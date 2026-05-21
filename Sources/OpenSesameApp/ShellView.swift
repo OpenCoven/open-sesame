@@ -323,7 +323,7 @@ private struct ExpandedSiteRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 DragGrip(isHovered: isHovered)
                 FaviconView(site: site, size: 22)
 
@@ -333,20 +333,20 @@ private struct ExpandedSiteRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.vertical, appearance.rowVerticalPadding)
-            .padding(.trailing, 6)
+            .padding(.horizontal, 10)
             .background(rowBackground)
             .overlay(alignment: .top) {
                 if isDropTargeted {
-                    Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(height: 2)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(Color.accentColor, lineWidth: 2)
                 }
             }
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover(perform: onHover)
         .contextMenu { contextMenu }
+        .padding(.horizontal, 8)
         .draggable(site.id.uuidString) {
             HStack(spacing: 8) {
                 FaviconView(site: site, size: 18)
@@ -363,14 +363,23 @@ private struct ExpandedSiteRow: View {
     }
 
     private var rowBackground: some View {
-        Rectangle()
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
             .fill(rowFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(strokeColor, lineWidth: 0.5)
+            )
     }
 
     private var rowFill: Color {
         if isSelected { return Color.accentColor.opacity(0.22) }
-        if isHovered { return Color.primary.opacity(0.07) }
-        return Color.clear
+        if isHovered { return Color.black.opacity(0.32) }
+        return Color.black.opacity(0.22)
+    }
+
+    private var strokeColor: Color {
+        if isSelected { return Color.accentColor.opacity(0.5) }
+        return Color.white.opacity(0.06)
     }
 
     @ViewBuilder
