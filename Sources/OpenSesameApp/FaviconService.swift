@@ -82,6 +82,13 @@ final class FaviconService: ObservableObject {
             },
             resource: "github",
             ext: "png"
+        ),
+        (
+            matches: { host in
+                host == "cast.codes" || host.hasSuffix(".cast.codes")
+            },
+            resource: "cast",
+            ext: "png"
         )
     ]
 
