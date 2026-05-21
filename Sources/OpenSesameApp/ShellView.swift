@@ -54,6 +54,25 @@ struct ShellView: View {
                 toggleMode: toggleSidebar
             )
             .frame(width: sidebarMode == .expanded ? sidebarWidth : railWidth)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 18,
+                    bottomLeadingRadius: 18,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0,
+                    style: .continuous
+                )
+            )
+            .overlay(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 18,
+                    bottomLeadingRadius: 18,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0,
+                    style: .continuous
+                )
+                .strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5)
+            )
             .zIndex(1)
 
             if sidebarMode == .expanded {
