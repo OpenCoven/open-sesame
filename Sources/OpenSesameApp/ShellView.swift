@@ -97,8 +97,8 @@ struct ShellView: View {
                 Divider()
 
                 if let site = catalog.selectedSite {
-                    BrowserWebView(
-                        url: site.url,
+                    BrowserPane(
+                        site: site,
                         reloadToken: reloadToken,
                         controller: controller
                     )
@@ -1440,5 +1440,214 @@ private struct QuickAddTile: View {
         } else {
             ColoredInitialAvatar(name: app.name, size: 22)
         }
+    }
+}
+
+// MARK: - Browser pane
+
+/// Wraps BrowserWebView with the failure overlay, the find-in-page bar,
+/// the dark backdrop that absorbs the WebView's transparent paint, and
+/// the zoom/find keyboard shortcuts.
+private struct BrowserPane: View {
+    let site: PortalSite
+    let reloadToken: UUID
+    @ObservedObject var controller: BrowserController
+
+    @State private var isFindActive: Bool = false
+    @State private var findQuery: String = ""
+    @State private var findMissed: Bool = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color(nsColor: .windowBackgroundColor)
+
+            BrowserWebView(
+                url: site.url,
+                reloadToken: reloadToken,
+                controller: controller
+            )
+
+            if let error = controller.loadError {
+                WebErrorOverlay(error: error, retry: controller.reload)
+                    .transition(.opacity)
+            }
+
+            if isFindActive {
+                FindInPageBar(
+                    query: $findQuery,
+                    missed: $findMissed,
+                    findNext: { performFind(forward: true) },
+                    findPrev: { performFind(forward: false) },
+                    close: closeFind
+                )
+                .padding(.top, 10)
+                .padding(.trailing, 14)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: controller.loadError != nil)
+        .animation(.easeOut(duration: 0.18), value: isFindActive)
+        .background(shortcutShims)
+    }
+
+    private func performFind(forward: Bool) {
+        Task {
+            let hit = await controller.find(findQuery, forward: forward)
+            findMissed = !hit
+        }
+    }
+
+    private func closeFind() {
+        isFindActive = false
+        findQuery = ""
+        findMissed = false
+    }
+
+    /// Hidden zero-size Buttons that host the WebView-scoped keyboard
+    /// shortcuts (find + zoom). The chrome already owns nav/reload/home.
+    private var shortcutShims: some View {
+        Group {
+            Button("Find") {
+                isFindActive = true
+                findMissed = false
+            }
+            .keyboardShortcut("f", modifiers: .command)
+
+            Button("Zoom In", action: controller.zoomIn)
+                .keyboardShortcut("=", modifiers: .command)
+            Button("Zoom In Alt", action: controller.zoomIn)
+                .keyboardShortcut("+", modifiers: [.command, .shift])
+            Button("Zoom Out", action: controller.zoomOut)
+                .keyboardShortcut("-", modifiers: .command)
+            Button("Reset Zoom", action: controller.resetZoom)
+                .keyboardShortcut("0", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+    }
+}
+
+private struct WebErrorOverlay: View {
+    let error: WebLoadError
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.red.opacity(0.14))
+                    .frame(width: 72, height: 72)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.28), lineWidth: 0.5)
+                    .frame(width: 72, height: 72)
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.red)
+            }
+
+            VStack(spacing: 6) {
+                Text(error.title)
+                    .font(.system(size: 22, weight: .semibold))
+                Text(error.detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                if let url = error.url {
+                    Text(url.absoluteString)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.top, 4)
+                }
+            }
+
+            Button(action: retry) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Retry")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .padding(.horizontal, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 32)
+        .frame(maxWidth: 460)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct FindInPageBar: View {
+    @Binding var query: String
+    @Binding var missed: Bool
+    let findNext: () -> Void
+    let findPrev: () -> Void
+    let close: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            TextField("Find on page", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(missed && !query.isEmpty ? Color.red : Color.primary)
+                .focused($isFocused)
+                .onSubmit { findNext() }
+                .onChange(of: query) { _, _ in missed = false }
+                .frame(width: 180)
+
+            Divider().frame(height: 14)
+
+            Button(action: findPrev) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help("Previous match")
+
+            Button(action: findNext) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .help("Next match")
+
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .help("Close")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule().fill(.regularMaterial)
+        )
+        .overlay(
+            Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
+        )
+        .onAppear { isFocused = true }
     }
 }
