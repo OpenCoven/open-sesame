@@ -385,26 +385,6 @@ private struct AppearanceSection: View {
             subtitle: "Subtle visual preferences for the sidebar and browser chrome."
         ) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Transparency")
-                        .font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Text("\(Int((1 - appearance.transparency) * 100))%")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-                Slider(
-                    value: $appearance.transparency,
-                    in: AppearanceSettings.minTransparency...AppearanceSettings.maxTransparency
-                )
-                Text("Lower values let more of the desktop or window behind show through the sidebar and chrome.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
                 Toggle(isOn: $appearance.radialBlurEnabled) {
                     Text("Radial Blur")
                         .font(.system(size: 13, weight: .semibold))
@@ -476,8 +456,10 @@ struct FaviconView: View {
     @State private var image: NSImage?
 
     var body: some View {
-        Group {
+        ZStack {
             if let image {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)

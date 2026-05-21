@@ -257,7 +257,7 @@ private struct ExpandedSidebar: View {
                                 onPinAsHome: { catalog.setHomeSite(withID: site.id) }
                             )
                             .listRowSeparator(.hidden)
-                            .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
+                            .listRowInsets(.init(top: 1, leading: 0, bottom: 1, trailing: 0))
                             .listRowBackground(Color.clear)
 
                         case .group(let group):
@@ -269,7 +269,7 @@ private struct ExpandedSidebar: View {
                                 addSiteToGroup: { addSiteToGroup(group.id) }
                             )
                             .listRowSeparator(.hidden)
-                            .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
+                            .listRowInsets(.init(top: 1, leading: 0, bottom: 1, trailing: 0))
                             .listRowBackground(Color.clear)
                         }
                     }
@@ -307,7 +307,8 @@ private struct ExpandedSiteRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                DragGrip(isHovered: isHovered)
                 FaviconView(site: site, size: 22)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -329,10 +330,10 @@ private struct ExpandedSiteRow: View {
                             .lineLimit(1)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(.vertical, 5)
-            .padding(.horizontal, 6)
+            .padding(.trailing, 6)
             .background(rowBackground)
             .contentShape(Rectangle())
         }
@@ -352,7 +353,7 @@ private struct ExpandedSiteRow: View {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
+        Rectangle()
             .fill(rowFill)
     }
 
@@ -386,6 +387,7 @@ private struct ExpandedGroupRow: View {
     let addSiteToGroup: () -> Void
 
     @State private var isDropTargeted: Bool = false
+    @State private var isLabelHovered: Bool = false
 
     var body: some View {
         DisclosureGroup(
@@ -404,13 +406,13 @@ private struct ExpandedGroupRow: View {
                     onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
                     onPinAsHome: { catalog.setHomeSite(withID: site.id) }
                 )
-                .padding(.leading, 8)
             }
             .onMove { source, destination in
                 catalog.moveSitesInGroup(group.id, fromOffsets: source, toOffset: destination)
             }
         } label: {
             HStack(spacing: 8) {
+                DragGrip(isHovered: isLabelHovered)
                 Text(group.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
@@ -423,13 +425,20 @@ private struct ExpandedGroupRow: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Add Site to \(group.name)")
+                .padding(.trailing, 6)
             }
             .padding(.vertical, 3)
-            .padding(.horizontal, 4)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                Rectangle()
                     .fill(isDropTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
             )
+            .onHover { isLabelHovered = $0 }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                    catalog.toggleGroupCollapsed(withID: group.id)
+                }
+            }
             .contextMenu {
                 Button {
                     catalog.renameGroup(withID: group.id, to: group.name)
@@ -570,15 +579,6 @@ private struct RailSiteRow: View {
                 }
 
                 FaviconView(site: site, size: 28)
-
-                if site.isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(2)
-                        .background(Circle().fill(Color.secondary))
-                        .offset(x: 14, y: -14)
-                }
             }
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
@@ -622,14 +622,42 @@ private struct RailGroup: View {
 
     @State private var isDropTargeted: Bool = false
 
+    private var isCollapsed: Bool { group.isCollapsed }
+
     var body: some View {
+        Group {
+            if isCollapsed {
+                closedBody
+            } else {
+                openBody
+            }
+        }
+        .padding(.vertical, 1)
+        .dropDestination(for: String.self) { strings, _ in
+            var moved = false
+            for payload in strings {
+                guard let uuid = UUID(uuidString: payload),
+                      catalog.findSite(withID: uuid) != nil else { continue }
+                catalog.moveSite(uuid, intoGroup: group.id)
+                moved = true
+            }
+            return moved
+        } isTargeted: { isDropTargeted = $0 }
+    }
+
+    private var openBody: some View {
         VStack(spacing: 2) {
-            Image(systemName: "folder.fill")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 3)
-                .help(group.name)
+            Button(action: toggleCollapsed) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 3)
+                    .padding(.bottom, 1)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(group.name)
 
             ForEach(group.sites) { site in
                 RailSiteRow(
@@ -659,21 +687,157 @@ private struct RailGroup: View {
                         )
                 )
         )
-        .padding(.vertical, 1)
-        .dropDestination(for: String.self) { strings, _ in
-            var moved = false
-            for payload in strings {
-                guard let uuid = UUID(uuidString: payload),
-                      catalog.findSite(withID: uuid) != nil else { continue }
-                catalog.moveSite(uuid, intoGroup: group.id)
-                moved = true
+    }
+
+    private var closedBody: some View {
+        Button(action: toggleCollapsed) {
+            ZStack {
+                FolderShape()
+                    .fill(isDropTargeted ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.085))
+                    .overlay(
+                        FolderShape()
+                            .stroke(
+                                isDropTargeted ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.1),
+                                lineWidth: isDropTargeted ? 1.5 : 0.5
+                            )
+                    )
+
+                FolderContentsPreview(sites: group.sites)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 4)
             }
-            return moved
-        } isTargeted: { isDropTargeted = $0 }
+            .frame(height: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(group.name)
+        .contextMenu {
+            Button {
+                catalog.toggleGroupCollapsed(withID: group.id)
+            } label: { Label("Open Folder", systemImage: "folder") }
+            Divider()
+            Button(role: .destructive) {
+                catalog.removeGroup(withID: group.id)
+            } label: { Label("Remove Folder", systemImage: "trash") }
+        }
+    }
+
+    private func toggleCollapsed() {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+            catalog.toggleGroupCollapsed(withID: group.id)
+        }
+    }
+}
+
+private struct FolderShape: Shape {
+    var tabWidthRatio: CGFloat = 0.5
+    var tabHeight: CGFloat = 5
+    var cornerRadius: CGFloat = 8
+    var notchRadius: CGFloat = 3
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let tabRight = rect.minX + rect.width * tabWidthRatio
+        let bodyTop = rect.minY + tabHeight
+        let cr = min(cornerRadius, min(rect.width, rect.height) / 2)
+
+        p.move(to: CGPoint(x: rect.minX + cr, y: rect.minY))
+        p.addLine(to: CGPoint(x: tabRight - notchRadius, y: rect.minY))
+        p.addQuadCurve(
+            to: CGPoint(x: tabRight + notchRadius, y: bodyTop),
+            control: CGPoint(x: tabRight, y: rect.minY + tabHeight * 0.45)
+        )
+        p.addLine(to: CGPoint(x: rect.maxX - cr, y: bodyTop))
+        p.addArc(
+            center: CGPoint(x: rect.maxX - cr, y: bodyTop + cr),
+            radius: cr,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cr))
+        p.addArc(
+            center: CGPoint(x: rect.maxX - cr, y: rect.maxY - cr),
+            radius: cr,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+        p.addLine(to: CGPoint(x: rect.minX + cr, y: rect.maxY))
+        p.addArc(
+            center: CGPoint(x: rect.minX + cr, y: rect.maxY - cr),
+            radius: cr,
+            startAngle: .degrees(90),
+            endAngle: .degrees(180),
+            clockwise: false
+        )
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cr))
+        p.addArc(
+            center: CGPoint(x: rect.minX + cr, y: rect.minY + cr),
+            radius: cr,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        p.closeSubpath()
+        return p
+    }
+}
+
+private struct FolderContentsPreview: View {
+    let sites: [PortalSite]
+
+    var body: some View {
+        let display = Array(sites.prefix(4))
+        let cellSize: CGFloat = 14
+        let spacing: CGFloat = 2
+
+        if display.isEmpty {
+            Image(systemName: "tray")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.tertiary)
+        } else if display.count == 1 {
+            FaviconView(site: display[0], size: 26)
+        } else {
+            VStack(spacing: spacing) {
+                HStack(spacing: spacing) {
+                    cell(at: 0, in: display, size: cellSize)
+                    cell(at: 1, in: display, size: cellSize)
+                }
+                HStack(spacing: spacing) {
+                    cell(at: 2, in: display, size: cellSize)
+                    cell(at: 3, in: display, size: cellSize)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(at index: Int, in sites: [PortalSite], size: CGFloat) -> some View {
+        if index < sites.count {
+            FaviconView(site: sites[index], size: size)
+        } else {
+            Color.clear.frame(width: size, height: size)
+        }
     }
 }
 
 // MARK: - Resize handle
+
+private struct DragGrip: View {
+    let isHovered: Bool
+
+    var body: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.secondary)
+            .frame(width: 14, height: 14)
+            .opacity(isHovered ? 0.55 : 0)
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .accessibilityHidden(true)
+    }
+}
 
 private struct SidebarResizeHandle: View {
     @Binding var width: CGFloat

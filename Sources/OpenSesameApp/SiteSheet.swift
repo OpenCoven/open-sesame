@@ -60,7 +60,10 @@ struct SiteSheet: View {
             _name = State(initialValue: site.name)
             _label = State(initialValue: site.label)
             _urlString = State(initialValue: site.url.absoluteString)
-            _selectedGroupID = State(initialValue: initialGroupID)
+            let containingID = availableGroups.first { group in
+                group.sites.contains(where: { $0.id == site.id })
+            }?.id
+            _selectedGroupID = State(initialValue: containingID ?? initialGroupID)
         }
     }
 
@@ -314,7 +317,10 @@ struct SiteSheet: View {
                     isPinned: existing.isPinned,
                     iconData: existing.iconData
                 )
-                onUpdate(updated, initialGroupID, selectedGroupID)
+                let previousID = availableGroups.first { group in
+                    group.sites.contains(where: { $0.id == existing.id })
+                }?.id ?? initialGroupID
+                onUpdate(updated, previousID, selectedGroupID)
             }
             dismiss()
         } catch let error as PortalSite.ValidationError {

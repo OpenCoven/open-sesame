@@ -3,12 +3,9 @@ import SwiftUI
 
 @MainActor
 final class AppearanceSettings: ObservableObject {
-    @AppStorage("appearance.transparency") var transparency: Double = 0.85
     @AppStorage("appearance.radialBlurEnabled") var radialBlurEnabled: Bool = false
     @AppStorage("appearance.radialBlurIntensity") var radialBlurIntensity: Double = 18
 
-    static let minTransparency: Double = 0.5
-    static let maxTransparency: Double = 1.0
     static let maxBlurRadius: Double = 40
 }
 
