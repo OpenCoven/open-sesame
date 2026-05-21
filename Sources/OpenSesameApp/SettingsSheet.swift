@@ -23,7 +23,11 @@ struct SettingsSheet: View {
                     .frame(width: 34, height: 34)
                     .background(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color.primary.opacity(0.08))
+                            .fill(Color.black.opacity(0.22))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -46,16 +50,9 @@ struct SettingsSheet: View {
 
             Divider()
 
-            Picker("Section", selection: $selection) {
-                ForEach(Tab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.large)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 14)
+            PillSegmentedPicker(selection: $selection)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
 
             Divider()
 
@@ -88,9 +85,10 @@ private struct SuggestedSection: View {
     var body: some View {
         SettingsPanelSection(
             title: "Social Apps",
-            subtitle: "Opt-in only — toggle on to add to the Socials folder."
+            subtitle: "Opt-in only — toggle on to add to the Socials folder.",
+            contentPadding: 0
         ) {
-            VStack(spacing: 4) {
+            VStack(spacing: 0) {
                 ForEach(CuratedCatalog.socialApps) { app in
                     SuggestedRow(
                         app: app,
@@ -151,14 +149,11 @@ private struct SuggestedRow: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
+        .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }
 }
@@ -227,19 +222,23 @@ private struct AppearanceSection: View {
                 }
 
                 if appearance.radialBlurEnabled {
-                    HStack {
-                        Text("Intensity")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Intensity")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(Int(appearance.radialBlurIntensity))")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 30, alignment: .trailing)
+                        }
                         Slider(
                             value: $appearance.radialBlurIntensity,
                             in: 0...AppearanceSettings.maxBlurRadius
                         )
-                        Text("\(Int(appearance.radialBlurIntensity))")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 30, alignment: .trailing)
                     }
+                    .padding(.top, 2)
                 }
 
                 Text("Softens the corners of the window with a radial-mask gaussian blur. Subtle by default.")
@@ -252,9 +251,78 @@ private struct AppearanceSection: View {
     }
 }
 
+// MARK: - Pill segmented picker
+
+private struct PillSegmentedPicker: View {
+    @Binding var selection: SettingsSheet.Tab
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(SettingsSheet.Tab.allCases) { tab in
+                PillSegment(
+                    label: tab.rawValue,
+                    isSelected: tab == selection,
+                    action: {
+                        withAnimation(.easeOut(duration: 0.16)) { selection = tab }
+                    }
+                )
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(0.22))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
+    }
+}
+
+private struct PillSegment: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(fillColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(strokeColor, lineWidth: 0.5)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var fillColor: Color {
+        if isSelected { return Color.accentColor.opacity(0.22) }
+        if isHovered { return Color.white.opacity(0.06) }
+        return Color.clear
+    }
+
+    private var strokeColor: Color {
+        isSelected ? Color.accentColor.opacity(0.5) : Color.clear
+    }
+}
+
 private struct SettingsPanelSection<Content: View>: View {
     let title: String
     let subtitle: String
+    var contentPadding: CGFloat = 14
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -272,15 +340,16 @@ private struct SettingsPanelSection<Content: View>: View {
             VStack(alignment: .leading, spacing: 14) {
                 content
             }
-            .padding(14)
+            .padding(contentPadding)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.34))
+                    .fill(Color.black.opacity(0.22))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.15))
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
             )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 }
