@@ -7,3 +7,5 @@ xcuserdata/
 open-sesame-sites.json
 dist/
 .codex/
+.env*
+!.env.example

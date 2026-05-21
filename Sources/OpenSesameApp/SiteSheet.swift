@@ -85,9 +85,8 @@ struct SiteSheet: View {
             footer
                 .padding(.horizontal, 22)
                 .padding(.vertical, 14)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.42))
         }
-        .frame(width: 460)
+        .frame(width: 480)
         .onAppear {
             DispatchQueue.main.async {
                 if case .add = target {
@@ -108,6 +107,10 @@ struct SiteSheet: View {
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(Color.accentColor.opacity(0.14))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
                 )
 
             VStack(alignment: .leading, spacing: 3) {
@@ -190,11 +193,11 @@ struct SiteSheet: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.36))
+                .fill(Color.black.opacity(0.22))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.secondary.opacity(0.16))
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
         )
     }
 
@@ -396,9 +399,9 @@ private struct ModalField<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             content
         }
@@ -425,5 +428,9 @@ private struct IconPreview: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
     }
 }

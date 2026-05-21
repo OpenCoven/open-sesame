@@ -418,38 +418,45 @@ private struct ExpandedGroupRow: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
+
+                if group.isCollapsed {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("\(group.sites.count)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
             }
             .padding(.vertical, appearance.rowVerticalPadding)
             .padding(.horizontal, 10)
-            .background(pillBackground)
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(rowBackground)
+            .overlay {
+                if isDropTargeted {
+                    Rectangle()
+                        .stroke(Color.accentColor, lineWidth: 2)
+                }
+            }
+            .contentShape(Rectangle())
             .onHover { isHovered = $0 }
             .dropDestination(for: String.self) { strings, _ in
                 handleDrop(strings)
             } isTargeted: { isDropTargeted = $0 }
         }
         .disclosureGroupStyle(PlainDisclosureStyle())
-        .padding(.horizontal, 8)
     }
 
-    private var pillBackground: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(pillFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(strokeColor, lineWidth: 0.5)
-            )
+    private var rowBackground: some View {
+        Rectangle()
+            .fill(rowFill)
     }
 
-    private var pillFill: Color {
+    private var rowFill: Color {
         if isDropTargeted { return Color.accentColor.opacity(0.22) }
         if isHovered { return Color.black.opacity(0.32) }
         return Color.black.opacity(0.22)
-    }
-
-    private var strokeColor: Color {
-        if isDropTargeted { return Color.accentColor.opacity(0.5) }
-        return Color.white.opacity(0.06)
     }
 
     private func handleDrop(_ payloads: [String]) -> Bool {
