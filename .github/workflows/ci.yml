@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcode-select -p
+          swift --version
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Test
+        run: swift test --parallel
+
+  bundle:
+    name: Build .app bundle
+    runs-on: macos-15
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcode-select -p
+          swift --version
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Stage .app bundle
+        env:
+          APP_NAME: open-sesame
+          BUNDLE_ID: ai.opencoven.OpenSesame
+          MIN_SYSTEM_VERSION: "14.0"
+        run: |
+          set -euo pipefail
+          BIN_DIR="$(swift build -c release --show-bin-path)"
+          APP_BUNDLE="dist/${APP_NAME}.app"
+          APP_MACOS="${APP_BUNDLE}/Contents/MacOS"
+
+          rm -rf "${APP_BUNDLE}"
+          mkdir -p "${APP_MACOS}"
+          cp "${BIN_DIR}/${APP_NAME}" "${APP_MACOS}/${APP_NAME}"
+          chmod +x "${APP_MACOS}/${APP_NAME}"
+
+          cat >"${APP_BUNDLE}/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>${APP_NAME}</string>
+            <key>CFBundleIdentifier</key>
+            <string>${BUNDLE_ID}</string>
+            <key>CFBundleName</key>
+            <string>${APP_NAME}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>${MIN_SYSTEM_VERSION}</string>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Upload .app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-sesame-app
+          path: dist/open-sesame.app
+          if-no-files-found: error
+          retention-days: 14
