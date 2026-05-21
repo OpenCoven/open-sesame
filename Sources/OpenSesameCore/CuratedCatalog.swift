@@ -43,7 +43,7 @@ public enum CuratedCatalog {
         ),
         CuratedApp(
             id: "opencoven",
-            name: "OpenCoven",
+            name: "GitHub",
             urlString: "https://github.com/OpenCoven",
             category: .default
         ),
@@ -55,7 +55,7 @@ public enum CuratedCatalog {
         ),
         CuratedApp(
             id: "coven-grimoire",
-            name: "Coven Grimoire",
+            name: "Grimoire",
             urlString: "https://mind.opencoven.ai",
             category: .default
         )
@@ -82,13 +82,6 @@ public enum CuratedCatalog {
             urlString: "https://web.telegram.org/k",
             category: .social,
             summary: "Real-time messaging"
-        ),
-        CuratedApp(
-            id: "discord",
-            name: "Discord",
-            urlString: "https://discord.com/app",
-            category: .social,
-            summary: "Voice, video, and text chat"
         )
     ]
 

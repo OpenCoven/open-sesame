@@ -166,13 +166,6 @@ private struct SuggestedRow: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowFill)
-            .overlay(alignment: .leading) {
-                if isOn {
-                    Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(width: 2)
-                }
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -180,10 +173,7 @@ private struct SuggestedRow: View {
     }
 
     private var rowFill: Color {
-        if isOn {
-            return isHovered ? Color.accentColor.opacity(0.16) : Color.accentColor.opacity(0.10)
-        }
-        return isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22)
+        isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22)
     }
 
     private var addRemovePill: some View {
@@ -369,16 +359,12 @@ private struct PillSegment: View {
         Button(action: action) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(fillColor)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(strokeColor, lineWidth: 0.5)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
@@ -387,13 +373,9 @@ private struct PillSegment: View {
     }
 
     private var fillColor: Color {
-        if isSelected { return Color.accentColor.opacity(0.22) }
-        if isHovered { return Color.white.opacity(0.06) }
+        if isSelected { return Color.white.opacity(0.10) }
+        if isHovered { return Color.white.opacity(0.05) }
         return Color.clear
-    }
-
-    private var strokeColor: Color {
-        isSelected ? Color.accentColor.opacity(0.5) : Color.clear
     }
 }
 

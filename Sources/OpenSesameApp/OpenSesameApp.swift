@@ -22,11 +22,13 @@ struct OpenSesameApp: App {
 private enum CatalogBootstrap {
     private static let socialsMigrationKey = "didMigrateSocialsV2"
     private static let covenMigrationKey = "didMigrateCovenV2"
+    private static let renameMigrationKey = "didMigrateRenamesV1"
 
     static func loadInitialCatalog() -> SiteCatalog {
         var catalog = loadCatalog()
         migrateSocialsIfNeeded(&catalog)
         migrateCovenIfNeeded(&catalog)
+        migrateRenamesIfNeeded(&catalog)
         return catalog
     }
 
@@ -111,6 +113,34 @@ private enum CatalogBootstrap {
                 return false
             }), currentIndex != 0 {
                 catalog.moveRootEntries(fromOffsets: IndexSet(integer: currentIndex), toOffset: 0)
+            }
+        }
+    }
+
+    /// One-time rename pass: brings the user's existing catalog entries in
+    /// line with current CuratedCatalog display names. Matches by URL and
+    /// the previous display name so user-customized names are not touched.
+    private static func migrateRenamesIfNeeded(_ catalog: inout SiteCatalog) {
+        guard !UserDefaults.standard.bool(forKey: renameMigrationKey) else { return }
+        defer { UserDefaults.standard.set(true, forKey: renameMigrationKey) }
+
+        let renames: [(url: String, oldName: String, newName: String)] = [
+            ("https://github.com/OpenCoven", "OpenCoven", "GitHub"),
+            ("https://mind.opencoven.ai", "Coven Grimoire", "Grimoire")
+        ]
+
+        for site in catalog.sites {
+            guard let match = renames.first(where: {
+                site.url.absoluteString == $0.url && site.name == $0.oldName
+            }) else { continue }
+
+            if let updated = try? PortalSite(
+                id: site.id,
+                name: match.newName,
+                urlString: site.url.absoluteString,
+                iconData: site.iconData
+            ) {
+                catalog.updateSite(updated)
             }
         }
     }
