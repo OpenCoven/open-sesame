@@ -89,6 +89,37 @@ final class FaviconService: ObservableObject {
             },
             resource: "cast",
             ext: "png"
+        ),
+        (
+            matches: { host in
+                host == "reddit.com" || host.hasSuffix(".reddit.com")
+            },
+            resource: "reddit",
+            ext: "png"
+        ),
+        (
+            matches: { host in
+                host == "x.com" || host.hasSuffix(".x.com")
+                    || host == "twitter.com" || host.hasSuffix(".twitter.com")
+            },
+            resource: "x",
+            ext: "png"
+        ),
+        (
+            matches: { host in
+                host == "telegram.org" || host.hasSuffix(".telegram.org")
+                    || host == "t.me"
+            },
+            resource: "telegram",
+            ext: "png"
+        ),
+        (
+            matches: { host in
+                host == "discord.com" || host.hasSuffix(".discord.com")
+                    || host == "discord.gg" || host == "discordapp.com"
+            },
+            resource: "discord",
+            ext: "png"
         )
     ]
 

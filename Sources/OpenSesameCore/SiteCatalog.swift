@@ -335,14 +335,10 @@ public struct SiteCatalog: Sendable, Equatable {
 }
 
 public extension SiteCatalog {
-    static let defaultCatalog = SiteCatalog(
-        entries: [
-            .site(
-                try! PortalSite(
-                    name: "OpenCoven",
-                    urlString: "https://opencoven.ai"
-                )
-            )
-        ]
-    )
+    static let defaultCatalog: SiteCatalog = {
+        let sites: [PortalSite] = CuratedCatalog.defaultApps.compactMap { app in
+            try? PortalSite(name: app.name, urlString: app.urlString)
+        }
+        return SiteCatalog(entries: sites.map { .site($0) })
+    }()
 }

@@ -15,12 +15,21 @@ import Testing
     }
 }
 
-@Test func catalogUsesOpenCovenAsDefaultSite() throws {
+@Test func defaultCatalogSeedsCuratedDefaults() throws {
     let catalog = SiteCatalog.defaultCatalog
 
-    #expect(catalog.sites.count == 1)
-    #expect(catalog.selectedSite?.name == "OpenCoven")
-    #expect(catalog.selectedSite?.url.absoluteString == "https://opencoven.ai")
+    let expectedNames = CuratedCatalog.defaultApps.map(\.name)
+    #expect(catalog.sites.count == expectedNames.count)
+    #expect(catalog.sites.map(\.name) == expectedNames)
+    #expect(catalog.sites.map { $0.url.absoluteString } == CuratedCatalog.defaultApps.map(\.urlString))
+}
+
+@Test func curatedCatalogSeparatesDefaultsFromSocials() throws {
+    #expect(CuratedCatalog.defaultApps.allSatisfy { $0.category == .default })
+    #expect(CuratedCatalog.socialApps.allSatisfy { $0.category == .social })
+    let defaultIDs = Set(CuratedCatalog.defaultApps.map(\.id))
+    let socialIDs = Set(CuratedCatalog.socialApps.map(\.id))
+    #expect(defaultIDs.intersection(socialIDs).isEmpty)
 }
 
 @Test func removeSiteRemovesAnyEntry() throws {

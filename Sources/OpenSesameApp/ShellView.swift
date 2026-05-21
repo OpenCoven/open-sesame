@@ -123,7 +123,7 @@ struct ShellView: View {
             )
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsSheet(appearance: appearance)
+            SettingsSheet(catalog: $catalog, appearance: appearance)
         }
         .task {
             await refreshAllFavicons()
@@ -640,6 +640,7 @@ private struct RailGroup: View {
     let selectSite: (PortalSite) -> Void
 
     @State private var isDropTargeted: Bool = false
+    @State private var isContainerHovered: Bool = false
 
     private var isCollapsed: Bool { group.isCollapsed }
 
@@ -666,18 +667,6 @@ private struct RailGroup: View {
 
     private var openBody: some View {
         VStack(spacing: 2) {
-            Button(action: toggleCollapsed) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 3)
-                    .padding(.bottom, 1)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(group.name)
-
             ForEach(group.sites) { site in
                 RailSiteRow(
                     site: site,
@@ -691,32 +680,50 @@ private struct RailGroup: View {
                 )
             }
         }
-        .padding(.bottom, 3)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isDropTargeted ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.045))
+                .fill(containerFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(
-                            isDropTargeted ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.06),
-                            lineWidth: isDropTargeted ? 1.5 : 0.5
-                        )
+                        .strokeBorder(containerStroke, lineWidth: 0.5)
                 )
         )
+        .overlay(alignment: .topTrailing) {
+            if isContainerHovered {
+                Button(action: toggleCollapsed) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(3)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Collapse \(group.name)")
+                .padding(3)
+            }
+        }
+        .onHover { isContainerHovered = $0 }
+        .contextMenu {
+            Button(action: toggleCollapsed) {
+                Label("Collapse Folder", systemImage: "chevron.up")
+            }
+            Divider()
+            Button(role: .destructive) {
+                catalog.removeGroup(withID: group.id)
+            } label: { Label("Remove Folder", systemImage: "trash") }
+        }
     }
 
     private var closedBody: some View {
         Button(action: toggleCollapsed) {
             ZStack {
                 FolderShape()
-                    .fill(isDropTargeted ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.085))
+                    .fill(closedFill)
                     .overlay(
                         FolderShape()
-                            .stroke(
-                                isDropTargeted ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.1),
-                                lineWidth: isDropTargeted ? 1.5 : 0.5
-                            )
+                            .stroke(closedStroke, lineWidth: 0.5)
                     )
 
                 FolderContentsPreview(sites: group.sites)
@@ -729,6 +736,31 @@ private struct RailGroup: View {
         }
         .buttonStyle(.plain)
         .help(group.name)
+        .contextMenu {
+            Button(action: toggleCollapsed) {
+                Label("Open Folder", systemImage: "folder")
+            }
+            Divider()
+            Button(role: .destructive) {
+                catalog.removeGroup(withID: group.id)
+            } label: { Label("Remove Folder", systemImage: "trash") }
+        }
+    }
+
+    private var containerFill: Color {
+        isDropTargeted ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.04)
+    }
+
+    private var containerStroke: Color {
+        isDropTargeted ? Color.accentColor.opacity(0.5) : Color.white.opacity(0.06)
+    }
+
+    private var closedFill: Color {
+        isDropTargeted ? Color.accentColor.opacity(0.22) : Color.black.opacity(0.22)
+    }
+
+    private var closedStroke: Color {
+        isDropTargeted ? Color.accentColor.opacity(0.5) : Color.white.opacity(0.06)
     }
 
     private func toggleCollapsed() {

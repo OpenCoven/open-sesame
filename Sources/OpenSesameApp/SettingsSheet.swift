@@ -2,9 +2,17 @@ import OpenSesameCore
 import SwiftUI
 
 struct SettingsSheet: View {
+    @Binding var catalog: SiteCatalog
     @ObservedObject var appearance: AppearanceSettings
 
     @Environment(\.dismiss) private var dismiss
+    @State private var selection: Tab = .appearance
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case appearance = "Appearance"
+        case suggested = "Suggested"
+        var id: String { rawValue }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +29,7 @@ struct SettingsSheet: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Settings")
                         .font(.system(size: 19, weight: .semibold))
-                    Text("Tune the shell’s visual treatment.")
+                    Text(sectionSubtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -38,10 +46,141 @@ struct SettingsSheet: View {
 
             Divider()
 
-            AppearanceSection(appearance: appearance)
-                .padding(22)
+            Picker("Section", selection: $selection) {
+                ForEach(Tab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.large)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            Group {
+                switch selection {
+                case .appearance:
+                    AppearanceSection(appearance: appearance)
+                case .suggested:
+                    SuggestedSection(catalog: $catalog)
+                }
+            }
+            .padding(22)
         }
-        .frame(width: 480, height: 360)
+        .frame(width: 520, height: 460)
+    }
+
+    private var sectionSubtitle: String {
+        switch selection {
+        case .appearance: return "Tune the shell’s visual treatment."
+        case .suggested: return "Toggle suggested social apps in and out of the sidebar."
+        }
+    }
+}
+
+// MARK: - Suggested
+
+private struct SuggestedSection: View {
+    @Binding var catalog: SiteCatalog
+
+    var body: some View {
+        SettingsPanelSection(
+            title: "Social Apps",
+            subtitle: "Each social app is opt-in. Toggling on adds it to a Socials folder; toggling off removes it from the sidebar."
+        ) {
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(CuratedCatalog.socialApps) { app in
+                        SuggestedRow(
+                            app: app,
+                            isOn: catalogContains(app),
+                            toggle: { newValue in toggleApp(app, on: newValue) }
+                        )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 220)
+        }
+    }
+
+    private func catalogContains(_ app: CuratedApp) -> Bool {
+        catalog.sites.contains { $0.url.absoluteString == app.urlString }
+    }
+
+    private func toggleApp(_ app: CuratedApp, on: Bool) {
+        if on {
+            guard !catalogContains(app),
+                  let site = try? PortalSite(name: app.name, urlString: app.urlString) else { return }
+            let groupID = ensureSocialsFolder()
+            catalog.addSite(site, toGroupID: groupID)
+        } else {
+            guard let site = catalog.sites.first(where: { $0.url.absoluteString == app.urlString }) else { return }
+            catalog.removeSite(withID: site.id)
+        }
+    }
+
+    private func ensureSocialsFolder() -> SiteGroup.ID {
+        if let existing = catalog.groups.first(where: { $0.name == CuratedCatalog.socialsFolderName }) {
+            return existing.id
+        }
+        let group = SiteGroup(name: CuratedCatalog.socialsFolderName)
+        catalog.addGroup(group)
+        return group.id
+    }
+}
+
+private struct SuggestedRow: View {
+    let app: CuratedApp
+    let isOn: Bool
+    let toggle: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            BundledAppIcon(urlString: app.urlString, fallbackName: app.name)
+                .frame(width: 26, height: 26)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(app.name)
+                    .font(.system(size: 13, weight: .medium))
+                Text(app.urlString)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: Binding(get: { isOn }, set: { toggle($0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct BundledAppIcon: View {
+    let urlString: String
+    let fallbackName: String
+
+    var body: some View {
+        if let url = URL(string: urlString),
+           let host = url.host,
+           let data = FaviconService.bundledIconData(forHost: host),
+           let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+            ColoredInitialAvatar(name: fallbackName, size: 26)
+        }
     }
 }
 
