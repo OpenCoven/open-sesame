@@ -953,7 +953,7 @@ private struct SidebarBrandFooter: View {
             Image(systemName: "key.fill")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.tertiary)
-            Text("OPEN SESAME")
+            Text("OPENSESAME")
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.2)
                 .foregroundStyle(.tertiary)
@@ -976,7 +976,7 @@ private struct RailBrandFooter: View {
             .background(alignment: .top) {
                 Divider().opacity(0.35)
             }
-            .help("Open Sesame")
+            .help("OpenSesame")
     }
 }
 

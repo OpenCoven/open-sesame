@@ -13,12 +13,20 @@ public struct CuratedApp: Identifiable, Hashable, Sendable {
     public let name: String
     public let urlString: String
     public let category: Category
+    public let summary: String
 
-    public init(id: String, name: String, urlString: String, category: Category) {
+    public init(
+        id: String,
+        name: String,
+        urlString: String,
+        category: Category,
+        summary: String = ""
+    ) {
         self.id = id
         self.name = name
         self.urlString = urlString
         self.category = category
+        self.summary = summary
     }
 
     /// Normalized absolute URL string used for matching against catalog entries.
@@ -58,25 +66,29 @@ public enum CuratedCatalog {
             id: "reddit",
             name: "Reddit",
             urlString: "https://reddit.com/r/OpenCvn",
-            category: .social
+            category: .social,
+            summary: "Forums and communities"
         ),
         CuratedApp(
             id: "x",
             name: "fka Twitter",
             urlString: "https://x.com/OpenCvn",
-            category: .social
+            category: .social,
+            summary: "Posts and the OpenCoven feed"
         ),
         CuratedApp(
             id: "telegram",
             name: "Telegram",
             urlString: "https://web.telegram.org/k",
-            category: .social
+            category: .social,
+            summary: "Real-time messaging"
         ),
         CuratedApp(
             id: "discord",
             name: "Discord",
             urlString: "https://discord.com/app",
-            category: .social
+            category: .social,
+            summary: "Voice, video, and text chat"
         )
     ]
 

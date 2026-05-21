@@ -89,7 +89,12 @@ private struct SuggestedSection: View {
             contentPadding: 0
         ) {
             VStack(spacing: 0) {
-                ForEach(CuratedCatalog.socialApps) { app in
+                ForEach(Array(CuratedCatalog.socialApps.enumerated()), id: \.element.id) { index, app in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.06))
+                            .frame(height: 0.5)
+                    }
                     SuggestedRow(
                         app: app,
                         isOn: catalogContains(app),
@@ -133,28 +138,101 @@ private struct SuggestedRow: View {
     let toggle: (Bool) -> Void
 
     @State private var isHovered: Bool = false
+    @State private var isButtonHovered: Bool = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            BundledAppIcon(urlString: app.urlString, fallbackName: app.name, size: 18)
+        Button(action: { toggle(!isOn) }) {
+            HStack(spacing: 12) {
+                BundledAppIcon(urlString: app.urlString, fallbackName: app.name, size: 22)
 
-            Text(app.name)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(app.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if !app.summary.isEmpty {
+                        Text(app.summary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            Toggle("", isOn: Binding(get: { isOn }, set: { toggle($0) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+                addRemovePill
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(rowFill)
+            .overlay(alignment: .leading) {
+                if isOn {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: 2)
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+    }
+
+    private var rowFill: Color {
+        if isOn {
+            return isHovered ? Color.accentColor.opacity(0.16) : Color.accentColor.opacity(0.10)
+        }
+        return isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22)
+    }
+
+    private var addRemovePill: some View {
+        HStack(spacing: 4) {
+            Image(systemName: pillIcon)
+                .font(.system(size: 10, weight: .bold))
+            Text(pillLabel)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(pillForeground)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(pillFill)
+        )
+        .overlay(
+            Capsule().strokeBorder(pillStroke, lineWidth: 0.5)
+        )
+        .onHover { isButtonHovered = $0 }
+        .animation(.easeOut(duration: 0.14), value: isOn)
+        .animation(.easeOut(duration: 0.14), value: isButtonHovered)
+    }
+
+    private var pillIcon: String {
+        if isOn { return isButtonHovered && isHovered ? "minus" : "checkmark" }
+        return "plus"
+    }
+
+    private var pillLabel: String {
+        if isOn { return isButtonHovered && isHovered ? "Remove" : "Added" }
+        return "Add"
+    }
+
+    private var pillForeground: Color {
+        if isOn && isButtonHovered && isHovered { return .red }
+        if isOn { return Color.accentColor }
+        return Color.primary
+    }
+
+    private var pillFill: Color {
+        if isOn && isButtonHovered && isHovered { return Color.red.opacity(0.14) }
+        if isOn { return Color.accentColor.opacity(0.18) }
+        return Color.white.opacity(0.08)
+    }
+
+    private var pillStroke: Color {
+        if isOn && isButtonHovered && isHovered { return Color.red.opacity(0.4) }
+        if isOn { return Color.accentColor.opacity(0.4) }
+        return Color.white.opacity(0.12)
     }
 }
 

@@ -21,7 +21,7 @@ struct OpenSesameApp: App {
 
 private enum CatalogBootstrap {
     private static let socialsMigrationKey = "didMigrateSocialsV2"
-    private static let covenMigrationKey = "didMigrateCovenV1"
+    private static let covenMigrationKey = "didMigrateCovenV2"
 
     static func loadInitialCatalog() -> SiteCatalog {
         var catalog = loadCatalog()
@@ -71,29 +71,47 @@ private enum CatalogBootstrap {
         }
     }
 
-    /// One-time migration: roll any pre-existing curated default sites into a
-    /// "Coven" folder so they share the collapsible folder treatment with
-    /// the Socials section. New sites the user added themselves are left
-    /// alone — only the URLs that match CuratedCatalog.defaultApps move.
+    /// One-time migration: the first curated default (Documentation) becomes
+    /// the home and lives at root, the remaining curated defaults nest inside
+    /// the Coven folder. Documentation is pulled out of any folder it's in,
+    /// then moved to root index 0. User-added sites are not touched.
     private static func migrateCovenIfNeeded(_ catalog: inout SiteCatalog) {
         guard !UserDefaults.standard.bool(forKey: covenMigrationKey) else { return }
         defer { UserDefaults.standard.set(true, forKey: covenMigrationKey) }
 
-        let defaultURLs = Set(CuratedCatalog.defaultApps.map { $0.urlString })
-        let defaults = catalog.sites.filter { defaultURLs.contains($0.url.absoluteString) }
-        guard !defaults.isEmpty else { return }
+        let homeApp = CuratedCatalog.defaultApps.first
+        let folderApps = Array(CuratedCatalog.defaultApps.dropFirst())
+        let folderURLs = Set(folderApps.map { $0.urlString })
 
-        let groupID: SiteGroup.ID
-        if let existing = catalog.groups.first(where: { $0.name == CuratedCatalog.covenFolderName }) {
-            groupID = existing.id
-        } else {
-            let group = SiteGroup(name: CuratedCatalog.covenFolderName)
-            catalog.addGroup(group)
-            groupID = group.id
+        // 1. Move the non-home defaults into the Coven folder.
+        let toFolder = catalog.sites.filter { folderURLs.contains($0.url.absoluteString) }
+        if !toFolder.isEmpty {
+            let groupID: SiteGroup.ID
+            if let existing = catalog.groups.first(where: { $0.name == CuratedCatalog.covenFolderName }) {
+                groupID = existing.id
+            } else {
+                let group = SiteGroup(name: CuratedCatalog.covenFolderName)
+                catalog.addGroup(group)
+                groupID = group.id
+            }
+
+            for site in toFolder where catalog.groupID(containingSite: site.id) != groupID {
+                catalog.moveSite(site.id, intoGroup: groupID)
+            }
         }
 
-        for site in defaults where catalog.groupID(containingSite: site.id) != groupID {
-            catalog.moveSite(site.id, intoGroup: groupID)
+        // 2. Pull the home site out of any folder and position it at root[0].
+        if let homeApp,
+           let home = catalog.sites.first(where: { $0.url.absoluteString == homeApp.urlString }) {
+            if catalog.groupID(containingSite: home.id) != nil {
+                catalog.moveSiteToRoot(home.id)
+            }
+            if let currentIndex = catalog.entries.firstIndex(where: { entry in
+                if case .site(let s) = entry, s.id == home.id { return true }
+                return false
+            }), currentIndex != 0 {
+                catalog.moveRootEntries(fromOffsets: IndexSet(integer: currentIndex), toOffset: 0)
+            }
         }
     }
 }

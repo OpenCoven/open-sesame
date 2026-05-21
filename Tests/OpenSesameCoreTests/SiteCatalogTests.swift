@@ -15,15 +15,24 @@ import Testing
     }
 }
 
-@Test func defaultCatalogSeedsCuratedDefaultsInCovenFolder() throws {
+@Test func defaultCatalogPutsHomeAtRootAndRestInCoven() throws {
     let catalog = SiteCatalog.defaultCatalog
 
     let expectedNames = CuratedCatalog.defaultApps.map(\.name)
-    #expect(catalog.entries.count == 1)
+    let homeApp = CuratedCatalog.defaultApps.first
+
+    // Root has the home site, then the Coven folder — 2 entries total.
+    #expect(catalog.entries.count == 2)
+    if case .site(let home) = catalog.entries[0] {
+        #expect(home.name == homeApp?.name)
+        #expect(home.url.absoluteString == homeApp?.urlString)
+    } else {
+        Issue.record("expected entries[0] to be the home site")
+    }
     #expect(catalog.groups.first?.name == CuratedCatalog.covenFolderName)
+    #expect(catalog.groups.first?.sites.count == expectedNames.count - 1)
     #expect(catalog.sites.count == expectedNames.count)
-    #expect(catalog.sites.map(\.name) == expectedNames)
-    #expect(catalog.sites.map { $0.url.absoluteString } == CuratedCatalog.defaultApps.map(\.urlString))
+    #expect(catalog.selectedSite?.name == homeApp?.name)
 }
 
 @Test func curatedCatalogSeparatesDefaultsFromSocials() throws {

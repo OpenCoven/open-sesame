@@ -339,7 +339,18 @@ public extension SiteCatalog {
         let sites: [PortalSite] = CuratedCatalog.defaultApps.compactMap { app in
             try? PortalSite(name: app.name, urlString: app.urlString)
         }
-        let coven = SiteGroup(name: CuratedCatalog.covenFolderName, sites: sites)
-        return SiteCatalog(entries: [.group(coven)])
+
+        // First default (Documentation) sits at the root as the home page;
+        // remaining defaults nest inside the Coven folder.
+        var entries: [CatalogEntry] = []
+        if let home = sites.first {
+            entries.append(.site(home))
+        }
+        let folderSites = Array(sites.dropFirst())
+        entries.append(
+            .group(SiteGroup(name: CuratedCatalog.covenFolderName, sites: folderSites))
+        )
+
+        return SiteCatalog(entries: entries)
     }()
 }
