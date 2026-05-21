@@ -334,7 +334,6 @@ private struct ExpandedSiteRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 10) {
-                DragGrip(isHovered: isHovered)
                 FaviconView(site: site, size: 22)
 
                 Text(site.name)
@@ -410,7 +409,6 @@ private struct ExpandedGroupRow: View {
     let addSiteToGroup: () -> Void
 
     @State private var isDropTargeted: Bool = false
-    @State private var isLabelHovered: Bool = false
 
     var body: some View {
         DisclosureGroup(
@@ -435,7 +433,6 @@ private struct ExpandedGroupRow: View {
             }
         } label: {
             HStack(spacing: 8) {
-                DragGrip(isHovered: isLabelHovered)
                 Text(group.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
@@ -455,7 +452,6 @@ private struct ExpandedGroupRow: View {
                 Rectangle()
                     .fill(isDropTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
             )
-            .onHover { isLabelHovered = $0 }
             .contentShape(Rectangle())
             .onTapGesture {
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
@@ -854,20 +850,6 @@ private struct FolderContentsPreview: View {
 }
 
 // MARK: - Resize handle
-
-private struct DragGrip: View {
-    let isHovered: Bool
-
-    var body: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(.secondary)
-            .frame(width: 14, height: 14)
-            .opacity(isHovered ? 0.55 : 0)
-            .animation(.easeOut(duration: 0.12), value: isHovered)
-            .accessibilityHidden(true)
-    }
-}
 
 private struct SidebarResizeHandle: View {
     @Binding var width: CGFloat
