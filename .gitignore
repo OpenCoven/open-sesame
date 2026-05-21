@@ -5,3 +5,5 @@ xcuserdata/
 *.xcodeproj
 *.xcworkspace
 open-sesame-sites.json
+dist/
+.codex/
