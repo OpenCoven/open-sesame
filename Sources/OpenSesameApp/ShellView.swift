@@ -874,7 +874,7 @@ private struct SidebarResizeHandle: View {
         ZStack {
             Color.clear
             Rectangle()
-                .fill(isHovering ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.08))
+                .fill(isHovering ? Color.accentColor.opacity(0.45) : Color.white.opacity(0.06))
                 .frame(width: isHovering ? 2 : 1)
                 .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
@@ -960,8 +960,10 @@ private struct SidebarBrandFooter: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 9)
-        .background(alignment: .top) {
-            Divider().opacity(0.35)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 0.5)
         }
     }
 }
@@ -973,8 +975,10 @@ private struct RailBrandFooter: View {
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(alignment: .top) {
-                Divider().opacity(0.35)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.06))
+                    .frame(height: 0.5)
             }
             .help("OpenSesame")
     }
@@ -994,7 +998,11 @@ private struct SidebarIconButton: View {
                 .frame(width: 24, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isHovering ? Color.primary.opacity(0.08) : Color.clear)
+                        .fill(isHovering ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
                 )
                 .contentShape(Rectangle())
         }
