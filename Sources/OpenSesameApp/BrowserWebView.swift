@@ -66,6 +66,8 @@ struct BrowserWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController.add(BlockCounter.shared, name: "blockCounter")
+        configuration.userContentController.addUserScript(ContentBlocker.blockTallyScript)
 
         let webView = FocusableWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true

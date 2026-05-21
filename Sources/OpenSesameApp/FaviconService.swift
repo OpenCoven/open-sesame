@@ -28,11 +28,16 @@ final class FaviconService: ObservableObject {
         self.cacheDirectory = dir
     }
 
-    /// Returns icon bytes for the host. Uses memory cache, then disk cache,
-    /// then a network fetch (direct → Google s2 fallback). Fetched bytes are
+    /// Returns icon bytes for the host. Uses bundled overrides for known
+    /// hosts (e.g. GitHub), then memory cache, then disk cache, then a
+    /// network fetch (direct → Google s2 fallback). Fetched bytes are
     /// written back to disk for next launch.
     func icon(for url: URL) async -> Data? {
         guard let host = url.host else { return nil }
+
+        if let bundled = Self.bundledIconData(forHost: host) {
+            return bundled
+        }
 
         if let cached = memoryCache[host] { return cached }
         if let disk = readDiskCache(host: host) {
@@ -57,6 +62,43 @@ final class FaviconService: ObservableObject {
         let result = await task.value
         inFlight.removeValue(forKey: host)
         return result
+    }
+
+    // MARK: - Bundled overrides
+
+    /// Per-host overrides that ship inside the app bundle. These trump the
+    /// scrape/Google fallbacks and skip the disk cache so the bundled asset
+    /// is always authoritative — users who want a different icon for these
+    /// hosts can still set one via "Choose Image…" in the Edit sheet, which
+    /// is stored on the site itself (PortalSite.iconData) and rendered by
+    /// FaviconView before the service is ever consulted.
+    private static let bundledHostOverrides: [(matches: (String) -> Bool, resource: String, ext: String)] = [
+        (
+            matches: { host in
+                host == "github.com"
+                    || host.hasSuffix(".github.com")
+                    || host.hasSuffix(".github.io")
+                    || host.hasSuffix(".githubusercontent.com")
+            },
+            resource: "github",
+            ext: "png"
+        )
+    ]
+
+    private static var bundledCache: [String: Data] = [:]
+
+    static func bundledIconData(forHost host: String) -> Data? {
+        for override in bundledHostOverrides where override.matches(host) {
+            let key = "\(override.resource).\(override.ext)"
+            if let cached = bundledCache[key] { return cached }
+            guard let url = Bundle.module.url(forResource: override.resource, withExtension: override.ext),
+                  let data = try? Data(contentsOf: url) else {
+                continue
+            }
+            bundledCache[key] = data
+            return data
+        }
+        return nil
     }
 
     // MARK: - Network

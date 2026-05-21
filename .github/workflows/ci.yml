@@ -63,11 +63,19 @@ jobs:
           BIN_DIR="$(swift build -c release --show-bin-path)"
           APP_BUNDLE="dist/${APP_NAME}.app"
           APP_MACOS="${APP_BUNDLE}/Contents/MacOS"
+          APP_RESOURCES="${APP_BUNDLE}/Contents/Resources"
 
           rm -rf "${APP_BUNDLE}"
-          mkdir -p "${APP_MACOS}"
+          mkdir -p "${APP_MACOS}" "${APP_RESOURCES}"
           cp "${BIN_DIR}/${APP_NAME}" "${APP_MACOS}/${APP_NAME}"
           chmod +x "${APP_MACOS}/${APP_NAME}"
+
+          shopt -s nullglob
+          for bundle in "${BIN_DIR}"/*.bundle; do
+            cp -R "${bundle}" "${APP_RESOURCES}/"
+            cp -R "${bundle}" "${APP_MACOS}/"
+          done
+          shopt -u nullglob
 
           cat >"${APP_BUNDLE}/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>

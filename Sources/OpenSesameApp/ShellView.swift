@@ -1007,6 +1007,8 @@ private struct BrowserChrome: View {
     let openExternally: () -> Void
     let openSettings: () -> Void
 
+    @ObservedObject private var blockCounter = BlockCounter.shared
+
     var body: some View {
         ZStack {
             VisualEffectBackground(material: .titlebar)
@@ -1060,6 +1062,12 @@ private struct BrowserChrome: View {
 
                 Spacer()
 
+                if blockCounter.count > 0 {
+                    BlockCounterPill(count: blockCounter.count) {
+                        blockCounter.reset()
+                    }
+                }
+
                 ChromeIconButton(
                     systemName: "arrow.up.right.square",
                     help: "Open in Browser",
@@ -1093,5 +1101,41 @@ private struct TrafficLights: View {
             Circle().fill(Color(red: 0.16, green: 0.78, blue: 0.25))
         }
         .frame(width: 52, height: 12)
+    }
+}
+
+private struct BlockCounterPill: View {
+    let count: Int
+    let onReset: () -> Void
+
+    @State private var isHovering: Bool = false
+
+    var body: some View {
+        Button(action: onReset) {
+            HStack(spacing: 4) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.accentColor.opacity(isHovering ? 0.18 : 0.12))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 0.5)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("\(count) tracker request\(count == 1 ? "" : "s") blocked — click to reset")
+        .transition(.scale.combined(with: .opacity))
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: count)
     }
 }

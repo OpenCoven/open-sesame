@@ -11,6 +11,7 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 
@@ -19,12 +20,23 @@ cd "$ROOT_DIR"
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 swift build
-BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+BIN_DIR="$(swift build --show-bin-path)"
+BUILD_BINARY="$BIN_DIR/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+
+# Stage SwiftPM-generated resource bundles (Bundle.module) next to the binary
+# AND inside Contents/Resources so both lookup paths resolve.
+mkdir -p "$APP_RESOURCES"
+shopt -s nullglob
+for bundle in "$BIN_DIR"/*.bundle; do
+  cp -R "$bundle" "$APP_RESOURCES/"
+  cp -R "$bundle" "$APP_MACOS/"
+done
+shopt -u nullglob
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

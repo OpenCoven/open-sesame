@@ -15,7 +15,8 @@ let package = Package(
         .target(name: "OpenSesameCore"),
         .executableTarget(
             name: "OpenSesameApp",
-            dependencies: ["OpenSesameCore"]
+            dependencies: ["OpenSesameCore"],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "OpenSesameCoreTests",
