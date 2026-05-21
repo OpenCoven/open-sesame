@@ -54,7 +54,6 @@ struct ShellView: View {
                     site: catalog.selectedSite,
                     controller: controller,
                     hasHome: catalog.pinnedSite != nil,
-                    appearance: appearance,
                     reload: reload,
                     goHome: goHome,
                     openExternally: openSelectedSite,
@@ -189,8 +188,6 @@ private struct SiteSidebar: View {
     var body: some View {
         ZStack {
             VisualEffectBackground()
-            Color(nsColor: .underPageBackgroundColor)
-                .opacity(1 - appearance.transparency)
             if appearance.radialBlurEnabled {
                 RadialBlurOverlay(radius: appearance.radialBlurIntensity)
             }
@@ -253,7 +250,6 @@ private struct ExpandedSidebar: View {
                                 site: site,
                                 isSelected: catalog.selectedSite?.id == site.id,
                                 isHovered: hoveredID == site.id,
-                                anyHovered: hoveredID != nil,
                                 onSelect: { catalog.selectSite(withID: site.id) },
                                 onHover: { hover in hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID) },
                                 onEdit: { editSite(site) },
@@ -303,7 +299,6 @@ private struct ExpandedSiteRow: View {
     let site: PortalSite
     let isSelected: Bool
     let isHovered: Bool
-    let anyHovered: Bool
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
     let onEdit: () -> Void
@@ -324,7 +319,6 @@ private struct ExpandedSiteRow: View {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 8))
                                 .foregroundStyle(.secondary)
-                                .rotationEffect(.degrees(45))
                         }
                     }
 
@@ -340,9 +334,7 @@ private struct ExpandedSiteRow: View {
             .padding(.vertical, 5)
             .padding(.horizontal, 6)
             .background(rowBackground)
-            .overlay(activeBar, alignment: .leading)
             .contentShape(Rectangle())
-            .opacity(rowOpacity)
         }
         .buttonStyle(.plain)
         .onHover(perform: onHover)
@@ -359,12 +351,6 @@ private struct ExpandedSiteRow: View {
         }
     }
 
-    private var rowOpacity: Double {
-        if isSelected { return 1.0 }
-        if !anyHovered { return 0.78 }
-        return isHovered ? 1.0 : 0.42
-    }
-
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(rowFill)
@@ -374,16 +360,6 @@ private struct ExpandedSiteRow: View {
         if isSelected { return Color.accentColor.opacity(0.22) }
         if isHovered { return Color.primary.opacity(0.07) }
         return Color.clear
-    }
-
-    @ViewBuilder
-    private var activeBar: some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(Color.accentColor)
-                .frame(width: 3, height: 22)
-                .offset(x: -2)
-        }
     }
 
     @ViewBuilder
@@ -420,7 +396,6 @@ private struct ExpandedGroupRow: View {
                     site: site,
                     isSelected: catalog.selectedSite?.id == site.id,
                     isHovered: hoveredID == site.id,
-                    anyHovered: hoveredID != nil,
                     onSelect: { catalog.selectSite(withID: site.id) },
                     onHover: { hover in
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
@@ -436,9 +411,6 @@ private struct ExpandedGroupRow: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
                 Text(group.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
@@ -527,7 +499,6 @@ private struct RailSidebar: View {
                                 site: site,
                                 isSelected: catalog.selectedSite?.id == site.id,
                                 isHovered: hoveredID == site.id,
-                                anyHovered: hoveredID != nil,
                                 onTap: { catalog.selectSite(withID: site.id) },
                                 onHover: { hover in
                                     hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
@@ -579,7 +550,6 @@ private struct RailSiteRow: View {
     let site: PortalSite
     let isSelected: Bool
     let isHovered: Bool
-    let anyHovered: Bool
     let onTap: () -> Void
     let onHover: (Bool) -> Void
     let onEdit: () -> Void
@@ -607,12 +577,10 @@ private struct RailSiteRow: View {
                         .foregroundStyle(.white)
                         .padding(2)
                         .background(Circle().fill(Color.secondary))
-                        .rotationEffect(.degrees(45))
                         .offset(x: 14, y: -14)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 10))
-            .opacity(rowOpacity)
         }
         .buttonStyle(.plain)
         .help(site.name)
@@ -637,12 +605,6 @@ private struct RailSiteRow: View {
                 .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-    }
-
-    private var rowOpacity: Double {
-        if isSelected { return 1.0 }
-        if !anyHovered { return 0.82 }
-        return isHovered ? 1.0 : 0.42
     }
 
     private var rowFill: Color {
@@ -674,7 +636,6 @@ private struct RailGroup: View {
                     site: site,
                     isSelected: catalog.selectedSite?.id == site.id,
                     isHovered: hoveredID == site.id,
-                    anyHovered: hoveredID != nil,
                     onTap: { catalog.selectSite(withID: site.id) },
                     onHover: { hover in
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
@@ -868,7 +829,6 @@ private struct BrowserChrome: View {
     let site: PortalSite?
     @ObservedObject var controller: BrowserController
     let hasHome: Bool
-    @ObservedObject var appearance: AppearanceSettings
     let reload: () -> Void
     let goHome: () -> Void
     let openExternally: () -> Void
@@ -877,8 +837,6 @@ private struct BrowserChrome: View {
     var body: some View {
         ZStack {
             VisualEffectBackground(material: .titlebar)
-            Color(nsColor: .controlBackgroundColor)
-                .opacity(1 - appearance.transparency)
 
             HStack(spacing: 6) {
                 TrafficLights()
