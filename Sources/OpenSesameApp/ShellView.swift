@@ -930,8 +930,8 @@ private struct SidebarHeader: View {
             SidebarIconButton(systemName: secondaryIcon, help: secondaryHelp, action: secondaryAction)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.vertical, 8)
+        .frame(height: 50)
     }
 
     @ViewBuilder
