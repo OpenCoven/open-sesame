@@ -208,20 +208,19 @@ private struct SuggestedRow: View {
     }
 
     private var pillForeground: Color {
-        if isOn && isButtonHovered && isHovered { return .red }
-        if isOn { return Color.accentColor }
+        if isOn { return .white }
         return Color.primary
     }
 
     private var pillFill: Color {
-        if isOn && isButtonHovered && isHovered { return Color.red.opacity(0.14) }
-        if isOn { return Color.accentColor.opacity(0.18) }
+        if isOn && isButtonHovered && isHovered { return Color.red.opacity(0.85) }
+        if isOn { return Color.purple.opacity(0.85) }
         return Color.white.opacity(0.08)
     }
 
     private var pillStroke: Color {
-        if isOn && isButtonHovered && isHovered { return Color.red.opacity(0.4) }
-        if isOn { return Color.accentColor.opacity(0.4) }
+        if isOn && isButtonHovered && isHovered { return Color.red }
+        if isOn { return Color.purple }
         return Color.white.opacity(0.12)
     }
 }

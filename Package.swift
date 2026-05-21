@@ -9,7 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "OpenSesameCore", targets: ["OpenSesameCore"]),
-        .executable(name: "open-sesame", targets: ["OpenSesameApp"])
+        .executable(name: "OpenSesame", targets: ["OpenSesameApp"])
     ],
     targets: [
         .target(name: "OpenSesameCore"),

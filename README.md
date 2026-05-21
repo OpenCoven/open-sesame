@@ -1,4 +1,4 @@
-# open-sesame
+# OpenSesame
 
 Generic macOS application shell template for OpenCoven projects.
 
@@ -15,7 +15,7 @@ It intentionally does not include the Next.js/v0 stack, share-link compression, 
 ## Run
 
 ```bash
-swift run open-sesame
+swift run OpenSesame
 ```
 
 ## Configure Sites
@@ -24,7 +24,7 @@ The app falls back to `SiteCatalog.defaultCatalog`. To customize it without edit
 
 ```bash
 cp open-sesame-sites.example.json open-sesame-sites.json
-swift run open-sesame
+swift run OpenSesame
 ```
 
 Each site must use an `http` or `https` URL:
@@ -34,7 +34,6 @@ Each site must use an `http` or `https` URL:
   "sites": [
     {
       "name": "Local App",
-      "label": "Development",
       "url": "http://localhost:3000"
     }
   ]

@@ -55,7 +55,7 @@ jobs:
 
       - name: Stage .app bundle
         env:
-          APP_NAME: open-sesame
+          APP_NAME: OpenSesame
           BUNDLE_ID: ai.opencoven.OpenSesame
           MIN_SYSTEM_VERSION: "14.0"
         run: |
@@ -101,7 +101,7 @@ jobs:
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4
         with:
-          name: open-sesame-app
-          path: dist/open-sesame.app
+          name: OpenSesame-app
+          path: dist/OpenSesame.app
           if-no-files-found: error
           retention-days: 14

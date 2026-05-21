@@ -23,12 +23,18 @@ private enum CatalogBootstrap {
     private static let socialsMigrationKey = "didMigrateSocialsV2"
     private static let covenMigrationKey = "didMigrateCovenV2"
     private static let renameMigrationKey = "didMigrateRenamesV1"
+    private static let discordRemovalKey = "didRemoveDiscordV1"
+
+    private static let deprecatedSocialURLs: [String] = [
+        "https://discord.com/app"
+    ]
 
     static func loadInitialCatalog() -> SiteCatalog {
         var catalog = loadCatalog()
         migrateSocialsIfNeeded(&catalog)
         migrateCovenIfNeeded(&catalog)
         migrateRenamesIfNeeded(&catalog)
+        migrateDeprecatedSocialsIfNeeded(&catalog)
         return catalog
     }
 
@@ -114,6 +120,26 @@ private enum CatalogBootstrap {
             }), currentIndex != 0 {
                 catalog.moveRootEntries(fromOffsets: IndexSet(integer: currentIndex), toOffset: 0)
             }
+        }
+    }
+
+    /// One-time cleanup: when an app gets dropped from CuratedCatalog (e.g.
+    /// Discord), it should also disappear from catalogs where the user had
+    /// previously toggled it on, since the Suggested tab no longer exposes
+    /// a way to remove it. Empties the Socials folder if it ends up bare.
+    private static func migrateDeprecatedSocialsIfNeeded(_ catalog: inout SiteCatalog) {
+        guard !UserDefaults.standard.bool(forKey: discordRemovalKey) else { return }
+        defer { UserDefaults.standard.set(true, forKey: discordRemovalKey) }
+
+        let dropURLs = Set(deprecatedSocialURLs)
+        let toRemove = catalog.sites.filter { dropURLs.contains($0.url.absoluteString) }
+        for site in toRemove {
+            catalog.removeSite(withID: site.id)
+        }
+
+        if let socialsFolder = catalog.groups.first(where: { $0.name == CuratedCatalog.socialsFolderName }),
+           socialsFolder.sites.isEmpty {
+            catalog.removeGroup(withID: socialsFolder.id)
         }
     }
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="open-sesame"
+APP_NAME="OpenSesame"
 BUNDLE_ID="ai.opencoven.OpenSesame"
 MIN_SYSTEM_VERSION="14.0"
 
