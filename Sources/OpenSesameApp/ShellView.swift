@@ -589,13 +589,11 @@ private struct RailSiteRow: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(rowFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(strokeColor, lineWidth: 0.5)
+                )
                 .frame(width: 44, height: 44)
-
-            if isSelected {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.accentColor, lineWidth: 2)
-                    .frame(width: 44, height: 44)
-            }
 
             FaviconView(site: site, size: 28)
         }
@@ -625,8 +623,13 @@ private struct RailSiteRow: View {
 
     private var rowFill: Color {
         if isSelected { return Color.accentColor.opacity(0.22) }
-        if isHovered { return Color.primary.opacity(0.07) }
-        return Color.clear
+        if isHovered { return Color.black.opacity(0.32) }
+        return Color.black.opacity(0.22)
+    }
+
+    private var strokeColor: Color {
+        if isSelected { return Color.accentColor.opacity(0.5) }
+        return Color.white.opacity(0.06)
     }
 }
 
