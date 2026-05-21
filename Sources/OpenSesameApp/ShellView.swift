@@ -403,40 +403,36 @@ private struct ExpandedGroupRow: View {
                 catalog.moveSitesInGroup(group.id, fromOffsets: source, toOffset: destination)
             }
         } label: {
-            HStack(spacing: 10) {
-                if let firstChild = group.sites.first {
-                    FaviconView(site: firstChild, size: 18)
-                } else {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
-                        .frame(width: 18, height: 18)
-                }
+            HStack(spacing: 6) {
+                Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 10)
 
-                Text(group.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isDropTargeted ? Color.accentColor : .primary)
+                Text(group.name.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
 
                 if group.isCollapsed {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
                     Text("\(group.sites.count)")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
             }
-            .padding(.vertical, appearance.rowVerticalPadding)
+            .padding(.vertical, 4)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(rowBackground)
-            .overlay {
+            .background(headerBackground)
+            .overlay(alignment: .bottom) {
                 if isDropTargeted {
                     Rectangle()
-                        .stroke(Color.accentColor, lineWidth: 2)
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
                 }
             }
             .contentShape(Rectangle())
@@ -448,15 +444,9 @@ private struct ExpandedGroupRow: View {
         .disclosureGroupStyle(PlainDisclosureStyle())
     }
 
-    private var rowBackground: some View {
+    private var headerBackground: some View {
         Rectangle()
-            .fill(rowFill)
-    }
-
-    private var rowFill: Color {
-        if isDropTargeted { return Color.accentColor.opacity(0.22) }
-        if isHovered { return Color.black.opacity(0.32) }
-        return Color.black.opacity(0.22)
+            .fill(isHovered ? Color.black.opacity(0.32) : Color.clear)
     }
 
     private func handleDrop(_ payloads: [String]) -> Bool {
