@@ -65,91 +65,26 @@ struct SiteSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 16, weight: .semibold))
-                    if isFetchingMetadata {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            sheetHeader
+
+            VStack(alignment: .leading, spacing: 14) {
+                fieldGroup
+
+                validationMessage
+                    .frame(minHeight: 16, alignment: .leading)
             }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
 
-            VStack(alignment: .leading, spacing: 10) {
-                fieldLabel("URL")
-                TextField("https://example.com", text: $urlString)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .url)
-                    .onSubmit { submit() }
-                    .onChange(of: urlString) { _, newValue in
-                        scheduleMetadataFetch(for: newValue)
-                    }
+            Divider()
 
-                fieldLabel("Name")
-                TextField("OpenCoven", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .name)
-                    .onSubmit { focusedField = .label }
-                    .onChange(of: name) { _, _ in
-                        nameWasAutofilled = false
-                    }
-
-                fieldLabel("Label")
-                TextField("Home (optional)", text: $label)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .label)
-                    .onSubmit { submit() }
-                    .onChange(of: label) { _, _ in
-                        labelWasAutofilled = false
-                    }
-
-                if !availableGroups.isEmpty {
-                    fieldLabel("Folder")
-                    Picker("Folder", selection: $selectedGroupID) {
-                        Text("None").tag(SiteGroup.ID?.none)
-                        ForEach(availableGroups) { group in
-                            Text(group.name).tag(SiteGroup.ID?.some(group.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                }
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-            }
-
-            HStack {
-                if case .edit(let site) = target, site.isPinned {
-                    HStack(spacing: 4) {
-                        Image(systemName: "pin.fill")
-                            .rotationEffect(.degrees(45))
-                        Text("Pinned — cannot be removed")
-                    }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-
-                Button(actionTitle) { submit() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isFormValid)
-            }
+            footer
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.42))
         }
-        .padding(20)
-        .frame(width: 420)
+        .frame(width: 460)
         .onAppear {
             DispatchQueue.main.async {
                 if case .add = target {
@@ -158,6 +93,131 @@ struct SiteSheet: View {
                     focusedField = .name
                 }
             }
+        }
+    }
+
+    private var sheetHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: headerIcon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 34, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 19, weight: .semibold))
+                    if isFetchingMetadata {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 22)
+        .padding(.bottom, 16)
+    }
+
+    private var fieldGroup: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ModalField(label: "URL") {
+                TextField("https://example.com", text: $urlString)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+                    .focused($focusedField, equals: .url)
+                    .onSubmit { submit() }
+                    .onChange(of: urlString) { _, newValue in
+                        scheduleMetadataFetch(for: newValue)
+                    }
+            }
+
+            ModalField(label: "Name") {
+                TextField("OpenCoven", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+                    .focused($focusedField, equals: .name)
+                    .onSubmit { focusedField = .label }
+                    .onChange(of: name) { _, _ in
+                        nameWasAutofilled = false
+                    }
+            }
+
+            ModalField(label: "Label") {
+                TextField("Home (optional)", text: $label)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+                    .focused($focusedField, equals: .label)
+                    .onSubmit { submit() }
+                    .onChange(of: label) { _, _ in
+                        labelWasAutofilled = false
+                    }
+            }
+
+            if !availableGroups.isEmpty {
+                ModalField(label: "Folder") {
+                    Picker("Folder", selection: $selectedGroupID) {
+                        Text("None").tag(SiteGroup.ID?.none)
+                        ForEach(availableGroups) { group in
+                            Text(group.name).tag(SiteGroup.ID?.some(group.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.large)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.36))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.secondary.opacity(0.16))
+        )
+    }
+
+    @ViewBuilder
+    private var validationMessage: some View {
+        if let errorMessage {
+            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.red)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            if case .edit(let site) = target, site.isPinned {
+                Label("Pinned home site", systemImage: "pin.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .controlSize(.large)
+
+            Button(actionTitle) { submit() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!isFormValid)
         }
     }
 
@@ -227,16 +287,16 @@ struct SiteSheet: View {
         }
     }
 
+    private var headerIcon: String {
+        switch target {
+        case .add: return "plus"
+        case .edit: return "pencil"
+        }
+    }
+
     private var isFormValid: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && !urlString.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    @ViewBuilder
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
     }
 
     private func submit() {
@@ -271,6 +331,20 @@ struct SiteSheet: View {
             }
         } catch {
             errorMessage = "Could not save site."
+        }
+    }
+}
+
+private struct ModalField<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            content
         }
     }
 }

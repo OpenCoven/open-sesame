@@ -34,7 +34,6 @@ struct ShellView: View {
                 addSite: { presentAddSite(toGroup: nil) },
                 addSiteToGroup: { groupID in presentAddSite(toGroup: groupID) },
                 editSite: { site in presentEdit(site: site) },
-                openSettings: { showingSettings = true },
                 toggleMode: toggleSidebar
             )
             .frame(width: sidebarMode == .expanded ? sidebarWidth : railWidth)
@@ -116,26 +115,12 @@ struct ShellView: View {
                     showingSettings = false
                     DispatchQueue.main.async { presentEdit(site: site) }
                 },
-                addSite: {
-                    showingSettings = false
-                    DispatchQueue.main.async { presentAddSite(toGroup: nil) }
-                },
                 addGroup: {
                     let group = SiteGroup(name: "New Folder")
                     catalog.addGroup(group)
                 }
             )
         }
-        .background(
-            Group {
-                Button("Toggle Sidebar", action: toggleSidebar)
-                    .keyboardShortcut("s", modifiers: [.command, .control])
-                Button("Open Settings", action: { showingSettings = true })
-                    .keyboardShortcut(",", modifiers: .command)
-            }
-            .opacity(0)
-            .frame(width: 0, height: 0)
-        )
         .task {
             await refreshAllFavicons()
         }
@@ -199,7 +184,6 @@ private struct SiteSidebar: View {
     let addSite: () -> Void
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let editSite: (PortalSite) -> Void
-    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     var body: some View {
@@ -219,7 +203,6 @@ private struct SiteSidebar: View {
                         addSite: addSite,
                         addSiteToGroup: addSiteToGroup,
                         editSite: editSite,
-                        openSettings: openSettings,
                         toggleMode: toggleMode
                     )
                 case .rail:
@@ -227,7 +210,6 @@ private struct SiteSidebar: View {
                         catalog: $catalog,
                         addSite: addSite,
                         editSite: editSite,
-                        openSettings: openSettings,
                         toggleMode: toggleMode
                     )
                 }
@@ -243,7 +225,6 @@ private struct ExpandedSidebar: View {
     let addSite: () -> Void
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let editSite: (PortalSite) -> Void
-    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -255,12 +236,10 @@ private struct ExpandedSidebar: View {
                 primaryIcon: "sidebar.left",
                 primaryHelp: "Collapse to Rail  ⌃⌘S",
                 primaryAction: toggleMode,
+                primaryShortcut: KeyboardShortcut("s", modifiers: [.command, .control]),
                 secondaryIcon: "plus",
                 secondaryHelp: "Add Site  ⌘N",
-                secondaryAction: addSite,
-                tertiaryIcon: "gearshape",
-                tertiaryHelp: "Settings  ⌘,",
-                tertiaryAction: openSettings
+                secondaryAction: addSite
             )
 
             Divider().opacity(0.4)
@@ -305,6 +284,17 @@ private struct ExpandedSidebar: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .dropDestination(for: String.self) { strings, _ in
+                var moved = false
+                for payload in strings {
+                    guard let uuid = UUID(uuidString: payload),
+                          catalog.findSite(withID: uuid) != nil,
+                          catalog.groupID(containingSite: uuid) != nil else { continue }
+                    catalog.moveSiteToRoot(uuid)
+                    moved = true
+                }
+                return moved
+            }
         }
     }
 }
@@ -357,6 +347,16 @@ private struct ExpandedSiteRow: View {
         .buttonStyle(.plain)
         .onHover(perform: onHover)
         .contextMenu { contextMenu }
+        .draggable(site.id.uuidString) {
+            HStack(spacing: 8) {
+                FaviconView(site: site, size: 18)
+                Text(site.name).font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
     }
 
     private var rowOpacity: Double {
@@ -409,6 +409,8 @@ private struct ExpandedGroupRow: View {
     let editSite: (PortalSite) -> Void
     let addSiteToGroup: () -> Void
 
+    @State private var isDropTargeted: Bool = false
+
     var body: some View {
         DisclosureGroup(
             isExpanded: collapsedBinding
@@ -429,14 +431,17 @@ private struct ExpandedGroupRow: View {
                 )
                 .padding(.leading, 8)
             }
+            .onMove { source, destination in
+                catalog.moveSitesInGroup(group.id, fromOffsets: source, toOffset: destination)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
                 Text(group.name)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
                     .textCase(.uppercase)
                 Spacer()
                 Button(action: addSiteToGroup) {
@@ -447,6 +452,12 @@ private struct ExpandedGroupRow: View {
                 .buttonStyle(.borderless)
                 .help("Add Site to \(group.name)")
             }
+            .padding(.vertical, 3)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isDropTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
+            )
             .contextMenu {
                 Button {
                     catalog.renameGroup(withID: group.id, to: group.name)
@@ -456,8 +467,22 @@ private struct ExpandedGroupRow: View {
                     catalog.removeGroup(withID: group.id)
                 } label: { Label("Remove Folder", systemImage: "trash") }
             }
+            .dropDestination(for: String.self) { strings, _ in
+                handleDrop(strings)
+            } isTargeted: { isDropTargeted = $0 }
         }
         .accentColor(.secondary)
+    }
+
+    private func handleDrop(_ payloads: [String]) -> Bool {
+        var moved = false
+        for payload in payloads {
+            guard let uuid = UUID(uuidString: payload),
+                  catalog.findSite(withID: uuid) != nil else { continue }
+            catalog.moveSite(uuid, intoGroup: group.id)
+            moved = true
+        }
+        return moved
     }
 
     private var collapsedBinding: Binding<Bool> {
@@ -478,7 +503,6 @@ private struct RailSidebar: View {
     @Binding var catalog: SiteCatalog
     let addSite: () -> Void
     let editSite: (PortalSite) -> Void
-    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -490,6 +514,7 @@ private struct RailSidebar: View {
                 help: "Expand Sidebar  ⌃⌘S",
                 action: toggleMode
             )
+            .keyboardShortcut("s", modifiers: [.command, .control])
             .padding(.top, 12)
             .padding(.bottom, 4)
 
@@ -524,6 +549,17 @@ private struct RailSidebar: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
             }
+            .dropDestination(for: String.self) { strings, _ in
+                var moved = false
+                for payload in strings {
+                    guard let uuid = UUID(uuidString: payload),
+                          catalog.findSite(withID: uuid) != nil,
+                          catalog.groupID(containingSite: uuid) != nil else { continue }
+                    catalog.moveSiteToRoot(uuid)
+                    moved = true
+                }
+                return moved
+            }
 
             Spacer(minLength: 0)
 
@@ -532,11 +568,6 @@ private struct RailSidebar: View {
                     systemName: "plus",
                     help: "Add Site  ⌘N",
                     action: addSite
-                )
-                SidebarIconButton(
-                    systemName: "gearshape",
-                    help: "Settings  ⌘,",
-                    action: openSettings
                 )
             }
             .padding(.bottom, 10)
@@ -600,6 +631,12 @@ private struct RailSiteRow: View {
                 }
             }
         }
+        .draggable(site.id.uuidString) {
+            FaviconView(site: site, size: 28)
+                .padding(6)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
     }
 
     private var rowOpacity: Double {
@@ -621,19 +658,15 @@ private struct RailGroup: View {
     @Binding var hoveredID: PortalSite.ID?
     let editSite: (PortalSite) -> Void
 
-    var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.25))
-                    .frame(height: 1)
-            }
-            .padding(.horizontal, 6)
-            .padding(.top, 2)
+    @State private var isDropTargeted: Bool = false
 
+    var body: some View {
+        VStack(spacing: 2) {
             Image(systemName: "folder.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 3)
                 .help(group.name)
 
             ForEach(group.sites) { site in
@@ -652,6 +685,30 @@ private struct RailGroup: View {
                 )
             }
         }
+        .padding(.bottom, 3)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isDropTargeted ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.045))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            isDropTargeted ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.06),
+                            lineWidth: isDropTargeted ? 1.5 : 0.5
+                        )
+                )
+        )
+        .padding(.vertical, 1)
+        .dropDestination(for: String.self) { strings, _ in
+            var moved = false
+            for payload in strings {
+                guard let uuid = UUID(uuidString: payload),
+                      catalog.findSite(withID: uuid) != nil else { continue }
+                catalog.moveSite(uuid, intoGroup: group.id)
+                moved = true
+            }
+            return moved
+        } isTargeted: { isDropTargeted = $0 }
     }
 }
 
@@ -706,27 +763,44 @@ private struct SidebarHeader: View {
     let primaryIcon: String
     let primaryHelp: String
     let primaryAction: () -> Void
+    let primaryShortcut: KeyboardShortcut?
     let secondaryIcon: String
     let secondaryHelp: String
     let secondaryAction: () -> Void
-    let tertiaryIcon: String
-    let tertiaryHelp: String
-    let tertiaryAction: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
-            SidebarIconButton(systemName: primaryIcon, help: primaryHelp, action: primaryAction)
+            shortcutButton(
+                systemName: primaryIcon,
+                help: primaryHelp,
+                shortcut: primaryShortcut,
+                action: primaryAction
+            )
             Spacer()
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
-            SidebarIconButton(systemName: tertiaryIcon, help: tertiaryHelp, action: tertiaryAction)
             SidebarIconButton(systemName: secondaryIcon, help: secondaryHelp, action: secondaryAction)
         }
         .padding(.horizontal, 10)
         .padding(.top, 12)
         .padding(.bottom, 10)
+    }
+
+    @ViewBuilder
+    private func shortcutButton(
+        systemName: String,
+        help: String,
+        shortcut: KeyboardShortcut?,
+        action: @escaping () -> Void
+    ) -> some View {
+        if let shortcut {
+            SidebarIconButton(systemName: systemName, help: help, action: action)
+                .keyboardShortcut(shortcut)
+        } else {
+            SidebarIconButton(systemName: systemName, help: help, action: action)
+        }
     }
 }
 
@@ -867,6 +941,7 @@ private struct BrowserChrome: View {
                     help: "Settings  ⌘,",
                     action: openSettings
                 )
+                .keyboardShortcut(",", modifiers: .command)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

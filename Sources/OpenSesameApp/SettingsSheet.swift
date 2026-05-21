@@ -5,7 +5,6 @@ struct SettingsSheet: View {
     @Binding var catalog: SiteCatalog
     @ObservedObject var appearance: AppearanceSettings
     let editSite: (PortalSite) -> Void
-    let addSite: () -> Void
     let addGroup: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -20,15 +19,33 @@ struct SettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Settings")
-                    .font(.system(size: 16, weight: .semibold))
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.14))
+                    )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Settings")
+                        .font(.system(size: 19, weight: .semibold))
+                    Text(sectionSubtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
                 Spacer()
+
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .controlSize(.large)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 22)
+            .padding(.top, 22)
+            .padding(.bottom, 16)
 
             Divider()
 
@@ -39,8 +56,9 @@ struct SettingsSheet: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .controlSize(.large)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
 
             Divider()
 
@@ -50,7 +68,6 @@ struct SettingsSheet: View {
                     SitesSection(
                         catalog: $catalog,
                         editSite: editSite,
-                        addSite: addSite,
                         addGroup: addGroup
                     )
                 case .home:
@@ -59,9 +76,20 @@ struct SettingsSheet: View {
                     AppearanceSection(appearance: appearance)
                 }
             }
-            .padding(20)
+            .padding(22)
         }
-        .frame(width: 540, height: 480)
+        .frame(width: 600, height: 520)
+    }
+
+    private var sectionSubtitle: String {
+        switch selection {
+        case .sites:
+            return "Manage sidebar sites, folders, and quick edits."
+        case .home:
+            return "Choose the protected home destination."
+        case .appearance:
+            return "Tune the shell’s visual treatment."
+        }
     }
 }
 
@@ -70,15 +98,13 @@ struct SettingsSheet: View {
 private struct SitesSection: View {
     @Binding var catalog: SiteCatalog
     let editSite: (PortalSite) -> Void
-    let addSite: () -> Void
     let addGroup: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Manage the sites and folders shown in the sidebar. Drag to reorder.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-
+        SettingsPanelSection(
+            title: "Sidebar",
+            subtitle: "Edit addresses inline, rename folders, and keep the sidebar tidy."
+        ) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(catalog.entries.enumerated()), id: \.element.id) { _, entry in
@@ -91,23 +117,23 @@ private struct SitesSection: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 260)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.15))
             )
 
             HStack {
-                Button {
-                    addSite()
-                } label: {
-                    Label("Add Site", systemImage: "plus")
-                }
-
                 Button {
                     addGroup()
                 } label: {
                     Label("Add Folder", systemImage: "folder.badge.plus")
                 }
+                .controlSize(.large)
 
                 Spacer()
             }
@@ -126,6 +152,7 @@ private struct EntryRow: View {
             SiteEditorRow(
                 site: site,
                 groupName: nil,
+                updateSite: { catalog.updateSite($0) },
                 editSite: editSite,
                 onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) }
             )
@@ -147,14 +174,14 @@ private struct EntryRow: View {
                     .help("Remove folder (children move to root)")
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.secondary.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .padding(.vertical, 7)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 ForEach(group.sites) { site in
                     SiteEditorRow(
                         site: site,
                         groupName: group.name,
+                        updateSite: { catalog.updateSite($0) },
                         editSite: editSite,
                         onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) }
                     )
@@ -175,6 +202,7 @@ private struct EntryRow: View {
 private struct SiteEditorRow: View {
     let site: PortalSite
     let groupName: String?
+    let updateSite: (PortalSite) -> Void
     let editSite: (PortalSite) -> Void
     let onRemove: (() -> Void)?
 
@@ -193,10 +221,7 @@ private struct SiteEditorRow: View {
                             .rotationEffect(.degrees(45))
                     }
                 }
-                Text(site.url.absoluteString)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                InlineSiteAddressField(site: site, updateSite: updateSite)
             }
 
             Spacer()
@@ -218,8 +243,69 @@ private struct SiteEditorRow: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.clear)
+        .padding(.vertical, 7)
+        .background(Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct InlineSiteAddressField: View {
+    let site: PortalSite
+    let updateSite: (PortalSite) -> Void
+
+    @State private var draftURL: String
+    @State private var showsValidationError: Bool = false
+    @FocusState private var isFocused: Bool
+
+    init(site: PortalSite, updateSite: @escaping (PortalSite) -> Void) {
+        self.site = site
+        self.updateSite = updateSite
+        _draftURL = State(initialValue: site.url.absoluteString)
+    }
+
+    var body: some View {
+        TextField("https://example.com", text: $draftURL)
+            .textFieldStyle(.plain)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(showsValidationError ? Color.red : Color.secondary)
+            .lineLimit(1)
+            .focused($isFocused)
+            .onSubmit { commitDraftURL() }
+            .onChange(of: isFocused) { _, focused in
+                if focused {
+                    showsValidationError = false
+                } else {
+                    commitDraftURL()
+                }
+            }
+            .onChange(of: site.url) { _, newURL in
+                guard !isFocused else { return }
+                draftURL = newURL.absoluteString
+                showsValidationError = false
+            }
+    }
+
+    private func commitDraftURL() {
+        let trimmedURL = draftURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedURL != site.url.absoluteString else {
+            showsValidationError = false
+            return
+        }
+
+        do {
+            let updated = try PortalSite(
+                id: site.id,
+                name: site.name,
+                label: site.label,
+                urlString: trimmedURL,
+                isPinned: site.isPinned,
+                iconData: site.iconData
+            )
+            updateSite(updated)
+            draftURL = updated.url.absoluteString
+            showsValidationError = false
+        } catch {
+            showsValidationError = true
+        }
     }
 }
 
@@ -229,13 +315,10 @@ private struct HomeSection: View {
     @Binding var catalog: SiteCatalog
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Home Tab")
-                .font(.system(size: 13, weight: .semibold))
-            Text("Pick which site is treated as your home. The home tab is protected from removal and is what the Home button (⌘⇧H) jumps to.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-
+        SettingsPanelSection(
+            title: "Home",
+            subtitle: "The home site is protected from removal and is opened by the Home button."
+        ) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(catalog.sites) { site in
@@ -248,9 +331,14 @@ private struct HomeSection: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            .frame(minHeight: 300)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.15))
             )
         }
     }
@@ -278,9 +366,9 @@ private struct HomeChoiceRow: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
-            .background(isHome ? Color.accentColor.opacity(0.08) : Color.clear)
+            .background(isHome ? Color.accentColor.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -292,7 +380,10 @@ private struct AppearanceSection: View {
     @ObservedObject var appearance: AppearanceSettings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        SettingsPanelSection(
+            title: "Appearance",
+            subtitle: "Subtle visual preferences for the sidebar and browser chrome."
+        ) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Transparency")
@@ -341,6 +432,37 @@ private struct AppearanceSection: View {
             }
 
             Spacer()
+        }
+    }
+}
+
+private struct SettingsPanelSection<Content: View>: View {
+    let title: String
+    let subtitle: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                content
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.34))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.15))
+            )
         }
     }
 }
