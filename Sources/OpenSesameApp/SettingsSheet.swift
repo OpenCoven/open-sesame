@@ -19,11 +19,11 @@ struct SettingsSheet: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.primary)
                     .frame(width: 34, height: 34)
                     .background(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.14))
+                            .fill(Color.primary.opacity(0.08))
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -88,21 +88,18 @@ private struct SuggestedSection: View {
     var body: some View {
         SettingsPanelSection(
             title: "Social Apps",
-            subtitle: "Each social app is opt-in. Toggling on adds it to a Socials folder; toggling off removes it from the sidebar."
+            subtitle: "Opt-in only — toggle on to add to the Socials folder."
         ) {
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(CuratedCatalog.socialApps) { app in
-                        SuggestedRow(
-                            app: app,
-                            isOn: catalogContains(app),
-                            toggle: { newValue in toggleApp(app, on: newValue) }
-                        )
-                    }
+            VStack(spacing: 4) {
+                ForEach(CuratedCatalog.socialApps) { app in
+                    SuggestedRow(
+                        app: app,
+                        isOn: catalogContains(app),
+                        toggle: { newValue in toggleApp(app, on: newValue) }
+                    )
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 220)
         }
     }
 
@@ -261,6 +258,8 @@ private struct SettingsPanelSection<Content: View>: View {
                 Text(subtitle)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
 
             VStack(alignment: .leading, spacing: 14) {
