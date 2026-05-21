@@ -1030,7 +1030,11 @@ private struct ChromeIconButton: View {
                 .foregroundStyle(isEnabled ? Color.primary : Color.secondary.opacity(0.5))
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill((isHovering && isEnabled) ? Color.primary.opacity(0.08) : Color.clear)
+                        .fill(fillColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
                 )
                 .contentShape(Rectangle())
         }
@@ -1038,6 +1042,11 @@ private struct ChromeIconButton: View {
         .disabled(!isEnabled)
         .onHover { isHovering = $0 }
         .help(help)
+    }
+
+    private var fillColor: Color {
+        guard isEnabled else { return Color.black.opacity(0.12) }
+        return isHovering ? Color.black.opacity(0.32) : Color.black.opacity(0.22)
     }
 }
 
@@ -1121,48 +1130,91 @@ private struct BrowserChrome: View {
     }
 }
 
-private struct TrafficLights: View {
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(Color(red: 1.0, green: 0.37, blue: 0.34))
-            Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18))
-            Circle().fill(Color(red: 0.16, green: 0.78, blue: 0.25))
-        }
-        .frame(width: 52, height: 12)
-    }
-}
-
 private struct URLBar: View {
     let site: PortalSite?
     @ObservedObject var controller: BrowserController
 
+    @State private var isHovering: Bool = false
+    @State private var showCopied: Bool = false
+
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: site == nil ? "safari" : "lock.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+        Button(action: copyURL) {
+            HStack(spacing: 8) {
+                if let site {
+                    FaviconView(site: site, size: 14)
+                }
 
-            Text(displayURL)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                Image(systemName: lockSymbol)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(lockColor)
 
-            Spacer(minLength: 0)
+                Text(displayURL)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if showCopied {
+                    Text("Copied")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                        .transition(.opacity.combined(with: .scale))
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(isHovering ? 0.10 : 0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
-        )
-        .help(displayURL)
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Click to copy URL")
+        .animation(.easeOut(duration: 0.16), value: showCopied)
     }
 
     private var displayURL: String {
         controller.currentURL?.absoluteString
             ?? site?.url.absoluteString
             ?? "No URL"
+    }
+
+    private var activeScheme: String? {
+        (controller.currentURL ?? site?.url)?.scheme
+    }
+
+    private var lockSymbol: String {
+        guard let scheme = activeScheme else { return "questionmark" }
+        return scheme == "https" ? "lock.fill" : "lock.open.fill"
+    }
+
+    private var lockColor: Color {
+        guard let scheme = activeScheme else { return .secondary }
+        return scheme == "https" ? .secondary : .orange
+    }
+
+    private func copyURL() {
+        let url = controller.currentURL?.absoluteString ?? site?.url.absoluteString
+        guard let url else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(url, forType: .string)
+        showCopied = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            showCopied = false
+        }
     }
 }
 
