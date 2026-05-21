@@ -134,50 +134,57 @@ private struct SuggestedRow: View {
     let isOn: Bool
     let toggle: (Bool) -> Void
 
+    @State private var isHovered: Bool = false
+
     var body: some View {
-        HStack(spacing: 12) {
-            BundledAppIcon(urlString: app.urlString, fallbackName: app.name)
-                .frame(width: 26, height: 26)
+        HStack(spacing: 10) {
+            BundledAppIcon(urlString: app.urlString, fallbackName: app.name, size: 18)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(app.name)
-                    .font(.system(size: 13, weight: .medium))
-                Text(app.urlString)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Text(app.name)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
 
             Toggle("", isOn: Binding(get: { isOn }, set: { toggle($0) }))
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHovered ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovered = $0 }
     }
 }
 
 private struct BundledAppIcon: View {
     let urlString: String
     let fallbackName: String
+    let size: CGFloat
 
     var body: some View {
-        if let url = URL(string: urlString),
-           let host = url.host,
-           let data = FaviconService.bundledIconData(forHost: host),
-           let image = NSImage(data: data) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        } else {
-            ColoredInitialAvatar(name: fallbackName, size: 26)
+        ZStack {
+            if let url = URL(string: urlString),
+               let host = url.host,
+               let data = FaviconService.bundledIconData(forHost: host),
+               let image = NSImage(data: data) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                ColoredInitialAvatar(name: fallbackName, size: size)
+            }
         }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
