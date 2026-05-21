@@ -11,8 +11,15 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
     public var name: String
     public var label: String
     public var url: URL
+    public var isPinned: Bool
 
-    public init(id: UUID = UUID(), name: String, label: String = "", urlString: String) throws {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        label: String = "",
+        urlString: String,
+        isPinned: Bool = false
+    ) throws {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,5 +40,6 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
         self.name = trimmedName
         self.label = trimmedLabel
         self.url = parsedURL
+        self.isPinned = isPinned
     }
 }

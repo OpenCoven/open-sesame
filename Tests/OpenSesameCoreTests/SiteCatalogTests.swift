@@ -16,12 +16,46 @@ import Testing
     }
 }
 
-@Test func catalogUsesOpenSorceryAsDefaultSite() throws {
+@Test func catalogUsesOpenCovenAsPinnedDefaultSite() throws {
     let catalog = SiteCatalog.defaultCatalog
 
     #expect(catalog.sites.count == 1)
-    #expect(catalog.selectedSite?.name == "Open Sorcery")
-    #expect(catalog.selectedSite?.url.absoluteString == "https://opensorcery.ai")
+    #expect(catalog.selectedSite?.name == "OpenCoven")
+    #expect(catalog.selectedSite?.url.absoluteString == "https://opencoven.ai")
+    #expect(catalog.selectedSite?.isPinned == true)
+    #expect(catalog.pinnedSite?.id == catalog.selectedSite?.id)
+}
+
+@Test func catalogRefusesToRemovePinnedSites() throws {
+    let pinned = try PortalSite(name: "Home", urlString: "https://example.com", isPinned: true)
+    let extra = try PortalSite(name: "Extra", urlString: "https://example.org")
+    var catalog = SiteCatalog(sites: [pinned, extra])
+
+    let removedPinned = catalog.removeSite(withID: pinned.id)
+    let removedExtra = catalog.removeSite(withID: extra.id)
+
+    #expect(removedPinned == false)
+    #expect(removedExtra == true)
+    #expect(catalog.sites.count == 1)
+    #expect(catalog.sites.first?.id == pinned.id)
+}
+
+@Test func updateSitePreservesPinnedFlag() throws {
+    let pinned = try PortalSite(name: "Home", urlString: "https://example.com", isPinned: true)
+    var catalog = SiteCatalog(sites: [pinned])
+
+    let edited = try PortalSite(
+        id: pinned.id,
+        name: "New Home",
+        urlString: "https://other.example",
+        isPinned: false
+    )
+    catalog.updateSite(edited)
+
+    let stored = catalog.sites.first
+    #expect(stored?.name == "New Home")
+    #expect(stored?.url.absoluteString == "https://other.example")
+    #expect(stored?.isPinned == true)
 }
 
 @Test func catalogSelectsSitesByStableIdentifier() throws {

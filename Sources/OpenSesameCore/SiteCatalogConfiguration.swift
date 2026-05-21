@@ -4,11 +4,25 @@ public struct PortalSiteDefinition: Codable, Equatable, Sendable {
     public var name: String
     public var label: String
     public var url: String
+    public var isPinned: Bool
 
-    public init(name: String, label: String = "", url: String) {
+    public init(name: String, label: String = "", url: String, isPinned: Bool = false) {
         self.name = name
         self.label = label
         self.url = url
+        self.isPinned = isPinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, label, url, isPinned
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+        url = try container.decode(String.self, forKey: .url)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 }
 
@@ -26,7 +40,8 @@ public extension SiteCatalog {
             try PortalSite(
                 name: definition.name,
                 label: definition.label,
-                urlString: definition.url
+                urlString: definition.url,
+                isPinned: definition.isPinned
             )
         }
 
