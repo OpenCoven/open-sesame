@@ -334,7 +334,7 @@ private struct ExpandedSiteRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 10) {
-                FaviconView(site: site, size: 22)
+                FaviconView(site: site, size: 18)
 
                 Text(site.name)
                     .font(.system(size: 13, weight: .medium))
