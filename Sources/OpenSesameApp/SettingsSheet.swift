@@ -303,6 +303,28 @@ private struct AppearanceSection: View {
             subtitle: "Subtle visual preferences for the sidebar and browser chrome."
         ) {
             VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Tab Height")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Text("\(Int(appearance.rowVerticalPadding))")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, alignment: .trailing)
+                }
+                Slider(
+                    value: $appearance.rowVerticalPadding,
+                    in: AppearanceSettings.minRowVerticalPadding...AppearanceSettings.maxRowVerticalPadding,
+                    step: 1
+                )
+                Text("Vertical padding inside each sidebar tab. Higher values make rows taller and easier to hit.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
                 Toggle(isOn: $appearance.radialBlurEnabled) {
                     Text("Radial Blur")
                         .font(.system(size: 13, weight: .semibold))

@@ -5,8 +5,11 @@ import SwiftUI
 final class AppearanceSettings: ObservableObject {
     @AppStorage("appearance.radialBlurEnabled") var radialBlurEnabled: Bool = false
     @AppStorage("appearance.radialBlurIntensity") var radialBlurIntensity: Double = 18
+    @AppStorage("appearance.rowVerticalPadding") var rowVerticalPadding: Double = 5
 
     static let maxBlurRadius: Double = 40
+    static let minRowVerticalPadding: Double = 2
+    static let maxRowVerticalPadding: Double = 12
 }
 
 struct VisualEffectBackground: NSViewRepresentable {

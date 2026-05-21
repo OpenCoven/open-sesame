@@ -172,4 +172,15 @@ final class FaviconService: ObservableObject {
         let url = cacheDirectory.appending(path: filename(forHost: host))
         try? data.write(to: url, options: .atomic)
     }
+
+    /// Drops the cached icon for the given host from memory and disk so the
+    /// next `icon(for:)` call refetches. Used by "Use Auto Favicon" so users
+    /// can force a fresh download after picking a custom icon.
+    func invalidate(host: String) {
+        memoryCache.removeValue(forKey: host)
+        inFlight.removeValue(forKey: host)
+        guard let cacheDirectory else { return }
+        let url = cacheDirectory.appending(path: filename(forHost: host))
+        try? FileManager.default.removeItem(at: url)
+    }
 }

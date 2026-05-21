@@ -94,6 +94,7 @@ struct ShellView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .environmentObject(appearance)
         .sheet(item: $siteSheet) { target in
             SiteSheet(
                 target: target,
@@ -179,6 +180,7 @@ struct ShellView: View {
     }
 
     private func refreshFavicon(for site: PortalSite) async {
+        guard site.iconData == nil else { return }
         guard let data = await favicons.icon(for: site.url) else { return }
         catalog.updateIconData(data, forSiteWithID: site.id)
     }
@@ -316,6 +318,7 @@ private struct ExpandedSiteRow: View {
     let onRemove: () -> Void
     let onDropBefore: ([String]) -> Bool
 
+    @EnvironmentObject private var appearance: AppearanceSettings
     @State private var isDropTargeted: Bool = false
 
     var body: some View {
@@ -329,7 +332,7 @@ private struct ExpandedSiteRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 5)
+            .padding(.vertical, appearance.rowVerticalPadding)
             .padding(.trailing, 6)
             .background(rowBackground)
             .overlay(alignment: .top) {
@@ -1027,6 +1030,14 @@ private struct BrowserChrome: View {
                     action: { controller.goForward() }
                 )
                 .keyboardShortcut("]", modifiers: .command)
+
+                ChromeIconButton(
+                    systemName: "house",
+                    help: "Home  ⌘⇧H",
+                    isEnabled: site != nil,
+                    action: { if let url = site?.url { controller.load(url) } }
+                )
+                .keyboardShortcut("h", modifiers: [.command, .shift])
 
                 ChromeIconButton(
                     systemName: "arrow.clockwise",

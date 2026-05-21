@@ -1,5 +1,7 @@
+import AppKit
 import OpenSesameCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum SiteSheetTarget: Identifiable {
     case add
@@ -29,6 +31,8 @@ struct SiteSheet: View {
     @State private var isFetchingMetadata: Bool = false
     @State private var nameWasAutofilled: Bool = false
     @State private var lastFetchedURL: String = ""
+    @State private var pickedIconData: Data?
+    @State private var resetToAuto: Bool = false
     @FocusState private var focusedField: Field?
 
     private enum Field {
@@ -131,6 +135,22 @@ struct SiteSheet: View {
 
     private var fieldGroup: some View {
         VStack(alignment: .leading, spacing: 14) {
+            ModalField(label: "Icon") {
+                HStack(spacing: 12) {
+                    IconPreview(data: displayIconData, fallbackName: previewName, size: 40)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button("Choose Image…") { pickIcon() }
+                            .controlSize(.regular)
+                        Button("Use Auto Favicon") { resetIconToAuto() }
+                            .controlSize(.regular)
+                            .disabled(!canResetIcon)
+                    }
+
+                    Spacer()
+                }
+            }
+
             ModalField(label: "URL") {
                 TextField("https://example.com", text: $urlString)
                     .textFieldStyle(.roundedBorder)
@@ -201,6 +221,50 @@ struct SiteSheet: View {
                 .controlSize(.large)
                 .disabled(!isFormValid)
         }
+    }
+
+    // MARK: - Icon
+
+    private var displayIconData: Data? {
+        if let pickedIconData { return pickedIconData }
+        if resetToAuto { return nil }
+        if case .edit(let site) = target { return site.iconData }
+        return nil
+    }
+
+    private var previewName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { return trimmed }
+        if case .edit(let site) = target { return site.name }
+        return "?"
+    }
+
+    private var canResetIcon: Bool {
+        if pickedIconData != nil { return true }
+        if case .edit(let site) = target { return site.iconData != nil && !resetToAuto }
+        return false
+    }
+
+    private func pickIcon() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose an image to use as this site's icon."
+        guard panel.runModal() == .OK,
+              let url = panel.url,
+              let data = try? Data(contentsOf: url),
+              NSImage(data: data) != nil else {
+            return
+        }
+        pickedIconData = data
+        resetToAuto = false
+    }
+
+    private func resetIconToAuto() {
+        pickedIconData = nil
+        resetToAuto = true
     }
 
     // MARK: - Metadata autofill
@@ -278,14 +342,30 @@ struct SiteSheet: View {
         do {
             switch target {
             case .add:
-                let site = try PortalSite(name: name, urlString: urlString)
+                let site = try PortalSite(
+                    name: name,
+                    urlString: urlString,
+                    iconData: pickedIconData
+                )
                 onAdd(site, selectedGroupID)
             case .edit(let existing):
+                let resolvedIconData: Data?
+                if let pickedIconData {
+                    resolvedIconData = pickedIconData
+                } else if resetToAuto {
+                    resolvedIconData = nil
+                    if let host = existing.url.host {
+                        FaviconService.shared.invalidate(host: host)
+                    }
+                } else {
+                    resolvedIconData = existing.iconData
+                }
+
                 let updated = try PortalSite(
                     id: existing.id,
                     name: name,
                     urlString: urlString,
-                    iconData: existing.iconData
+                    iconData: resolvedIconData
                 )
                 let previousID = availableGroups.first { group in
                     group.sites.contains(where: { $0.id == existing.id })
@@ -322,5 +402,28 @@ private struct ModalField<Content: View>: View {
                 .foregroundStyle(.secondary)
             content
         }
+    }
+}
+
+private struct IconPreview: View {
+    let data: Data?
+    let fallbackName: String
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            if let data, let image = NSImage(data: data) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(3)
+            } else {
+                ColoredInitialAvatar(name: fallbackName, size: size)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
