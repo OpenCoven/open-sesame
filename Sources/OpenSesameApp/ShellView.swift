@@ -104,10 +104,9 @@ struct ShellView: View {
                     )
                     .id(site.id)
                 } else {
-                    ContentUnavailableView(
-                        "No Site Selected",
-                        systemImage: "safari",
-                        description: Text("Add a site from the sidebar to start previewing.")
+                    EmptyState(
+                        catalog: $catalog,
+                        addSite: { presentAddSite(toGroup: nil) }
                     )
                 }
             }
@@ -1275,5 +1274,171 @@ private struct BlockCounterPill: View {
         .help("\(count) tracker request\(count == 1 ? "" : "s") blocked — click to reset")
         .transition(.scale.combined(with: .opacity))
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: count)
+    }
+}
+
+// MARK: - Empty state
+
+private struct EmptyState: View {
+    @Binding var catalog: SiteCatalog
+    let addSite: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            VStack(spacing: 22) {
+                brandedGlyph
+
+                VStack(spacing: 6) {
+                    Text("No Site Selected")
+                        .font(.system(size: 22, weight: .semibold))
+                    Text("Add a site or pick one from your catalog to get started.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button(action: addSite) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("Add Site…")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                if !availableCuratedApps.isEmpty {
+                    quickAddGrid
+                }
+            }
+            .padding(.horizontal, 40)
+            .padding(.vertical, 32)
+            .frame(maxWidth: 460)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+            )
+
+            Spacer(minLength: 0)
+
+            Text("OpenSesame — your private portal to anything.")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var brandedGlyph: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.accentColor.opacity(0.14))
+                .frame(width: 72, height: 72)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.28), lineWidth: 0.5)
+                .frame(width: 72, height: 72)
+            Image(systemName: "key.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+        }
+    }
+
+    private var availableCuratedApps: [CuratedApp] {
+        CuratedCatalog.defaultApps.filter { app in
+            !catalog.sites.contains { $0.url.absoluteString == app.urlString }
+        }
+    }
+
+    private var quickAddGrid: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Quick Add")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 8
+            ) {
+                ForEach(availableCuratedApps) { app in
+                    QuickAddTile(app: app, action: { add(app) })
+                }
+            }
+        }
+    }
+
+    private func add(_ app: CuratedApp) {
+        guard let site = try? PortalSite(name: app.name, urlString: app.urlString) else { return }
+        catalog.addSite(site)
+        catalog.selectSite(withID: site.id)
+    }
+}
+
+private struct QuickAddTile: View {
+    let app: CuratedApp
+    let action: () -> Void
+
+    @State private var isHovering: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                iconView
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(app.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if !app.summary.isEmpty {
+                        Text(app.summary)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovering ? 1 : 0.4)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isHovering ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        if let site = try? PortalSite(
+            name: app.name,
+            urlString: app.urlString,
+            iconData: URL(string: app.urlString)?.host.flatMap { FaviconService.bundledIconData(forHost: $0) }
+        ) {
+            FaviconView(site: site, size: 22)
+        } else {
+            ColoredInitialAvatar(name: app.name, size: 22)
+        }
     }
 }
