@@ -69,20 +69,12 @@ import Testing
     #expect(catalog.selectedSite?.name == "Two")
 }
 
-@Test func catalogDecodesFromJSONConfiguration() throws {
+@Test func catalogDecodesFromLegacyFlatJSON() throws {
     let data = """
     {
       "sites": [
-        {
-          "name": "Local App",
-          "label": "Development",
-          "url": "http://localhost:3000"
-        },
-        {
-          "name": "Production",
-          "label": "Live",
-          "url": "https://example.com"
-        }
+        {"name": "Local App", "label": "Development", "url": "http://localhost:3000"},
+        {"name": "Production", "label": "Live", "url": "https://example.com"}
       ]
     }
     """.data(using: .utf8)!
@@ -94,15 +86,43 @@ import Testing
     #expect(catalog.sites[1].url.absoluteString == "https://example.com")
 }
 
+@Test func catalogDecodesEntriesTreeWithGroups() throws {
+    let data = """
+    {
+      "entries": [
+        {
+          "type": "site",
+          "payload": {"name": "Home", "url": "https://opencoven.ai", "isPinned": true}
+        },
+        {
+          "type": "group",
+          "payload": {
+            "name": "Dev",
+            "sites": [
+              {"name": "Localhost", "url": "http://localhost:3000"},
+              {"name": "Staging", "url": "https://staging.example"}
+            ]
+          }
+        }
+      ]
+    }
+    """.data(using: .utf8)!
+
+    let catalog = try SiteCatalog.decodeConfiguration(from: data)
+
+    #expect(catalog.entries.count == 2)
+    #expect(catalog.sites.count == 3)
+    #expect(catalog.groups.count == 1)
+    #expect(catalog.groups.first?.name == "Dev")
+    #expect(catalog.groups.first?.sites.count == 2)
+    #expect(catalog.pinnedSite?.name == "Home")
+}
+
 @Test func catalogConfigurationUsesPortalSiteValidation() throws {
     let data = """
     {
       "sites": [
-        {
-          "name": "Local File",
-          "label": "Unsafe",
-          "url": "file:///tmp/index.html"
-        }
+        {"name": "Local File", "label": "Unsafe", "url": "file:///tmp/index.html"}
       ]
     }
     """.data(using: .utf8)!
@@ -118,11 +138,7 @@ import Testing
     let data = """
     {
       "sites": [
-        {
-          "name": "Workbench",
-          "label": "Local",
-          "url": "http://127.0.0.1:8080"
-        }
+        {"name": "Workbench", "label": "Local", "url": "http://127.0.0.1:8080"}
       ]
     }
     """.data(using: .utf8)!
@@ -135,4 +151,74 @@ import Testing
 
     #expect(catalog.selectedSite?.name == "Workbench")
     #expect(catalog.selectedSite?.url.absoluteString == "http://127.0.0.1:8080")
+}
+
+// MARK: - Groups & reordering
+
+@Test func addGroupAndAddSiteIntoGroup() throws {
+    var catalog = SiteCatalog(entries: [])
+    let group = SiteGroup(name: "Dev")
+    catalog.addGroup(group)
+
+    let site = try PortalSite(name: "Local", urlString: "http://localhost:3000")
+    catalog.addSite(site, toGroupID: group.id)
+
+    #expect(catalog.entries.count == 1)
+    #expect(catalog.groups.first?.sites.count == 1)
+    #expect(catalog.sites.count == 1)
+    #expect(catalog.findSite(withID: site.id)?.name == "Local")
+}
+
+@Test func moveSiteInAndOutOfGroup() throws {
+    let rootSite = try PortalSite(name: "Root", urlString: "https://root.example")
+    let groupSite = try PortalSite(name: "Inside", urlString: "https://inside.example")
+    let group = SiteGroup(name: "Folder", sites: [groupSite])
+    var catalog = SiteCatalog(entries: [.site(rootSite), .group(group)])
+
+    catalog.moveSite(rootSite.id, intoGroup: group.id)
+    #expect(catalog.groupID(containingSite: rootSite.id) == group.id)
+    #expect(catalog.groups.first?.sites.count == 2)
+
+    catalog.moveSiteToRoot(groupSite.id)
+    #expect(catalog.groupID(containingSite: groupSite.id) == nil)
+}
+
+@Test func removeGroupPromotesChildrenToRoot() throws {
+    let a = try PortalSite(name: "A", urlString: "https://a.example")
+    let b = try PortalSite(name: "B", urlString: "https://b.example")
+    let group = SiteGroup(name: "G", sites: [a, b])
+    let other = try PortalSite(name: "C", urlString: "https://c.example")
+    var catalog = SiteCatalog(entries: [.group(group), .site(other)])
+
+    catalog.removeGroup(withID: group.id)
+
+    #expect(catalog.entries.count == 3)
+    #expect(catalog.groups.isEmpty)
+    if case .site(let first) = catalog.entries[0] { #expect(first.id == a.id) } else { Issue.record("expected .site") }
+    if case .site(let second) = catalog.entries[1] { #expect(second.id == b.id) } else { Issue.record("expected .site") }
+    if case .site(let third) = catalog.entries[2] { #expect(third.id == other.id) } else { Issue.record("expected .site") }
+}
+
+@Test func setHomeSiteUnpinsPreviousHome() throws {
+    let a = try PortalSite(name: "A", urlString: "https://a.example", isPinned: true)
+    let b = try PortalSite(name: "B", urlString: "https://b.example")
+    var catalog = SiteCatalog(sites: [a, b])
+
+    catalog.setHomeSite(withID: b.id)
+
+    #expect(catalog.findSite(withID: a.id)?.isPinned == false)
+    #expect(catalog.findSite(withID: b.id)?.isPinned == true)
+    #expect(catalog.pinnedSite?.id == b.id)
+}
+
+@Test func moveRootEntriesReorders() throws {
+    let a = try PortalSite(name: "A", urlString: "https://a.example")
+    let b = try PortalSite(name: "B", urlString: "https://b.example")
+    let c = try PortalSite(name: "C", urlString: "https://c.example")
+    var catalog = SiteCatalog(sites: [a, b, c])
+
+    catalog.moveRootEntries(fromOffsets: IndexSet(integer: 0), toOffset: 2)
+
+    let names = catalog.sites.map(\.name)
+    #expect(names == ["B", "A", "C"])
 }

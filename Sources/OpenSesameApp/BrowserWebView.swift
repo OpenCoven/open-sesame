@@ -2,6 +2,17 @@ import Combine
 import SwiftUI
 import WebKit
 
+private final class FocusableWebView: WKWebView {
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
+}
+
 @MainActor
 final class BrowserController: ObservableObject {
     @Published private(set) var canGoBack: Bool = false
@@ -56,7 +67,7 @@ struct BrowserWebView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = FocusableWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.load(URLRequest(url: url))
 

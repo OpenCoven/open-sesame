@@ -12,13 +12,15 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
     public var label: String
     public var url: URL
     public var isPinned: Bool
+    public var iconData: Data?
 
     public init(
         id: UUID = UUID(),
         name: String,
         label: String = "",
         urlString: String,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        iconData: Data? = nil
     ) throws {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,5 +43,49 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
         self.label = trimmedLabel
         self.url = parsedURL
         self.isPinned = isPinned
+        self.iconData = iconData
+    }
+}
+
+extension PortalSite: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, label, url, isPinned, iconData
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        let name = try container.decode(String.self, forKey: .name)
+        let label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+        let url = try container.decode(String.self, forKey: .url)
+        let isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        let iconData = try container.decodeIfPresent(Data.self, forKey: .iconData)
+
+        do {
+            try self.init(
+                id: id,
+                name: name,
+                label: label,
+                urlString: url,
+                isPinned: isPinned,
+                iconData: iconData
+            )
+        } catch let error as ValidationError {
+            let context = DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "PortalSite validation failed: \(error)"
+            )
+            throw DecodingError.dataCorrupted(context)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(label, forKey: .label)
+        try container.encode(url.absoluteString, forKey: .url)
+        try container.encode(isPinned, forKey: .isPinned)
+        try container.encodeIfPresent(iconData, forKey: .iconData)
     }
 }

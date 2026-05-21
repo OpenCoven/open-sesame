@@ -2,24 +2,12 @@ import AppKit
 import OpenSesameCore
 import SwiftUI
 
-private enum SiteSheetTarget: Identifiable {
-    case add
-    case edit(PortalSite)
-
-    var id: String {
-        switch self {
-        case .add: return "add"
-        case .edit(let site): return "edit-\(site.id.uuidString)"
-        }
-    }
-}
-
 private enum SidebarMode {
     case expanded
     case rail
 }
 
-private let railWidth: CGFloat = 56
+private let railWidth: CGFloat = 60
 
 struct ShellView: View {
     @Binding var catalog: SiteCatalog
@@ -27,7 +15,11 @@ struct ShellView: View {
     @State private var sidebarMode: SidebarMode = .expanded
     @State private var sidebarWidth: CGFloat = 240
     @State private var siteSheet: SiteSheetTarget?
+    @State private var siteSheetInitialGroupID: SiteGroup.ID?
+    @State private var showingSettings: Bool = false
     @StateObject private var controller = BrowserController()
+    @StateObject private var appearance = AppearanceSettings()
+    @StateObject private var favicons = FaviconService.shared
 
     private static let minSidebarWidth: CGFloat = 180
     private static let maxSidebarWidth: CGFloat = 380
@@ -38,8 +30,11 @@ struct ShellView: View {
             SiteSidebar(
                 catalog: $catalog,
                 mode: sidebarMode,
-                addSite: { siteSheet = .add },
-                editSite: { site in siteSheet = .edit(site) },
+                appearance: appearance,
+                addSite: { presentAddSite(toGroup: nil) },
+                addSiteToGroup: { groupID in presentAddSite(toGroup: groupID) },
+                editSite: { site in presentEdit(site: site) },
+                openSettings: { showingSettings = true },
                 toggleMode: toggleSidebar
             )
             .frame(width: sidebarMode == .expanded ? sidebarWidth : railWidth)
@@ -52,8 +47,7 @@ struct ShellView: View {
                     maxWidth: Self.maxSidebarWidth
                 )
             } else {
-                Divider()
-                    .opacity(0.6)
+                Divider().opacity(0.6)
             }
 
             VStack(spacing: 0) {
@@ -61,9 +55,11 @@ struct ShellView: View {
                     site: catalog.selectedSite,
                     controller: controller,
                     hasHome: catalog.pinnedSite != nil,
+                    appearance: appearance,
                     reload: reload,
                     goHome: goHome,
-                    openExternally: openSelectedSite
+                    openExternally: openSelectedSite,
+                    openSettings: { showingSettings = true }
                 )
 
                 Divider()
@@ -79,7 +75,7 @@ struct ShellView: View {
                     ContentUnavailableView(
                         "No Site Selected",
                         systemImage: "safari",
-                        description: Text("Add a site to start previewing.")
+                        description: Text("Add a site from the sidebar to start previewing.")
                     )
                 }
             }
@@ -88,22 +84,67 @@ struct ShellView: View {
         .sheet(item: $siteSheet) { target in
             SiteSheet(
                 target: target,
-                onAdd: { site in
-                    catalog.addSite(site)
+                availableGroups: catalog.groups,
+                initialGroupID: siteSheetInitialGroupID,
+                onAdd: { site, groupID in
+                    if let groupID {
+                        catalog.addSite(site, toGroupID: groupID)
+                    } else {
+                        catalog.addSite(site)
+                    }
                     catalog.selectSite(withID: site.id)
+                    Task { await refreshFavicon(for: site) }
                 },
-                onUpdate: { site in
-                    catalog.updateSite(site)
+                onUpdate: { updated, previousGroupID, newGroupID in
+                    catalog.updateSite(updated)
+                    if previousGroupID != newGroupID {
+                        if let newGroupID {
+                            catalog.moveSite(updated.id, intoGroup: newGroupID)
+                        } else {
+                            catalog.moveSiteToRoot(updated.id)
+                        }
+                    }
+                    Task { await refreshFavicon(for: updated) }
+                }
+            )
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsSheet(
+                catalog: $catalog,
+                appearance: appearance,
+                editSite: { site in
+                    showingSettings = false
+                    DispatchQueue.main.async { presentEdit(site: site) }
+                },
+                addSite: {
+                    showingSettings = false
+                    DispatchQueue.main.async { presentAddSite(toGroup: nil) }
+                },
+                addGroup: {
+                    let group = SiteGroup(name: "New Folder")
+                    catalog.addGroup(group)
                 }
             )
         }
         .background(
-            Button("Toggle Sidebar", action: toggleSidebar)
-                .keyboardShortcut("s", modifiers: [.command, .control])
-                .opacity(0)
-                .frame(width: 0, height: 0)
+            Group {
+                Button("Toggle Sidebar", action: toggleSidebar)
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                Button("Open Settings", action: { showingSettings = true })
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
         )
+        .task {
+            await refreshAllFavicons()
+        }
+        .onChange(of: catalog.sites.map(\.id)) { _, _ in
+            Task { await refreshAllFavicons() }
+        }
     }
+
+    // MARK: - Actions
 
     private func toggleSidebar() {
         withAnimation(Self.sidebarAnimation) {
@@ -121,13 +162,500 @@ struct ShellView: View {
     }
 
     private func openSelectedSite() {
-        guard let url = catalog.selectedSite?.url else {
-            return
-        }
-
+        guard let url = catalog.selectedSite?.url else { return }
         NSWorkspace.shared.open(url)
     }
+
+    private func presentAddSite(toGroup groupID: SiteGroup.ID?) {
+        siteSheetInitialGroupID = groupID
+        siteSheet = .add
+    }
+
+    private func presentEdit(site: PortalSite) {
+        siteSheetInitialGroupID = catalog.groupID(containingSite: site.id)
+        siteSheet = .edit(site)
+    }
+
+    // MARK: - Favicons
+
+    private func refreshAllFavicons() async {
+        for site in catalog.sites where site.iconData == nil {
+            await refreshFavicon(for: site)
+        }
+    }
+
+    private func refreshFavicon(for site: PortalSite) async {
+        guard let data = await favicons.icon(for: site.url) else { return }
+        catalog.updateIconData(data, forSiteWithID: site.id)
+    }
 }
+
+// MARK: - Sidebar
+
+private struct SiteSidebar: View {
+    @Binding var catalog: SiteCatalog
+    let mode: SidebarMode
+    @ObservedObject var appearance: AppearanceSettings
+    let addSite: () -> Void
+    let addSiteToGroup: (SiteGroup.ID) -> Void
+    let editSite: (PortalSite) -> Void
+    let openSettings: () -> Void
+    let toggleMode: () -> Void
+
+    var body: some View {
+        ZStack {
+            VisualEffectBackground()
+            Color(nsColor: .underPageBackgroundColor)
+                .opacity(1 - appearance.transparency)
+            if appearance.radialBlurEnabled {
+                RadialBlurOverlay(radius: appearance.radialBlurIntensity)
+            }
+
+            Group {
+                switch mode {
+                case .expanded:
+                    ExpandedSidebar(
+                        catalog: $catalog,
+                        addSite: addSite,
+                        addSiteToGroup: addSiteToGroup,
+                        editSite: editSite,
+                        openSettings: openSettings,
+                        toggleMode: toggleMode
+                    )
+                case .rail:
+                    RailSidebar(
+                        catalog: $catalog,
+                        addSite: addSite,
+                        editSite: editSite,
+                        openSettings: openSettings,
+                        toggleMode: toggleMode
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Expanded sidebar
+
+private struct ExpandedSidebar: View {
+    @Binding var catalog: SiteCatalog
+    let addSite: () -> Void
+    let addSiteToGroup: (SiteGroup.ID) -> Void
+    let editSite: (PortalSite) -> Void
+    let openSettings: () -> Void
+    let toggleMode: () -> Void
+
+    @State private var hoveredID: PortalSite.ID?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SidebarHeader(
+                title: "Open Sesame",
+                primaryIcon: "sidebar.left",
+                primaryHelp: "Collapse to Rail  ⌃⌘S",
+                primaryAction: toggleMode,
+                secondaryIcon: "plus",
+                secondaryHelp: "Add Site  ⌘N",
+                secondaryAction: addSite,
+                tertiaryIcon: "gearshape",
+                tertiaryHelp: "Settings  ⌘,",
+                tertiaryAction: openSettings
+            )
+
+            Divider().opacity(0.4)
+
+            List {
+                ForEach(catalog.entries, id: \.id) { entry in
+                    Group {
+                        switch entry {
+                        case .site(let site):
+                            ExpandedSiteRow(
+                                site: site,
+                                isSelected: catalog.selectedSite?.id == site.id,
+                                isHovered: hoveredID == site.id,
+                                anyHovered: hoveredID != nil,
+                                onSelect: { catalog.selectSite(withID: site.id) },
+                                onHover: { hover in hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID) },
+                                onEdit: { editSite(site) },
+                                onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
+                                onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                            )
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
+                            .listRowBackground(Color.clear)
+
+                        case .group(let group):
+                            ExpandedGroupRow(
+                                group: group,
+                                catalog: $catalog,
+                                hoveredID: $hoveredID,
+                                editSite: editSite,
+                                addSiteToGroup: { addSiteToGroup(group.id) }
+                            )
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
+                            .listRowBackground(Color.clear)
+                        }
+                    }
+                }
+                .onMove { source, destination in
+                    catalog.moveRootEntries(fromOffsets: source, toOffset: destination)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+        }
+    }
+}
+
+private struct ExpandedSiteRow: View {
+    let site: PortalSite
+    let isSelected: Bool
+    let isHovered: Bool
+    let anyHovered: Bool
+    let onSelect: () -> Void
+    let onHover: (Bool) -> Void
+    let onEdit: () -> Void
+    let onRemove: (() -> Void)?
+    let onPinAsHome: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 10) {
+                FaviconView(site: site, size: 22)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text(site.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        if site.isPinned {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(45))
+                        }
+                    }
+
+                    if !site.label.isEmpty {
+                        Text(site.label)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 6)
+            .background(rowBackground)
+            .overlay(activeBar, alignment: .leading)
+            .contentShape(Rectangle())
+            .opacity(rowOpacity)
+        }
+        .buttonStyle(.plain)
+        .onHover(perform: onHover)
+        .contextMenu { contextMenu }
+    }
+
+    private var rowOpacity: Double {
+        if isSelected { return 1.0 }
+        if !anyHovered { return 0.78 }
+        return isHovered ? 1.0 : 0.42
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(rowFill)
+    }
+
+    private var rowFill: Color {
+        if isSelected { return Color.accentColor.opacity(0.22) }
+        if isHovered { return Color.primary.opacity(0.07) }
+        return Color.clear
+    }
+
+    @ViewBuilder
+    private var activeBar: some View {
+        if isSelected {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(Color.accentColor)
+                .frame(width: 3, height: 22)
+                .offset(x: -2)
+        }
+    }
+
+    @ViewBuilder
+    private var contextMenu: some View {
+        Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
+        Button { onPinAsHome() } label: {
+            Label(site.isPinned ? "Already Home" : "Set as Home", systemImage: "house")
+        }
+        .disabled(site.isPinned)
+        if let onRemove {
+            Divider()
+            Button(role: .destructive, action: onRemove) {
+                Label("Remove", systemImage: "trash")
+            }
+        }
+    }
+}
+
+private struct ExpandedGroupRow: View {
+    let group: SiteGroup
+    @Binding var catalog: SiteCatalog
+    @Binding var hoveredID: PortalSite.ID?
+    let editSite: (PortalSite) -> Void
+    let addSiteToGroup: () -> Void
+
+    var body: some View {
+        DisclosureGroup(
+            isExpanded: collapsedBinding
+        ) {
+            ForEach(group.sites) { site in
+                ExpandedSiteRow(
+                    site: site,
+                    isSelected: catalog.selectedSite?.id == site.id,
+                    isHovered: hoveredID == site.id,
+                    anyHovered: hoveredID != nil,
+                    onSelect: { catalog.selectSite(withID: site.id) },
+                    onHover: { hover in
+                        hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
+                    },
+                    onEdit: { editSite(site) },
+                    onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
+                    onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                )
+                .padding(.leading, 8)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Text(group.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                Spacer()
+                Button(action: addSiteToGroup) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Add Site to \(group.name)")
+            }
+            .contextMenu {
+                Button {
+                    catalog.renameGroup(withID: group.id, to: group.name)
+                } label: { Label("Rename in Settings…", systemImage: "pencil") }
+                Divider()
+                Button(role: .destructive) {
+                    catalog.removeGroup(withID: group.id)
+                } label: { Label("Remove Folder", systemImage: "trash") }
+            }
+        }
+        .accentColor(.secondary)
+    }
+
+    private var collapsedBinding: Binding<Bool> {
+        Binding(
+            get: { !group.isCollapsed },
+            set: { newValue in
+                if (newValue && group.isCollapsed) || (!newValue && !group.isCollapsed) {
+                    catalog.toggleGroupCollapsed(withID: group.id)
+                }
+            }
+        )
+    }
+}
+
+// MARK: - Rail sidebar
+
+private struct RailSidebar: View {
+    @Binding var catalog: SiteCatalog
+    let addSite: () -> Void
+    let editSite: (PortalSite) -> Void
+    let openSettings: () -> Void
+    let toggleMode: () -> Void
+
+    @State private var hoveredID: PortalSite.ID?
+
+    var body: some View {
+        VStack(spacing: 4) {
+            SidebarIconButton(
+                systemName: "sidebar.left",
+                help: "Expand Sidebar  ⌃⌘S",
+                action: toggleMode
+            )
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 4) {
+                    ForEach(catalog.entries, id: \.id) { entry in
+                        switch entry {
+                        case .site(let site):
+                            RailSiteRow(
+                                site: site,
+                                isSelected: catalog.selectedSite?.id == site.id,
+                                isHovered: hoveredID == site.id,
+                                anyHovered: hoveredID != nil,
+                                onTap: { catalog.selectSite(withID: site.id) },
+                                onHover: { hover in
+                                    hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
+                                },
+                                onEdit: { editSite(site) },
+                                onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
+                                onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                            )
+                        case .group(let group):
+                            RailGroup(
+                                group: group,
+                                catalog: $catalog,
+                                hoveredID: $hoveredID,
+                                editSite: editSite
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 4) {
+                SidebarIconButton(
+                    systemName: "plus",
+                    help: "Add Site  ⌘N",
+                    action: addSite
+                )
+                SidebarIconButton(
+                    systemName: "gearshape",
+                    help: "Settings  ⌘,",
+                    action: openSettings
+                )
+            }
+            .padding(.bottom, 10)
+        }
+    }
+}
+
+private struct RailSiteRow: View {
+    let site: PortalSite
+    let isSelected: Bool
+    let isHovered: Bool
+    let anyHovered: Bool
+    let onTap: () -> Void
+    let onHover: (Bool) -> Void
+    let onEdit: () -> Void
+    let onRemove: (() -> Void)?
+    let onPinAsHome: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(rowFill)
+                    .frame(width: 44, height: 44)
+
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .frame(width: 44, height: 44)
+                }
+
+                FaviconView(site: site, size: 28)
+
+                if site.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(2)
+                        .background(Circle().fill(Color.secondary))
+                        .rotationEffect(.degrees(45))
+                        .offset(x: 14, y: -14)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .opacity(rowOpacity)
+        }
+        .buttonStyle(.plain)
+        .help(site.name)
+        .frame(width: 48, height: 48)
+        .onHover(perform: onHover)
+        .contextMenu {
+            Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
+            Button(action: onPinAsHome) {
+                Label(site.isPinned ? "Already Home" : "Set as Home", systemImage: "house")
+            }
+            .disabled(site.isPinned)
+            if let onRemove {
+                Divider()
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private var rowOpacity: Double {
+        if isSelected { return 1.0 }
+        if !anyHovered { return 0.82 }
+        return isHovered ? 1.0 : 0.42
+    }
+
+    private var rowFill: Color {
+        if isSelected { return Color.accentColor.opacity(0.22) }
+        if isHovered { return Color.primary.opacity(0.07) }
+        return Color.clear
+    }
+}
+
+private struct RailGroup: View {
+    let group: SiteGroup
+    @Binding var catalog: SiteCatalog
+    @Binding var hoveredID: PortalSite.ID?
+    let editSite: (PortalSite) -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.25))
+                    .frame(height: 1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 2)
+
+            Image(systemName: "folder.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .help(group.name)
+
+            ForEach(group.sites) { site in
+                RailSiteRow(
+                    site: site,
+                    isSelected: catalog.selectedSite?.id == site.id,
+                    isHovered: hoveredID == site.id,
+                    anyHovered: hoveredID != nil,
+                    onTap: { catalog.selectSite(withID: site.id) },
+                    onHover: { hover in
+                        hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
+                    },
+                    onEdit: { editSite(site) },
+                    onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
+                    onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Resize handle
 
 private struct SidebarResizeHandle: View {
     @Binding var width: CGFloat
@@ -171,264 +699,34 @@ private struct SidebarResizeHandle: View {
     }
 }
 
-private struct SiteSidebar: View {
-    @Binding var catalog: SiteCatalog
-    let mode: SidebarMode
-    let addSite: () -> Void
-    let editSite: (PortalSite) -> Void
-    let toggleMode: () -> Void
+// MARK: - Buttons
+
+private struct SidebarHeader: View {
+    let title: String
+    let primaryIcon: String
+    let primaryHelp: String
+    let primaryAction: () -> Void
+    let secondaryIcon: String
+    let secondaryHelp: String
+    let secondaryAction: () -> Void
+    let tertiaryIcon: String
+    let tertiaryHelp: String
+    let tertiaryAction: () -> Void
 
     var body: some View {
-        Group {
-            switch mode {
-            case .expanded:
-                ExpandedSidebar(
-                    catalog: $catalog,
-                    addSite: addSite,
-                    editSite: editSite,
-                    toggleMode: toggleMode
-                )
-            case .rail:
-                RailSidebar(
-                    catalog: $catalog,
-                    addSite: addSite,
-                    editSite: editSite,
-                    toggleMode: toggleMode
-                )
-            }
-        }
-        .background(SidebarBackground())
-    }
-}
-
-private struct ExpandedSidebar: View {
-    @Binding var catalog: SiteCatalog
-    let addSite: () -> Void
-    let editSite: (PortalSite) -> Void
-    let toggleMode: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                SidebarIconButton(
-                    systemName: "sidebar.left",
-                    help: "Collapse to Rail  ⌃⌘S",
-                    action: toggleMode
-                )
-
-                Spacer()
-
-                Text("Open Sesame")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                SidebarIconButton(
-                    systemName: "plus",
-                    help: "Add Site  ⌘N",
-                    action: addSite
-                )
-            }
-            .padding(.horizontal, 10)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-
-            Divider()
-                .opacity(0.5)
-
-            List(selection: selectionBinding) {
-                Section {
-                    ForEach(catalog.sites) { site in
-                        SiteRow(site: site)
-                            .tag(site.id)
-                            .listRowSeparator(.hidden)
-                            .contextMenu {
-                                Button {
-                                    editSite(site)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-
-                                if !site.isPinned {
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        catalog.removeSite(withID: site.id)
-                                    } label: {
-                                        Label("Remove", systemImage: "trash")
-                                    }
-                                }
-                            }
-                    }
-                } header: {
-                    Text("Sites")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-                        .padding(.leading, 2)
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-        }
-    }
-
-    private var selectionBinding: Binding<PortalSite.ID?> {
-        Binding(
-            get: { catalog.selectedSite?.id },
-            set: { id in
-                guard let id else {
-                    return
-                }
-
-                catalog.selectSite(withID: id)
-            }
-        )
-    }
-}
-
-private struct RailSidebar: View {
-    @Binding var catalog: SiteCatalog
-    let addSite: () -> Void
-    let editSite: (PortalSite) -> Void
-    let toggleMode: () -> Void
-
-    var body: some View {
-        VStack(spacing: 6) {
-            SidebarIconButton(
-                systemName: "sidebar.left",
-                help: "Expand Sidebar  ⌃⌘S",
-                action: toggleMode
-            )
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 4) {
-                    ForEach(catalog.sites) { site in
-                        RailSiteRow(
-                            site: site,
-                            isSelected: catalog.selectedSite?.id == site.id,
-                            onTap: { catalog.selectSite(withID: site.id) },
-                            onEdit: { editSite(site) },
-                            onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) }
-                        )
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-
-            Spacer(minLength: 0)
-
-            SidebarIconButton(
-                systemName: "plus",
-                help: "Add Site  ⌘N",
-                action: addSite
-            )
-            .padding(.bottom, 10)
-        }
-    }
-}
-
-private struct RailSiteRow: View {
-    let site: PortalSite
-    let isSelected: Bool
-    let onTap: () -> Void
-    let onEdit: () -> Void
-    let onRemove: (() -> Void)?
-
-    @State private var isHovered: Bool = false
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Button(action: onTap) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(rowFill)
-                        .frame(width: 40, height: 40)
-
-                    SiteAvatar(name: site.name)
-
-                    if site.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(2)
-                            .background(Circle().fill(Color.secondary))
-                            .rotationEffect(.degrees(45))
-                            .offset(x: 12, y: -12)
-                    }
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 9))
-            }
-            .buttonStyle(.plain)
-            .help(site.name)
-            .contextMenu {
-                Button {
-                    onEdit()
-                } label: {
-                    Label("Edit", systemImage: "pencil")
-                }
-
-                if let onRemove {
-                    Divider()
-                    Button(role: .destructive, action: onRemove) {
-                        Label("Remove", systemImage: "trash")
-                    }
-                }
-            }
-
-            if isHovered {
-                NameTag(name: site.name, label: site.label)
-                    .offset(x: railWidth - 4, y: 0)
-                    .allowsHitTesting(false)
-                    .transition(.opacity.combined(with: .offset(x: -4, y: 0)))
-            }
-        }
-        .frame(width: 48, height: 44)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-        .zIndex(isHovered ? 1 : 0)
-    }
-
-    private var rowFill: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.22)
-        }
-        if isHovered {
-            return Color.primary.opacity(0.06)
-        }
-        return Color.clear
-    }
-}
-
-private struct NameTag: View {
-    let name: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(name)
+        HStack(spacing: 6) {
+            SidebarIconButton(systemName: primaryIcon, help: primaryHelp, action: primaryAction)
+            Spacer()
+            Text(title)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.primary)
-
-            if !label.isEmpty {
-                Text(label)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
+                .foregroundStyle(.secondary)
+            Spacer()
+            SidebarIconButton(systemName: tertiaryIcon, help: tertiaryHelp, action: tertiaryAction)
+            SidebarIconButton(systemName: secondaryIcon, help: secondaryHelp, action: secondaryAction)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 2)
-        )
-        .fixedSize()
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 }
 
@@ -490,148 +788,90 @@ private struct ChromeIconButton: View {
     }
 }
 
-private struct SidebarBackground: View {
-    var body: some View {
-        ZStack {
-            Color(nsColor: .underPageBackgroundColor)
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.04),
-                    Color.clear
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-    }
-}
-
-private struct SiteRow: View {
-    let site: PortalSite
-
-    var body: some View {
-        HStack(spacing: 10) {
-            SiteAvatar(name: site.name)
-
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text(site.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-
-                    if site.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(45))
-                    }
-                }
-
-                if !site.label.isEmpty {
-                    Text(site.label)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.vertical, 3)
-    }
-}
-
-private struct SiteAvatar: View {
-    let name: String
-
-    private var initial: String {
-        name.first.map { String($0).uppercased() } ?? "?"
-    }
-
-    private var tint: Color {
-        let palette: [Color] = [.blue, .purple, .pink, .orange, .green, .teal, .indigo, .mint]
-        let hash = abs(name.hashValue)
-        return palette[hash % palette.count]
-    }
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(tint.opacity(0.22))
-            .overlay(
-                Text(initial)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint)
-            )
-            .frame(width: 28, height: 28)
-    }
-}
+// MARK: - Chrome
 
 private struct BrowserChrome: View {
     let site: PortalSite?
     @ObservedObject var controller: BrowserController
     let hasHome: Bool
+    @ObservedObject var appearance: AppearanceSettings
     let reload: () -> Void
     let goHome: () -> Void
     let openExternally: () -> Void
+    let openSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            TrafficLights()
-                .padding(.trailing, 4)
+        ZStack {
+            VisualEffectBackground(material: .titlebar)
+            Color(nsColor: .controlBackgroundColor)
+                .opacity(1 - appearance.transparency)
 
-            ChromeIconButton(
-                systemName: "chevron.left",
-                help: "Back  ⌘[",
-                isEnabled: controller.canGoBack,
-                action: { controller.goBack() }
-            )
-            .keyboardShortcut("[", modifiers: .command)
+            HStack(spacing: 6) {
+                TrafficLights()
+                    .padding(.trailing, 4)
 
-            ChromeIconButton(
-                systemName: "chevron.right",
-                help: "Forward  ⌘]",
-                isEnabled: controller.canGoForward,
-                action: { controller.goForward() }
-            )
-            .keyboardShortcut("]", modifiers: .command)
+                ChromeIconButton(
+                    systemName: "chevron.left",
+                    help: "Back  ⌘[",
+                    isEnabled: controller.canGoBack,
+                    action: { controller.goBack() }
+                )
+                .keyboardShortcut("[", modifiers: .command)
 
-            ChromeIconButton(
-                systemName: "house",
-                help: "Home  ⌘⇧H",
-                isEnabled: hasHome,
-                action: goHome
-            )
-            .keyboardShortcut("h", modifiers: [.command, .shift])
+                ChromeIconButton(
+                    systemName: "chevron.right",
+                    help: "Forward  ⌘]",
+                    isEnabled: controller.canGoForward,
+                    action: { controller.goForward() }
+                )
+                .keyboardShortcut("]", modifiers: .command)
 
-            ChromeIconButton(
-                systemName: "arrow.clockwise",
-                help: "Reload  ⌘R",
-                action: reload
-            )
-            .keyboardShortcut("r", modifiers: .command)
+                ChromeIconButton(
+                    systemName: "house",
+                    help: "Home  ⌘⇧H",
+                    isEnabled: hasHome,
+                    action: goHome
+                )
+                .keyboardShortcut("h", modifiers: [.command, .shift])
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(site?.name ?? "Open Sesame")
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
+                ChromeIconButton(
+                    systemName: "arrow.clockwise",
+                    help: "Reload  ⌘R",
+                    action: reload
+                )
+                .keyboardShortcut("r", modifiers: .command)
 
-                Text(displayURL)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(site?.name ?? "Open Sesame")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+
+                    Text(displayURL)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.leading, 6)
+
+                Spacer()
+
+                ChromeIconButton(
+                    systemName: "arrow.up.right.square",
+                    help: "Open in Browser",
+                    isEnabled: site != nil,
+                    action: openExternally
+                )
+
+                ChromeIconButton(
+                    systemName: "gearshape",
+                    help: "Settings  ⌘,",
+                    action: openSettings
+                )
             }
-            .padding(.leading, 6)
-
-            Spacer()
-
-            ChromeIconButton(
-                systemName: "arrow.up.right.square",
-                help: "Open in Browser",
-                isEnabled: site != nil,
-                action: openExternally
-            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .frame(height: 50)
     }
 
     private var displayURL: String {
@@ -647,177 +887,5 @@ private struct TrafficLights: View {
             Circle().fill(Color(red: 0.16, green: 0.78, blue: 0.25))
         }
         .frame(width: 52, height: 12)
-    }
-}
-
-private struct SiteSheet: View {
-    let target: SiteSheetTarget
-    let onAdd: (PortalSite) -> Void
-    let onUpdate: (PortalSite) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var name: String
-    @State private var label: String
-    @State private var urlString: String
-    @State private var errorMessage: String?
-    @FocusState private var focusedField: Field?
-
-    private enum Field {
-        case name, label, url
-    }
-
-    init(
-        target: SiteSheetTarget,
-        onAdd: @escaping (PortalSite) -> Void,
-        onUpdate: @escaping (PortalSite) -> Void
-    ) {
-        self.target = target
-        self.onAdd = onAdd
-        self.onUpdate = onUpdate
-
-        switch target {
-        case .add:
-            _name = State(initialValue: "")
-            _label = State(initialValue: "")
-            _urlString = State(initialValue: "https://")
-        case .edit(let site):
-            _name = State(initialValue: site.name)
-            _label = State(initialValue: site.label)
-            _urlString = State(initialValue: site.url.absoluteString)
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 16, weight: .semibold))
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                fieldLabel("Name")
-                TextField("OpenCoven", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .name)
-                    .onSubmit { focusedField = .label }
-
-                fieldLabel("Label")
-                TextField("Home (optional)", text: $label)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .label)
-                    .onSubmit { focusedField = .url }
-
-                fieldLabel("URL")
-                TextField("https://example.com", text: $urlString)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .url)
-                    .onSubmit { submit() }
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-            }
-
-            HStack {
-                if case .edit(let site) = target, site.isPinned {
-                    HStack(spacing: 4) {
-                        Image(systemName: "pin.fill")
-                            .rotationEffect(.degrees(45))
-                        Text("Pinned — cannot be removed")
-                    }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-
-                Button(actionTitle) { submit() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isFormValid)
-            }
-        }
-        .padding(20)
-        .frame(width: 400)
-        .onAppear {
-            DispatchQueue.main.async {
-                focusedField = .name
-            }
-        }
-    }
-
-    private var title: String {
-        switch target {
-        case .add: return "Add Site"
-        case .edit: return "Edit Site"
-        }
-    }
-
-    private var subtitle: String {
-        switch target {
-        case .add: return "Pin any HTTP or HTTPS site to the sidebar."
-        case .edit: return "Update the name, label, or URL."
-        }
-    }
-
-    private var actionTitle: String {
-        switch target {
-        case .add: return "Add"
-        case .edit: return "Save"
-        }
-    }
-
-    private var isFormValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty
-            && !urlString.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    @ViewBuilder
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
-    }
-
-    private func submit() {
-        do {
-            switch target {
-            case .add:
-                let site = try PortalSite(name: name, label: label, urlString: urlString)
-                onAdd(site)
-            case .edit(let existing):
-                let updated = try PortalSite(
-                    id: existing.id,
-                    name: name,
-                    label: label,
-                    urlString: urlString,
-                    isPinned: existing.isPinned
-                )
-                onUpdate(updated)
-            }
-            dismiss()
-        } catch let error as PortalSite.ValidationError {
-            switch error {
-            case .missingName:
-                errorMessage = "Please enter a name."
-                focusedField = .name
-            case .missingURL:
-                errorMessage = "Please enter a valid URL."
-                focusedField = .url
-            case .unsupportedScheme(let scheme):
-                errorMessage = "Only http and https are supported (got \(scheme ?? "no scheme"))."
-                focusedField = .url
-            }
-        } catch {
-            errorMessage = "Could not save site."
-        }
     }
 }

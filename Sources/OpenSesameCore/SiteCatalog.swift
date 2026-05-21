@@ -1,91 +1,339 @@
 import Foundation
 
-public struct SiteCatalog: Sendable {
-    public private(set) var sites: [PortalSite]
+public struct SiteCatalog: Sendable, Equatable {
+    public private(set) var entries: [CatalogEntry]
     public private(set) var selectedSiteID: PortalSite.ID?
 
-    public var selectedSite: PortalSite? {
-        guard let selectedSiteID else {
-            return sites.first
+    public var sites: [PortalSite] {
+        entries.flatMap { entry -> [PortalSite] in
+            switch entry {
+            case .site(let site): return [site]
+            case .group(let group): return group.sites
+            }
         }
+    }
 
-        return sites.first { $0.id == selectedSiteID } ?? sites.first
+    public var groups: [SiteGroup] {
+        entries.compactMap { entry in
+            if case .group(let group) = entry { return group }
+            return nil
+        }
     }
 
     public var pinnedSite: PortalSite? {
         sites.first { $0.isPinned }
     }
 
-    public init(sites: [PortalSite]) {
-        self.sites = sites
-        self.selectedSiteID = sites.first?.id
-    }
-
-    public mutating func selectSite(withID id: PortalSite.ID) {
-        guard sites.contains(where: { $0.id == id }) else {
-            return
+    public var selectedSite: PortalSite? {
+        guard let selectedSiteID else {
+            return sites.first
         }
 
+        return findSite(withID: selectedSiteID) ?? sites.first
+    }
+
+    // MARK: - Init
+
+    public init(entries: [CatalogEntry]) {
+        self.entries = entries
+
+        let flatSites = entries.flatMap { entry -> [PortalSite] in
+            switch entry {
+            case .site(let site): return [site]
+            case .group(let group): return group.sites
+            }
+        }
+        self.selectedSiteID = flatSites.first?.id
+    }
+
+    public init(sites: [PortalSite]) {
+        self.init(entries: sites.map { .site($0) })
+    }
+
+    // MARK: - Lookup
+
+    public func findSite(withID id: PortalSite.ID) -> PortalSite? {
+        for entry in entries {
+            switch entry {
+            case .site(let site) where site.id == id:
+                return site
+            case .group(let group):
+                if let match = group.sites.first(where: { $0.id == id }) {
+                    return match
+                }
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
+    public func findGroup(withID id: SiteGroup.ID) -> SiteGroup? {
+        for entry in entries {
+            if case .group(let group) = entry, group.id == id { return group }
+        }
+        return nil
+    }
+
+    public func groupID(containingSite siteID: PortalSite.ID) -> SiteGroup.ID? {
+        for entry in entries {
+            if case .group(let group) = entry,
+               group.sites.contains(where: { $0.id == siteID }) {
+                return group.id
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Selection
+
+    public mutating func selectSite(withID id: PortalSite.ID) {
+        guard findSite(withID: id) != nil else { return }
         selectedSiteID = id
     }
 
+    // MARK: - Sites
+
     public mutating func addSite(_ site: PortalSite) {
-        sites.append(site)
+        entries.append(.site(site))
 
         if selectedSiteID == nil {
             selectedSiteID = site.id
         }
     }
 
-    public mutating func updateSite(_ site: PortalSite) {
-        guard let index = sites.firstIndex(where: { $0.id == site.id }) else {
+    public mutating func addSite(_ site: PortalSite, toGroupID groupID: SiteGroup.ID) {
+        guard let entryIndex = entries.firstIndex(where: { $0.id == groupID }),
+              case .group(var group) = entries[entryIndex] else {
+            // Group not found — add at root as fallback.
+            addSite(site)
             return
         }
 
-        var updated = site
-        // Preserve pinned status — pinning is set at catalog level, not via edit.
-        updated.isPinned = sites[index].isPinned
-        sites[index] = updated
+        group.sites.append(site)
+        entries[entryIndex] = .group(group)
+
+        if selectedSiteID == nil {
+            selectedSiteID = site.id
+        }
+    }
+
+    public mutating func updateSite(_ updated: PortalSite) {
+        for index in entries.indices {
+            switch entries[index] {
+            case .site(let existing) where existing.id == updated.id:
+                var preserved = updated
+                preserved.isPinned = existing.isPinned
+                entries[index] = .site(preserved)
+                return
+            case .group(var group):
+                if let siteIndex = group.sites.firstIndex(where: { $0.id == updated.id }) {
+                    var preserved = updated
+                    preserved.isPinned = group.sites[siteIndex].isPinned
+                    group.sites[siteIndex] = preserved
+                    entries[index] = .group(group)
+                    return
+                }
+            default:
+                continue
+            }
+        }
     }
 
     @discardableResult
     public mutating func removeSite(withID id: PortalSite.ID) -> Bool {
-        guard let site = sites.first(where: { $0.id == id }) else {
-            return false
+        guard let target = findSite(withID: id) else { return false }
+        if target.isPinned { return false }
+
+        for index in entries.indices {
+            switch entries[index] {
+            case .site(let site) where site.id == id:
+                entries.remove(at: index)
+                if selectedSiteID == id {
+                    selectedSiteID = sites.first?.id
+                }
+                return true
+            case .group(var group):
+                if let siteIndex = group.sites.firstIndex(where: { $0.id == id }) {
+                    group.sites.remove(at: siteIndex)
+                    entries[index] = .group(group)
+                    if selectedSiteID == id {
+                        selectedSiteID = sites.first?.id
+                    }
+                    return true
+                }
+            default:
+                continue
+            }
         }
-
-        if site.isPinned {
-            return false
-        }
-
-        sites.removeAll { $0.id == id }
-
-        if selectedSiteID == id {
-            selectedSiteID = sites.first?.id
-        }
-
-        return true
+        return false
     }
 
-    public mutating func replaceSites(_ newSites: [PortalSite]) {
-        sites = newSites
+    /// Pins the given site as the home. Unpins any previously pinned site so
+    /// the catalog only ever has one pinned (home) entry.
+    public mutating func setHomeSite(withID id: PortalSite.ID) {
+        for entryIndex in entries.indices {
+            switch entries[entryIndex] {
+            case .site(var site):
+                site.isPinned = (site.id == id)
+                entries[entryIndex] = .site(site)
+            case .group(var group):
+                for siteIndex in group.sites.indices {
+                    group.sites[siteIndex].isPinned = (group.sites[siteIndex].id == id)
+                }
+                entries[entryIndex] = .group(group)
+            }
+        }
+    }
 
-        if let selectedSiteID, newSites.contains(where: { $0.id == selectedSiteID }) {
-            return
+    /// Updates the cached favicon bytes for a site. Does nothing if the site
+    /// is not in the catalog.
+    public mutating func updateIconData(_ data: Data?, forSiteWithID id: PortalSite.ID) {
+        for index in entries.indices {
+            switch entries[index] {
+            case .site(var site) where site.id == id:
+                site.iconData = data
+                entries[index] = .site(site)
+                return
+            case .group(var group):
+                if let siteIndex = group.sites.firstIndex(where: { $0.id == id }) {
+                    group.sites[siteIndex].iconData = data
+                    entries[index] = .group(group)
+                    return
+                }
+            default:
+                continue
+            }
+        }
+    }
+
+    // MARK: - Groups
+
+    public mutating func addGroup(_ group: SiteGroup) {
+        entries.append(.group(group))
+    }
+
+    public mutating func renameGroup(withID id: SiteGroup.ID, to name: String) {
+        guard let index = entries.firstIndex(where: { $0.id == id }),
+              case .group(var group) = entries[index] else { return }
+        group.name = name
+        entries[index] = .group(group)
+    }
+
+    public mutating func toggleGroupCollapsed(withID id: SiteGroup.ID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }),
+              case .group(var group) = entries[index] else { return }
+        group.isCollapsed.toggle()
+        entries[index] = .group(group)
+    }
+
+    /// Removes a group and promotes its children to the root, preserving order.
+    public mutating func removeGroup(withID id: SiteGroup.ID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }),
+              case .group(let group) = entries[index] else { return }
+        entries.remove(at: index)
+        for (offset, site) in group.sites.enumerated() {
+            entries.insert(.site(site), at: index + offset)
+        }
+    }
+
+    // MARK: - Reordering
+
+    public mutating func moveRootEntries(fromOffsets source: IndexSet, toOffset destination: Int) {
+        entries = Self.moved(entries, fromOffsets: source, toOffset: destination)
+    }
+
+    public mutating func moveSitesInGroup(
+        _ groupID: SiteGroup.ID,
+        fromOffsets source: IndexSet,
+        toOffset destination: Int
+    ) {
+        guard let index = entries.firstIndex(where: { $0.id == groupID }),
+              case .group(var group) = entries[index] else { return }
+        group.sites = Self.moved(group.sites, fromOffsets: source, toOffset: destination)
+        entries[index] = .group(group)
+    }
+
+    /// Foundation-only equivalent of SwiftUI's `Array.move(fromOffsets:toOffset:)`.
+    private static func moved<T>(_ array: [T], fromOffsets source: IndexSet, toOffset destination: Int) -> [T] {
+        var result = array
+        let movingItems = source.map { result[$0] }
+
+        for index in source.sorted(by: >) {
+            result.remove(at: index)
         }
 
-        selectedSiteID = newSites.first?.id
+        let beforeDestination = source.filter { $0 < destination }.count
+        let adjustedDestination = max(0, min(result.count, destination - beforeDestination))
+        result.insert(contentsOf: movingItems, at: adjustedDestination)
+        return result
+    }
+
+    /// Moves a site into the given group (appended) and removes it from its
+    /// previous location.
+    public mutating func moveSite(_ siteID: PortalSite.ID, intoGroup targetGroupID: SiteGroup.ID) {
+        guard let site = findSite(withID: siteID) else { return }
+        guard groupID(containingSite: siteID) != targetGroupID else { return }
+
+        _removeSiteByID(siteID, allowPinned: true)
+        addSite(site, toGroupID: targetGroupID)
+    }
+
+    /// Moves a site out of its current group and to the root (appended).
+    public mutating func moveSiteToRoot(_ siteID: PortalSite.ID) {
+        guard groupID(containingSite: siteID) != nil else { return }
+        guard let site = findSite(withID: siteID) else { return }
+
+        _removeSiteByID(siteID, allowPinned: true)
+        entries.append(.site(site))
+    }
+
+    private mutating func _removeSiteByID(_ id: PortalSite.ID, allowPinned: Bool) {
+        for index in entries.indices {
+            switch entries[index] {
+            case .site(let site) where site.id == id:
+                entries.remove(at: index)
+                return
+            case .group(var group):
+                if let siteIndex = group.sites.firstIndex(where: { $0.id == id }) {
+                    group.sites.remove(at: siteIndex)
+                    entries[index] = .group(group)
+                    return
+                }
+            default:
+                continue
+            }
+        }
+        _ = allowPinned
+    }
+
+    // MARK: - Bulk replace
+
+    public mutating func replaceEntries(_ newEntries: [CatalogEntry]) {
+        entries = newEntries
+
+        let flatSiteIDs: [PortalSite.ID] = newEntries.flatMap { entry -> [PortalSite.ID] in
+            switch entry {
+            case .site(let s): return [s.id]
+            case .group(let g): return g.sites.map(\.id)
+            }
+        }
+
+        if let selectedSiteID, flatSiteIDs.contains(selectedSiteID) { return }
+        selectedSiteID = flatSiteIDs.first
     }
 }
 
 public extension SiteCatalog {
     static let defaultCatalog = SiteCatalog(
-        sites: [
-            try! PortalSite(
-                name: "OpenCoven",
-                label: "Home",
-                urlString: "https://opencoven.ai",
-                isPinned: true
+        entries: [
+            .site(
+                try! PortalSite(
+                    name: "OpenCoven",
+                    label: "Home",
+                    urlString: "https://opencoven.ai",
+                    isPinned: true
+                )
             )
         ]
     )
