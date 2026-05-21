@@ -3,16 +3,15 @@ import Testing
 @testable import OpenSesameCore
 
 @Test func siteTrimsNamesAndRequiresHTTPURL() throws {
-    let site = try PortalSite(name: "  Open Sorcery  ", label: "  DevTools  ", urlString: "https://opensorcery.ai")
+    let site = try PortalSite(name: "  Open Sorcery  ", urlString: "https://opensorcery.ai")
 
     #expect(site.name == "Open Sorcery")
-    #expect(site.label == "DevTools")
     #expect(site.url.absoluteString == "https://opensorcery.ai")
 }
 
 @Test func siteRejectsUnsupportedURLSchemes() {
     #expect(throws: PortalSite.ValidationError.self) {
-        try PortalSite(name: "Local File", label: "Unsafe", urlString: "file:///tmp/index.html")
+        try PortalSite(name: "Local File", urlString: "file:///tmp/index.html")
     }
 }
 
@@ -59,8 +58,8 @@ import Testing
 }
 
 @Test func catalogSelectsSitesByStableIdentifier() throws {
-    let first = try PortalSite(name: "One", label: "A", urlString: "https://one.example")
-    let second = try PortalSite(name: "Two", label: "B", urlString: "https://two.example")
+    let first = try PortalSite(name: "One", urlString: "https://one.example")
+    let second = try PortalSite(name: "Two", urlString: "https://two.example")
     var catalog = SiteCatalog(sites: [first, second])
 
     catalog.selectSite(withID: second.id)

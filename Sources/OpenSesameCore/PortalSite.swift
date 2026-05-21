@@ -9,7 +9,6 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
 
     public let id: UUID
     public var name: String
-    public var label: String
     public var url: URL
     public var isPinned: Bool
     public var iconData: Data?
@@ -17,13 +16,11 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
     public init(
         id: UUID = UUID(),
         name: String,
-        label: String = "",
         urlString: String,
         isPinned: Bool = false,
         iconData: Data? = nil
     ) throws {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
@@ -40,7 +37,6 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
 
         self.id = id
         self.name = trimmedName
-        self.label = trimmedLabel
         self.url = parsedURL
         self.isPinned = isPinned
         self.iconData = iconData
@@ -49,14 +45,13 @@ public struct PortalSite: Identifiable, Hashable, Sendable {
 
 extension PortalSite: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, name, label, url, isPinned, iconData
+        case id, name, url, isPinned, iconData
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         let name = try container.decode(String.self, forKey: .name)
-        let label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         let url = try container.decode(String.self, forKey: .url)
         let isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         let iconData = try container.decodeIfPresent(Data.self, forKey: .iconData)
@@ -65,7 +60,6 @@ extension PortalSite: Codable {
             try self.init(
                 id: id,
                 name: name,
-                label: label,
                 urlString: url,
                 isPinned: isPinned,
                 iconData: iconData
@@ -83,7 +77,6 @@ extension PortalSite: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
-        try container.encode(label, forKey: .label)
         try container.encode(url.absoluteString, forKey: .url)
         try container.encode(isPinned, forKey: .isPinned)
         try container.encodeIfPresent(iconData, forKey: .iconData)

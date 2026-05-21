@@ -304,6 +304,9 @@ private struct ExpandedSiteRow: View {
     let onEdit: () -> Void
     let onRemove: (() -> Void)?
     let onPinAsHome: () -> Void
+    let onDropBefore: ([String]) -> Bool
+
+    @State private var isDropTargeted: Bool = false
 
     var body: some View {
         Button(action: onSelect) {
@@ -311,23 +314,14 @@ private struct ExpandedSiteRow: View {
                 DragGrip(isHovered: isHovered)
                 FaviconView(site: site, size: 22)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 4) {
-                        Text(site.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        if site.isPinned {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 8))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if !site.label.isEmpty {
-                        Text(site.label)
-                            .font(.system(size: 11))
+                HStack(spacing: 4) {
+                    Text(site.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    if site.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 8))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -335,6 +329,13 @@ private struct ExpandedSiteRow: View {
             .padding(.vertical, 5)
             .padding(.trailing, 6)
             .background(rowBackground)
+            .overlay(alignment: .top) {
+                if isDropTargeted {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -350,6 +351,9 @@ private struct ExpandedSiteRow: View {
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+        .dropDestination(for: String.self) { strings, _ in
+            onDropBefore(strings)
+        } isTargeted: { isDropTargeted = $0 }
     }
 
     private var rowBackground: some View {

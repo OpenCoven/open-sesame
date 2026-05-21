@@ -43,7 +43,6 @@ public struct CatalogPersistence: Sendable {
                     return .site(
                         PortalSiteDefinition(
                             name: site.name,
-                            label: site.label,
                             url: site.url.absoluteString,
                             isPinned: site.isPinned
                         )
@@ -57,7 +56,6 @@ public struct CatalogPersistence: Sendable {
                             sites: group.sites.map { site in
                                 PortalSiteDefinition(
                                     name: site.name,
-                                    label: site.label,
                                     url: site.url.absoluteString,
                                     isPinned: site.isPinned
                                 )

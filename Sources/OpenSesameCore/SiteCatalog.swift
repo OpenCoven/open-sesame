@@ -288,6 +288,42 @@ public struct SiteCatalog: Sendable, Equatable {
         entries.append(.site(site))
     }
 
+    /// Moves `siteID` to sit immediately before `targetSiteID`, inheriting the
+    /// target's parent (root or group). No-op if either is missing or the same.
+    public mutating func moveSite(_ siteID: PortalSite.ID, before targetSiteID: PortalSite.ID) {
+        guard siteID != targetSiteID else { return }
+        guard let site = findSite(withID: siteID) else { return }
+        guard findSite(withID: targetSiteID) != nil else { return }
+
+        let targetGroupID = groupID(containingSite: targetSiteID)
+        _removeSiteByID(siteID, allowPinned: true)
+
+        if let targetGroupID {
+            guard let groupIdx = entries.firstIndex(where: { entry in
+                if case .group(let g) = entry { return g.id == targetGroupID }
+                return false
+            }), case .group(var group) = entries[groupIdx] else {
+                entries.append(.site(site))
+                return
+            }
+            if let targetIdx = group.sites.firstIndex(where: { $0.id == targetSiteID }) {
+                group.sites.insert(site, at: targetIdx)
+            } else {
+                group.sites.append(site)
+            }
+            entries[groupIdx] = .group(group)
+        } else {
+            if let targetIdx = entries.firstIndex(where: { entry in
+                if case .site(let s) = entry { return s.id == targetSiteID }
+                return false
+            }) {
+                entries.insert(.site(site), at: targetIdx)
+            } else {
+                entries.append(.site(site))
+            }
+        }
+    }
+
     private mutating func _removeSiteByID(_ id: PortalSite.ID, allowPinned: Bool) {
         for index in entries.indices {
             switch entries[index] {
@@ -330,7 +366,6 @@ public extension SiteCatalog {
             .site(
                 try! PortalSite(
                     name: "OpenCoven",
-                    label: "Home",
                     urlString: "https://opencoven.ai",
                     isPinned: true
                 )

@@ -23,18 +23,16 @@ struct SiteSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
-    @State private var label: String
     @State private var urlString: String
     @State private var selectedGroupID: SiteGroup.ID?
     @State private var errorMessage: String?
     @State private var isFetchingMetadata: Bool = false
     @State private var nameWasAutofilled: Bool = false
-    @State private var labelWasAutofilled: Bool = false
     @State private var lastFetchedURL: String = ""
     @FocusState private var focusedField: Field?
 
     private enum Field {
-        case name, label, url
+        case name, url
     }
 
     init(
@@ -53,12 +51,10 @@ struct SiteSheet: View {
         switch target {
         case .add:
             _name = State(initialValue: "")
-            _label = State(initialValue: "")
             _urlString = State(initialValue: "https://")
             _selectedGroupID = State(initialValue: initialGroupID)
         case .edit(let site):
             _name = State(initialValue: site.name)
-            _label = State(initialValue: site.label)
             _urlString = State(initialValue: site.url.absoluteString)
             let containingID = availableGroups.first { group in
                 group.sites.contains(where: { $0.id == site.id })
@@ -151,20 +147,9 @@ struct SiteSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.large)
                     .focused($focusedField, equals: .name)
-                    .onSubmit { focusedField = .label }
+                    .onSubmit { submit() }
                     .onChange(of: name) { _, _ in
                         nameWasAutofilled = false
-                    }
-            }
-
-            ModalField(label: "Label") {
-                TextField("Home (optional)", text: $label)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.large)
-                    .focused($focusedField, equals: .label)
-                    .onSubmit { submit() }
-                    .onChange(of: label) { _, _ in
-                        labelWasAutofilled = false
                     }
             }
 
@@ -258,13 +243,6 @@ struct SiteSheet: View {
                 nameWasAutofilled = true
             }
         }
-        if label.isEmpty || labelWasAutofilled {
-            if let suggested = metadata.siteName ?? metadata.description {
-                let truncated = String(suggested.prefix(60))
-                label = truncated
-                labelWasAutofilled = true
-            }
-        }
     }
 
     // MARK: - Submit
@@ -278,8 +256,8 @@ struct SiteSheet: View {
 
     private var subtitle: String {
         switch target {
-        case .add: return "Paste a URL — name and label will autofill."
-        case .edit: return "Update the name, label, URL, or folder."
+        case .add: return "Paste a URL — the name will autofill."
+        case .edit: return "Update the name, URL, or folder."
         }
     }
 
@@ -306,13 +284,12 @@ struct SiteSheet: View {
         do {
             switch target {
             case .add:
-                let site = try PortalSite(name: name, label: label, urlString: urlString)
+                let site = try PortalSite(name: name, urlString: urlString)
                 onAdd(site, selectedGroupID)
             case .edit(let existing):
                 let updated = try PortalSite(
                     id: existing.id,
                     name: name,
-                    label: label,
                     urlString: urlString,
                     isPinned: existing.isPinned,
                     iconData: existing.iconData

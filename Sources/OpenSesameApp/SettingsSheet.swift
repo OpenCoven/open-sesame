@@ -295,7 +295,6 @@ private struct InlineSiteAddressField: View {
             let updated = try PortalSite(
                 id: site.id,
                 name: site.name,
-                label: site.label,
                 urlString: trimmedURL,
                 isPinned: site.isPinned,
                 iconData: site.iconData
