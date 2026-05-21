@@ -189,12 +189,6 @@ struct SiteSheet: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            if case .edit(let site) = target, site.isPinned {
-                Label("Pinned home site", systemImage: "pin.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             Button("Cancel") { dismiss() }
@@ -291,7 +285,6 @@ struct SiteSheet: View {
                     id: existing.id,
                     name: name,
                     urlString: urlString,
-                    isPinned: existing.isPinned,
                     iconData: existing.iconData
                 )
                 let previousID = availableGroups.first { group in

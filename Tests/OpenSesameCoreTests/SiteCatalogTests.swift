@@ -15,46 +15,41 @@ import Testing
     }
 }
 
-@Test func catalogUsesOpenCovenAsPinnedDefaultSite() throws {
+@Test func catalogUsesOpenCovenAsDefaultSite() throws {
     let catalog = SiteCatalog.defaultCatalog
 
     #expect(catalog.sites.count == 1)
     #expect(catalog.selectedSite?.name == "OpenCoven")
     #expect(catalog.selectedSite?.url.absoluteString == "https://opencoven.ai")
-    #expect(catalog.selectedSite?.isPinned == true)
-    #expect(catalog.pinnedSite?.id == catalog.selectedSite?.id)
 }
 
-@Test func catalogRefusesToRemovePinnedSites() throws {
-    let pinned = try PortalSite(name: "Home", urlString: "https://example.com", isPinned: true)
-    let extra = try PortalSite(name: "Extra", urlString: "https://example.org")
-    var catalog = SiteCatalog(sites: [pinned, extra])
+@Test func removeSiteRemovesAnyEntry() throws {
+    let a = try PortalSite(name: "Home", urlString: "https://example.com")
+    let b = try PortalSite(name: "Extra", urlString: "https://example.org")
+    var catalog = SiteCatalog(sites: [a, b])
 
-    let removedPinned = catalog.removeSite(withID: pinned.id)
-    let removedExtra = catalog.removeSite(withID: extra.id)
+    let removedA = catalog.removeSite(withID: a.id)
+    let removedB = catalog.removeSite(withID: b.id)
 
-    #expect(removedPinned == false)
-    #expect(removedExtra == true)
-    #expect(catalog.sites.count == 1)
-    #expect(catalog.sites.first?.id == pinned.id)
+    #expect(removedA == true)
+    #expect(removedB == true)
+    #expect(catalog.sites.isEmpty)
 }
 
-@Test func updateSitePreservesPinnedFlag() throws {
-    let pinned = try PortalSite(name: "Home", urlString: "https://example.com", isPinned: true)
-    var catalog = SiteCatalog(sites: [pinned])
+@Test func updateSiteRewritesNameAndURL() throws {
+    let original = try PortalSite(name: "Old", urlString: "https://example.com")
+    var catalog = SiteCatalog(sites: [original])
 
     let edited = try PortalSite(
-        id: pinned.id,
-        name: "New Home",
-        urlString: "https://other.example",
-        isPinned: false
+        id: original.id,
+        name: "New",
+        urlString: "https://other.example"
     )
     catalog.updateSite(edited)
 
     let stored = catalog.sites.first
-    #expect(stored?.name == "New Home")
+    #expect(stored?.name == "New")
     #expect(stored?.url.absoluteString == "https://other.example")
-    #expect(stored?.isPinned == true)
 }
 
 @Test func catalogSelectsSitesByStableIdentifier() throws {
@@ -91,7 +86,7 @@ import Testing
       "entries": [
         {
           "type": "site",
-          "payload": {"name": "Home", "url": "https://opencoven.ai", "isPinned": true}
+          "payload": {"name": "Home", "url": "https://opencoven.ai"}
         },
         {
           "type": "group",
@@ -114,7 +109,7 @@ import Testing
     #expect(catalog.groups.count == 1)
     #expect(catalog.groups.first?.name == "Dev")
     #expect(catalog.groups.first?.sites.count == 2)
-    #expect(catalog.pinnedSite?.name == "Home")
+    #expect(catalog.sites.first?.name == "Home")
 }
 
 @Test func catalogConfigurationUsesPortalSiteValidation() throws {
@@ -196,18 +191,6 @@ import Testing
     if case .site(let first) = catalog.entries[0] { #expect(first.id == a.id) } else { Issue.record("expected .site") }
     if case .site(let second) = catalog.entries[1] { #expect(second.id == b.id) } else { Issue.record("expected .site") }
     if case .site(let third) = catalog.entries[2] { #expect(third.id == other.id) } else { Issue.record("expected .site") }
-}
-
-@Test func setHomeSiteUnpinsPreviousHome() throws {
-    let a = try PortalSite(name: "A", urlString: "https://a.example", isPinned: true)
-    let b = try PortalSite(name: "B", urlString: "https://b.example")
-    var catalog = SiteCatalog(sites: [a, b])
-
-    catalog.setHomeSite(withID: b.id)
-
-    #expect(catalog.findSite(withID: a.id)?.isPinned == false)
-    #expect(catalog.findSite(withID: b.id)?.isPinned == true)
-    #expect(catalog.pinnedSite?.id == b.id)
 }
 
 @Test func moveRootEntriesReorders() throws {

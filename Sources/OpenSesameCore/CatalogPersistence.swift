@@ -43,8 +43,7 @@ public struct CatalogPersistence: Sendable {
                     return .site(
                         PortalSiteDefinition(
                             name: site.name,
-                            url: site.url.absoluteString,
-                            isPinned: site.isPinned
+                            url: site.url.absoluteString
                         )
                     )
                 case .group(let group):
@@ -56,8 +55,7 @@ public struct CatalogPersistence: Sendable {
                             sites: group.sites.map { site in
                                 PortalSiteDefinition(
                                     name: site.name,
-                                    url: site.url.absoluteString,
-                                    isPinned: site.isPinned
+                                    url: site.url.absoluteString
                                 )
                             }
                         )

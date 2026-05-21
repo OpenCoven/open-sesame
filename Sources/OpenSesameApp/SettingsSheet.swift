@@ -12,7 +12,6 @@ struct SettingsSheet: View {
 
     enum Tab: String, CaseIterable, Identifiable {
         case sites = "Sites"
-        case home = "Home"
         case appearance = "Appearance"
         var id: String { rawValue }
     }
@@ -70,8 +69,6 @@ struct SettingsSheet: View {
                         editSite: editSite,
                         addGroup: addGroup
                     )
-                case .home:
-                    HomeSection(catalog: $catalog)
                 case .appearance:
                     AppearanceSection(appearance: appearance)
                 }
@@ -85,8 +82,6 @@ struct SettingsSheet: View {
         switch selection {
         case .sites:
             return "Manage sidebar sites, folders, and quick edits."
-        case .home:
-            return "Choose the protected home destination."
         case .appearance:
             return "Tune the shell’s visual treatment."
         }
@@ -154,7 +149,7 @@ private struct EntryRow: View {
                 groupName: nil,
                 updateSite: { catalog.updateSite($0) },
                 editSite: editSite,
-                onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) }
+                onRemove: { catalog.removeSite(withID: site.id) }
             )
         case .group(let group):
             VStack(alignment: .leading, spacing: 4) {
@@ -183,7 +178,7 @@ private struct EntryRow: View {
                         groupName: group.name,
                         updateSite: { catalog.updateSite($0) },
                         editSite: editSite,
-                        onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) }
+                        onRemove: { catalog.removeSite(withID: site.id) }
                     )
                     .padding(.leading, 20)
                 }
@@ -204,23 +199,15 @@ private struct SiteEditorRow: View {
     let groupName: String?
     let updateSite: (PortalSite) -> Void
     let editSite: (PortalSite) -> Void
-    let onRemove: (() -> Void)?
+    let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
             FaviconView(site: site, size: 22)
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(site.name)
-                        .font(.system(size: 13, weight: .medium))
-                    if site.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(45))
-                    }
-                }
+                Text(site.name)
+                    .font(.system(size: 13, weight: .medium))
                 InlineSiteAddressField(site: site, updateSite: updateSite)
             }
 
@@ -234,13 +221,11 @@ private struct SiteEditorRow: View {
             .buttonStyle(.borderless)
             .help("Edit")
 
-            if let onRemove {
-                Button(action: onRemove) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .help("Remove")
+            Button(action: onRemove) {
+                Image(systemName: "trash")
             }
+            .buttonStyle(.borderless)
+            .help("Remove")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -296,7 +281,6 @@ private struct InlineSiteAddressField: View {
                 id: site.id,
                 name: site.name,
                 urlString: trimmedURL,
-                isPinned: site.isPinned,
                 iconData: site.iconData
             )
             updateSite(updated)
@@ -305,71 +289,6 @@ private struct InlineSiteAddressField: View {
         } catch {
             showsValidationError = true
         }
-    }
-}
-
-// MARK: - Home
-
-private struct HomeSection: View {
-    @Binding var catalog: SiteCatalog
-
-    var body: some View {
-        SettingsPanelSection(
-            title: "Home",
-            subtitle: "The home site is protected from removal and is opened by the Home button."
-        ) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(catalog.sites) { site in
-                        HomeChoiceRow(
-                            site: site,
-                            isHome: site.isPinned,
-                            choose: { catalog.setHomeSite(withID: site.id) }
-                        )
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 300)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.3))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.15))
-            )
-        }
-    }
-}
-
-private struct HomeChoiceRow: View {
-    let site: PortalSite
-    let isHome: Bool
-    let choose: () -> Void
-
-    var body: some View {
-        Button(action: choose) {
-            HStack(spacing: 10) {
-                Image(systemName: isHome ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(isHome ? Color.accentColor : Color.secondary)
-                FaviconView(site: site, size: 22)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(site.name)
-                        .font(.system(size: 13, weight: .medium))
-                    Text(site.url.absoluteString)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .background(isHome ? Color.accentColor.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
     }
 }
 

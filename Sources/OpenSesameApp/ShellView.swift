@@ -70,9 +70,7 @@ struct ShellView: View {
                 BrowserChrome(
                     site: catalog.selectedSite,
                     controller: controller,
-                    hasHome: catalog.pinnedSite != nil,
                     reload: reload,
-                    goHome: goHome,
                     openExternally: openSelectedSite,
                     openSettings: { showingSettings = true }
                 )
@@ -155,11 +153,6 @@ struct ShellView: View {
 
     private func reload() {
         reloadToken = UUID()
-    }
-
-    private func goHome() {
-        guard let home = catalog.pinnedSite else { return }
-        catalog.selectSite(withID: home.id)
     }
 
     private func openSelectedSite() {
@@ -270,8 +263,7 @@ private struct ExpandedSidebar: View {
                                 onSelect: { catalog.selectSite(withID: site.id) },
                                 onHover: { hover in hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID) },
                                 onEdit: { editSite(site) },
-                                onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                                onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                                onRemove: { catalog.removeSite(withID: site.id) },
                                 onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                             )
                             .listRowSeparator(.hidden)
@@ -321,8 +313,7 @@ private struct ExpandedSiteRow: View {
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
     let onEdit: () -> Void
-    let onRemove: (() -> Void)?
-    let onPinAsHome: () -> Void
+    let onRemove: () -> Void
     let onDropBefore: ([String]) -> Bool
 
     @State private var isDropTargeted: Bool = false
@@ -333,16 +324,9 @@ private struct ExpandedSiteRow: View {
                 DragGrip(isHovered: isHovered)
                 FaviconView(site: site, size: 22)
 
-                HStack(spacing: 4) {
-                    Text(site.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                    if site.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Text(site.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 5)
@@ -389,15 +373,9 @@ private struct ExpandedSiteRow: View {
     @ViewBuilder
     private var contextMenu: some View {
         Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
-        Button { onPinAsHome() } label: {
-            Label(site.isPinned ? "Already Home" : "Set as Home", systemImage: "house")
-        }
-        .disabled(site.isPinned)
-        if let onRemove {
-            Divider()
-            Button(role: .destructive, action: onRemove) {
-                Label("Remove", systemImage: "trash")
-            }
+        Divider()
+        Button(role: .destructive, action: onRemove) {
+            Label("Remove", systemImage: "trash")
         }
     }
 }
@@ -426,8 +404,7 @@ private struct ExpandedGroupRow: View {
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                     },
                     onEdit: { editSite(site) },
-                    onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                    onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                    onRemove: { catalog.removeSite(withID: site.id) },
                     onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                 )
             }
@@ -537,8 +514,7 @@ private struct RailSidebar: View {
                                     hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                                 },
                                 onEdit: { editSite(site) },
-                                onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                                onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                                onRemove: { catalog.removeSite(withID: site.id) },
                                 onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                             )
                         case .group(let group):
@@ -587,8 +563,7 @@ private struct RailSiteRow: View {
     let onTap: () -> Void
     let onHover: (Bool) -> Void
     let onEdit: () -> Void
-    let onRemove: (() -> Void)?
-    let onPinAsHome: () -> Void
+    let onRemove: () -> Void
     let onDropBefore: ([String]) -> Bool
 
     @State private var isDropTargeted: Bool = false
@@ -624,15 +599,9 @@ private struct RailSiteRow: View {
         .onHover(perform: onHover)
         .contextMenu {
             Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
-            Button(action: onPinAsHome) {
-                Label(site.isPinned ? "Already Home" : "Set as Home", systemImage: "house")
-            }
-            .disabled(site.isPinned)
-            if let onRemove {
-                Divider()
-                Button(role: .destructive, action: onRemove) {
-                    Label("Remove", systemImage: "trash")
-                }
+            Divider()
+            Button(role: .destructive, action: onRemove) {
+                Label("Remove", systemImage: "trash")
             }
         }
         .draggable(site.id.uuidString) {
@@ -708,8 +677,7 @@ private struct RailGroup: View {
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                     },
                     onEdit: { editSite(site) },
-                    onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                    onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                    onRemove: { catalog.removeSite(withID: site.id) },
                     onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                 )
             }
@@ -1032,9 +1000,7 @@ private struct ChromeIconButton: View {
 private struct BrowserChrome: View {
     let site: PortalSite?
     @ObservedObject var controller: BrowserController
-    let hasHome: Bool
     let reload: () -> Void
-    let goHome: () -> Void
     let openExternally: () -> Void
     let openSettings: () -> Void
 
@@ -1061,14 +1027,6 @@ private struct BrowserChrome: View {
                     action: { controller.goForward() }
                 )
                 .keyboardShortcut("]", modifiers: .command)
-
-                ChromeIconButton(
-                    systemName: "house",
-                    help: "Home  ⌘⇧H",
-                    isEnabled: hasHome,
-                    action: goHome
-                )
-                .keyboardShortcut("h", modifiers: [.command, .shift])
 
                 ChromeIconButton(
                     systemName: "arrow.clockwise",

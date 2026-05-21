@@ -20,10 +20,6 @@ public struct SiteCatalog: Sendable, Equatable {
         }
     }
 
-    public var pinnedSite: PortalSite? {
-        sites.first { $0.isPinned }
-    }
-
     public var selectedSite: PortalSite? {
         guard let selectedSiteID else {
             return sites.first
@@ -122,15 +118,11 @@ public struct SiteCatalog: Sendable, Equatable {
         for index in entries.indices {
             switch entries[index] {
             case .site(let existing) where existing.id == updated.id:
-                var preserved = updated
-                preserved.isPinned = existing.isPinned
-                entries[index] = .site(preserved)
+                entries[index] = .site(updated)
                 return
             case .group(var group):
                 if let siteIndex = group.sites.firstIndex(where: { $0.id == updated.id }) {
-                    var preserved = updated
-                    preserved.isPinned = group.sites[siteIndex].isPinned
-                    group.sites[siteIndex] = preserved
+                    group.sites[siteIndex] = updated
                     entries[index] = .group(group)
                     return
                 }
@@ -142,8 +134,7 @@ public struct SiteCatalog: Sendable, Equatable {
 
     @discardableResult
     public mutating func removeSite(withID id: PortalSite.ID) -> Bool {
-        guard let target = findSite(withID: id) else { return false }
-        if target.isPinned { return false }
+        guard findSite(withID: id) != nil else { return false }
 
         for index in entries.indices {
             switch entries[index] {
@@ -167,23 +158,6 @@ public struct SiteCatalog: Sendable, Equatable {
             }
         }
         return false
-    }
-
-    /// Pins the given site as the home. Unpins any previously pinned site so
-    /// the catalog only ever has one pinned (home) entry.
-    public mutating func setHomeSite(withID id: PortalSite.ID) {
-        for entryIndex in entries.indices {
-            switch entries[entryIndex] {
-            case .site(var site):
-                site.isPinned = (site.id == id)
-                entries[entryIndex] = .site(site)
-            case .group(var group):
-                for siteIndex in group.sites.indices {
-                    group.sites[siteIndex].isPinned = (group.sites[siteIndex].id == id)
-                }
-                entries[entryIndex] = .group(group)
-            }
-        }
     }
 
     /// Updates the cached favicon bytes for a site. Does nothing if the site
@@ -366,8 +340,7 @@ public extension SiteCatalog {
             .site(
                 try! PortalSite(
                     name: "OpenCoven",
-                    urlString: "https://opencoven.ai",
-                    isPinned: true
+                    urlString: "https://opencoven.ai"
                 )
             )
         ]

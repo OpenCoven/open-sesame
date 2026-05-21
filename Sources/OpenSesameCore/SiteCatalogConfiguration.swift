@@ -3,23 +3,20 @@ import Foundation
 public struct PortalSiteDefinition: Codable, Equatable, Sendable {
     public var name: String
     public var url: String
-    public var isPinned: Bool
 
-    public init(name: String, url: String, isPinned: Bool = false) {
+    public init(name: String, url: String) {
         self.name = name
         self.url = url
-        self.isPinned = isPinned
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, url, isPinned
+        case name, url
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decode(String.self, forKey: .name)
         url = try container.decode(String.self, forKey: .url)
-        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 }
 
@@ -130,16 +127,14 @@ public extension SiteCatalog {
             case .site(let site):
                 let portal = try PortalSite(
                     name: site.name,
-                    urlString: site.url,
-                    isPinned: site.isPinned
+                    urlString: site.url
                 )
                 return .site(portal)
             case .group(let group):
                 let sites = try group.sites.map { site in
                     try PortalSite(
                         name: site.name,
-                        urlString: site.url,
-                        isPinned: site.isPinned
+                        urlString: site.url
                     )
                 }
                 return .group(

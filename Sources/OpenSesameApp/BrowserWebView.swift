@@ -69,6 +69,13 @@ struct BrowserWebView: NSViewRepresentable {
 
         let webView = FocusableWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
+
+        Task { @MainActor [weak webView] in
+            guard let list = await ContentBlocker.shared.compiled(),
+                  let webView else { return }
+            webView.configuration.userContentController.add(list)
+        }
+
         webView.load(URLRequest(url: url))
 
         context.coordinator.lastURL = url
