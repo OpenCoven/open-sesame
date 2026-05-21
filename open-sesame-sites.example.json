@@ -1,0 +1,14 @@
+{
+  "sites": [
+    {
+      "name": "Local App",
+      "label": "Development",
+      "url": "http://localhost:3000"
+    },
+    {
+      "name": "Production",
+      "label": "Live",
+      "url": "https://example.com"
+    }
+  ]
+}

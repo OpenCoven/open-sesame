@@ -3,7 +3,7 @@ import SwiftUI
 
 @main
 struct OpenSesameApp: App {
-    @State private var catalog = SiteCatalog.defaultCatalog
+    @State private var catalog = CatalogBootstrap.loadInitialCatalog()
 
     var body: some Scene {
         WindowGroup {
@@ -12,5 +12,22 @@ struct OpenSesameApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1180, height: 760)
+    }
+}
+
+private enum CatalogBootstrap {
+    static func loadInitialCatalog() -> SiteCatalog {
+        let configurationURL = URL(filePath: FileManager.default.currentDirectoryPath)
+            .appending(path: "open-sesame-sites.json")
+
+        guard FileManager.default.fileExists(atPath: configurationURL.path) else {
+            return .defaultCatalog
+        }
+
+        do {
+            return try SiteCatalog.loadConfiguration(at: configurationURL)
+        } catch {
+            return .defaultCatalog
+        }
     }
 }

@@ -18,6 +18,29 @@ It intentionally does not include the Next.js/v0 stack, share-link compression, 
 swift run open-sesame
 ```
 
+## Configure Sites
+
+The app falls back to `SiteCatalog.defaultCatalog`. To customize it without editing Swift source, copy the example configuration:
+
+```bash
+cp open-sesame-sites.example.json open-sesame-sites.json
+swift run open-sesame
+```
+
+Each site must use an `http` or `https` URL:
+
+```json
+{
+  "sites": [
+    {
+      "name": "Local App",
+      "label": "Development",
+      "url": "http://localhost:3000"
+    }
+  ]
+}
+```
+
 ## Test
 
 ```bash
