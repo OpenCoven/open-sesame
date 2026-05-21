@@ -9,6 +9,23 @@ private enum SidebarMode {
 
 private let railWidth: CGFloat = 60
 
+@discardableResult
+private func dropSitesBefore(
+    _ payloads: [String],
+    target: PortalSite.ID,
+    in catalog: Binding<SiteCatalog>
+) -> Bool {
+    var moved = false
+    for payload in payloads {
+        guard let uuid = UUID(uuidString: payload),
+              uuid != target,
+              catalog.wrappedValue.findSite(withID: uuid) != nil else { continue }
+        catalog.wrappedValue.moveSite(uuid, before: target)
+        moved = true
+    }
+    return moved
+}
+
 struct ShellView: View {
     @Binding var catalog: SiteCatalog
     @State private var reloadToken = UUID()
@@ -254,7 +271,8 @@ private struct ExpandedSidebar: View {
                                 onHover: { hover in hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID) },
                                 onEdit: { editSite(site) },
                                 onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                                onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                                onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                                onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                             )
                             .listRowSeparator(.hidden)
                             .listRowInsets(.init(top: 1, leading: 0, bottom: 1, trailing: 0))
@@ -293,6 +311,7 @@ private struct ExpandedSidebar: View {
             }
         }
     }
+
 }
 
 private struct ExpandedSiteRow: View {
@@ -408,7 +427,8 @@ private struct ExpandedGroupRow: View {
                     },
                     onEdit: { editSite(site) },
                     onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                    onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                    onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                    onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                 )
             }
             .onMove { source, destination in
@@ -518,7 +538,8 @@ private struct RailSidebar: View {
                                 },
                                 onEdit: { editSite(site) },
                                 onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                                onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                                onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                                onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                             )
                         case .group(let group):
                             RailGroup(
@@ -568,6 +589,9 @@ private struct RailSiteRow: View {
     let onEdit: () -> Void
     let onRemove: (() -> Void)?
     let onPinAsHome: () -> Void
+    let onDropBefore: ([String]) -> Bool
+
+    @State private var isDropTargeted: Bool = false
 
     var body: some View {
         Button(action: onTap) {
@@ -583,6 +607,14 @@ private struct RailSiteRow: View {
                 }
 
                 FaviconView(site: site, size: 28)
+            }
+            .overlay(alignment: .top) {
+                if isDropTargeted {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 32, height: 2)
+                        .offset(y: -3)
+                }
             }
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
@@ -609,6 +641,9 @@ private struct RailSiteRow: View {
                 .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
+        .dropDestination(for: String.self) { strings, _ in
+            onDropBefore(strings)
+        } isTargeted: { isDropTargeted = $0 }
     }
 
     private var rowFill: Color {
@@ -674,7 +709,8 @@ private struct RailGroup: View {
                     },
                     onEdit: { editSite(site) },
                     onRemove: site.isPinned ? nil : { catalog.removeSite(withID: site.id) },
-                    onPinAsHome: { catalog.setHomeSite(withID: site.id) }
+                    onPinAsHome: { catalog.setHomeSite(withID: site.id) },
+                    onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
                 )
             }
         }
