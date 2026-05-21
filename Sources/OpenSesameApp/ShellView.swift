@@ -1059,14 +1059,7 @@ private struct BrowserChrome: View {
             VisualEffectBackground(material: .titlebar)
 
             HStack(spacing: 8) {
-                TrafficLights()
-                    .padding(.trailing, 2)
-
-                Text(displayURL)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                URLBar(site: site, controller: controller)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if blockCounter.count > 0 {
@@ -1085,15 +1078,23 @@ private struct BrowserChrome: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .opacity(isHidden ? 0 : 1)
+
+            GeometryReader { proxy in
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: proxy.size.width * CGFloat(controller.estimatedProgress), height: 2)
+            }
+            .frame(height: 2)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .opacity(controller.isLoading ? 1 : 0)
+            .allowsHitTesting(false)
+            .animation(.easeOut(duration: 0.18), value: controller.estimatedProgress)
+            .animation(.easeOut(duration: 0.25), value: controller.isLoading)
         }
         .frame(height: isHidden ? 0 : 36)
         .clipped()
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isHidden)
         .background(shortcutShims)
-    }
-
-    private var displayURL: String {
-        controller.currentURL?.absoluteString ?? site?.url.absoluteString ?? "No URL"
     }
 
     /// Hidden zero-size Buttons that exist only to host the keyboard shortcuts
@@ -1128,6 +1129,40 @@ private struct TrafficLights: View {
             Circle().fill(Color(red: 0.16, green: 0.78, blue: 0.25))
         }
         .frame(width: 52, height: 12)
+    }
+}
+
+private struct URLBar: View {
+    let site: PortalSite?
+    @ObservedObject var controller: BrowserController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: site == nil ? "safari" : "lock.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text(displayURL)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .help(displayURL)
+    }
+
+    private var displayURL: String {
+        controller.currentURL?.absoluteString
+            ?? site?.url.absoluteString
+            ?? "No URL"
     }
 }
 

@@ -18,6 +18,8 @@ final class BrowserController: ObservableObject {
     @Published private(set) var canGoBack: Bool = false
     @Published private(set) var canGoForward: Bool = false
     @Published private(set) var currentURL: URL?
+    @Published private(set) var isLoading: Bool = false
+    @Published private(set) var estimatedProgress: Double = 0
     @Published var chromeHidden: Bool = false
 
     fileprivate weak var webView: WKWebView?
@@ -36,6 +38,12 @@ final class BrowserController: ObservableObject {
         })
         observers.append(webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, _ in
             Task { @MainActor in self?.currentURL = webView.url }
+        })
+        observers.append(webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
+            Task { @MainActor in self?.isLoading = webView.isLoading }
+        })
+        observers.append(webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
+            Task { @MainActor in self?.estimatedProgress = webView.estimatedProgress }
         })
     }
 
