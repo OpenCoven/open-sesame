@@ -39,7 +39,7 @@ struct ShellView: View {
     @StateObject private var favicons = FaviconService.shared
 
     private static let minSidebarWidth: CGFloat = 180
-    private static let maxSidebarWidth: CGFloat = 380
+    private static let maxSidebarWidth: CGFloat = 600
     private static let sidebarAnimation: Animation = .spring(response: 0.32, dampingFraction: 0.86)
 
     var body: some View {
@@ -332,30 +332,28 @@ private struct ExpandedSiteRow: View {
     @State private var isDropTargeted: Bool = false
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 10) {
-                FaviconView(site: site, size: 18)
+        HStack(spacing: 10) {
+            FaviconView(site: site, size: 18)
 
-                Text(site.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, appearance.rowVerticalPadding)
-            .padding(.horizontal, 10)
-            .background(rowBackground)
-            .overlay(alignment: .top) {
-                if isDropTargeted {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(Color.accentColor, lineWidth: 2)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Text(site.name)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, appearance.rowVerticalPadding)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(rowBackground)
+        .overlay {
+            if isDropTargeted {
+                Rectangle()
+                    .stroke(Color.accentColor, lineWidth: 2)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
         .onHover(perform: onHover)
         .contextMenu { contextMenu }
-        .padding(.horizontal, 8)
         .draggable(site.id.uuidString) {
             HStack(spacing: 8) {
                 FaviconView(site: site, size: 18)
@@ -372,12 +370,8 @@ private struct ExpandedSiteRow: View {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
+        Rectangle()
             .fill(rowFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(strokeColor, lineWidth: 0.5)
-            )
     }
 
     private var rowFill: Color {
@@ -408,7 +402,9 @@ private struct ExpandedGroupRow: View {
     let editSite: (PortalSite) -> Void
     let addSiteToGroup: () -> Void
 
+    @EnvironmentObject private var appearance: AppearanceSettings
     @State private var isDropTargeted: Bool = false
+    @State private var isHovered: Bool = false
 
     var body: some View {
         DisclosureGroup(
@@ -432,33 +428,32 @@ private struct ExpandedGroupRow: View {
                 catalog.moveSitesInGroup(group.id, fromOffsets: source, toOffset: destination)
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
+                if let firstChild = group.sites.first {
+                    FaviconView(site: firstChild, size: 18)
+                } else {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                        .frame(width: 18, height: 18)
+                }
+
                 Text(group.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
-                    .textCase(.uppercase)
-                Spacer()
-                Button(action: addSiteToGroup) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Add Site to \(group.name)")
-                .padding(.trailing, 6)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isDropTargeted ? Color.accentColor : .primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
             }
-            .padding(.vertical, 3)
-            .background(
-                Rectangle()
-                    .fill(isDropTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
-                    catalog.toggleGroupCollapsed(withID: group.id)
-                }
-            }
+            .padding(.vertical, appearance.rowVerticalPadding)
+            .padding(.horizontal, 10)
+            .background(pillBackground)
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .onHover { isHovered = $0 }
             .contextMenu {
+                Button(action: addSiteToGroup) {
+                    Label("Add Site Here", systemImage: "plus")
+                }
+                Divider()
                 Button {
                     catalog.renameGroup(withID: group.id, to: group.name)
                 } label: { Label("Rename in Settings…", systemImage: "pencil") }
@@ -471,7 +466,28 @@ private struct ExpandedGroupRow: View {
                 handleDrop(strings)
             } isTargeted: { isDropTargeted = $0 }
         }
-        .accentColor(.secondary)
+        .disclosureGroupStyle(PlainDisclosureStyle())
+        .padding(.horizontal, 8)
+    }
+
+    private var pillBackground: some View {
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(pillFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(strokeColor, lineWidth: 0.5)
+            )
+    }
+
+    private var pillFill: Color {
+        if isDropTargeted { return Color.accentColor.opacity(0.22) }
+        if isHovered { return Color.black.opacity(0.32) }
+        return Color.black.opacity(0.22)
+    }
+
+    private var strokeColor: Color {
+        if isDropTargeted { return Color.accentColor.opacity(0.5) }
+        return Color.white.opacity(0.06)
     }
 
     private func handleDrop(_ payloads: [String]) -> Bool {
@@ -494,6 +510,28 @@ private struct ExpandedGroupRow: View {
                 }
             }
         )
+    }
+}
+
+/// A DisclosureGroupStyle that suppresses the built-in chevron and lets the
+/// custom label own the entire row (including its own expansion indicator).
+/// Tap on the label toggles `isExpanded`.
+private struct PlainDisclosureStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                    configuration.isExpanded.toggle()
+                }
+            } label: {
+                configuration.label
+            }
+            .buttonStyle(.plain)
+
+            if configuration.isExpanded {
+                configuration.content
+            }
+        }
     }
 }
 
@@ -587,33 +625,31 @@ private struct RailSiteRow: View {
     @State private var isDropTargeted: Bool = false
 
     var body: some View {
-        Button(action: onTap) {
-            ZStack {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(rowFill)
+                .frame(width: 44, height: 44)
+
+            if isSelected {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(rowFill)
+                    .stroke(Color.accentColor, lineWidth: 2)
                     .frame(width: 44, height: 44)
-
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.accentColor, lineWidth: 2)
-                        .frame(width: 44, height: 44)
-                }
-
-                FaviconView(site: site, size: 28)
             }
-            .overlay(alignment: .top) {
-                if isDropTargeted {
-                    Capsule()
-                        .fill(Color.accentColor)
-                        .frame(width: 32, height: 2)
-                        .offset(y: -3)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+
+            FaviconView(site: site, size: 28)
         }
-        .buttonStyle(.plain)
-        .help(site.name)
+        .overlay(alignment: .top) {
+            if isDropTargeted {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 32, height: 2)
+                    .offset(y: -3)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10))
         .frame(width: 48, height: 48)
+        .help(site.name)
+        .onTapGesture(perform: onTap)
         .onHover(perform: onHover)
         .contextMenu {
             Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
