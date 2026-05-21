@@ -257,65 +257,124 @@ private struct AppearanceSection: View {
     @ObservedObject var appearance: AppearanceSettings
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sidebarPanel
+            windowPanel
+        }
+    }
+
+    private var sidebarPanel: some View {
         SettingsPanelSection(
-            title: "Appearance",
-            subtitle: "Subtle visual preferences for the sidebar and browser chrome."
+            title: "Sidebar",
+            subtitle: "Tab metrics in the expanded sidebar."
         ) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Tab Height")
-                        .font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Text("\(Int(appearance.rowVerticalPadding))")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 30, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 14) {
+                    LabeledSlider(
+                        label: "Tab Height",
+                        value: $appearance.rowVerticalPadding,
+                        range: AppearanceSettings.minRowVerticalPadding...AppearanceSettings.maxRowVerticalPadding,
+                        step: 1,
+                        isPrimary: true
+                    )
+                    TabHeightPreview(verticalPadding: CGFloat(appearance.rowVerticalPadding))
                 }
-                Slider(
-                    value: $appearance.rowVerticalPadding,
-                    in: AppearanceSettings.minRowVerticalPadding...AppearanceSettings.maxRowVerticalPadding,
-                    step: 1
-                )
                 Text("Vertical padding inside each sidebar tab. Higher values make rows taller and easier to hit.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
+        }
+    }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
+    private var windowPanel: some View {
+        SettingsPanelSection(
+            title: "Window",
+            subtitle: "Decorative effects on the sidebar background."
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
                 Toggle(isOn: $appearance.radialBlurEnabled) {
                     Text("Radial Blur")
                         .font(.system(size: 13, weight: .semibold))
                 }
 
                 if appearance.radialBlurEnabled {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Intensity")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text("\(Int(appearance.radialBlurIntensity))")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 30, alignment: .trailing)
-                        }
-                        Slider(
-                            value: $appearance.radialBlurIntensity,
-                            in: 0...AppearanceSettings.maxBlurRadius
-                        )
-                    }
-                    .padding(.top, 2)
+                    Rectangle()
+                        .fill(Color.white.opacity(0.06))
+                        .frame(height: 0.5)
+                        .padding(.vertical, 2)
+
+                    LabeledSlider(
+                        label: "Intensity",
+                        value: $appearance.radialBlurIntensity,
+                        range: 0...AppearanceSettings.maxBlurRadius,
+                        isPrimary: false
+                    )
                 }
 
                 Text("Softens the corners of the window with a radial-mask gaussian blur. Subtle by default.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-
-            Spacer()
         }
+    }
+}
+
+private struct LabeledSlider: View {
+    let label: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double? = nil
+    var isPrimary: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.system(
+                        size: isPrimary ? 13 : 12,
+                        weight: isPrimary ? .semibold : .medium
+                    ))
+                    .foregroundStyle(isPrimary ? .primary : .secondary)
+                Spacer()
+                Text("\(Int(value))")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30, alignment: .trailing)
+            }
+            if let step {
+                Slider(value: $value, in: range, step: step)
+            } else {
+                Slider(value: $value, in: range)
+            }
+        }
+    }
+}
+
+private struct TabHeightPreview: View {
+    let verticalPadding: CGFloat
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.primary.opacity(0.12))
+                .frame(width: 14, height: 14)
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(Color.primary.opacity(0.25))
+                .frame(width: 36, height: 6)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, verticalPadding)
+        .frame(width: 110)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.22))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+        )
+        .animation(.easeOut(duration: 0.12), value: verticalPadding)
     }
 }
 
