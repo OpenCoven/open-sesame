@@ -51,6 +51,7 @@ struct ShellView: View {
                 addSite: { presentAddSite(toGroup: nil) },
                 addSiteToGroup: { groupID in presentAddSite(toGroup: groupID) },
                 editSite: { site in presentEdit(site: site) },
+                selectSite: selectOrHome,
                 toggleMode: toggleSidebar
             )
             .frame(width: sidebarMode == .expanded ? sidebarWidth : railWidth)
@@ -171,6 +172,17 @@ struct ShellView: View {
         siteSheet = .edit(site)
     }
 
+    /// Selects the site if it isn't already current; otherwise re-loads its
+    /// configured URL in the existing WebView so clicking an already-active
+    /// tab returns to that tab's home.
+    private func selectOrHome(_ site: PortalSite) {
+        if catalog.selectedSite?.id == site.id {
+            controller.load(site.url)
+        } else {
+            catalog.selectSite(withID: site.id)
+        }
+    }
+
     // MARK: - Favicons
 
     private func refreshAllFavicons() async {
@@ -205,6 +217,7 @@ private struct SiteSidebar: View {
     let addSite: () -> Void
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let editSite: (PortalSite) -> Void
+    let selectSite: (PortalSite) -> Void
     let toggleMode: () -> Void
 
     var body: some View {
@@ -222,6 +235,7 @@ private struct SiteSidebar: View {
                         addSite: addSite,
                         addSiteToGroup: addSiteToGroup,
                         editSite: editSite,
+                        selectSite: selectSite,
                         toggleMode: toggleMode
                     )
                 case .rail:
@@ -229,6 +243,7 @@ private struct SiteSidebar: View {
                         catalog: $catalog,
                         addSite: addSite,
                         editSite: editSite,
+                        selectSite: selectSite,
                         toggleMode: toggleMode
                     )
                 }
@@ -244,6 +259,7 @@ private struct ExpandedSidebar: View {
     let addSite: () -> Void
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let editSite: (PortalSite) -> Void
+    let selectSite: (PortalSite) -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -253,9 +269,9 @@ private struct ExpandedSidebar: View {
             SidebarHeader(
                 title: "Open Sesame",
                 primaryIcon: "sidebar.left",
-                primaryHelp: "Collapse to Rail  ⌃⌘S",
+                primaryHelp: "Collapse to Rail  ⌘B",
                 primaryAction: toggleMode,
-                primaryShortcut: KeyboardShortcut("s", modifiers: [.command, .control]),
+                primaryShortcut: KeyboardShortcut("b", modifiers: .command),
                 secondaryIcon: "plus",
                 secondaryHelp: "Add Site  ⌘N",
                 secondaryAction: addSite
@@ -272,7 +288,7 @@ private struct ExpandedSidebar: View {
                                 site: site,
                                 isSelected: catalog.selectedSite?.id == site.id,
                                 isHovered: hoveredID == site.id,
-                                onSelect: { catalog.selectSite(withID: site.id) },
+                                onSelect: { selectSite(site) },
                                 onHover: { hover in hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID) },
                                 onEdit: { editSite(site) },
                                 onRemove: { catalog.removeSite(withID: site.id) },
@@ -288,6 +304,7 @@ private struct ExpandedSidebar: View {
                                 catalog: $catalog,
                                 hoveredID: $hoveredID,
                                 editSite: editSite,
+                                selectSite: selectSite,
                                 addSiteToGroup: { addSiteToGroup(group.id) }
                             )
                             .listRowSeparator(.hidden)
@@ -400,6 +417,7 @@ private struct ExpandedGroupRow: View {
     @Binding var catalog: SiteCatalog
     @Binding var hoveredID: PortalSite.ID?
     let editSite: (PortalSite) -> Void
+    let selectSite: (PortalSite) -> Void
     let addSiteToGroup: () -> Void
 
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -415,7 +433,7 @@ private struct ExpandedGroupRow: View {
                     site: site,
                     isSelected: catalog.selectedSite?.id == site.id,
                     isHovered: hoveredID == site.id,
-                    onSelect: { catalog.selectSite(withID: site.id) },
+                    onSelect: { selectSite(site) },
                     onHover: { hover in
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                     },
@@ -541,6 +559,7 @@ private struct RailSidebar: View {
     @Binding var catalog: SiteCatalog
     let addSite: () -> Void
     let editSite: (PortalSite) -> Void
+    let selectSite: (PortalSite) -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -549,10 +568,10 @@ private struct RailSidebar: View {
         VStack(spacing: 4) {
             SidebarIconButton(
                 systemName: "sidebar.left",
-                help: "Expand Sidebar  ⌃⌘S",
+                help: "Expand Sidebar  ⌘B",
                 action: toggleMode
             )
-            .keyboardShortcut("s", modifiers: [.command, .control])
+            .keyboardShortcut("b", modifiers: .command)
             .padding(.top, 12)
             .padding(.bottom, 4)
 
@@ -565,7 +584,7 @@ private struct RailSidebar: View {
                                 site: site,
                                 isSelected: catalog.selectedSite?.id == site.id,
                                 isHovered: hoveredID == site.id,
-                                onTap: { catalog.selectSite(withID: site.id) },
+                                onTap: { selectSite(site) },
                                 onHover: { hover in
                                     hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                                 },
@@ -578,7 +597,8 @@ private struct RailSidebar: View {
                                 group: group,
                                 catalog: $catalog,
                                 hoveredID: $hoveredID,
-                                editSite: editSite
+                                editSite: editSite,
+                                selectSite: selectSite
                             )
                         }
                     }
@@ -681,6 +701,7 @@ private struct RailGroup: View {
     @Binding var catalog: SiteCatalog
     @Binding var hoveredID: PortalSite.ID?
     let editSite: (PortalSite) -> Void
+    let selectSite: (PortalSite) -> Void
 
     @State private var isDropTargeted: Bool = false
 
@@ -726,7 +747,7 @@ private struct RailGroup: View {
                     site: site,
                     isSelected: catalog.selectedSite?.id == site.id,
                     isHovered: hoveredID == site.id,
-                    onTap: { catalog.selectSite(withID: site.id) },
+                    onTap: { selectSite(site) },
                     onHover: { hover in
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                     },
