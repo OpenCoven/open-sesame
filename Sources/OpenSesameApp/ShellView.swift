@@ -174,8 +174,18 @@ struct ShellView: View {
     // MARK: - Favicons
 
     private func refreshAllFavicons() async {
-        for site in catalog.sites where site.iconData == nil {
-            await refreshFavicon(for: site)
+        for site in catalog.sites {
+            // Bundled-override hosts are authoritative — keep stored iconData
+            // in sync with the current bundled bytes (e.g. when we ship a new
+            // GitHub icon, pre-existing sites pick it up on next launch).
+            if let bundled = FaviconService.bundledIconData(forHost: site.url.host ?? ""),
+               site.iconData != bundled {
+                catalog.updateIconData(bundled, forSiteWithID: site.id)
+                continue
+            }
+            if site.iconData == nil {
+                await refreshFavicon(for: site)
+            }
         }
     }
 
@@ -1018,58 +1028,22 @@ private struct BrowserChrome: View {
 
     @ObservedObject private var blockCounter = BlockCounter.shared
 
+    private var isHidden: Bool { controller.chromeHidden }
+
     var body: some View {
         ZStack {
             VisualEffectBackground(material: .titlebar)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 TrafficLights()
-                    .padding(.trailing, 4)
+                    .padding(.trailing, 2)
 
-                ChromeIconButton(
-                    systemName: "chevron.left",
-                    help: "Back  ⌘[",
-                    isEnabled: controller.canGoBack,
-                    action: { controller.goBack() }
-                )
-                .keyboardShortcut("[", modifiers: .command)
-
-                ChromeIconButton(
-                    systemName: "chevron.right",
-                    help: "Forward  ⌘]",
-                    isEnabled: controller.canGoForward,
-                    action: { controller.goForward() }
-                )
-                .keyboardShortcut("]", modifiers: .command)
-
-                ChromeIconButton(
-                    systemName: "house",
-                    help: "Home  ⌘⇧H",
-                    isEnabled: site != nil,
-                    action: { if let url = site?.url { controller.load(url) } }
-                )
-                .keyboardShortcut("h", modifiers: [.command, .shift])
-
-                ChromeIconButton(
-                    systemName: "arrow.clockwise",
-                    help: "Reload  ⌘R",
-                    action: reload
-                )
-                .keyboardShortcut("r", modifiers: .command)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(site?.name ?? "Open Sesame")
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-
-                    Text(displayURL)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .padding(.leading, 6)
-
-                Spacer()
+                Text(displayURL)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 if blockCounter.count > 0 {
                     BlockCounterPill(count: blockCounter.count) {
@@ -1078,27 +1052,47 @@ private struct BrowserChrome: View {
                 }
 
                 ChromeIconButton(
-                    systemName: "arrow.up.right.square",
-                    help: "Open in Browser",
-                    isEnabled: site != nil,
-                    action: openExternally
-                )
-
-                ChromeIconButton(
                     systemName: "gearshape",
                     help: "Settings  ⌘,",
                     action: openSettings
                 )
                 .keyboardShortcut(",", modifiers: .command)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .opacity(isHidden ? 0 : 1)
         }
-        .frame(height: 50)
+        .frame(height: isHidden ? 0 : 36)
+        .clipped()
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isHidden)
+        .background(shortcutShims)
     }
 
     private var displayURL: String {
         controller.currentURL?.absoluteString ?? site?.url.absoluteString ?? "No URL"
+    }
+
+    /// Hidden zero-size Buttons that exist only to host the keyboard shortcuts
+    /// for the nav actions we dropped from the visible chrome.
+    private var shortcutShims: some View {
+        Group {
+            Button("Back", action: { controller.goBack() })
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(!controller.canGoBack)
+            Button("Forward", action: { controller.goForward() })
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(!controller.canGoForward)
+            Button("Home", action: { if let url = site?.url { controller.load(url) } })
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+                .disabled(site == nil)
+            Button("Reload", action: reload)
+                .keyboardShortcut("r", modifiers: .command)
+            Button("Open Externally", action: openExternally)
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(site == nil)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
     }
 }
 
