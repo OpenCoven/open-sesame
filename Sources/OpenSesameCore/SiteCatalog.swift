@@ -339,6 +339,7 @@ public extension SiteCatalog {
         let sites: [PortalSite] = CuratedCatalog.defaultApps.compactMap { app in
             try? PortalSite(name: app.name, urlString: app.urlString)
         }
-        return SiteCatalog(entries: sites.map { .site($0) })
+        let coven = SiteGroup(name: CuratedCatalog.covenFolderName, sites: sites)
+        return SiteCatalog(entries: [.group(coven)])
     }()
 }

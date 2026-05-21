@@ -21,10 +21,12 @@ struct OpenSesameApp: App {
 
 private enum CatalogBootstrap {
     private static let socialsMigrationKey = "didMigrateSocialsV2"
+    private static let covenMigrationKey = "didMigrateCovenV1"
 
     static func loadInitialCatalog() -> SiteCatalog {
         var catalog = loadCatalog()
         migrateSocialsIfNeeded(&catalog)
+        migrateCovenIfNeeded(&catalog)
         return catalog
     }
 
@@ -66,6 +68,32 @@ private enum CatalogBootstrap {
         if let socialsFolder = catalog.groups.first(where: { $0.name == CuratedCatalog.socialsFolderName }),
            socialsFolder.sites.isEmpty {
             catalog.removeGroup(withID: socialsFolder.id)
+        }
+    }
+
+    /// One-time migration: roll any pre-existing curated default sites into a
+    /// "Coven" folder so they share the collapsible folder treatment with
+    /// the Socials section. New sites the user added themselves are left
+    /// alone — only the URLs that match CuratedCatalog.defaultApps move.
+    private static func migrateCovenIfNeeded(_ catalog: inout SiteCatalog) {
+        guard !UserDefaults.standard.bool(forKey: covenMigrationKey) else { return }
+        defer { UserDefaults.standard.set(true, forKey: covenMigrationKey) }
+
+        let defaultURLs = Set(CuratedCatalog.defaultApps.map { $0.urlString })
+        let defaults = catalog.sites.filter { defaultURLs.contains($0.url.absoluteString) }
+        guard !defaults.isEmpty else { return }
+
+        let groupID: SiteGroup.ID
+        if let existing = catalog.groups.first(where: { $0.name == CuratedCatalog.covenFolderName }) {
+            groupID = existing.id
+        } else {
+            let group = SiteGroup(name: CuratedCatalog.covenFolderName)
+            catalog.addGroup(group)
+            groupID = group.id
+        }
+
+        for site in defaults where catalog.groupID(containingSite: site.id) != groupID {
+            catalog.moveSite(site.id, intoGroup: groupID)
         }
     }
 }

@@ -85,4 +85,9 @@ public enum CuratedCatalog {
     /// Stable folder name used by the one-time social migration and by the
     /// "Suggested" toggle path so newly-enabled socials land in a known group.
     public static let socialsFolderName = "Socials"
+
+    /// Stable folder name for the OpenCoven-branded defaults. Defaults seed
+    /// here on first launch, and the V3 migration rolls any pre-existing
+    /// curated default sites at root level into this folder.
+    public static let covenFolderName = "Coven"
 }

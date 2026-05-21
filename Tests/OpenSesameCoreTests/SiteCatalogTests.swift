@@ -15,10 +15,12 @@ import Testing
     }
 }
 
-@Test func defaultCatalogSeedsCuratedDefaults() throws {
+@Test func defaultCatalogSeedsCuratedDefaultsInCovenFolder() throws {
     let catalog = SiteCatalog.defaultCatalog
 
     let expectedNames = CuratedCatalog.defaultApps.map(\.name)
+    #expect(catalog.entries.count == 1)
+    #expect(catalog.groups.first?.name == CuratedCatalog.covenFolderName)
     #expect(catalog.sites.count == expectedNames.count)
     #expect(catalog.sites.map(\.name) == expectedNames)
     #expect(catalog.sites.map { $0.url.absoluteString } == CuratedCatalog.defaultApps.map(\.urlString))
