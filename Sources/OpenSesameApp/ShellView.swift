@@ -26,6 +26,12 @@ private func dropSitesBefore(
     return moved
 }
 
+/// Returns true when a site was seeded from the curated defaults and should
+/// not be removable via the sidebar close button (only via Settings).
+private func isDefaultSite(_ site: PortalSite) -> Bool {
+    CuratedCatalog.defaultApps.contains { $0.normalizedURL == site.url.absoluteString }
+}
+
 struct ShellView: View {
     @Binding var catalog: SiteCatalog
     @State private var reloadToken = UUID()
@@ -51,6 +57,7 @@ struct ShellView: View {
                 addSite: { presentAddSite(toGroup: nil) },
                 addSiteToGroup: { groupID in presentAddSite(toGroup: groupID) },
                 selectSite: selectOrHome,
+                editSite: presentEditSite,
                 toggleMode: toggleSidebar
             )
             .frame(width: sidebarMode == .expanded ? sidebarWidth : railWidth)
@@ -146,6 +153,10 @@ struct ShellView: View {
         .task {
             await refreshAllFavicons()
         }
+        .onDeleteCommand {
+            guard let site = catalog.selectedSite, !isDefaultSite(site) else { return }
+            catalog.removeSite(withID: site.id)
+        }
         .onChange(of: catalog.sites.map(\.id)) { _, _ in
             Task { await refreshAllFavicons() }
         }
@@ -171,6 +182,10 @@ struct ShellView: View {
     private func presentAddSite(toGroup groupID: SiteGroup.ID?) {
         siteSheetInitialGroupID = groupID
         siteSheet = .add
+    }
+
+    private func presentEditSite(_ site: PortalSite) {
+        siteSheet = .edit(site)
     }
 
     /// Selects the site if it isn't already current; otherwise re-loads its
@@ -218,6 +233,7 @@ private struct SiteSidebar: View {
     let addSite: () -> Void
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let selectSite: (PortalSite) -> Void
+    let editSite: (PortalSite) -> Void
     let toggleMode: () -> Void
 
     var body: some View {
@@ -235,6 +251,7 @@ private struct SiteSidebar: View {
                         addSite: addSite,
                         addSiteToGroup: addSiteToGroup,
                         selectSite: selectSite,
+                        editSite: editSite,
                         toggleMode: toggleMode
                     )
                 case .rail:
@@ -242,6 +259,7 @@ private struct SiteSidebar: View {
                         catalog: $catalog,
                         addSite: addSite,
                         selectSite: selectSite,
+                        editSite: editSite,
                         toggleMode: toggleMode
                     )
                 }
@@ -257,6 +275,7 @@ private struct ExpandedSidebar: View {
     let addSite: () -> Void
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let selectSite: (PortalSite) -> Void
+    let editSite: (PortalSite) -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -286,7 +305,9 @@ private struct ExpandedSidebar: View {
                                 isHovered: hoveredID == site.id,
                                 onSelect: { selectSite(site) },
                                 onHover: { hover in hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID) },
-                                onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
+                                onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) },
+                                onEdit: { editSite(site) },
+                                onRemove: isDefaultSite(site) ? nil : { catalog.removeSite(withID: site.id) }
                             )
                             .listRowSeparator(.hidden)
                             .listRowInsets(.init(top: 1, leading: 0, bottom: 1, trailing: 0))
@@ -298,6 +319,7 @@ private struct ExpandedSidebar: View {
                                 catalog: $catalog,
                                 hoveredID: $hoveredID,
                                 selectSite: selectSite,
+                                editSite: editSite,
                                 addSiteToGroup: { addSiteToGroup(group.id) }
                             )
                             .listRowSeparator(.hidden)
@@ -337,6 +359,8 @@ private struct ExpandedSiteRow: View {
     let onSelect: () -> Void
     let onHover: (Bool) -> Void
     let onDropBefore: ([String]) -> Bool
+    var onEdit: (() -> Void)? = nil
+    var onRemove: (() -> Void)? = nil
 
     @EnvironmentObject private var appearance: AppearanceSettings
     @State private var isDropTargeted: Bool = false
@@ -349,6 +373,22 @@ private struct ExpandedSiteRow: View {
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 0)
+
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Remove Site")
+                .opacity(isHovered ? 1 : 0)
+                .animation(.easeOut(duration: 0.1), value: isHovered)
+                .padding(.trailing, 2)
+            }
         }
         .padding(.vertical, appearance.rowVerticalPadding)
         .padding(.horizontal, 10)
@@ -363,6 +403,19 @@ private struct ExpandedSiteRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover(perform: onHover)
+        .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit Site", systemImage: "pencil")
+                }
+            }
+            if onEdit != nil && onRemove != nil { Divider() }
+            if let onRemove {
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove Site", systemImage: "trash")
+                }
+            }
+        }
         .draggable(site.id.uuidString) {
             HStack(spacing: 8) {
                 FaviconView(site: site, size: 18)
@@ -395,6 +448,7 @@ private struct ExpandedGroupRow: View {
     @Binding var catalog: SiteCatalog
     @Binding var hoveredID: PortalSite.ID?
     let selectSite: (PortalSite) -> Void
+    let editSite: (PortalSite) -> Void
     let addSiteToGroup: () -> Void
 
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -414,7 +468,9 @@ private struct ExpandedGroupRow: View {
                     onHover: { hover in
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                     },
-                    onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
+                    onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) },
+                    onEdit: { editSite(site) },
+                    onRemove: isDefaultSite(site) ? nil : { catalog.removeSite(withID: site.id) }
                 )
             }
             .onMove { source, destination in
@@ -518,6 +574,7 @@ private struct RailSidebar: View {
     @Binding var catalog: SiteCatalog
     let addSite: () -> Void
     let selectSite: (PortalSite) -> Void
+    let editSite: (PortalSite) -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -546,14 +603,17 @@ private struct RailSidebar: View {
                                 onHover: { hover in
                                     hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                                 },
-                                onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
+                                onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) },
+                                onEdit: { editSite(site) },
+                                onRemove: isDefaultSite(site) ? nil : { catalog.removeSite(withID: site.id) }
                             )
                         case .group(let group):
                             RailGroup(
                                 group: group,
                                 catalog: $catalog,
                                 hoveredID: $hoveredID,
-                                selectSite: selectSite
+                                selectSite: selectSite,
+                                editSite: editSite
                             )
                         }
                     }
@@ -597,6 +657,8 @@ private struct RailSiteRow: View {
     let onTap: () -> Void
     let onHover: (Bool) -> Void
     let onDropBefore: ([String]) -> Bool
+    var onEdit: (() -> Void)? = nil
+    var onRemove: (() -> Void)? = nil
 
     @State private var isDropTargeted: Bool = false
 
@@ -620,6 +682,24 @@ private struct RailSiteRow: View {
                     .offset(y: -3)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if let onRemove, isHovered {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 14)
+                        .background(Circle().fill(Color(nsColor: .windowBackgroundColor).opacity(0.88)))
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Remove Site")
+                .transition(.opacity)
+                .offset(x: 2, y: -2)
+            }
+        }
+        .animation(.easeOut(duration: 0.1), value: isHovered)
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .frame(width: 48, height: 48)
         .help(site.name)
@@ -634,6 +714,19 @@ private struct RailSiteRow: View {
         .dropDestination(for: String.self) { strings, _ in
             onDropBefore(strings)
         } isTargeted: { isDropTargeted = $0 }
+        .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit Site", systemImage: "pencil")
+                }
+            }
+            if onEdit != nil && onRemove != nil { Divider() }
+            if let onRemove {
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove Site", systemImage: "trash")
+                }
+            }
+        }
     }
 
     private var rowFill: Color {
@@ -653,6 +746,7 @@ private struct RailGroup: View {
     @Binding var catalog: SiteCatalog
     @Binding var hoveredID: PortalSite.ID?
     let selectSite: (PortalSite) -> Void
+    let editSite: (PortalSite) -> Void
 
     @State private var isDropTargeted: Bool = false
     @State private var isContainerHovered: Bool = false
@@ -691,7 +785,9 @@ private struct RailGroup: View {
                     onHover: { hover in
                         hoveredID = hover ? site.id : (hoveredID == site.id ? nil : hoveredID)
                     },
-                    onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) }
+                    onDropBefore: { dropSitesBefore($0, target: site.id, in: $catalog) },
+                    onEdit: { editSite(site) },
+                    onRemove: isDefaultSite(site) ? nil : { catalog.removeSite(withID: site.id) }
                 )
             }
         }
