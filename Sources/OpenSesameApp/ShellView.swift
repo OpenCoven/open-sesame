@@ -17,6 +17,22 @@ private struct WindowDragArea: NSViewRepresentable {
     }
 }
 
+/// Captures a reference to the hosting NSWindow so we can toggle native
+/// chrome (traffic lights) in response to SwiftUI state.
+private struct WindowAccessor: NSViewRepresentable {
+    let onWindow: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { [weak view] in
+            onWindow(view?.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 private enum SidebarMode {
     case expanded
     case rail
@@ -58,6 +74,7 @@ struct ShellView: View {
     @StateObject private var controller = BrowserController()
     @StateObject private var appearance = AppearanceSettings()
     @StateObject private var favicons = FaviconService.shared
+    @State private var hostingWindow: NSWindow?
 
     private static let minSidebarWidth: CGFloat = 180
     private static let maxSidebarWidth: CGFloat = 600
@@ -135,6 +152,13 @@ struct ShellView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .background(WindowAccessor { window in
+            hostingWindow = window
+            applyTrafficLightVisibility(to: window, mode: sidebarMode)
+        })
+        .onChange(of: sidebarMode) { _, mode in
+            applyTrafficLightVisibility(to: hostingWindow, mode: mode)
+        }
         .environmentObject(appearance)
         .sheet(item: $siteSheet) { target in
             SiteSheet(
@@ -184,6 +208,14 @@ struct ShellView: View {
         withAnimation(Self.sidebarAnimation) {
             sidebarMode = (sidebarMode == .expanded) ? .rail : .expanded
         }
+    }
+
+    private func applyTrafficLightVisibility(to window: NSWindow?, mode: SidebarMode) {
+        guard let window else { return }
+        let hidden = (mode == .rail)
+        window.standardWindowButton(.closeButton)?.isHidden = hidden
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = hidden
+        window.standardWindowButton(.zoomButton)?.isHidden = hidden
     }
 
     private func reload() {
@@ -278,7 +310,6 @@ private struct SiteSidebar: View {
                         addSite: addSite,
                         selectSite: selectSite,
                         editSite: editSite,
-                        openSettings: openSettings,
                         toggleMode: toggleMode
                     )
                 }
@@ -596,38 +627,28 @@ private struct RailSidebar: View {
     let addSite: () -> Void
     let selectSite: (PortalSite) -> Void
     let editSite: (PortalSite) -> Void
-    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
 
     var body: some View {
         VStack(spacing: 4) {
-            // Traffic-light zone + expand button — aligned with traffic lights
+            // Collapsed header: traffic lights are hidden at the window level,
+            // so the rail only shows the toggle icon. The strip behind the
+            // button stays draggable so users can still move the window.
             HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: 60, height: 24)
-                    .background(WindowDragArea())
-
+                Spacer(minLength: 0)
                 SidebarIconButton(
                     systemName: "sidebar.left",
                     help: "Expand Sidebar  ⌘B",
                     action: toggleMode
                 )
                 .keyboardShortcut("b", modifiers: .command)
-
-                Spacer()
-
-                SidebarIconButton(
-                    systemName: "ellipsis",
-                    help: "Settings",
-                    action: openSettings
-                )
-                .keyboardShortcut(",", modifiers: .command)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 2)
-            .frame(height: 38, alignment: .top)
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(WindowDragArea())
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
@@ -1162,20 +1183,23 @@ private struct SidebarIconButton: View {
     let systemName: String
     let help: String
     let action: () -> Void
+    var size: CGFloat = 24
+    var iconSize: CGFloat = 12
+    var cornerRadius: CGFloat = 6
 
     @State private var isHovering: Bool = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 24, height: 24)
+                .font(.system(size: iconSize, weight: .semibold))
+                .frame(width: size, height: size)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(isHovering ? Color.black.opacity(0.32) : Color.black.opacity(0.22))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
                 )
                 .contentShape(Rectangle())
