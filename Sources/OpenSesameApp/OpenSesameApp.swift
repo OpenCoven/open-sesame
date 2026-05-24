@@ -1,8 +1,10 @@
+import AppKit
 import OpenSesameCore
 import SwiftUI
 
 @main
 struct OpenSesameApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var catalog = CatalogBootstrap.loadInitialCatalog()
     private let persistence: CatalogPersistence? = CatalogPersistence.defaultURL().map(CatalogPersistence.init(fileURL:))
 
@@ -17,6 +19,27 @@ struct OpenSesameApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 760)
+    }
+}
+
+/// Forces the bare Swift executable to register as a regular foreground
+/// app so its window becomes key on launch. Without this, launching from
+/// the terminal leaves the previously-frontmost app capturing keystrokes.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 }
 
