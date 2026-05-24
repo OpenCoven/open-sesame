@@ -638,16 +638,22 @@ private struct RailSidebar: View {
             // button stays draggable so users can still move the window.
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                SidebarIconButton(
-                    systemName: "sidebar.left",
-                    help: "Expand Sidebar  ⌘B",
-                    action: toggleMode
-                )
-                .keyboardShortcut("b", modifiers: .command)
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    SidebarIconButton(
+                        systemName: "sidebar.left",
+                        help: "Expand Sidebar  ⌘B",
+                        action: toggleMode,
+                        size: 36,
+                        iconSize: 16,
+                        cornerRadius: 9
+                    )
+                    .keyboardShortcut("b", modifiers: .command)
+                    Spacer(minLength: 0)
+                }
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 38)
+            .frame(maxWidth: .infinity, minHeight: 48)
             .background(WindowDragArea())
 
             ScrollView(.vertical, showsIndicators: false) {
