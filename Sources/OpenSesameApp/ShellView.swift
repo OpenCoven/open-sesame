@@ -73,12 +73,13 @@ struct ShellView: View {
                 addSiteToGroup: { groupID in presentAddSite(toGroup: groupID) },
                 selectSite: selectOrHome,
                 editSite: presentEditSite,
+                openSettings: { showingSettings = true },
                 toggleMode: toggleSidebar
             )
             .frame(width: sidebarMode == .expanded ? sidebarWidth : railWidth)
             .clipShape(
                 UnevenRoundedRectangle(
-                    topLeadingRadius: 18,
+                    topLeadingRadius: 0,
                     bottomLeadingRadius: 18,
                     bottomTrailingRadius: 0,
                     topTrailingRadius: 0,
@@ -87,7 +88,7 @@ struct ShellView: View {
             )
             .overlay(
                 UnevenRoundedRectangle(
-                    topLeadingRadius: 18,
+                    topLeadingRadius: 0,
                     bottomLeadingRadius: 18,
                     bottomTrailingRadius: 0,
                     topTrailingRadius: 0,
@@ -249,6 +250,7 @@ private struct SiteSidebar: View {
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let selectSite: (PortalSite) -> Void
     let editSite: (PortalSite) -> Void
+    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     var body: some View {
@@ -267,6 +269,7 @@ private struct SiteSidebar: View {
                         addSiteToGroup: addSiteToGroup,
                         selectSite: selectSite,
                         editSite: editSite,
+                        openSettings: openSettings,
                         toggleMode: toggleMode
                     )
                 case .rail:
@@ -275,6 +278,7 @@ private struct SiteSidebar: View {
                         addSite: addSite,
                         selectSite: selectSite,
                         editSite: editSite,
+                        openSettings: openSettings,
                         toggleMode: toggleMode
                     )
                 }
@@ -291,6 +295,7 @@ private struct ExpandedSidebar: View {
     let addSiteToGroup: (SiteGroup.ID) -> Void
     let selectSite: (PortalSite) -> Void
     let editSite: (PortalSite) -> Void
+    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
@@ -304,7 +309,8 @@ private struct ExpandedSidebar: View {
                 primaryShortcut: KeyboardShortcut("b", modifiers: .command),
                 secondaryIcon: "plus",
                 secondaryHelp: "Add Site  ⌘N",
-                secondaryAction: addSite
+                secondaryAction: addSite,
+                openSettings: openSettings
             )
 
             Divider().opacity(0.4)
@@ -590,16 +596,17 @@ private struct RailSidebar: View {
     let addSite: () -> Void
     let selectSite: (PortalSite) -> Void
     let editSite: (PortalSite) -> Void
+    let openSettings: () -> Void
     let toggleMode: () -> Void
 
     @State private var hoveredID: PortalSite.ID?
 
     var body: some View {
         VStack(spacing: 4) {
-            // Traffic-light zone + expand button — same height as expanded header
+            // Traffic-light zone + expand button — aligned with traffic lights
             HStack(spacing: 0) {
                 Color.clear
-                    .frame(width: 60, height: 50)
+                    .frame(width: 60, height: 24)
                     .background(WindowDragArea())
 
                 SidebarIconButton(
@@ -610,9 +617,17 @@ private struct RailSidebar: View {
                 .keyboardShortcut("b", modifiers: .command)
 
                 Spacer()
+
+                SidebarIconButton(
+                    systemName: "ellipsis",
+                    help: "Settings",
+                    action: openSettings
+                )
+                .keyboardShortcut(",", modifiers: .command)
             }
             .padding(.horizontal, 4)
-            .frame(height: 50)
+            .padding(.top, 2)
+            .frame(height: 38, alignment: .top)
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
@@ -1052,18 +1067,18 @@ private struct SidebarHeader: View {
     let secondaryIcon: String
     let secondaryHelp: String
     let secondaryAction: () -> Void
+    let openSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             // Traffic-light zone — the system window buttons (close/min/max)
-            // float here automatically because of .hiddenTitleBar.
-            // We reserve exactly the same real estate so our controls
-            // don't overlap them and this whole strip is window-draggable.
+            // float here because of .hiddenTitleBar. We reserve this real
+            // estate so controls never overlap them; whole strip is draggable.
             Color.clear
-                .frame(width: 72, height: 50)
+                .frame(width: 72, height: 24)
                 .background(WindowDragArea())
 
-            // Sidebar toggle — right of traffic lights, left-aligned
+            // Sidebar toggle — right of traffic lights
             shortcutButton(
                 systemName: primaryIcon,
                 help: primaryHelp,
@@ -1073,12 +1088,21 @@ private struct SidebarHeader: View {
 
             Spacer()
 
+            // Settings / menu trigger (⋯) — like Dia’s top-right icon
+            SidebarIconButton(
+                systemName: "ellipsis",
+                help: "Settings  ⌘,",
+                action: openSettings
+            )
+            .keyboardShortcut(",", modifiers: .command)
+
             // Add site
             SidebarIconButton(systemName: secondaryIcon, help: secondaryHelp, action: secondaryAction)
+                .padding(.leading, 2)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(height: 50)
+        .padding(.top, 2)
+        .frame(height: 38, alignment: .top)
     }
 
     @ViewBuilder
