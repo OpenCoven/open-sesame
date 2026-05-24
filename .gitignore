@@ -9,3 +9,19 @@ dist/
 .codex/
 .env*
 !.env.example
+
+# Signing / credentials — never commit these
+*.p12
+*.p8
+*.pem
+*.key
+*.cer
+*.provisionprofile
+ExportOptions.plist
+
+# Local release config overrides
+script/.release-env
+
+# gitleaks baseline (contains historical match context, not for public repos)
+# Regenerate with: gitleaks git --config .gitleaks.toml --report-format json --report-path .gitleaks-baseline.json
+.gitleaks-baseline.json

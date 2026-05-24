@@ -1,0 +1,52 @@
+# gitleaks configuration for open-sesame
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+title = "open-sesame gitleaks config"
+
+[extend]
+# Use the default ruleset shipped with gitleaks as a base.
+useDefault = true
+
+# Global allowlist
+[allowlist]
+description = "Known-safe patterns and paths"
+
+# Paths to always skip (build artefacts, bundled assets, etc.)
+paths = [
+    '''\.build/''',
+    '''dist/''',
+    '''DerivedData/''',
+    '''\.git/''',
+    '''\.png$''',
+    '''\.icns$''',
+    '''\.pdf$''',
+]
+
+# Historic commits allowlisted by SHA so the scanner ignores them without
+# suppressing detection on any future commit.
+#   73eaa324 - release.sh added with hardcoded SIGNING_IDENTITY + TEAM_ID
+#              (credentials have since been moved to env vars)
+#   49bc6145 - UserDefaults migration key "didMigrateCovenV2" (false positive)
+#   753579db - UserDefaults migration key "didMigrateCovenV1" (false positive)
+commits = [
+    "73eaa324",
+    "49bc6145",
+    "753579db",
+]
+
+# Extra rules (applied on top of defaults)
+
+[[rules]]
+id = "apple-team-id"
+description = "Apple Developer Team ID (10-char alphanumeric)"
+regex = '''\b[A-Z0-9]{10}\b'''
+keywords = ["TEAM_ID", "team-id", "teamid"]
+[rules.allowlist]
+# Allow the placeholder shown in docs/scripts
+regexes = ['''XXXXXXXXXX''']
+
+[[rules]]
+id = "codesign-fingerprint"
+description = "Codesign certificate SHA-1 fingerprint (40-char hex)"
+regex = '''[0-9A-Fa-f]{40}'''
+keywords = ["SIGNING_IDENTITY", "signing-identity", "codesign"]

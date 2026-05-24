@@ -4,24 +4,38 @@
 # Usage:
 #   script/release.sh v0.1.0
 #
-# Env overrides:
+# Required env vars (no defaults — must be set in your shell or CI secrets):
+#   SIGNING_IDENTITY  codesign identity string (Developer ID Application fingerprint
+#                     or "Developer ID Application: Your Name (TEAMID)")
+#   TEAM_ID           Apple Developer Team ID (10-char string)
+#
+# Optional env vars:
 #   NOTARY_PROFILE    keychain profile name created via `xcrun notarytool
 #                     store-credentials` (default: opensesame-notary)
-#   SIGNING_IDENTITY  codesign identity string (default: the Soul Protocol
-#                     Developer ID Application cert from your keychain)
 #   SKIP_NOTARY=1     stop after signing + zipping (no upload, no release)
 #   SKIP_PUBLISH=1    notarize + staple, but don't create the GitHub release
 
 set -euo pipefail
 
 VERSION="${1:?usage: $0 <version-tag e.g. v0.1.0>}"
+
+# Require caller-supplied signing identity and team id — no hardcoded defaults.
+if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
+    echo "Error: SIGNING_IDENTITY env var is required (your Developer ID Application cert fingerprint)."
+    echo "  export SIGNING_IDENTITY=\"Developer ID Application: Your Name (TEAMID)\""
+    exit 1
+fi
+if [[ -z "${TEAM_ID:-}" ]]; then
+    echo "Error: TEAM_ID env var is required (your Apple Developer Team ID)."
+    echo "  export TEAM_ID=\"XXXXXXXXXX\""
+    exit 1
+fi
+
 NOTARY_PROFILE="${NOTARY_PROFILE:-opensesame-notary}"
-SIGNING_IDENTITY="${SIGNING_IDENTITY:-EE732DF3F48D7535561AF54D3FFFC4B44DAF3E7F}"
 
 APP_NAME="OpenSesame"
 BUNDLE_ID="ai.opencoven.OpenSesame"
 MIN_SYSTEM="14.0"
-TEAM_ID="9LR8Z8UQ9X"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${ROOT}/dist"

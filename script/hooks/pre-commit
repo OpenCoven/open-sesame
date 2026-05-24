@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# pre-commit hook: run gitleaks to block accidental secret commits.
+#
+# Install: script/install-hooks.sh
+# Requires: gitleaks (brew install gitleaks)
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="${REPO_ROOT}/.gitleaks.toml"
+BASELINE="${REPO_ROOT}/.gitleaks-baseline.json"
+
+if ! command -v gitleaks &>/dev/null; then
+    echo "⚠️  pre-commit: gitleaks not found — skipping secret scan."
+    echo "   Install it: brew install gitleaks"
+    echo "   Or re-run: script/install-hooks.sh"
+    exit 0
+fi
+
+BASELINE_ARG=""
+if [[ -f "${BASELINE}" ]]; then
+    BASELINE_ARG="--baseline-path ${BASELINE}"
+fi
+
+# Scan only staged changes (fast — doesn't re-scan whole history).
+if ! gitleaks git --pre-commit --staged \
+        --config "${CONFIG}" \
+        ${BASELINE_ARG} \
+        --redact 2>&1; then
+    echo ""
+    echo "🚨 gitleaks found potential secrets in staged files."
+    echo "   Review the findings above, remove or rotate the secret, then re-stage."
+    echo "   To skip (NOT recommended): git commit --no-verify"
+    exit 1
+fi
+
+exit 0
