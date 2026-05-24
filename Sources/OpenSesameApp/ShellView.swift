@@ -2,6 +2,21 @@ import AppKit
 import OpenSesameCore
 import SwiftUI
 
+// MARK: - Window drag area
+
+/// A transparent NSView that acts as a drag handle for the frameless window.
+/// Place it behind any header area where you want the user to be able to
+/// drag the window by clicking and dragging.
+private struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> DraggableView { DraggableView() }
+    func updateNSView(_ nsView: DraggableView, context: Context) {}
+
+    final class DraggableView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
+    }
+}
+
 private enum SidebarMode {
     case expanded
     case rail
@@ -581,14 +596,23 @@ private struct RailSidebar: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            SidebarIconButton(
-                systemName: "sidebar.left",
-                help: "Expand Sidebar  ⌘B",
-                action: toggleMode
-            )
-            .keyboardShortcut("b", modifiers: .command)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
+            // Traffic-light zone + expand button — same height as expanded header
+            HStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 60, height: 50)
+                    .background(WindowDragArea())
+
+                SidebarIconButton(
+                    systemName: "sidebar.left",
+                    help: "Expand Sidebar  ⌘B",
+                    action: toggleMode
+                )
+                .keyboardShortcut("b", modifiers: .command)
+
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .frame(height: 50)
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
@@ -1030,14 +1054,26 @@ private struct SidebarHeader: View {
     let secondaryAction: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
+            // Traffic-light zone — the system window buttons (close/min/max)
+            // float here automatically because of .hiddenTitleBar.
+            // We reserve exactly the same real estate so our controls
+            // don't overlap them and this whole strip is window-draggable.
+            Color.clear
+                .frame(width: 72, height: 50)
+                .background(WindowDragArea())
+
+            // Sidebar toggle — right of traffic lights, left-aligned
             shortcutButton(
                 systemName: primaryIcon,
                 help: primaryHelp,
                 shortcut: primaryShortcut,
                 action: primaryAction
             )
+
             Spacer()
+
+            // Add site
             SidebarIconButton(systemName: secondaryIcon, help: secondaryHelp, action: secondaryAction)
         }
         .padding(.horizontal, 10)

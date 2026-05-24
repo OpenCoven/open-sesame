@@ -10,11 +10,12 @@ struct OpenSesameApp: App {
         WindowGroup {
             ShellView(catalog: $catalog)
                 .frame(minWidth: 900, minHeight: 620)
+                .ignoresSafeArea()
                 .onChange(of: catalog) { _, newValue in
                     persistence?.save(newValue)
                 }
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 760)
     }
 }
