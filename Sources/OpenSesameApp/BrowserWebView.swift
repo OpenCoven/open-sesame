@@ -7,6 +7,18 @@ private final class FocusableWebView: WKWebView {
         true
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        // Without this, focus stays on whichever zero-size SwiftUI Button
+        // shim landed at the top of the responder chain, and keystrokes
+        // never reach the page.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
