@@ -636,24 +636,21 @@ private struct RailSidebar: View {
             // Collapsed header: traffic lights are hidden at the window level,
             // so the rail only shows the toggle icon. The strip behind the
             // button stays draggable so users can still move the window.
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    SidebarIconButton(
-                        systemName: "sidebar.left",
-                        help: "Expand Sidebar  ⌘B",
-                        action: toggleMode,
-                        size: 36,
-                        iconSize: 16,
-                        cornerRadius: 9
-                    )
-                    .keyboardShortcut("b", modifiers: .command)
-                    Spacer(minLength: 0)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, minHeight: 48)
+            SidebarIconButton(
+                systemName: "sidebar.left",
+                help: "Expand Sidebar  ⌘B",
+                action: toggleMode,
+                size: 36,
+                iconSize: 16,
+                cornerRadius: 9
+            )
+            .keyboardShortcut("b", modifiers: .command)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: 40,
+                maxHeight: 40,
+                alignment: .center
+            )
             .background(WindowDragArea())
 
             ScrollView(.vertical, showsIndicators: false) {
