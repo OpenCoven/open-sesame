@@ -35,3 +35,6 @@ console.log('Nested capture catalog, template search, and topic/subtopic note ro
 
 assert.equal(read('When is the beta?','auto','audio').kind,'live');
 assert.equal(read('Keep as a note','note','audio').kind,'item');
+
+ctx.window.OpenSesameLive.inQuestions=()=>false;
+assert.equal(read('Keep a note while recording','auto','audio').kind,'item','Record audio must not route unrelated notes into transcript questions');

@@ -17,7 +17,7 @@
   try { preferred = localStorage.getItem('open-sesame-live-provider') } catch {}
   if (Object.hasOwn(providerNames, preferred)) selector.value = preferred;
 
-  function placeholder() { return 'Ask about the transcript, or type /…'; }
+  function placeholder() { return $('audio-record').checked?'Capture a note, or type / for commands…':'Ask about the transcript, or type /…'; }
 
   function action() {
     return selector.value === 'local' ? 'Search transcript' : 'Ask ' + providerNames[selector.value];
@@ -47,8 +47,8 @@
     el('live-station').classList.toggle('compact',compact);
     el('live-station').classList.toggle('running',busy);
     el('live-transcript-view').hidden = false;
-    el('live-questions-view').hidden = false;
-    el('audio-transcript').placeholder=busy?'Listening for speech…':'Your transcript will appear here. Record a conversation or try the demo.';
+    el('live-questions-view').hidden = !text && !audioSession.interim.trim();
+    el('audio-transcript').placeholder=busy?'Listening for speech…':'Choose what to transcribe above, then Start transcription.';
     el('live-text').hidden = !compact;
     el('live-exports').hidden = !text && !audioSession.recordUrl;
     el('live-source-badge').hidden = !sample;
@@ -57,11 +57,11 @@
     el('audio-stop').hidden = !busy;
     el('audio-stop').disabled = !busy || audioSession.stopping;
     el('audio-start').disabled = busy || Boolean(pending);
-    el('audio-start').setAttribute('aria-label',sample ? 'Replay demo' : 'Start recording');
-    el('audio-start').title = sample ? 'Replay demo' : 'Start recording';
-    el('audio-stop').setAttribute('aria-label',demoTimer !== null ? 'Stop demo' : 'Stop recording');
+    el('audio-start').setAttribute('aria-label',$('audio-record').checked?'Start recording':'Start transcription');
+    el('audio-start').title = el('audio-start').getAttribute('aria-label');
+    el('audio-stop').setAttribute('aria-label',demoTimer !== null ? 'Stop demo' : $('audio-record').checked?'Stop recording':'Stop transcription');
     el('audio-stop').title=el('audio-stop').getAttribute('aria-label');
-    el('transcript-clear').disabled = (!text && !audioSession.recordUrl) || busy || Boolean(pending);
+    el('transcript-clear').disabled = !text || busy || Boolean(pending);
     el('tab-audio').title = demoTimer !== null ? 'Live · demo' : busy ? 'Live · listening' : 'Live conversation';
     el('live-answer-label').textContent = providerNames[selector.value];
     const cli = selector.value !== 'local';
@@ -74,10 +74,11 @@
     el('live-recheck').hidden = !openSesameBridge.available;
     el('live-recheck').disabled = checking;
     el('live-question-hint').textContent = pending ? 'Waiting for '+providerNames[pending.agent]+'…' :
-      !text ? 'Start recording or try the demo.' :
+      !text ? 'Start transcription or try the demo.' :
       !cli ? 'Type / for question shortcuts. Answers here use transcript excerpts.' :
       installed ? 'Ask sends your question, recent transcript, and recent Q&A to '+providerNames[selector.value]+'.' : el('live-agent-status').textContent;
     if (state.scenario==='audio') window.OpenSesameComposer?.sync();
+    window.OpenSesameLiveCapture?.sync();
   }
 
   async function checkProviders() {
@@ -183,6 +184,7 @@
     drawEntries(); update();
   }
   function beforeListen() {
+    endDemo();
     if (sample) {
       audioSession.final = ''; audioSession.interim = ''; reset(); renderTranscript();
     }
@@ -281,6 +283,6 @@
   window.addEventListener('open-sesame-home',event=>{if(event.detail==='audio')showView('transcript')});
   window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario!=='audio'){settings(false);closeEditor()}else {update();drawEntries()}});
   window.addEventListener('open-sesame-desktop-disconnected',()=>{checkNumber++;available={};checking=false;update()});
-  window.OpenSesameLive = {handoff(data){if(data){entries=data.entries;sample=data.sample;recapThrough=data.recapThrough;drawEntries();showView(data.view)}return JSON.parse(JSON.stringify({entries,sample,recapThrough,view:conversationView}))},get busy(){return !!pending},ask,update,placeholder,action,inQuestions:()=>state.scenario==='audio',beforeListen,isDemo:()=>sample,startDemo,endDemo,stopForHide(){endDemo();if(audioSession.active||audioSession.starting)stopAudio()}};
+  window.OpenSesameLive = {handoff(data){if(data){entries=data.entries;sample=data.sample;recapThrough=data.recapThrough;drawEntries();showView(data.view)}return JSON.parse(JSON.stringify({entries,sample,recapThrough,view:conversationView}))},get busy(){return !!pending},get demoRunning(){return demoTimer!==null},ask,update,placeholder,action,inQuestions:()=>state.scenario==='audio'&&!$('audio-record').checked,beforeListen,isDemo:()=>sample,startDemo,endDemo,stopForHide(){endDemo();if(audioSession.active||audioSession.starting)stopAudio()}};
   drawEntries(); update(); openSesameBridge.ready.then(checkProviders);
 })();

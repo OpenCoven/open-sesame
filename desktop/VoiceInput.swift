@@ -15,6 +15,7 @@ final class OpenSesameVoiceInput {
     private var finishing: Timer?
 
     init(emit: @escaping ([String: Any]) -> Void) { self.emit = emit }
+    var inputName: String { AVCaptureDevice.default(for: .audio)?.localizedName ?? "System microphone" }
 
     func start(id: String, locale: String, completion: @escaping (String?) -> Void) {
         stop(id: session, cancel: true)

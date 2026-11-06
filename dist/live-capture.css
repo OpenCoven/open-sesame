@@ -1,0 +1,29 @@
+/* A single labeled capture setup, separate from the question composer. */
+#widget-panel #pane-audio{overflow-y:auto;overscroll-behavior:contain}
+#widget-panel #live-capture{flex:none;display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid #ffffff12;border-radius:12px;background:#13121655}
+#widget-panel .live-capture-fields{display:flex;align-items:end;flex-wrap:wrap;gap:10px}
+#widget-panel .live-capture-fields label{display:flex;flex-direction:column;gap:5px;flex:1;min-width:115px;font-size:10px;line-height:14px;color:#bcb1c6}
+#widget-panel .live-capture-fields #live-capture-source-label{flex:2}
+#widget-panel .live-capture-fields select{width:100%;height:32px;min-width:0;border:1px solid #ffffff16;border-radius:7px;padding:5px 26px 5px 9px;background-color:#ffffff06;color:#ece4f1;font-size:12px}
+#widget-panel #live-capture-help{margin:0;font-size:11px;line-height:1.5;color:#bdb2c7}
+#widget-panel .live-capture-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#widget-panel #live-capture #live-input-controls{align-self:center}
+#widget-panel #live-capture #live-input-controls .record-key{width:auto;min-width:110px;height:32px;min-height:32px;padding:6px 12px;border-radius:8px;display:flex;align-items:center;justify-content:center;white-space:nowrap;font-size:11px;line-height:18px;box-shadow:none;transform:none}
+#widget-panel #live-capture-state{display:flex;align-items:center;gap:9px;flex:1;min-width:120px;flex-wrap:wrap}
+#widget-panel #live-capture-state .live-status{font-size:11px;line-height:16px;text-align:left;justify-content:flex-start;min-width:0}
+#widget-panel #live-capture-state #audio-status{overflow-wrap:anywhere}
+#widget-panel #live-active-source{flex-basis:100%;font-size:10px;line-height:14px;overflow-wrap:anywhere;color:#b7a8c2}
+#widget-panel #live-capture-state .audio-meter{display:block;width:48px;height:3px;flex:none}
+#widget-panel #live-workspace{flex:1;min-height:100px;display:flex;gap:10px;overflow:visible}
+#widget-panel #live-workspace>.live-main{min-height:100px;flex:1;border-radius:10px}
+#widget-panel #live-recording-result{flex:1;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:18px;border:1px solid #ffffff0e;border-radius:12px;background:#13121644}
+#widget-panel #live-recording-result strong{font-size:14px;font-weight:500;color:#e8deee}
+#widget-panel #live-recording-result p{font-size:12px;line-height:1.6;color:#bdb0c7;margin:0}
+#widget-panel #live-recording-result>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#widget-panel #live-recording-result :is(a,button){display:flex;align-items:center;gap:6px;min-height:32px;padding:7px 10px;border:1px solid #d0b6df25;border-radius:8px;font-size:11px;background:#cbb0df0d;color:#e0cdeb;text-decoration:none}
+#widget-panel #live-recording-result svg{width:13px;height:13px}
+#widget-panel #live-recording-clear{margin-left:auto;color:#b2a5bc}
+#widget-panel #pane-audio>.live-bar{margin:0;justify-content:flex-end}
+#widget-panel #pane-audio>.live-bar #live-sample{margin:0 auto 0 0}
+#widget-panel #pane-audio [hidden],#widget-panel #capture-voice[hidden],#widget-panel #widget-voice-open[hidden]{display:none!important}
+@container open-sesame-widget (max-width:570px){#widget-panel #live-workspace{flex-direction:column}#widget-panel #live-workspace>.live-main{flex:none;min-height:145px}#widget-panel .live-capture-fields label{min-width:100px}#widget-panel #live-capture{padding:10px;gap:8px}}

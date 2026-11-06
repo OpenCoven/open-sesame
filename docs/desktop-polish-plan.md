@@ -92,3 +92,7 @@ python3 -m unittest discover -s desktop/tests -v
 - **JavaScript:** all top-level widget JavaScript passed syntax checks; 16/19 existing check scripts passed, with the three failures described above. The frame script exercised 720 render combinations using simulated DOM state.
 - **Python:** 22 bounded checks passed across agent monitoring, allowlisted computer controls, local controller authorization/queue behavior, feed retrieval, and fixture CLI adapters. This is not live provider acceptance. The complete discovery run stalled in its first real PTY launcher test and was stopped; terminal acceptance remains open.
 - **Changes made for this review:** the explicit Swift entry point, the `dev:macos` shortcut, and links to this plan. Existing application work was preserved. No commit, push, deployment, account authorization, or provider message was performed.
+
+## Widget input and capture patch
+
+See [widget input and Live audio](widget-input-capture.md) for the implemented v0.0.1 behavior, capability limits, and device acceptance still required.

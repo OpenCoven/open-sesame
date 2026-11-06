@@ -4,6 +4,13 @@ import WebKit
 final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            NSApp.activate(ignoringOtherApps: true)
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
 }
 
 final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
@@ -15,6 +22,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var glassSavedLevel = 0.13
     var glassLevel = 0.13
     var voice: OpenSesameVoiceInput!
+    var audioRecorder: OpenSesameAudioRecorder!
     var status: NSStatusItem!
     var bridge: Process?
     var input: FileHandle?
@@ -25,6 +33,10 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var detached = false
     var detachedFrame: NSRect?
     var beforeFullscreen: NSRect?
+    var shortcut: GlobalShortcut?
+    var pendingLauncher = false
+    var dockedScreenID: NSNumber?
+    var embeddedPages: [String: EmbeddedWebSurface] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -49,8 +61,14 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             guard let data = try? JSONSerialization.data(withJSONObject: event), let text = String(data: data, encoding: .utf8) else { return }
             self?.web.evaluateJavaScript("window.__openSesameReceive(\(text))", completionHandler: nil)
         }
+        audioRecorder = OpenSesameAudioRecorder { [weak self] event in
+            guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
+            self?.web.evaluateJavaScript("window.__openSesameReceive(\(json))", completionHandler: nil)
+        }
         web.underPageBackgroundColor = .clear
-        panel = NotchPanel(contentRect: NSRect(origin: .zero, size: currentSize), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel = NotchPanel(contentRect: NSRect(origin: .zero, size: currentSize), styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.delegate = self
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -79,6 +97,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         surface.addSubview(effect)
         surface.addSubview(web)
         createStatusItem()
+        shortcut = GlobalShortcut { [weak self] in self?.openLauncher() }
+        web.configuration.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_GLOBAL_SHORTCUT__=\(shortcut?.available == true ? "true" : "false");", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        status.button?.toolTip = shortcut?.available == true ? "Open Sesame · Option–Space" : "Open Sesame · Option–Space unavailable"
         startBridge(resources: resources)
         web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
         positionPanel()
@@ -125,6 +146,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
             menu.addItem(withTitle: "Show Open Sesame", action: #selector(showPanel), keyEquivalent: "")
+            let launcher = menu.addItem(withTitle: "Open launcher", action: #selector(openLauncher), keyEquivalent: " ")
+            launcher.keyEquivalentModifierMask = [.option]; launcher.target = self
+            if shortcut?.available != true {
+                let notice = menu.addItem(withTitle: "Option–Space is unavailable", action: nil, keyEquivalent: "")
+                notice.isEnabled = false
+            }
             menu.addItem(.separator())
             menu.addItem(withTitle: "Quit Open Sesame", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             for item in menu.items where item.action == #selector(showPanel) { item.target = self }
@@ -136,6 +163,25 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
 
     @objc func showPanel() {
         setGlassLevel(glassSavedLevel, transient: false); positionPanel(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func openLauncher() {
+        let toggle = panel.isVisible && panel.isKeyWindow
+        showPanel()
+        panel.makeFirstResponder(web)
+        web.evaluateJavaScript("Boolean(window.OpenSesameLauncher && (window.OpenSesameLauncher.\(toggle ? "toggle" : "open")(), true))") { [weak self] value, _ in
+            self?.pendingLauncher = value as? Bool != true
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === web, pendingLauncher { pendingLauncher = false; openLauncher() }
+    }
+
+    func placementScreen() -> NSScreen? {
+        if let screen = panel?.screen { return screen }
+        if let id = dockedScreenID, let screen = NSScreen.screens.first(where: { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber == id }) { return screen }
+        return NSScreen.main ?? NSScreen.screens.first
     }
 
     func setGlassLevel(_ requested: Double, transient: Bool) {
@@ -157,14 +203,15 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
 
     func positionPanel() {
         if detached { return }
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = placementScreen() else { return }
+        dockedScreenID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
         let frame = screen.frame
         if currentSize.width >= frame.width && currentSize.height >= frame.height {
             panel.setFrame(frame, display: true); return
         }
         var x = frame.midX-currentSize.width/2
-        var top = frame.maxY
-        if placement == "menu", let button = status.button, let window = button.window {
+        var top = placement == "menu" ? screen.visibleFrame.maxY - 5 : frame.maxY
+        if placement == "menu", let button = status.button, let window = button.window, window.screen == screen {
             let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
             x = rect.maxX-currentSize.width
             top = rect.minY-5
@@ -183,7 +230,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         detached = value
         beforeFullscreen = nil
         if value {
-            panel.styleMask = [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
+            panel.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             panel.minSize = NSSize(width: 360, height: 300)
             panel.title = "Open Sesame"
             panel.titleVisibility = .visible
@@ -200,7 +247,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             effect.layer?.cornerRadius = 0
             surface.layer?.cornerRadius = 0
         } else {
-            panel.styleMask = [.borderless, .nonactivatingPanel]
+            panel.styleMask = [.borderless]
             panel.minSize = .zero
             panel.level = .statusBar
             positionPanel()
@@ -263,8 +310,42 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, source.isFileURL, source.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/"), let body = message.body as? [String:Any], let method = body["method"] as? String else { return }
         let params = body["params"] as? [String:Any] ?? [:], requestId = body["requestId"]
+        if method == "window.focus" {
+            NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(web)
+            respond(requestId, result: true); return
+        }
+        if method.hasPrefix("webview.") {
+            guard let id = params["id"] as? String, ["bookmark", "reading-bookmark", "youtube"].contains(id) else { respond(requestId, error: "Unsupported embedded page."); return }
+            do {
+                if method == "webview.open" {
+                    if embeddedPages[id] == nil {
+                        embeddedPages[id] = EmbeddedWebSurface(id: id, parent: web, assets: assets) { [weak self] event in
+                            guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
+                            self?.web.evaluateJavaScript("window.__openSesameReceive(\(json))", completionHandler: nil)
+                        }
+                    }
+                    try embeddedPages[id]?.open(params)
+                } else if let page = embeddedPages[id], page.matches(params["generation"]) {
+                    if method == "webview.frame" { try page.frame(params, bounds: web.bounds) }
+                    else if method == "webview.command" { try page.command(params) }
+                    else if method == "webview.close" { page.close(); embeddedPages.removeValue(forKey: id) }
+                    else { throw EmbeddedWebSurface.SurfaceError.invalidCommand }
+                }
+                respond(requestId, result: true)
+            } catch { respond(requestId, error: error.localizedDescription) }
+            return
+        }
         if method == "speech.start" {
-            voice.start(id: params["id"] as? String ?? "", locale: params["locale"] as? String ?? "en-US") { [weak self] error in self?.respond(requestId, result: error == nil, error: error) }
+            voice.start(id: params["id"] as? String ?? "", locale: params["locale"] as? String ?? "en-US") { [weak self] error in self?.respond(requestId, result: ["sourceLabel": self?.voice.inputName ?? "System microphone"], error: error) }
+            return
+        }
+        if method.hasPrefix("record.") {
+            let id = params["id"] as? String ?? ""
+            if method == "record.start" { voice.cancel(); audioRecorder.start(id: id) { [weak self] result, error in self?.respond(requestId, result: result, error: error) } }
+            else if method == "record.stop" { respond(requestId, result: ["ready": audioRecorder.stop(id: id)]) }
+            else if method == "record.save" { audioRecorder.save(id: id) { [weak self] saved, error in self?.respond(requestId, result: saved, error: error) } }
+            else if method == "record.clear" { audioRecorder.clear(); respond(requestId, result: true) }
+            else { respond(requestId, error: "Unsupported recording action.") }
             return
         }
         if method == "speech.stop" {
@@ -287,7 +368,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "window.size" {
             if detached { respond(requestId, result: true); return }
 
-            let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.frame ?? NSRect(x: 0, y: 0, width: 1512, height: 982)
+            let screenFrame = placementScreen()?.frame ?? NSRect(x: 0, y: 0, width: 1512, height: 982)
             let full = params["full"] as? Bool == true
             let requestedWidth = (params["width"] as? NSNumber)?.doubleValue ?? 280
             let requestedHeight = (params["height"] as? NSNumber)?.doubleValue ?? 35
@@ -297,7 +378,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             currentSize = NSSize(width: width, height: height)
             placement = params["layout"] as? String ?? "notch"
             effect.isHidden = placement == "capture"
-            effect.layer?.cornerRadius = (params["expanded"] as? Bool == true) ? 16 : 18
+            effect.layer?.cornerRadius = placement == "capture" ? 18 : params["expanded"] as? Bool == true ? (placement == "notch" ? 28 : 22) : 18
             effect.layer?.maskedCorners = placement == "notch" ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             surface.layer?.cornerRadius = effect.layer?.cornerRadius ?? 18
             surface.layer?.maskedCorners = effect.layer?.maskedCorners ?? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
@@ -351,7 +432,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         let picker = NSOpenPanel(); picker.canChooseFiles = !parameters.allowsDirectories; picker.canChooseDirectories = parameters.allowsDirectories; picker.allowsMultipleSelection = parameters.allowsMultipleSelection; picker.prompt = "Open"
         picker.begin { response in completionHandler(response == .OK ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

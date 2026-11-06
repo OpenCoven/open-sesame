@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
   const el=id=>document.getElementById(id),panel=el('widget-panel'),home=el('focus-overview'),projects=el('projects-overview');
-  // Keep recording on the input, and session metadata in the existing top toolbar.
+  // The capture setup moves this single Start/Stop group beside its source controls.
   const controls=document.createElement('span');controls.id='live-input-controls';controls.setAttribute('role','group');controls.setAttribute('aria-label','Session recording');controls.append(el('audio-start'),el('audio-stop'));el('capture-voice').after(controls);
   el('audio-start').innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9"/></svg>';
   const bar=panel.querySelector('.live-bar');bar.querySelector('.live-workspace-title').remove();bar.prepend(panel.querySelector('.live-status'));bar.append(el('live-sample'));el('pane-audio').prepend(bar);
@@ -25,7 +25,7 @@
     frame=0;
     set(panel,'short',panel.clientHeight<430?'true':'false');
     const live=state.scenario==='audio'&&!window.OpenSesameLauncher?.active;
-    bar.hidden=controls.hidden=!live;panel.classList.toggle('live-input-active',live);
+    bar.hidden=controls.hidden=!live;panel.classList.remove('live-input-active');
     if(!home.hidden){
       const w=home.clientWidth,h=home.clientHeight;
       set(home,'layout',w>=720&&h>=300?'wide':w>=1000&&h<300?'strip':'quad');

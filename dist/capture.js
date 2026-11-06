@@ -31,7 +31,7 @@
     }
     if(text==='/')return {kind:'help',hint:'Choose a command'};
     if(text.startsWith('/'))return {kind:'error',hint:'Choose a command · type / for options'};
-    if(context==='audio'&&type==='auto')return {kind:'live',question:text,label:'Ask about transcript',hint:'Ask about the transcript · Enter'};
+    if(context==='audio'&&window.OpenSesameLive?.inQuestions?.()!==false&&type==='auto')return {kind:'live',question:text,label:'Ask about transcript',hint:'Ask about the transcript · Enter'};
     if(type!=='auto')return {kind:'item',hint:'Save '+type};
     if(context==='terminal'&&window.OpenSesameCovenChat?.isActive())return {kind:'chat',task:text,hint:'Enter to send · Shift Enter for a new line',label:'Send to Coven preview'};
     if(/^(?:hf|arxiv)\s*[: ]\s*\S+/i.test(text))return {kind:'view',view:'reading',value:text,hint:'Read paper',label:'Open in Reading'};
@@ -39,7 +39,7 @@
     const open=text.match(/^(?:open|show|go to)\s+(plugins|console|library|reader|live|agents|desktops|lockin|music|focus|youtube|media|terminal|shells|items|reading|vnc)(?:\s+([\s\S]*))?$/i);
     if(open)return {kind:'view',view:views[open[1].toLowerCase()],value:open[2]?.trim()||'',hint:'Open '+open[1],label:'Open '+open[1]};
     const control=window.OpenSesameComputer?.parse(text);if(control)return {kind:'computer',control,label:control.label,hint:window.openSesameBridge?.available?'Run on this Mac':'Desktop companion required'};
-    if(context==='audio'){
+    if(context==='audio'&&window.OpenSesameLive?.inQuestions?.()!==false){
       const label=window.OpenSesameLive?.action()||'Search transcript';
       return {kind:'live',question:text,label,hint:label+' · Enter'};
     }
