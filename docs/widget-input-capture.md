@@ -20,3 +20,7 @@ Shared tab/screen audio is offered only where the browser exposes display captur
 JavaScript checks cover native capture lifecycle, final speech while stopping, segment rotation, denial recovery, cancelled and late microphone permission, sample-to-microphone transitions, saving, independent transcript/recording outputs, bookmark URL rollback, terminal focus/input forwarding, shell renaming, player events, and embedded-view lifetime. These checks use simulated speech, recorder, DOM, and bridge responses. Native URL validation executes without opening a view. The arm64 app is compiled and its packaged signature and helper are checked separately.
 
 A real GUI session is still required to accept Option–Space from another application, hidden-widget reopening, terminal typing, actual microphone capture and Save audio, permission denial/retry, YouTube playback, bookmark navigation, dialog overlap, and two-monitor placement. Computer-use and native GUI launch were unavailable in the build environment; mocked checks and compilation do not establish these device results. The complete real PTY suite also remains unverified.
+
+## Navigation follow-up in v0.0.2
+
+The primary Focus, Projects, Console, Reader, Live, and Plugins tabs now form a compact column of icons on the left. Each keeps its view name as a tooltip and accessible label. Up/Down and Home/End navigate the vertical tab list. Widget options sits at the bottom of the rail; each workspace keeps its own secondary tabs and sidebar. The standalone launcher retains its full-width layout.
