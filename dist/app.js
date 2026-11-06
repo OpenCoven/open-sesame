@@ -91,7 +91,7 @@ function renderCompact(){
   if(state.scenario==='focus'){$('compact-left').innerHTML=icon('focus');$('compact-right').textContent=time(focusRemaining)}
   if(['youtube','media'].includes(state.scenario)){$('compact-left').innerHTML=icon(state.scenario==='youtube'?'play':'music');$('compact-right').textContent=state.scenario==='youtube'?'YouTube':'Media'}
   if(state.scenario==='items'){$('compact-left').innerHTML=icon('items');$('compact-right').textContent=`${scopedItemCount()} items`}
-  if(state.scenario==='audio'){$('compact-left').innerHTML=icon('mic');$('compact-right').textContent=document.body.classList.contains('audio-active')?'Listening':'Live'}
+  if(state.scenario==='audio'){$('compact-left').innerHTML=icon('mic');$('compact-right').textContent=document.body.classList.contains('audio-active')?($('audio-record').checked?'Recording':'Transcribing'):'Live'}
   if(state.scenario==='terminal'){$('compact-left').innerHTML=icon('terminal');$('compact-right').textContent=(window.openSesameTerminalCount?.()??1)+' panes'}
   if(state.scenario==='plugins'){$('compact-left').innerHTML=icon('plugins');$('compact-right').textContent='Plugins'}
   if(state.scenario==='reading'){$('compact-left').innerHTML=icon('rss');$('compact-right').textContent='Reading'}

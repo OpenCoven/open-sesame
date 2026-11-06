@@ -40,6 +40,7 @@ await flush();
 assert.equal(starts().length,0);
 get('audio-start').click(); await flush();
 assert.equal(get('live-text').hidden,false,'Show the transcript while recording');
+assert.equal(get('panel-caption').textContent,'TRANSCRIBING · 0','Native capture must initialize its clock before rendering active status');
 const first=starts()[0].params.id;
 speech(first,'The beta opens Thursday.',true); await flush();
 const second=starts()[1].params.id;

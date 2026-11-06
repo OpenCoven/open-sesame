@@ -45,7 +45,7 @@ function setAudioControls(){
   if(!busy)audioSourceHelp();
   $('audio-start').disabled=busy;$('audio-stop').disabled=!busy||audioSession.stopping;
   $('audio-live-dot').hidden=!audioSession.active;document.body.classList.toggle('audio-active',audioSession.active);
-  $('panel-caption').textContent=audioSession.active?'LISTENING · '+time(Math.floor((Date.now()-audioSession.startedAt)/1000)):'A MOMENT FOR YOU';
+  $('panel-caption').textContent=audioSession.active?($('audio-record').checked?'RECORDING':'TRANSCRIBING')+' · '+time(Math.floor((Date.now()-audioSession.startedAt)/1000)):'A MOMENT FOR YOU';
   $('panel-privacy').title='Screen-share privacy · Option Shift P';
   renderCompact();renderTranscript();
 }
@@ -82,6 +82,7 @@ async function startNativeSegment(generation){
     if(generation!==audioGeneration || id!==nativeSpeechID)return;
     audioSession.starting=false; audioSession.active=true;
     audioSession.sourceLabel=result?.sourceLabel||'System microphone';
+    if(!audioSession.timer)audioSession.startedAt=Date.now();
     $('audio-status').textContent='Transcribing';
     setAudioControls(); $('transcript-status').textContent='Transcribing live';
     if(!audioSession.timer){
@@ -89,6 +90,7 @@ async function startNativeSegment(generation){
       audioSession.timer=setInterval(()=>{
         const seconds=Math.floor((Date.now()-audioSession.startedAt)/1000);
         $('audio-elapsed').textContent=time(seconds);
+        $('panel-caption').textContent='TRANSCRIBING · '+time(seconds);
         if(seconds>=1800)stopAudio('30-minute capture complete.');
       },1000);
     }
@@ -142,7 +144,7 @@ async function startAudio(){
       audioSession.recordUrl='';audioSession.nativeRecording='';$('audio-download').hidden=true;
       audioSession.sourceLabel=result?.sourceLabel||'System microphone';audioSession.startedAt=Date.now();audioSession.starting=false;audioSession.active=true;
       $('audio-status').textContent='Recording';setAudioControls();
-      audioSession.timer=setInterval(()=>{const seconds=Math.floor((Date.now()-audioSession.startedAt)/1000);$('audio-elapsed').textContent=time(seconds);if(seconds>=1800)stopAudio('30-minute recording complete. Save your audio.');},1000);
+      audioSession.timer=setInterval(()=>{const seconds=Math.floor((Date.now()-audioSession.startedAt)/1000);$('audio-elapsed').textContent=time(seconds);$('panel-caption').textContent='RECORDING · '+time(seconds);if(seconds>=1800)stopAudio('30-minute recording complete. Save your audio.');},1000);
     }catch(error){if(request===audioGeneration&&nativeRecordingID===id)stopAudio(error.message||'Could not start recording.',true)}
     return;
   }
@@ -181,7 +183,7 @@ async function startAudio(){
     $('audio-status').textContent=keepAudio?'Recording':'Transcribing';
     setAudioControls();startMeter(analyser);
     if(wantSpeech)beginSpeech(destination.stream.getAudioTracks()[0]);else $('transcript-status').textContent=SpeechEngine?'Live transcription is off':'Live transcription unavailable in this browser.';
-    audioSession.timer=setInterval(()=>{const seconds=Math.floor((Date.now()-audioSession.startedAt)/1000);$('audio-elapsed').textContent=time(seconds);$('panel-caption').textContent='LISTENING · '+time(seconds);if(seconds>=1800)stopAudio('30-minute capture complete. Save your transcript or audio.');},1000);
+    audioSession.timer=setInterval(()=>{const seconds=Math.floor((Date.now()-audioSession.startedAt)/1000);$('audio-elapsed').textContent=time(seconds);$('panel-caption').textContent=(keepAudio?'RECORDING':'TRANSCRIBING')+' · '+time(seconds);if(seconds>=1800)stopAudio('30-minute capture complete. Save your transcript or audio.');},1000);
   }catch(error){
     if(request!==audioGeneration)return;
     const message=error.name==='NotAllowedError'?'Microphone or sharing permission declined. Try the demo.':error.name==='NotFoundError'?'No microphone was found. Try shared audio.':error.name==='NotReadableError'?'This audio source is busy or unavailable.':error.message||'Could not start audio. Try again.';
