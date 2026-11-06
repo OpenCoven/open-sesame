@@ -1,0 +1,37 @@
+#terminal-workspace,#remote-workspace{grid-template-columns:118px minmax(0,1fr);gap:9px;min-width:0}
+#terminal-workspace.rail-right{grid-template-columns:minmax(0,1fr) 118px}
+#terminal-workspace.rail-collapsed,#terminal-workspace.single-pane,#remote-workspace.rail-collapsed{grid-template-columns:minmax(0,1fr)}
+#terminal-rail,#remote-rail{gap:6px;padding-right:6px;border-right:1px solid var(--workspace-line);min-width:0}
+#terminal-workspace.rail-right #terminal-rail{padding-right:0;border-right:0;padding-left:6px;border-left:1px solid var(--workspace-line)}
+#terminal-pane-list{display:flex;flex-direction:column;flex:1;min-height:0;gap:3px;overflow:hidden}
+#terminal-pane-list .terminal-pane-row{height:27px;min-height:27px;margin:0;flex:none}
+#terminal-pane-list [role=tab]{height:27px;min-height:27px;padding:5px 6px;font-size:8px;border-radius:6px;gap:6px}
+#terminal-pane-list .terminal-pane-trash{top:3px;height:21px}
+#terminal-rail-heading{position:relative}
+#terminal-rail-heading .terminal-create-menu{left:0;right:auto;top:25px;z-index:40}
+.rail-right #terminal-rail-heading .terminal-create-menu{left:auto;right:0}
+#terminal-rail-pages{margin-top:0;flex:none}
+#terminal-toolbar .terminal-project-picker{position:relative;display:grid;place-items:center;width:23px;height:23px;flex:none;color:#a99bb8;border-radius:6px}
+.terminal-project-picker>svg{width:11px;height:11px;pointer-events:none}
+#terminal-toolbar #terminal-project-filter{position:absolute;inset:0;width:100%;max-width:none;height:100%;opacity:0;cursor:pointer}
+.terminal-project-picker:hover,.terminal-project-picker:focus-within{background:#ffffff08;color:#dcd1e5;box-shadow:inset 0 0 0 1px #ffffff0c}
+#terminal-toolbar #terminal-name{font-size:9px;padding:3px 5px;border:0;max-width:180px;min-width:0;flex:1}
+#terminal-name:hover,#terminal-name:focus{background:#ffffff05}
+#terminal-toolbar #terminal-state{max-width:64px;font-size:6.5px;color:#99909f;overflow:hidden;text-overflow:ellipsis}
+.coven-chat-surface{padding:8px 12px;background:linear-gradient(145deg,#ffffff02,transparent 60%),#151518}
+.coven-chat-header{height:25px;min-height:25px;padding-bottom:5px;gap:5px}
+.coven-chat-search{display:flex;align-items:center;gap:3px;height:30px;min-height:30px;margin:5px 0;padding:3px;border:1px solid #ffffff0d;border-radius:7px;background:#ffffff03}
+.coven-chat-search input{min-width:0;flex:1;width:80px;background:none;border:0;padding:3px 5px;color:#d7cfdf;font-size:9px}
+.coven-chat-search button{display:grid;place-items:center;width:22px;height:22px;padding:5px;border-radius:5px;background:transparent;color:#a79ab4;flex:none}
+.coven-chat-search button:hover{background:#ffffff09}.coven-chat-search button:disabled{opacity:.3}.coven-chat-search svg{width:11px;height:11px}.coven-chat-search output{font-size:7px;white-space:nowrap;color:#a79ab4;margin:0 3px}
+.coven-message.search-match{border-color:#c4afd636}.coven-message.search-current{box-shadow:inset 2px 0 #c6b3da80;background:#c0a4d709}
+.coven-message mark{background:#bfa2d82a;color:#f0e6f7;border-radius:2px;padding:0}
+.coven-chat-log{scroll-padding:8px}.coven-message-body{line-height:1.8}.coven-message.user{margin:7px 0 7px 14px;background:linear-gradient(120deg,#ffffff06,#ffffff02)}
+#capture-voice[aria-pressed=true],.coven-chat-search button[aria-pressed=true]{color:#e5b2bc;background:#da8b9d18;box-shadow:0 0 0 1px #e6a0b21c}
+.voice-popover{position:absolute;bottom:calc(100% + 7px);left:0;right:0;z-index:70;padding:10px 12px;border:1px solid #ffffff17;border-radius:11px;background:linear-gradient(140deg,#303035f5,#202025fa);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);box-shadow:0 10px 30px #0005;display:flex;flex-direction:column;gap:7px}
+.voice-popover>div{display:flex;align-items:center;gap:7px}.voice-popover strong{font-size:9px;font-weight:450;color:#d4c9df}.voice-popover .voice-indicator{width:5px;height:5px;border-radius:50%;background:#dca3b4;box-shadow:0 0 8px #dca3b445;animation:voice-breathe 1.2s ease-in-out infinite alternate}
+.voice-popover button{font-size:8px;padding:4px 7px;background:#ffffff07;border-radius:5px;color:#bfb0cb}.voice-popover .voice-dismiss{margin-left:auto;background:none}.voice-popover output{font-size:10px;line-height:1.6;color:#d7cfdf;max-height:54px;overflow:auto;white-space:pre-wrap}.voice-popover small{font-size:7px;line-height:1.5;color:#958a9f}
+@keyframes voice-breathe{to{opacity:.35;box-shadow:0 0 3px #dca3b420}}
+@media(prefers-reduced-motion:reduce){.voice-popover .voice-indicator{animation:none}}
+
+.widget-capture-footer{position:relative}

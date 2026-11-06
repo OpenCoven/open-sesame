@@ -1,0 +1,4 @@
+import fs from 'node:fs';import {stripTypeScriptTypes} from 'node:module';
+let code=fs.readFileSync('vendor-src/coven-chat/coven-runtime.ts','utf8');code=code.replace(/^import .*?;\n/gm,'').replace(/export (type|interface) /g,'$1 ').replace(/export function /g,'function ');code=stripTypeScriptTypes(code,{mode:'transform'});
+const wrapper='/*! OpenCoven Chat runtime interface | MIT | pinned a8c76390ff946389224b86e5ff91b8b6c11bf413 */\n(()=>{class Channel {onmessage=null}const canUseTauriCommands=()=>false,invoke=()=>Promise.reject(new Error("Native Coven transport is not configured."));\n'+code+'\nwindow.OpenSesameCovenRuntime={create:createCovenRuntime};})();\n';fs.writeFileSync('dist/vendor/coven-runtime.js',wrapper);fs.copyFileSync('vendor-src/coven-chat/LICENSE','dist/vendor/coven-chat-LICENSE');
+console.log('Bundled the pinned Coven Chat runtime interface.');

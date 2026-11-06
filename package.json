@@ -1,0 +1,11 @@
+{
+  "name": "open-sesame-widget-studio",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "build:desktop-source": "python3 scripts/build-desktop-source.py",
+    "predev": "python3 scripts/build-desktop-source.py",
+    "dev": "python3 desktop/dev_server.py",
+    "dev:macos": "bash run-macos.sh"
+  }
+}

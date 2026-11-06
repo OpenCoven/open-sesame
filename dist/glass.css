@@ -1,0 +1,23 @@
+/* Translucency belongs to the material, never to the content above it. */
+#widget-anchor{isolation:isolate;background:linear-gradient(155deg,#ffffff04,#b9a4d002 43%,#00000010),rgba(9,10,12,var(--glass-opacity,.94));backdrop-filter:blur(var(--glass-blur,32px)) saturate(105%);-webkit-backdrop-filter:blur(var(--glass-blur,32px)) saturate(105%);box-shadow:inset 0 1px #ffffff32,inset 1px 0 #ffffff14,inset -1px 0 #ffffff0c,inset 0 -1px #ffffff13,0 20px 52px #08080c30,0 3px 12px #08080c20;transition:width .22s cubic-bezier(.2,.8,.2,1),height .22s cubic-bezier(.2,.8,.2,1),border-radius .22s ease,background-color .38s ease,backdrop-filter .38s ease,-webkit-backdrop-filter .38s ease,box-shadow .38s ease}
+#widget-anchor.expanded{transition:width .22s cubic-bezier(.2,.8,.2,1),height .22s cubic-bezier(.2,.8,.2,1),border-radius .22s ease,background-color .38s ease,backdrop-filter .38s ease,-webkit-backdrop-filter .38s ease,box-shadow .38s ease}
+.glass-sheen{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;overflow:hidden;background:radial-gradient(ellipse at 3% 0,#ffffff09,transparent 52%),radial-gradient(ellipse at 100% 100%,#bcadce05,transparent 48%)}
+.glass-sheen:after{content:'';position:absolute;inset:0;border-radius:inherit;background:radial-gradient(ellipse 240px 140px at var(--glass-x,50%) var(--glass-y,0%),#eee8ff15,transparent 72%);opacity:0;transition:opacity .38s ease}
+#widget-anchor[data-glass-pressing]>.glass-sheen:after{opacity:1}
+#widget-anchor[data-glass-held]{box-shadow:inset 0 1px #ffffff40,inset 1px 0 #ffffff1c,inset -1px 0 #ffffff13,inset 0 -1px #ffffff1c,0 16px 42px #08080c25;transition:background-color .12s linear,backdrop-filter .12s linear,-webkit-backdrop-filter .12s linear,box-shadow .38s ease}
+#widget-anchor[data-glass-held]>.glass-sheen{background:radial-gradient(ellipse at var(--glass-x,50%) var(--glass-y,0%),#e6deed0c,transparent 70%),linear-gradient(140deg,#ffffff04,transparent 55%)}
+.glass-value{position:absolute;right:18px;bottom:42px;z-index:80;padding:5px 8px;border:1px solid #ffffff14;border-radius:7px;background:#202025c9;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#cabed6;font-size:8px;font-variant-numeric:tabular-nums;pointer-events:none}
+
+#widget-anchor[data-glass-pressing]{user-select:none;-webkit-user-select:none}
+#widget-anchor[data-glass-held] #widget-panel{text-shadow:0 1px 3px #0009}
+#widget-panel:focus-visible{outline:none;box-shadow:inset 0 0 0 1px #c9b9df52}
+.native-desktop #widget-anchor.expanded{transition:background-color .38s ease,backdrop-filter .38s ease,-webkit-backdrop-filter .38s ease,box-shadow .38s ease}
+.native-desktop #widget-anchor[data-glass-held]{transition-duration:.12s}
+@media(prefers-reduced-motion:reduce){#widget-anchor,#widget-anchor.expanded,.native-desktop #widget-anchor.expanded,.glass-sheen:after{transition:none!important}}
+@media(prefers-reduced-transparency:reduce){#widget-anchor{background-color:#090a0c;backdrop-filter:none;-webkit-backdrop-filter:none}.glass-sheen{display:none}#widget-anchor[data-glass-held]{background-color:#090a0c}}
+
+#widget-anchor{--workspace-ink:#e3e0e8;--workspace-muted:#b4acbd;--workspace-glass:linear-gradient(140deg,#242429fa,#131316fc)}
+#widget-panel :is(.workspace-menu,.glass-popover,.item-view-menu,.detail-project-menu){color:#ded7e6;background:linear-gradient(140deg,#242429fa,#131316fc)}
+#widget-panel :is(.item-view-menu,.workspace-menu) small{color:#b3a8bf}
+#widget-panel .thought-text{color:#e0dae8}#widget-panel .thought-url{color:#b4a9bf}
+#widget-panel .item-group-toggle{color:#c8c0d2}
