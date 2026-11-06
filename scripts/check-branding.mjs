@@ -32,6 +32,8 @@ assert.ok(build.includes('/MacOS/OpenSesame'));
 assert.ok(build.includes('<key>CFBundleExecutable</key><string>OpenSesame</string>'));
 assert.ok(build.includes('<key>CFBundleDisplayName</key><string>Open Sesame</string>'));
 assert.ok(fs.existsSync('desktop/OpenSesame.swift'));
+assert.ok(fs.readFileSync('desktop/OpenSesame.swift','utf8').includes('["-B", "-u", resources.appendingPathComponent("bridge.py").path, "--stdio"]'),'The bundled helper must not write bytecode into the signed app');
+assert.ok(build.includes("info['CFBundleShortVersionString'] = sys.argv[2]"));
 assert.ok(!fs.existsSync('desktop/Perch.swift'));
 const controller={window:{}};
 vm.runInNewContext(fs.readFileSync('dist/controller-model.js','utf8'),controller);
