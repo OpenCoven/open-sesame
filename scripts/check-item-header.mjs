@@ -1,0 +1,25 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+// Controller checks with a DOM adapter; actual browser layout needs visual QA.
+const nodes=new Map();let documentActive=null;
+class Node {
+  constructor(id=''){this.id=id;this.children=[];this.handlers={};this.attrs={};this.dataset={};this.value='';this.hidden=true;this.clientWidth=600;this.clientHeight=360;this.offsetHeight=220;const classes=new Set();this.classList={toggle:(name,on)=>on?classes.add(name):classes.delete(name)};this.style={setProperty(){}};}
+  addEventListener(type,fn){(this.handlers[type]??=[]).push(fn)}
+  dispatchEvent(event){for(const fn of this.handlers[event.type]||[])fn({target:this,preventDefault(){},stopPropagation(){},...event});return true}
+  emit(type,event={}){this.dispatchEvent({type,...event})}
+  getBoundingClientRect(){return {left:0,top:0,right:600,bottom:this.id==='pane-items'?360:26,width:600,height:360}}
+  setAttribute(key,value){this.attrs[key]=String(value)}getAttribute(key){return this.attrs[key]??null}
+  append(...nodes){this.children.push(...nodes)}replaceChildren(...nodes){this.children=[...nodes]}insertAdjacentHTML(){}contains(node){return node===this||this.children.includes(node)}
+  querySelectorAll(){return this.children}querySelector(selector){return selector.includes('aria-checked')?this.children.find(n=>n.attrs['aria-checked']==='true')||null:this.children[0]||null}
+  focus(){documentActive=this}
+}
+const get=id=>{if(!nodes.has(id))nodes.set(id,new Node(id));return nodes.get(id)},item={id:'retained',title:'Keep this title',body:'Keep all content',projectId:'p8'},projects=Array.from({length:12},(_,i)=>({id:'p'+(i+1),name:'Project '+(i+1)}));let fail=false,saved=null,newProjectFor='';
+const window={addEventListener(){}},doc={getElementById:get,createElement:()=>new Node(),addEventListener(){},get activeElement(){return documentActive}};
+const context={window,document:doc,projects,$:get,currentItem:()=>item,libraryOpen:true,state:{scenario:'items',expanded:true},projectFilter:'p8',projectName:id=>projects.find(p=>p.id===id)?.name||'Inbox',icon:()=>'<svg></svg>',Event:class{constructor(type){this.type=type}},saveItems:()=>{if(fail)return false;saved={...item};return true},toast(){},renderItems:()=>window.OpenSesameItemHeader?.sync(),renderProjectSelectors:()=>{get('detail-project').value=item.projectId;window.OpenSesameItemHeader?.sync()},showProjectForm:id=>newProjectFor=id};
+vm.createContext(context);const app=fs.readFileSync('dist/app.js','utf8'),listener=app.split('\n').find(line=>line.startsWith("$('detail-project').addEventListener('change'"));assert.ok(listener);vm.runInContext(listener,context);vm.runInContext(fs.readFileSync('dist/item-header.js','utf8'),context);
+const button=get('detail-project-toggle'),menu=get('detail-project-menu'),options=()=>get('detail-project-options').children;
+assert.match(button.getAttribute('aria-label'),/Project 8/);button.emit('click');assert.equal(menu.hidden,false);assert.equal(get('detail-project-search-wrap').hidden,false);assert.equal(get('detail-project-page').textContent,'2 / 3');options().find(n=>n.dataset.projectId==='p10').emit('click');assert.equal(item.projectId,'p10');assert.equal(saved.projectId,'p10');assert.equal(saved.body,'Keep all content');assert.equal(context.projectFilter,'p10');assert.equal(menu.hidden,true);assert.match(button.getAttribute('aria-label'),/Project 10/);
+button.emit('click');fail=true;options().find(n=>n.dataset.projectId==='p8').emit('click');assert.equal(item.projectId,'p10','Failed writes must restore the prior assignment');assert.equal(saved.projectId,'p10');assert.equal(get('detail-project').value,'p10');assert.equal(context.projectFilter,'p10');fail=false;
+button.emit('click');get('detail-project-search').value='Project 12';get('detail-project-search').emit('input');assert.equal(options().length,1);options()[0].emit('click');assert.equal(item.projectId,'p12');assert.equal(item.body,'Keep all content');assert.equal(item.title,'Keep this title');
+button.emit('click');menu.emit('keydown',{key:'Escape',target:options()[0]});assert.equal(menu.hidden,true);assert.equal(documentActive,button);button.emit('click');menu.emit('keydown',{key:'Tab',target:options()[0],shiftKey:false});assert.equal(menu.hidden,true);assert.equal(documentActive,get('detail-title'));
+button.emit('click');get('detail-project-new').emit('click');assert.equal(newProjectFor,item.id);assert.equal(menu.hidden,true);button.emit('click');context.libraryOpen=false;window.OpenSesameItemHeader.sync();assert.equal(menu.hidden,true);
+console.log('Item project picker: assignment persistence, failed-write rollback, search/pagination, content preservation, Escape/Tab focus, new-project routing, and closure when leaving detail passed with a simulated DOM.');

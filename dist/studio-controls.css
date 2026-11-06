@@ -1,0 +1,75 @@
+/* Studio controls are independent of the widget's scaled content. */
+/* Fill the studio column and preserve the simulated display's aspect ratio. */
+html:not(.native-desktop) body:not(.presenting):not(.inspecting):not(.open-sesame-edge-to-edge) .workspace{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#d4cadf transparent}
+html:not(.native-desktop) body:not(.presenting):not(.inspecting):not(.open-sesame-edge-to-edge) .workspace>:is(.workspace-heading,.preview-toolbar,.preview-footer,.bottom-bar){flex-shrink:0}
+html:not(.native-desktop) body:not(.presenting):not(.inspecting):not(.open-sesame-edge-to-edge) .preview-well{display:block;flex:none;height:auto;min-height:0;max-height:none}
+html:not(.native-desktop) body:not(.presenting):not(.inspecting):not(.open-sesame-edge-to-edge) .desktop-frame{width:100%;transition:none}
+.sidebar{width:300px;min-height:0;padding:0;background:#fcfbfd;overflow:hidden;border-right:1px solid #e9e5ed}
+.studio-sidebar-header{flex:none;padding:20px 20px 17px;background:#ffffffd9;border-bottom:1px solid #ece8ef}
+.sidebar .sidebar-title{margin:0 0 15px;min-height:26px;gap:10px}
+.sidebar .eyebrow{font-size:9px;font-weight:600;letter-spacing:1.5px;color:#877b93}
+.sidebar #reset{min-height:28px;padding:5px 8px;gap:6px;font-size:11px;border-radius:7px;color:#7b6d87}
+.sidebar #reset:hover{background:#f0ecf5;color:#51405f}
+.studio-sidebar-header h2{margin:0 0 5px;font-size:19px;line-height:1.3;letter-spacing:-.55px;font-weight:600;color:#29232f}
+.sidebar .intro{margin:0;font-size:11px;line-height:1.5;color:#80748b}
+.studio-controls-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d4cadf transparent;padding:19px 18px 20px;scroll-padding-block:16px}
+.sidebar .control-section{padding:0 0 18px;margin:0 0 18px;border-bottom:1px solid #e9e4ed}
+.sidebar .control-section:last-child{margin:0;padding:0;border:0}
+.sidebar .section-heading{margin:0 0 13px;min-height:20px;gap:8px}
+.sidebar .section-heading h3{font-size:12px;line-height:20px;font-weight:600;color:#3d3346;letter-spacing:-.1px}
+.sidebar .subtle{font-size:9px;color:#8f829a;white-space:nowrap}
+.sidebar .tiny-tag{font-size:8px;letter-spacing:.8px;border-color:#e6ddeb;color:#8e7b9e;background:#f6f1fa;border-radius:5px;padding:3px 6px}
+.sidebar .layout-options{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:0 0 15px}
+.sidebar .layout-option{min-height:76px;padding:12px 8px 10px;gap:8px;border-radius:11px;border-color:#e8e2ed;background:#fff;color:#796c85;font-size:11px}
+.sidebar .layout-option.selected{background:#f4eefb;border-color:#ad8dd0;box-shadow:inset 0 0 0 1px #ad8dd01a;color:#63447f}
+.sidebar .placement-art{width:56px;height:29px;background:linear-gradient(135deg,#eee7f6,#d8c9e7);border-radius:4px}
+.sidebar .notch-art b{left:18px}
+.sidebar :is(.studio-field-heading,.field-label){display:block;margin:0 0 8px;font-size:11px;line-height:16px;font-weight:500;color:#75657f}
+.sidebar .segmented{min-height:34px;padding:3px;gap:2px;border:1px solid #eae4ef;border-radius:9px;background:#eeebf2}
+.sidebar .segmented button{min-height:27px;min-width:0;padding:5px 4px;font-size:11px;line-height:17px;border-radius:6px;color:#807389;white-space:nowrap}
+.sidebar .segmented button.selected{color:#523c67;background:#fff;box-shadow:0 1px 3px #38234312,inset 0 0 0 1px #ffffffc0;font-weight:500}
+.sidebar .size-segments button{font-size:10px;padding-inline:2px}
+.sidebar .studio-range-control+.studio-range-control{margin-top:14px}
+.sidebar .range-label{margin:0 0 2px;min-height:25px;gap:10px;font-size:11px;color:#75657f}
+.sidebar .range-label output{padding:3px 7px;border:1px solid #e9e2ef;background:#fff;border-radius:6px;min-width:55px;text-align:center;color:#5d496e;font-size:10px;line-height:16px}
+.sidebar input[type=range]{height:20px;margin:0;display:block;background:linear-gradient(to right,#aa8cc3 var(--fill,50%),#e7e1ed var(--fill,50%)) center/100% 3px no-repeat;cursor:pointer}
+.sidebar input[type=range]::-webkit-slider-thumb{width:14px;height:14px;border:1px solid #bca8ce;box-shadow:0 1px 3px #4a31531a;background:#fff}
+.sidebar input[type=range]::-moz-range-thumb{width:13px;height:13px;border:1px solid #bca8ce;box-shadow:0 1px 3px #4a31531a;background:#fff;border-radius:50%}
+.sidebar .range-extents{font-size:9px;line-height:14px;margin-top:0;color:#998ba4}
+.sidebar .dimension-note{margin:12px 0 0;min-height:32px;padding:8px 9px;gap:7px;font-size:9px;line-height:15px;border-radius:8px;background:#f0ebf5;color:#806b92;box-shadow:inset 0 0 0 1px #e8e0ef}
+.sidebar .dimension-note svg{width:13px;height:13px}
+.sidebar .switch-row{min-height:40px;gap:12px;margin:0;padding:9px 0;font-size:11px;color:#5d4d6a}
+.sidebar .switch-row label{min-width:0;flex:1;line-height:18px;cursor:pointer}
+.sidebar .switch-row label span{display:block;font-size:11px;font-weight:500}
+.sidebar .switch-row small{display:block;font-size:9px;font-weight:400;line-height:15px;color:#96859f}
+.sidebar .switch{flex:none;align-self:center;width:30px;height:18px;margin:0;background:#ddd7e4;border:1px solid #d5ccdf;cursor:pointer}
+.sidebar .switch:checked{background:#9978b5;border-color:#9978b5}
+.sidebar .switch:before{width:12px;height:12px;top:2px;left:2px;box-shadow:0 1px 2px #3b254b20}
+.sidebar .switch:checked:before{transform:translateX(12px)}
+.sidebar .playful-shape-row{padding:10px 0 0;min-height:36px}
+.sidebar .studio-size-control{padding-top:14px;margin-top:10px;border-top:1px solid #ece6f0}
+.sidebar .size-preset-note{margin:8px 0 0;font-size:9px;line-height:1.6;color:#9885a5;font-variant-numeric:tabular-nums}
+.sidebar .setting-description{font-size:11px;line-height:1.6;color:#8b7b97;margin:0}
+.sidebar .studio-behavior .section-heading{margin-bottom:3px}
+.sidebar .studio-behavior .switch-row+.switch-row{border-top:1px solid #f0eaf4}
+.sidebar .notification-test{margin:10px 0 0;min-height:34px;padding:7px 10px;border:1px solid #e6dceb;border-radius:8px;background:#fff;gap:9px;color:#786286;font-size:10px}
+.sidebar .notification-test svg{height:14px;width:14px}
+.sidebar .notification-test>i:last-child{margin-left:auto;color:#a58cb5}
+.sidebar .scenario-list{gap:5px}
+.sidebar .scenario{display:flex;align-items:center;min-height:53px;margin:0;padding:8px;gap:10px;border:1px solid #ece6f1;border-radius:10px;background:#ffffffa6;box-shadow:0 1px 2px #3c254403}
+.sidebar .scenario>span:nth-child(2){min-width:0;flex:1}
+.sidebar .scenario-icon{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:8px}
+.sidebar .scenario-icon svg{width:16px;height:16px}
+.sidebar .scenario strong{font-size:11px;line-height:16px;font-weight:550;color:#493a56}
+.sidebar .scenario small{display:block;font-size:9px;line-height:14px;margin-top:2px;color:#95839f}
+.sidebar .scenario>i{display:grid;place-items:center;width:17px;height:20px;color:#b7a4c6}
+.sidebar .scenario>i svg{width:11px;height:11px}
+.sidebar .scenario.selected{background:#f0e8f8;border-color:#d7c3e8;box-shadow:inset 2px 0 #a285bc,0 1px 3px #4b2e5910}
+.sidebar .scenario.selected strong{color:#64437f}
+.sidebar .scenario:hover:not(.selected){background:#f6f1fa;border-color:#e2d6eb;filter:none}
+.sidebar .sidebar-bottom{flex:none;margin:0;min-height:39px;padding:11px 20px;border-top:1px solid #ece6f0;background:#ffffffda;gap:7px;font-size:9px;line-height:16px;color:#96839f}
+.sidebar .sidebar-bottom .live-dot{width:5px;height:5px;background:#ad96bd}
+@media(min-width:681px) and (max-width:1100px){.sidebar{width:272px}.studio-sidebar-header{padding-inline:17px}.studio-controls-scroll{padding-inline:15px}.sidebar .subtle{font-size:8px}}
+@media(min-width:681px) and (max-height:760px){.studio-sidebar-header{padding-block:14px}.sidebar .sidebar-title{margin-bottom:9px}.studio-sidebar-header h2{font-size:17px}.studio-controls-scroll{padding-top:15px}.sidebar .control-section{padding-bottom:16px;margin-bottom:16px}}
+@media(max-width:680px){.sidebar{width:100%;overflow:visible;border-right:0}.studio-sidebar-header{padding:20px}.studio-controls-scroll{overflow:visible;display:grid;grid-template-columns:1fr 1fr;align-items:start;gap:20px;padding:20px}.sidebar .control-section{margin:0;padding:0 0 20px}.sidebar .studio-views{grid-column:1/-1}.sidebar .scenario-list{display:grid;grid-template-columns:1fr 1fr}.sidebar .scenario:last-child{grid-column:1/-1}.sidebar .sidebar-bottom{padding-inline:20px}}
+@media(max-width:440px){.studio-controls-scroll{grid-template-columns:1fr;gap:20px}.sidebar .scenario-list{grid-template-columns:1fr}.sidebar .scenario:last-child{grid-column:auto}}

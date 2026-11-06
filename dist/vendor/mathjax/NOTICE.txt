@@ -1,0 +1,5 @@
+MathJax 3.2.2 · Apache-2.0
+Official tex-svg-full.js from mathjax/MathJax, tag 3.2.2.
+Upstream Git blob b3388d20a8d2773b001eebd3211ef1a337335d67.
+Loaded on demand for scientific notation, with local SVG fonts.
+The application enables math packages explicitly and excludes dynamic require, autoload, and HTML injection commands.

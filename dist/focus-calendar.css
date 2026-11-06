@@ -1,0 +1,119 @@
+.focus-view-tabs,.focus-calendar-modes{display:flex;gap:2px;align-items:center}
+#pane-focus .focus-view-tabs button,#pane-focus .focus-calendar-modes button{font-size:8px;font-weight:400;padding:4px 8px;background:none;border:1px solid transparent;border-radius:6px;color:#998da7}
+#pane-focus .focus-view-tabs button[aria-selected=true],#pane-focus .focus-calendar-modes button[aria-selected=true]{color:#e2d8eb;background:#ffffff08;border-color:#ffffff0c}
+#pane-focus[data-focus-view=calendar]>.focus-top .focus-duration-picker,#pane-focus[data-focus-view=calendar]>:not(.focus-top):not(.focus-calendar){display:none!important}
+#pane-focus .focus-calendar{display:flex;flex-direction:column;gap:7px;flex:1;min-height:0;position:relative}
+.focus-calendar-header{display:flex;align-items:center;gap:6px;min-height:25px;flex:none}
+.focus-calendar-header>strong{min-width:0;flex:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:450;color:#d0c6dc}
+.focus-calendar-nav{display:flex;gap:2px;align-items:center}.focus-calendar-nav button,.focus-calendar-header>button{height:22px;min-width:22px;padding:4px;border-radius:5px;background:#ffffff04;color:#afa0bf;font-size:7px}.focus-calendar svg{height:11px;width:11px}
+.focus-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:17px repeat(6,minmax(0,1fr));gap:3px;flex:1;min-height:0}
+.focus-calendar-grid[data-mode=week]{grid-template-rows:17px minmax(0,1fr)}
+.focus-calendar-weekday{font-size:7px;text-align:center;color:#897e96;padding:2px}
+.focus-calendar-cell{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:stretch;gap:3px;padding:4px;border:1px solid #ffffff06;border-radius:7px;background:#ffffff02}
+.focus-calendar-cell.outside{opacity:.45}.focus-calendar-cell.today{border-color:#cbb1df38;background:#cbb1df07}
+.focus-calendar-cell>button{min-height:16px;padding:1px 3px;font-size:8px;color:#c0b2cc;background:none;text-align:left;border-radius:3px}.focus-calendar-cell>button:first-child{align-self:flex-start;font-variant-numeric:tabular-nums}.focus-calendar-cell.today>button:first-child{background:#c6aedc22;color:#f1e7f8}
+.focus-calendar-cell>.focus-calendar-chip{background:#bda7d40d;color:#bfb0cf;min-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:7px;border-left:2px solid #bfa9d44a;padding:2px 4px}
+.focus-calendar-chip[data-status=completed]{border-color:#9fc0ad66}.focus-calendar-chip[data-status=running]{border-color:#d7bb7977}.focus-calendar-cell .focus-calendar-more{font-size:6px;min-height:12px;color:#9c8baa}
+.focus-calendar-day{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0}.focus-calendar-event{display:flex;align-items:center;gap:10px;min-height:38px;height:38px;padding:6px 9px;border:1px solid #ffffff08;border-radius:8px;background:#ffffff03;text-align:left;color:#cdbfd8}.focus-calendar-event time{font-size:8px;color:#9f8eae;min-width:48px}.focus-calendar-event strong{font-size:10px;font-weight:450;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.focus-calendar-event small{font-size:7px;color:#9989a7;white-space:nowrap}.focus-calendar-empty{display:grid;place-content:center;gap:7px;flex:1;color:#8e809d;font-size:10px;text-align:center}.focus-calendar-empty button{font-size:8px;background:#ffffff06;padding:7px 10px;border-radius:6px;color:#b6a5c6}
+.focus-calendar-footer{display:flex;justify-content:space-between;align-items:center;flex:none;min-height:22px;color:#7f748b;font-size:7px}.focus-calendar-footer .workspace-pagination{margin:0;gap:6px}
+.focus-calendar-editor{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid #ffffff12;border-radius:11px;background:linear-gradient(140deg,#2d2c32fc,#1c1c20fc);overflow:auto;scrollbar-width:thin}
+.focus-calendar-editor>header,.focus-calendar-fields,.focus-calendar-editor>footer{display:flex;align-items:center;gap:8px}.focus-calendar-editor header>strong{flex:1;font-size:11px;font-weight:450;color:#ddd1e6}.focus-calendar-editor label{font-size:8px;color:#ad9cbb;display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}.focus-calendar-editor input{min-width:0;width:100%;border:1px solid #ffffff0e;border-radius:6px;background:#161619;color:#d4c6df;padding:7px;font:inherit;font-size:10px;color-scheme:dark}.focus-calendar-editor small,.focus-calendar-editor p{font-size:8px;line-height:1.6;margin:0;color:#a290b1}.focus-calendar-editor p[role=alert]{color:#dfadb8}.focus-calendar-editor button{padding:6px 9px;font-size:8px;color:#beaccd;border-radius:6px;background:#ffffff07}.focus-calendar-editor footer{margin-top:auto}.focus-calendar-editor [type=submit]{background:#c7b2d9;color:#2c2533;margin-left:auto}.focus-calendar-editor .remove-focus-event{color:#d6a4af}.focus-calendar-editor #focus-event-start{background:#b8c7bb18;color:#b7d0bd}
+
+/* Give the countdown all the space left by the current page of agenda rows. */
+#pane-focus .focus-clock-row {
+  display:grid;
+  grid-template-columns:minmax(0, 2.6fr) minmax(144px, 1fr);
+  align-items:stretch;
+  flex:1 1 0;
+  gap:clamp(10px, 1vw, 18px);
+  min-height:0;
+  padding:clamp(12px, 2cqw, 28px);
+  border:1px solid #ffffff12;
+  border-radius:18px;
+  background:radial-gradient(ellipse at 18% 0%,#c6b1e20c,transparent 65%),linear-gradient(135deg,#ffffff06,#00000024);
+  box-shadow:inset 0 1px #ffffff08,0 4px 18px #00000012;
+}
+.focus-clock-face {
+  container-type:size;
+  min-width:0;
+  min-height:0;
+  display:grid;
+  align-items:center;
+}
+#pane-focus .focus-clock-row .timer-value {
+  min-width:0;
+  margin:0;
+  font-size:56px;
+  font-size:min(100cqh, calc(100cqw / var(--timer-em-width, 2.86)));
+  font-weight:350;
+  line-height:0.9;
+  letter-spacing:-0.055em;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+  color:#f1edf4;
+}
+#pane-focus .timer-value span {margin:0;color:#a498af}
+#pane-focus .focus-current {
+  align-self:center;
+  gap:4px;
+  padding-left:clamp(9px, 1vw, 15px);
+  border-left:1px solid #c9b9de24;
+}
+#pane-focus .focus-current>span {font-size:8px;color:#aa9db6;letter-spacing:0.1em}
+#pane-focus .focus-current>strong {
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  font-size:clamp(13px, 1.5cqw, 22px);
+  line-height:1.25;
+}
+#pane-focus .focus-current>small {font-size:clamp(9px, 1cqw, 12px);color:#b8aebf}
+#pane-focus .focus-bottom {margin-top:0}
+/* Keep scheduling close to the calendar instead of stretching its labels. */
+#pane-focus .focus-calendar-editor{inset:8px 8px auto auto;width:min(430px,calc(100% - 16px));height:auto;max-height:calc(100% - 16px);gap:9px;padding:13px;box-shadow:0 14px 45px #0006,inset 0 1px #ffffff08;backdrop-filter:blur(28px)}
+#pane-focus .focus-calendar-editor>label{flex:none}
+#pane-focus .focus-calendar-editor>header{flex:none;min-height:23px}
+#pane-focus .focus-calendar-editor>footer{margin-top:1px;flex:none;padding-top:7px;border-top:1px solid #ffffff0a}
+#pane-focus .focus-calendar-fields{flex:none;gap:8px;align-items:end}
+#pane-focus .focus-calendar-fields>label:first-child{flex:2}#pane-focus .focus-calendar-fields>label:last-child{flex:1}
+#pane-focus #focus-event-topics{padding:7px 9px;border-radius:6px;background:#ffffff04;max-height:5em;overflow:auto;scrollbar-width:thin;line-height:1.6}
+#pane-focus .focus-calendar-editor input{padding:6px 8px;line-height:18px}
+
+/* Controls follow the current topic, keeping the timer and its actions together. */
+#pane-focus .focus-current .focus-bottom{display:flex;flex-direction:column-reverse;align-items:flex-start;gap:7px;margin:9px 0 0;min-height:0}
+#pane-focus .focus-current .focus-bottom>div{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+#pane-focus .focus-current .focus-bottom>span{display:none}
+#pane-focus .focus-current .focus-bottom button{width:32px;height:32px;display:grid;place-items:center;padding:7px;border:1px solid #ffffff17;border-radius:9px;transition:background .16s,box-shadow .16s,color .16s}
+#pane-focus .focus-current #focus-start{order:-1;width:38px;height:32px;background:linear-gradient(145deg,#e0d2ed,#bda5d5);border-color:#eadff680;box-shadow:inset 0 1px #ffffff55,0 3px 12px #0003;color:#29232f}
+#pane-focus .focus-current #focus-start span{display:none}
+#pane-focus .focus-current .focus-bottom button>i{display:grid;place-items:center;width:15px;height:15px}
+#pane-focus .focus-current .focus-bottom button svg{width:15px;height:15px;display:block}
+#pane-focus .focus-current .panel-icon{background:linear-gradient(145deg,#ffffff0d,#ffffff05);color:#d2c8de;box-shadow:inset 0 1px #ffffff06}
+#pane-focus .focus-current .panel-icon:hover:not(:disabled){background:#ffffff16;color:#f2e9fb}
+#pane-focus .focus-current #focus-start:hover{background:linear-gradient(145deg,#ece0f5,#c9b1df);box-shadow:inset 0 1px #ffffff65,0 4px 16px #0004}
+#pane-focus .focus-current .focus-bottom button:disabled{opacity:.3}
+@container open-sesame-widget (min-width:750px){
+  #pane-focus .focus-clock-row{grid-template-columns:minmax(0,2.6fr) minmax(210px,1fr);border-radius:22px}
+  #pane-focus .focus-current .focus-bottom{margin-top:14px}
+  #pane-focus .focus-current .focus-bottom button{width:38px;height:38px;border-radius:10px}
+  #pane-focus .focus-current #focus-start{display:flex;justify-content:center;gap:7px;width:auto;min-width:112px;height:38px;padding:9px 13px;font-size:11px;font-weight:500}
+  #pane-focus .focus-current #focus-start span{display:inline}
+}
+@container open-sesame-widget (max-width:420px){
+  #pane-focus .focus-clock-row{grid-template-columns:minmax(0,1fr) 110px;padding:10px;border-radius:13px}
+  #pane-focus .focus-current{padding-left:8px}
+  #pane-focus .focus-current .focus-bottom>div{gap:4px}
+  #pane-focus .focus-current .focus-bottom button{width:27px;height:29px;padding:5px}
+  #pane-focus .focus-current #focus-start{width:32px;height:29px}
+}
+@media(prefers-reduced-motion:reduce){#pane-focus .focus-current .focus-bottom button{transition:none}}
+
+#widget-panel #pane-focus>.focus-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-start;flex:none}
+#widget-panel #pane-focus>.focus-top .focus-calendar-modes{margin:0;flex:none}
+#widget-panel #pane-focus>.focus-top .focus-duration-picker{margin-left:auto}
+#widget-panel .focus-calendar-header>strong{text-align:left;padding-left:4px}
+
+/* A distinct inset surface gives the countdown a clear visual home. */
+#widget-panel #pane-focus .focus-clock-face{padding:clamp(12px,2cqw,28px);border:1px solid #d2bedc24;border-radius:clamp(14px,2cqw,24px);background:radial-gradient(ellipse at 25% 0%,#c4a9df16,transparent 72%),linear-gradient(145deg,#ffffff0b,#ffffff04);box-shadow:inset 0 1px #ffffff0c,0 5px 22px #0000001a;overflow:hidden}

@@ -1,0 +1,17 @@
+@create-markdown/core + @create-markdown/preview 2.0.3
+Official source: https://github.com/BunsDev/create-markdown
+Pinned commit: c5c291c9801078674069fd30eea8203777e6f7d8
+MIT license: create-markdown-LICENSE
+
+DOMPurify 3.4.17
+Official distribution source: https://github.com/cure53/DOMPurify/blob/main/dist/purify.min.js
+Apache-2.0 OR MPL-2.0 license: DOMPurify-LICENSE
+
+Package sources and build instructions are included in the source checkout.
+
+Marked pinned source snapshot 18.1.3
+Official source: https://github.com/markedjs/marked
+Pinned commit: ba50aa95636ac8f97f46446bbfeb04592ed22216
+MIT license: marked-LICENSE
+Build: node scripts/build-gfm.mjs
+Used only for sanitized GitHub Markdown views.

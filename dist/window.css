@@ -1,0 +1,27 @@
+/* The window is the canvas: no simulated desktop, scale, gap or rounded exterior. */
+html.open-sesame-edge-to-edge,html.open-sesame-edge-to-edge body{width:100%;height:100%;margin:0;overflow:hidden;background:#0d0e10}
+.open-sesame-edge-to-edge :is(.app-header,.sidebar,.workspace-heading,.preview-toolbar,.preview-footer,.bottom-bar,.wallpaper,.mac-menubar,.desktop-composition,.desktop-file,.desktop-dock,.exit-present,#menu-trigger){display:none!important}
+.open-sesame-edge-to-edge :is(.app-body,.workspace,.preview-well,.desktop-frame,.desktop-viewport,.desktop){position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;transform:none!important;box-shadow:none!important;overflow:hidden!important}
+.open-sesame-edge-to-edge #widget-anchor.expanded{position:absolute;inset:0!important;width:100%!important;height:100%!important;transform:none!important;border-radius:0!important;transition:none;box-shadow:none}
+.open-sesame-edge-to-edge #widget-anchor:before,.open-sesame-edge-to-edge #widget-anchor:after{display:none}
+.open-sesame-edge-to-edge #widget-anchor.expanded #widget-panel{border-radius:0!important;transition:none;padding-top:max(5px,env(safe-area-inset-top));padding-bottom:max(7px,env(safe-area-inset-bottom))}
+.open-sesame-edge-to-edge .app-toast{max-width:calc(100vw - 32px);bottom:14px;z-index:300}
+.open-sesame-detached #frame-resize-layer{display:none!important}
+#widget-panel .panel-window-button{flex:none;display:grid;place-items:center;width:24px;height:24px;padding:5px;border:1px solid transparent;border-radius:7px;background:transparent;color:#a9a6b0}
+#widget-panel .panel-window-button svg{width:13px;height:13px;stroke-width:1.5}
+#widget-panel .panel-window-button:hover,#widget-panel .panel-window-button[aria-pressed=true]{background:linear-gradient(#ffffff0c,#ffffff04);border-color:#ffffff0b;color:#e6e2ec}
+.window-away{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:#101113ed;backdrop-filter:blur(28px);color:#ddd9e2;text-align:center}
+.window-away>div{width:min(380px,calc(100vw - 36px));padding:28px}
+.window-away i{display:inline-flex;color:#b9adc9}.window-away svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.25}
+.window-away h2{font-size:21px;font-weight:450;letter-spacing:-.5px;margin:18px 0 10px}
+.window-away p{font-size:12px;line-height:1.7;color:#a4a1ab;margin:0 0 22px}
+.window-away button{font-size:12px;padding:10px 15px;margin:3px;border-radius:10px;background:#ffffff09;color:#c8c4d0;border:1px solid #ffffff10}
+.window-away #window-focus{background:linear-gradient(#d6c6e8,#b9a9cc);color:#25212c;border-color:#e0d2f022}
+@media(max-width:560px){
+ .open-sesame-edge-to-edge #widget-anchor.expanded #widget-panel{padding-inline:9px}
+ .open-sesame-edge-to-edge #activity-menu.widget-tabs>button{gap:3px;font-size:10px}
+ .open-sesame-edge-to-edge #activity-menu.widget-tabs>button i{display:none}
+ .open-sesame-edge-to-edge #panel-privacy{display:none}
+ .open-sesame-edge-to-edge #widget-panel>.panel-top{gap:2px}
+}
+@media(max-width:380px){.open-sesame-edge-to-edge #activity-menu.widget-tabs>button{font-size:9px}.open-sesame-edge-to-edge #widget-panel .panel-window-button{width:22px;padding:4px}}

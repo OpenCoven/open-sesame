@@ -1,0 +1,25 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+class Element{
+ constructor(){this.hidden=true;this.value='';this.style={setProperty(){}};this.handlers={};this.attrs={};this.classList={toggle(){}}}
+ addEventListener(type,fn){(this.handlers[type]??=[]).push(fn)}setAttribute(k,v){this.attrs[k]=v}focus(){}blur(){}closest(){return null}
+ append(){}replaceChildren(){}getBoundingClientRect(){return{width:640,height:480}}
+}
+function environment({pip=false,denied=false,blocked=false,native=false}={}){
+ const nodes=new Map(),el=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id)},events={},messages=[],calls=[],storage=new Map();let paused=0,focused=0;
+ const doc={documentElement:new Element(),activeElement:new Element(),getElementById:el,querySelector:()=>new Element(),querySelectorAll:()=>[],addEventListener:(t,f)=>{events[t]=f}};
+ const host={closed:false,innerWidth:700,innerHeight:500,focus(){focused++},close(){this.closed=true},document:{head:new Element(),body:new Element(),createElement:()=>new Element()},addEventListener(){}};
+ const win={__OPEN_SESAME_NATIVE__:native,innerWidth:1200,innerHeight:800,document:doc,addEventListener(){},dispatchEvent(){},open(){calls.push('popup');return blocked?null:host}};win.top=win;
+ if(pip)win.documentPictureInPicture={requestWindow:async size=>{calls.push(size);if(denied)throw Error('Denied');return host}};
+ const data=()=>({});for(const name of ['openSesameReading','OpenSesameFocusCalendar','OpenSesameLive'])win[name]={handoff:data};win.OpenSesameNotes={finish(){return true}};
+ win.OpenSesameLocalMedia={handoff:()=>({queue:[]}),snapshot:()=>({playing:true}),control(){paused++}};
+ const ctx={window:win,document:doc,location:{href:'https://open-sesame.test/'},URL,screen:{availWidth:1440,availHeight:900},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},setInterval:()=>1,clearInterval(){},clearTimeout(){},requestAnimationFrame:()=>1,cancelAnimationFrame(){},Event,CustomEvent:Event,
+ state:{size:'medium',layout:'notch',expanded:true},items:[],projects:[],libraryOpen:false,detailFullWidth:false,selectedItemId:'',projectFilter:'all',categoryFilter:'all',itemsArchive:false,itemsView:'table',itemsPage:0,libraryQuery:'',expandedCategories:new Set(['note']),attachedUrl:'',ignoredInlineUrl:'',focusMinutes:25,focusRemaining:120,focusRunning:true,focusEnd:Date.now()+120000,focusElapsedMs:0,focusStartedAt:Date.now(),focusTopics:[],focusPage:0,transcriptEditor:{get:()=>'',set(){}},audioSession:{active:false,starting:false},hoverTimer:0,renderAgendaList(){},renderFocus(){},render(){win.OpenSesameWindow?.sync()},renderDraft(){},fit(){},expandedFrame:()=>({width:1200,height:800}),toast:msg=>messages.push(msg),openSesameBridge:{request:async(method,params)=>{calls.push({method,params});return true}}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync('dist/window.js','utf8'),ctx);return{ctx,win,el,host,calls,messages,paused:()=>paused,focused:()=>focused,events};
+}
+let e=environment();e.el('capture-input').value='Draft';await e.win.OpenSesameWindow.open();assert.equal(e.calls[0],'popup');assert.equal(e.el('window-away').hidden,false);assert.equal(e.ctx.focusRunning,false);assert.equal(e.paused(),1);await e.win.OpenSesameWindow.open();assert.equal(e.calls.length,1,'Existing floating window is reused');assert.equal(e.focused(),1);e.win.OpenSesameWindow.dock();assert.equal(e.host.closed,true);assert.equal(e.ctx.focusRunning,true,'Timer resumes from its original deadline');assert.equal(e.el('capture-input').value,'Draft');assert.equal(e.el('window-away').hidden,true);
+e=environment({pip:true});await e.win.OpenSesameWindow.open();assert.deepEqual(JSON.parse(JSON.stringify(e.calls[0])),{width:640,height:480});assert.match(e.el('window-away-description').textContent,/Always on top/);
+e=environment({pip:true,denied:true});await e.win.OpenSesameWindow.open();assert.equal(e.ctx.focusRunning,true);assert.equal(e.el('window-away').hidden,true);assert.match(e.messages.at(-1),/Click Pop out again/);await e.win.OpenSesameWindow.open();assert.equal(e.calls.at(-1),'popup','A fresh gesture can open the fallback after PiP rejection');
+e=environment({blocked:true});await e.win.OpenSesameWindow.open();assert.equal(e.ctx.focusRunning,true);assert.match(e.messages.at(-1),/Allow pop-ups/);
+e=environment();e.ctx.audioSession.active=true;await e.win.OpenSesameWindow.open();assert.equal(e.calls.length,0);assert.equal(e.ctx.focusRunning,true);assert.match(e.messages.at(-1),/Stop recording/);
+e=environment({native:true});await e.win.OpenSesameWindow.open();assert.equal(e.calls[0].method,'window.detach');assert.equal(e.win.OpenSesameWindow.detached,true);assert.equal(e.ctx.focusRunning,true,'Native detachment keeps the original live workspace');e.win.OpenSesameWindow.dock();await Promise.resolve();assert.equal(e.win.OpenSesameWindow.detached,false);
+console.log('Floating-window lifecycle, duplicate-open reuse, draft/timer handoff, popup blocking, PiP failure fallback, active capture guard and native docking passed.');

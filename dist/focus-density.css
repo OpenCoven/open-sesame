@@ -1,0 +1,64 @@
+/* Content sets the rhythm: two compact players beside the combined planner. */
+#widget-panel #focus-overview{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:'music timer' 'youtube timer' 'media media';grid-template-rows:repeat(3,max-content);align-content:start;gap:10px;padding:3px 0}
+#focus-overview>.music-tile{grid-area:music}#focus-overview>.timer-tile{grid-area:timer}#focus-overview>.youtube-tile{grid-area:youtube}#focus-overview>.media-tile{grid-area:media}
+#widget-panel #focus-overview>.focus-tile{padding:clamp(12px,1.5cqw,18px);gap:10px;align-self:stretch;min-height:min-content}
+#widget-panel #focus-overview .bento-player{flex:0 0 auto;min-height:68px;gap:10px}
+#widget-panel #focus-overview .bento-record{width:clamp(40px,17cqw,76px)}
+#widget-panel #focus-overview .bento-video-art{display:grid;width:clamp(52px,23cqw,110px)}
+#widget-panel #focus-overview .bento-copy strong{font-size:clamp(12px,4cqw,16px)}
+#widget-panel #focus-overview .bento-copy small{font-size:clamp(10px,3cqw,12px)}
+#widget-panel #focus-overview .bento-link-form{min-height:34px;margin-top:auto}
+#widget-panel #focus-overview .media-volume{margin:0}
+#widget-panel #focus-overview .bento-agenda{flex:none;gap:8px;justify-content:flex-start}
+#widget-panel #focus-overview .bento-clock{flex:none;min-height:45px}
+#widget-panel #focus-overview #bento-clock{font-size:clamp(34px,14cqw,60px)}
+#widget-panel #focus-overview #bento-timer-topic{font-size:11px}
+#widget-panel #focus-overview .bento-plan-section{border-top:1px solid #ffffff0c;padding-top:10px;display:flex;flex-direction:column;gap:7px;flex:none;min-width:0}
+#widget-panel #focus-overview .bento-plan-section>header{display:flex;gap:6px;align-items:center;min-width:0}
+#widget-panel #focus-overview .bento-plan-section>header strong{font-size:11px;font-weight:500;color:#d3c5df}
+#widget-panel #focus-overview .bento-plan-section>header>small,#widget-panel #bento-calendar-day{margin-left:auto;font-size:9px;color:#a99bb4;font-weight:400}
+#widget-panel #bento-agenda-topics{display:flex;flex-direction:column;gap:4px}
+#widget-panel #bento-agenda-topics>button{display:flex;align-items:center;justify-content:space-between;padding:5px 7px;gap:10px;background:#ffffff04;min-height:26px;width:100%;text-align:left}
+#widget-panel #bento-agenda-topics>button>span{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#widget-panel #bento-agenda-topics>button>small{font-size:10px;color:#a799b3;flex:none;font-variant-numeric:tabular-nums}
+#widget-panel .bento-quick-add{display:flex;align-items:center;gap:5px;background:#0002;border:1px solid #ffffff10;border-radius:8px;padding:4px 5px;min-width:0}
+#widget-panel .bento-quick-add input{flex:1;min-width:0;width:0;border:0;background:none;padding:4px;color:#dfd1e9;font-size:11px}
+#widget-panel .bento-quick-add input[type=number]{width:32px;flex:none;appearance:textfield;text-align:right;padding:2px}
+#widget-panel .bento-quick-add input::-webkit-inner-spin-button{appearance:none}
+#widget-panel .bento-quick-add>span{font-size:9px;color:#a799b3}
+#widget-panel #bento-topic-help{font-size:9px;color:#b9a6c9;line-height:1.5}
+#widget-panel #bento-topic-help:empty{display:none}
+#widget-panel #bento-calendar-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+#widget-panel #bento-calendar-week>button{display:flex;flex-direction:column;gap:4px;min-height:38px;padding:5px 1px;border:1px solid #ffffff09;background:#ffffff03;font-variant-numeric:tabular-nums}
+#widget-panel #bento-calendar-week small{font-size:8px;color:#a598ae}#widget-panel #bento-calendar-week span{font-size:11px}
+#widget-panel #bento-calendar-week .today{background:#c4a4e01a;border-color:#c4a4e030;color:#e3cdf5}
+#widget-panel #bento-upcoming{flex:none;max-height:70px;font-size:10px;line-height:1.5;min-height:24px}
+#widget-panel #bento-upcoming strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+#widget-panel #bento-calendar-open{font-size:10px}
+#widget-panel #bento-event-form{display:flex;flex-direction:column;gap:7px;padding:9px;border:1px solid #c9afdf25;border-radius:9px;background:#b598cf09}
+#widget-panel #bento-event-form label{display:flex;align-items:center;gap:8px;font-size:9px;color:#b9a7c9;min-width:0}
+#widget-panel #bento-event-form input{min-width:0;width:0;flex:1;padding:6px 7px;border:1px solid #ffffff0c;border-radius:6px;background:#0002;color:#e5d9ef;font-size:10px;color-scheme:dark}
+#widget-panel #bento-event-form>div{display:flex;align-items:center;gap:4px;flex-wrap:wrap}#widget-panel #bento-event-form>div>label{margin-right:auto}
+#widget-panel #bento-event-form button[type=submit]{background:#c7afdf24;color:#e4d3f2;border-color:#c7afdf25}
+#widget-panel #bento-event-error{font-size:10px;color:#e2b6bf}
+#widget-panel #focus-overview>.media-tile{position:relative;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(170px,1fr);grid-template-rows:repeat(3,max-content);align-items:center;column-gap:20px}
+#widget-panel #focus-overview>.media-tile>header{grid-column:1/-1}
+#widget-panel .bento-media-empty{min-height:100px;gap:6px;justify-content:center}
+#widget-panel .bento-media-empty strong{font-size:12px;font-weight:450}#widget-panel .bento-media-empty small{font-size:10px;color:#a89bb4}
+#widget-panel .bento-drop-icon{display:grid;place-items:center;width:36px;height:36px;border:1px solid #c9b0df20;background:#c9b0df0c;border-radius:10px}
+#widget-panel .bento-drop-icon svg{width:20px;height:20px}
+#widget-panel .bento-media-import{display:grid;grid-template-columns:1fr 1fr;gap:6px;min-width:0;border:1px dashed #c9b0df35;border-radius:12px;padding:12px;background:#c9b0df05}
+#widget-panel .bento-media-import>button{padding:9px 5px;min-height:36px;border:1px solid #c9b0df1b;background:#c9b0df0b;font-size:11px}
+#widget-panel #bento-drop-status{grid-column:1/-1;text-align:center;font-size:10px;color:#b0a0bf;line-height:1.5}
+#widget-panel #bento-media-volume{grid-column:1/-1}
+#widget-panel #focus-overview .bento-media-loaded{min-height:110px;gap:6px;overflow:hidden}
+#widget-panel #focus-overview .bento-carousel{flex:none;height:85px}
+#widget-panel #focus-overview .bento-media-art{width:120px;max-height:85px}
+#widget-panel #focus-overview .bento-media-art.has-video{width:150px}
+#widget-panel .media-drop-active{position:relative;outline:2px solid #c5a3e2;outline-offset:-3px;background:#9d7bbc26!important}
+#widget-panel .media-drop-active:after{content:attr(data-drop-label);position:absolute;inset:8px;z-index:10;display:grid;place-items:center;border:1px dashed #d6b9ef88;border-radius:12px;background:#26202fef;color:#ecddfa;font-size:15px;pointer-events:none;box-shadow:0 0 30px #b79ad21a}
+@container open-sesame-widget (max-width:500px){#widget-panel #focus-overview{grid-template-columns:1fr;grid-template-areas:'music' 'timer' 'youtube' 'media';grid-template-rows:repeat(4,max-content)}#widget-panel #focus-overview>.media-tile{display:flex;gap:12px}#widget-panel .bento-media-import{width:100%}#widget-panel #bento-media-volume{width:100%}}
+@container open-sesame-widget (min-width:1000px){#widget-panel #focus-overview{grid-template-columns:1fr 1.1fr 1fr;grid-template-areas:'music timer media' 'youtube timer media';grid-template-rows:repeat(2,max-content)}#widget-panel #focus-overview>.media-tile{display:flex;justify-content:flex-start}#widget-panel #focus-overview .bento-media-loaded{width:100%;flex:1}#widget-panel #focus-overview .bento-carousel{height:150px}#widget-panel #focus-overview .bento-media-art{max-height:150px}#widget-panel .bento-media-import,#widget-panel #bento-media-volume{width:100%}#widget-panel .bento-media-import{margin-top:auto}#widget-panel .bento-media-empty{width:100%;flex:1}}
+
+#widget-panel #focus-overview>.media-tile>header{width:100%}
+@container open-sesame-widget (min-width:1000px){#widget-panel #focus-overview>.media-tile{align-self:start;min-height:0}#widget-panel #focus-overview .bento-media-empty{flex:none;min-height:130px}#widget-panel #focus-overview .bento-media-loaded{flex:none;min-height:190px}#widget-panel .bento-media-import{margin-top:0}}

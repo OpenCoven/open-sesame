@@ -1,0 +1,47 @@
+/* Composer metadata lives in the command palette, leaving one quiet input surface. */
+#widget-panel .capture-foot{display:none!important}
+#widget-panel #capture-settings{flex:none;border-top:1px solid #ffffff0c;padding:7px 3px 0;font-size:10px;color:#a99bb8}
+#widget-panel #capture-settings summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;padding:3px 0}
+#widget-panel #capture-settings summary:after{content:'⌄';margin-left:auto}
+#widget-panel #capture-settings>div{display:flex;gap:10px;padding:9px 0 3px}
+#widget-panel #capture-settings label{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+#widget-panel #capture-settings select{background-color:#ffffff06;border:1px solid #ffffff0a;border-radius:7px;flex:1;min-width:0;font-size:11px;color:#ded2e9}
+#widget-panel #capture-url-row .capture-link-preview{display:flex;align-items:center;gap:7px;margin-top:8px;min-width:0;font-size:11px;color:#cbb6de}
+#widget-panel #capture-link-domain{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#widget-panel #remove-url{margin-left:auto}
+.syntax-host{position:relative}
+#widget-panel .syntax-overlay{position:absolute;z-index:1;pointer-events:none;overflow:hidden;margin:0;border:0;background:transparent;color:#e3dee9;box-sizing:border-box}
+#widget-panel .syntax-overlay code{display:block;font:inherit;white-space:inherit;letter-spacing:inherit;overflow-wrap:inherit;background:none;padding:0;border:0;margin:0;border-radius:0;box-shadow:none}
+#widget-panel textarea.syntax-input{color:transparent!important;-webkit-text-fill-color:transparent;caret-color:#e3d5f3}
+#widget-panel textarea.syntax-input::selection{background:#ae8dd347}
+#widget-panel .syntax-command,#widget-panel .syntax-keyword{color:#cdb1f2}
+#widget-panel .syntax-string{color:#afd5bb}#widget-panel .syntax-number{color:#e0c394}
+#widget-panel .syntax-variable,#widget-panel .syntax-flag{color:#a7c8e5}#widget-panel .syntax-comment{color:#9d95aa}
+#widget-panel .syntax-link{color:#a6ced3}#widget-panel .syntax-heading{color:#d9c2ee}#widget-panel .syntax-code{color:#c4b5e0}
+#widget-panel #capture-calculation{padding:0 10px 9px;flex:none}
+#widget-panel .calculation-copy{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;text-align:left;padding:10px 12px;border:1px solid #c9b4e01c;border-radius:10px;background:linear-gradient(110deg,#c5abdf0e,#ffffff03);color:#dfd1ed;user-select:text}
+#widget-panel .calculation-copy>span:first-child{display:flex;flex-direction:column;gap:4px;min-width:0}
+#widget-panel .calculation-copy small{font-size:10px;color:#a99ab8;line-height:1.4;overflow-wrap:anywhere}
+#widget-panel .calculation-copy output{font-size:20px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.3;overflow-wrap:anywhere}
+#widget-panel .calculation-copy svg{width:15px;height:15px;color:#ac9cbb}
+#widget-panel .has-error .calculation-copy output{font-size:12px;color:#d4b3b4}
+#widget-panel .has-error .calculation-copy>span:last-child{display:none}
+#widget-panel #transcript-retry{flex:none;border:1px solid #c6addc30;background:#c6addc10;color:#dbc4ed;padding:6px 9px;border-radius:7px;font-size:11px}
+#widget-panel .transcript-heading{display:flex;align-items:center;gap:10px}
+/* A centered launcher with destinations directly below the search field. */
+body.capture-launcher-open #widget-anchor.expanded{top:50%!important;bottom:auto!important;transform:translate(-50%,-50%)!important;max-height:calc(100% - 48px)!important}
+body.capture-launcher-open #widget-anchor.expanded #widget-panel{border-radius:18px!important;overflow:hidden!important;box-shadow:0 24px 80px #0006,inset 0 1px #ffffff16;background:linear-gradient(135deg,#29282ef7,#1d1c22fc)}
+body.capture-launcher-open #widget-panel #capture-form{border:1px solid #ffffff18;background:transparent;border-radius:18px;display:flex;flex-direction:column;max-height:calc(100vh - 48px)}
+body.capture-launcher-open #widget-panel .capture-input-wrap{min-height:62px;padding:12px 14px}
+body.capture-launcher-open #widget-panel #capture-input{font-size:15px;line-height:24px}
+body.capture-launcher-open #widget-panel #capture-commands{position:static;display:flex;max-height:min(440px,var(--capture-menu-space));margin:0;border:0;border-top:1px solid #ffffff0a;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;padding:10px 12px}
+body.capture-launcher-open #widget-panel #capture-command-list{grid-template-columns:1fr}
+body.capture-launcher-open #widget-panel #capture-command-list>button{height:46px;padding:7px 9px}
+body.capture-launcher-open #widget-panel #capture-command-list strong{font-size:12px}
+body.capture-launcher-open #widget-panel #capture-command-list small{font-size:10px}
+body.capture-launcher-open #widget-panel .capture-commands-heading strong{font-size:10px;color:#b2a7bd}
+body.capture-launcher-open #widget-panel #capture-command-groups{display:none}
+body.capture-launcher-open #widget-panel #capture-settings{font-size:10px}
+body.capture-launcher-open #widget-panel .voice-popover{position:relative;bottom:auto;top:auto;margin:8px;left:auto;right:auto}
+html.native-desktop body.capture-launcher-open #widget-anchor.expanded{top:50%!important;bottom:auto!important}
+@media(forced-colors:active){#widget-panel .syntax-overlay{display:none}#widget-panel textarea.syntax-input{color:CanvasText!important;-webkit-text-fill-color:CanvasText}}

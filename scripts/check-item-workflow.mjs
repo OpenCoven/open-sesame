@@ -1,0 +1,9 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const ctx={window:{}};vm.createContext(ctx);vm.runInContext(fs.readFileSync('dist/item-workflow.js','utf8'),ctx);const w=ctx.window.OpenSesameItemWorkflow;
+assert.deepEqual(Array.from(w.stages,n=>n[1]),['Inbox','Started','Review']);assert.equal(w.label({kind:'task',stage:'active'}),'Started');assert.equal(w.label({kind:'task',stage:'review'}),'Review');assert.equal(w.isArchived({kind:'task',done:true}),true);assert.equal(w.isArchived({kind:'note',stage:'done'}),true);assert.equal(w.stage({stage:'unknown'}),'inbox');
+for(const kind of ['note','task','bookmark']){const item={id:'preserved',kind,stage:'review',title:'Keep this',body:'Details',projectId:'work',done:false};const archived={...item,...w.patch(item,'done',100)};assert.equal(w.isArchived(archived),true);assert.equal(archived.previousStage,'review');assert.equal(archived.done,kind==='task');const restored={...archived,...w.patch(archived,'restore',101)};assert.equal(w.isArchived(restored),false);assert.equal(w.stage(restored),'review');assert.equal(restored.body,item.body);assert.equal(restored.projectId,item.projectId);assert.equal(item.stage,'review');}
+assert.equal(w.patch({kind:'task',stage:'done',done:true},'restore').stage,'inbox');assert.equal(w.patch({},'invalid'),null);console.log('Started/Review workflow, legacy completion, non-destructive archive, and restoration passed.');
+assert.equal(w.excerpt('## Decisions\n- [ ] **Review** [paper](https://example.com)\n![Diagram](assets/diagram.svg)'),'Decisions Review paper Diagram');
+assert.equal(w.excerpt('<b>A note</b>\n\nwith `code`'),'A note with code');
+assert.equal(w.excerpt('x'.repeat(200)).length,178);
+console.log('Project excerpts keep readable text without Markdown markers or image URLs.');
