@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YouTube player</title><style>html,body,#player{width:100%;height:100%;margin:0;background:#101012;overflow:hidden}iframe{border:0;display:block}</style></head><body><div id="player"></div><script>
+'use strict';
+const source=__OPEN_SESAME_SOURCE__;let player=null,ready=false;
+function snapshot(){
+  if(!ready)return {};
+  try{const number=value=>Number.isFinite(Number(value))?Number(value):0,data=player.getVideoData()||{};return {state:number(player.getPlayerState()),time:number(player.getCurrentTime()),duration:number(player.getDuration()),volume:number(player.getVolume()),muted:player.isMuted()===true,video:{video_id:String(data.video_id||'').slice(0,80),title:String(data.title||'').slice(0,1000),author:String(data.author||'').slice(0,1000)},url:String(player.getVideoUrl()||'').slice(0,8192),playlist:(player.getPlaylist()||[]).filter(id=>/^[A-Za-z0-9_-]{11}$/.test(id)).slice(0,1000),index:number(player.getPlaylistIndex())}}catch{return {}}
+}
+function send(type,code){window.webkit.messageHandlers.youtubePlayer.postMessage({generation:source.generation,type,code:code??null,snapshot:snapshot()})}
+window.onYouTubeIframeAPIReady=()=>{
+  const vars={playsinline:1,autoplay:0,origin:source.origin,widget_referrer:source.origin};
+  if(source.list)vars.list=source.list;if(source.start)vars.start=source.start;
+  player=new YT.Player('player',{width:'100%',height:'100%',videoId:source.id||undefined,playerVars:vars,events:{onReady(){ready=true;send('ready')},onStateChange(){send('state')},onError(event){send('error',event.data)}}});
+};
+window.openSesamePlayerCommand=({action,args=[]})=>{
+  if(!ready)return;
+  if(['playVideo','pauseVideo','mute','unMute'].includes(action))player[action]();
+  else if(action==='setVolume')player.setVolume(Math.max(0,Math.min(100,Number(args[0])||0)));
+  else if(action==='seekTo')player.seekTo(Math.max(0,Math.min(86400,Number(args[0])||0)),true);
+  else if(action==='setShuffle')player.setShuffle(args[0]===true);
+  else if(['loadPlaylist','cuePlaylist'].includes(action)&&Array.isArray(args[0])&&args[0].length<=1000&&args[0].every(id=>/^[A-Za-z0-9_-]{11}$/.test(id)))player[action](args[0],Math.max(0,Number(args[1])||0),Math.max(0,Number(args[2])||0));
+  send('state');
+};
+setInterval(()=>{if(ready)send('state')},700);
+</script><script src="https://www.youtube.com/iframe_api" referrerpolicy="strict-origin-when-cross-origin"></script></body></html>

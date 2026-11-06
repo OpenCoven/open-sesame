@@ -366,7 +366,7 @@ function setBookmarkPreview(open){
   $('detail-content').classList.toggle('previewing-bookmark',show);$('bookmark-detail').hidden=!n?.url;$('bookmark-embed-wrap').hidden=!n?.url;$('bookmark-detail').setAttribute('aria-hidden',!show);$('bookmark-detail').inert=!show;
   const tabs=[$('bookmark-preview-toggle'),$('bookmark-notes-tab')];tabs.forEach((tab,i)=>{const active=i===0?show:!show;tab.setAttribute('aria-selected',active);tab.tabIndex=active?0:-1});$('bookmark-notes-panel').hidden=show;
   const visible=state.scenario==='items'&&state.expanded&&libraryOpen,frame=$('bookmark-embed');
-  const github=window.OpenSesameGitHub?.isRepo(n?.url);window.OpenSesameGitHub?.render(n?.url,visible&&show);$('bookmark-embed-wrap').hidden=!!github;const src=visible&&n?.url&&!github&&(show||frame.getAttribute('src')===n.url)?n.url:'about:blank';if(frame.getAttribute('src')!==src)frame.src=src;detailEditor.layout();
+  const native=window.__OPEN_SESAME_NATIVE__===true,github=!native&&window.OpenSesameGitHub?.isRepo(n?.url);window.OpenSesameGitHub?.render(native?null:n?.url,!native&&visible&&show);$('bookmark-embed-wrap').hidden=!!github||!show;const hosted=window.OpenSesameNativeSurfaces?.bookmark(n?.url,visible&&show);frame.hidden=!!hosted;const src=!hosted&&visible&&n?.url&&!github&&show?n.url:'about:blank';if(frame.getAttribute('src')!==src)frame.src=src;detailEditor.layout();
 }
 function closeBookmarkUrl(){ $('bookmark-url-editor').hidden=true;$('bookmark-edit-url').setAttribute('aria-expanded','false'); }
 function renderDetail(){
@@ -390,14 +390,14 @@ $('detail-delete').addEventListener('click',()=>{if(selectedItemId)deleteItem(se
 let bookmarkUrlTimer;
 function applyBookmarkUrl(showError=true){
   clearTimeout(bookmarkUrlTimer);const n=currentItem();if(!n?.url)return false;const url=pageUrl($('detail-url').value);
-  if(!url){$('detail-url-error').hidden=!showError;$('detail-url').setAttribute('aria-invalid','true');return false}
+  if(!url){$('detail-url-error').textContent='Enter a valid HTTP or HTTPS page URL.';$('detail-url-error').hidden=!showError;$('detail-url').setAttribute('aria-invalid','true');return false}
   if(OpenSesameBookmarkModel.duplicate(items,url,n.projectId,n.id)){if(showError)toast('This bookmark is already saved in this project.');$('detail-url').setAttribute('aria-invalid','true');return false}
   $('detail-url-error').hidden=true;$('detail-url').removeAttribute('aria-invalid');
-  if(n.url!==url){n.url=url;saveItems();renderBookmarkMeta(n);renderItems({detail:false});setBookmarkPreview(bookmarkPreview)}return true;
+  if(n.url!==url){const before={url:n.url,text:n.text,title:n.title,updatedAt:n.updatedAt};n.url=url;n.updatedAt=Date.now();if(n.text===before.url)n.text=url;if(n.title===before.url)n.title=url;if(!saveItems()){Object.assign(n,before);$('detail-url-error').textContent='Could not save this address. Try again.';$('detail-url-error').hidden=false;return false}renderBookmarkMeta(n);renderItems({detail:false});setBookmarkPreview(bookmarkPreview)}return true;
 }
 $('bookmark-edit-url').addEventListener('click',()=>{const open=$('bookmark-url-editor').hidden;$('bookmark-url-editor').hidden=!open;$('bookmark-edit-url').setAttribute('aria-expanded',open);if(open)$('detail-url').focus({preventScroll:true})});
 $('bookmark-url-done').addEventListener('click',()=>{if(applyBookmarkUrl()){closeBookmarkUrl();$('detail-more').focus({preventScroll:true})}});
-$('detail-url').addEventListener('change',()=>applyBookmarkUrl());$('detail-url').addEventListener('input',()=>{clearTimeout(bookmarkUrlTimer);$('detail-url-error').hidden=true;const id=selectedItemId;bookmarkUrlTimer=setTimeout(()=>{if(selectedItemId===id)applyBookmarkUrl(false)},400)});
+$('detail-url').addEventListener('change',()=>applyBookmarkUrl());$('detail-url').addEventListener('input',()=>{clearTimeout(bookmarkUrlTimer);$('detail-url-error').hidden=true;$('detail-url').removeAttribute('aria-invalid')});
 $('detail-url').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(applyBookmarkUrl()){closeBookmarkUrl();$('detail-more').focus({preventScroll:true})}}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();const n=currentItem();if(n)$('detail-url').value=n.url;closeBookmarkUrl();$('detail-more').focus({preventScroll:true})}});
 [$('bookmark-preview-toggle'),$('bookmark-notes-tab')].forEach((tab,index)=>{tab.addEventListener('click',()=>setBookmarkPreview(index===0));tab.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const preview=e.key==='Home'||e.key!=='End'&&index===1;setBookmarkPreview(preview);$(preview?'bookmark-preview-toggle':'bookmark-notes-tab').focus({preventScroll:true})}})});
 $('item-search-toggle').addEventListener('click',()=>{itemsSearchOpen=!itemsSearchOpen;syncDetailWidth();if(itemsSearchOpen)$('library-search').focus({preventScroll:true})});

@@ -10,7 +10,7 @@
     if(window.__OPEN_SESAME_NATIVE__){const size=nativeFrame(),key=size.width+'x'+size.height;if(key!==lastGeometry){lastGeometry=key;syncNativeWindow()}}
   }
   function open(){
-    if(active)return;
+    if(active){el('capture-input').focus({preventScroll:true});return;}
     previous={expanded:state.expanded,size:state.size,type:el('capture-type').value};
     window.OpenSesameComposer?.fullscreen(false);window.openSesameCapture?.hide();
     active=true;document.body.classList.add('capture-launcher-open');
@@ -29,7 +29,7 @@
   el('capture-launcher-open').addEventListener('click',open);
   el('capture-launcher-exit').addEventListener('click',()=>close(true));
   document.addEventListener('keydown',event=>{
-    if(event.code==='Space'&&event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.repeat){event.preventDefault();event.stopImmediatePropagation();toggle();return}
+    if(event.code==='Space'&&event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.repeat){event.preventDefault();event.stopImmediatePropagation();if(!window.__OPEN_SESAME_GLOBAL_SHORTCUT__)toggle();return}
     if(active&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();close()}
   },true);
   window.addEventListener('open-sesame-view-changed',()=>{if(active)close(true)});

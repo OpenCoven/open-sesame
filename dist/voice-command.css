@@ -3,7 +3,7 @@
 #widget-panel .voice-command-sheet header strong{font-size:15px;font-weight:500;color:#e5d9ef}
 #widget-panel .voice-command-sheet header>button{margin-left:auto}
 #widget-panel .voice-command-sheet svg{width:16px;height:16px;flex:none}
-#widget-panel .voice-mode-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+#widget-panel .voice-mode-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 #widget-panel .voice-mode-actions>button{display:flex;gap:8px;align-items:center;text-align:left;padding:12px 9px;min-height:56px;border:1px solid #ffffff14;background:#ffffff05;border-radius:10px;font-size:12px}
 #widget-panel .voice-mode-actions span{display:flex;flex-direction:column;gap:5px;min-width:0}
 #widget-panel .voice-mode-actions small{font-size:10px;color:#a99ab6;line-height:1.3}
