@@ -227,7 +227,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         }
         let process = Process(), stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.executableURL = URL(fileURLWithPath: python)
-        process.arguments = ["-u", resources.appendingPathComponent("bridge.py").path, "--stdio"]
+        process.arguments = ["-B", "-u", resources.appendingPathComponent("bridge.py").path, "--stdio"]
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = stderr
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData

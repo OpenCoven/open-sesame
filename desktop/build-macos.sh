@@ -2,6 +2,8 @@
 set -euo pipefail
 open_sesame_root="$(cd "$(dirname "$0")/.." && pwd)"
 open_sesame_app="$open_sesame_root/build/Open Sesame.app"
+open_sesame_version="${OPEN_SESAME_VERSION:-0.0.0}"
+[[ "$open_sesame_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use a numeric release version such as 0.0.0.'; exit 1; }
 command -v xcrun >/dev/null || { echo 'Install Xcode Command Line Tools first: xcode-select --install'; exit 1; }
 open_sesame_python="$(command -v python3 || true)"
 [[ -n "$open_sesame_python" ]] || { echo 'Install Python 3 before building Open Sesame.'; exit 1; }
@@ -16,5 +18,13 @@ printf '%s\n' "$open_sesame_python" > "$open_sesame_app/Contents/Resources/pytho
 cat > "$open_sesame_app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>OpenSesame</string><key>CFBundleDisplayName</key><string>Open Sesame</string><key>CFBundleIdentifier</key><string>com.perch.widgetstudio</string><key>CFBundleName</key><string>Open Sesame</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>1</string><key>LSUIElement</key><true/><key>LSMinimumSystemVersion</key><string>13.0</string><key>NSHighResolutionCapable</key><true/><key>NSSpeechRecognitionUsageDescription</key><string>Open Sesame transcribes speech only when you click a voice control or hold the widget to speak.</string><key>NSMicrophoneUsageDescription</key><string>Open Sesame uses your microphone only when you start voice input or live listening.</string></dict></plist>
 PLIST
+"$open_sesame_python" - "$open_sesame_app/Contents/Info.plist" "$open_sesame_version" <<'PY'
+import pathlib, plistlib, sys
+path = pathlib.Path(sys.argv[1])
+info = plistlib.loads(path.read_bytes())
+info['CFBundleShortVersionString'] = sys.argv[2]
+info['CFBundleVersion'] = sys.argv[2]
+path.write_bytes(plistlib.dumps(info))
+PY
 codesign --force --deep --sign - "$open_sesame_app"
 printf 'Built %s\n' "$open_sesame_app"
