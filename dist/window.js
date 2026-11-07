@@ -38,7 +38,7 @@
     }
     document.querySelectorAll('audio,video').forEach(media=>media.pause());window.openSesameSpeech?.stop();
   }
-  function busy(){return audioSession.active||audioSession.starting||window.OpenSesameLive?.busy||window.OpenSesameVoice?.active}
+  function busy(){return audioSession.active||audioSession.starting||(window.OpenSesameLive?.busy||window.OpenSesameCovenClient?.busy)||window.OpenSesameVoice?.active}
   function sync(){
     const edge=detached||state.expanded&&state.size==='full';root.classList.toggle('open-sesame-edge-to-edge',edge);root.classList.toggle('open-sesame-detached',detached);
     if(edge){

@@ -27,23 +27,23 @@
   <link rel="stylesheet" href="studio-controls.css?v=ee9c3474b7">
   <link rel="stylesheet" href="focus-overview.css?v=75b3b1e4dc">
   <script src="storage-migration.js?v=3ac2f2e93e" defer></script>
-  <script src="bridge.js?v=d2c4fd0d65" defer></script>
+  <script src="bridge.js?v=bbd2f7df72" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f" defer></script>
   <script src="vendor/purify.min.js?v=4936212d73" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e" defer></script>
   <script src="vendor/create-markdown.js?v=14815efa26" defer></script>
   <script src="fit.js?v=0017ebc64d" defer></script>
-  <script src="capture-catalog.js?v=b7727e0d7e" defer></script>
+  <script src="capture-catalog.js?v=223529c4bb" defer></script>
   <script src="calculator.js?v=c064e126d2" defer></script>
   <script src="syntax.js?v=f0c2e3477f" defer></script>
   <script src="computer-controls.js?v=1e537ed2fe" defer></script>
-  <script src="capture.js?v=c5d0aa981e" defer></script>
+  <script src="capture.js?v=38c5e6d64c" defer></script>
   <script src="item-workflow.js?v=e0ff202e7b" defer></script>
   <script src="frame-model.js?v=9da83bef5c" defer></script>
   <script src="bookmark-model.js?v=6a111c3f2b" defer></script>
   <script src="focus-calendar-model.js?v=0a25c0d1a8" defer></script>
   <script src="native-surfaces.js?v=515cb24a11" defer></script>
-  <script src="app.js?v=d594cd5536" defer></script>
+  <script src="app.js?v=cc37a01e91" defer></script>
   <script src="bookmarks.js?v=e69a15e3d5" defer></script>
   <script src="frame.js?v=56010083f1" defer></script>
   <script src="glass-model.js?v=10ef6433cd" defer></script>
@@ -52,7 +52,7 @@
   <script src="pagination.js?v=41ba7e7faf" defer></script>
   <script src="items-views.js?v=fd05bb1fba" defer></script>
   <script src="item-header.js?v=0501decc75" defer></script>
-  <script src="workspace.js?v=3bf4179c16" defer></script>
+  <script src="workspace.js?v=d7967aeb51" defer></script>
   <script src="speech.js?v=893cd06ac2" defer></script>
   <script src="content.js?v=4c436533e4" defer></script>
   <script src="vendor/coven-runtime.js?v=e5dd00e623" defer></script>
@@ -60,8 +60,8 @@
   <script src="recognition.js?v=67184f2927" defer></script>
   <script src="voice.js?v=0c825cf8aa" defer></script>
   <script src="agents-layout.js?v=96fb8f98e4" defer></script>
-  <script src="coven-chat.js?v=b54b8fb0e6" defer></script>
-  <script src="terminal.js?v=93e7ab1b43" defer></script>
+  <script src="coven-chat.js?v=fba6a9b895" defer></script>
+  <script src="terminal.js?v=f1838cb04f" defer></script>
   <script src="github-viewer.js?v=6bc0d7da9c" defer></script>
   <script src="exports.js?v=2e6981ef77" defer></script>
   <script src="site-feeds.js?v=92b76944ee" defer></script>
@@ -93,7 +93,7 @@
   <script src="focus-overview.js?v=df5645bde4" defer></script>
   <script src="screen-notes.js?v=8c8c060d36" defer></script>
   <script src="notes.js?v=5c98607c8a" defer></script>
-  <script src="window.js?v=3f28554ee6" defer></script>
+  <script src="window.js?v=5fd4cb2bac" defer></script>
   <script src="capture-launcher.js?v=e76dbda31c" defer></script>
   <link rel="stylesheet" href="projects-overview.css?v=3a4c0c9c24">
   <script src="projects-overview.js?v=9946efa5d6" defer></script>
@@ -114,11 +114,13 @@
   <script src="widget-options.js?v=d92bcef5b0" defer></script>
   <script src="live-settings.js?v=6ab0ee5b2e" defer></script>
   <link rel="stylesheet" href="plugins.css?v=598f92daa6">
-  <script src="plugins-model.js?v=472fa015ab" defer></script>
-  <script src="plugins.js?v=d567f57693" defer></script>
+  <script src="plugins-model.js?v=886bd2756b" defer></script>
+  <script src="plugins.js?v=94a8714b41" defer></script>
   <script src="audio-source-menu.js?v=211e97c267" defer></script>
   <link rel="stylesheet" href="workspace-rail.css?v=ce253b58d2">
   <link rel="stylesheet" href="live-capture.css?v=1ff3b4de9f">
+  <script src="familiars.js?v=662987338d" defer></script>
+  <link rel="stylesheet" href="familiars.css?v=c6b099f596">
   <link rel="stylesheet" href="activity-rail.css?v=edcc45286c">
 </head>
 <body>
@@ -334,7 +336,18 @@
                     </form>
                   </section>
                   <section id="agents-workspace" class="agents-workspace" role="tabpanel" aria-labelledby="tab-agents" hidden>
-                  <div id="agents-toolbar" class="agents-toolbar" aria-label="Console controls"><div id="agents-context" class="agents-context"><button id="agents-rail-toggle" class="workspace-rail-toggle" type="button" aria-label="Hide pane list" aria-expanded="true" aria-controls="terminal-rail" title="Hide pane list"><i data-icon="rail-left"></i></button><div class="agents-mode-tabs" role="tablist" aria-label="Console views"><button id="agents-monitor" type="button" role="tab" data-agents="agent-monitor" aria-controls="pane-agent-monitor" aria-selected="false" tabindex="-1"><i data-icon="agents"></i><span>Agents</span></button><button id="agents-shells" type="button" role="tab" data-agents="terminal" aria-controls="pane-terminal" aria-selected="true"><i data-icon="terminal"></i><span>Shells</span></button><button id="agents-desktops" type="button" role="tab" data-agents="remote" aria-controls="pane-remote" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Desktops</span></button></div></div><button id="terminal-more" aria-label="Shell preferences" aria-expanded="false" aria-controls="terminal-options" title="Shell preferences"><i data-icon="sliders"></i></button><button id="remote-settings" aria-label="Desktop preferences" title="Desktop preferences" hidden><i data-icon="sliders"></i></button></div>
+                  <div id="agents-toolbar" class="agents-toolbar" aria-label="Console controls"><div id="agents-context" class="agents-context"><button id="agents-rail-toggle" class="workspace-rail-toggle" type="button" aria-label="Hide pane list" aria-expanded="true" aria-controls="terminal-rail" title="Hide pane list"><i data-icon="rail-left"></i></button><div class="agents-mode-tabs" role="tablist" aria-label="Console views"><button id="agents-familiars" type="button" role="tab" data-agents="familiars" aria-controls="pane-familiars" aria-selected="false" tabindex="-1"><i data-icon="chat"></i><span>Familiars</span></button><button id="agents-monitor" type="button" role="tab" data-agents="agent-monitor" aria-controls="pane-agent-monitor" aria-selected="false" tabindex="-1"><i data-icon="agents"></i><span>Processes</span></button><button id="agents-shells" type="button" role="tab" data-agents="terminal" aria-controls="pane-terminal" aria-selected="true"><i data-icon="terminal"></i><span>Shells</span></button><button id="agents-desktops" type="button" role="tab" data-agents="remote" aria-controls="pane-remote" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Desktops</span></button></div></div><button id="terminal-more" aria-label="Shell preferences" aria-expanded="false" aria-controls="terminal-options" title="Shell preferences"><i data-icon="sliders"></i></button><button id="remote-settings" aria-label="Desktop preferences" title="Desktop preferences" hidden><i data-icon="sliders"></i></button></div>
+                  <section id="pane-familiars" class="widget-pane familiars-pane" role="tabpanel" aria-labelledby="agents-familiars" hidden>
+                    <header class="familiar-connection"><div><strong>Coven Familiars</strong><span id="familiar-connection-status" role="status">Connect Coven to find your familiars.</span></div><button id="familiar-connect" type="button">Connect Coven</button><a href="https://github.com/OpenCoven/coven" target="_blank" rel="noopener noreferrer" id="familiar-setup-guide">Setup guide</a></header>
+                    <div class="familiars-workspace"><aside class="familiars-rail" aria-label="Your familiars"><label class="sr-only" for="familiar-search">Find a familiar</label><input id="familiar-search" type="search" placeholder="Find a familiar…" autocomplete="off"><div id="familiar-list" role="tablist" aria-label="Familiar conversations" aria-orientation="vertical"></div><p id="familiar-roster-empty">Your Coven roster appears here.</p></aside>
+                    <section id="familiar-thread" class="familiar-thread" role="tabpanel" aria-label="Familiar conversation"><div id="familiar-welcome"><i data-icon="chat"></i><strong>Talk with your familiars.</strong><p id="familiar-welcome-copy">Connect Coven, choose a familiar, then send a message. Your familiar brings its own identity and workspace.</p></div>
+                      <header id="familiar-thread-header" hidden><div><strong id="familiar-name"></strong><small id="familiar-workspace">Read-only workspace</small></div><button id="familiar-search-open" type="button" aria-label="Search this conversation" title="Search conversation"><i data-icon="search"></i></button><button id="familiar-new" type="button">New chat</button></header>
+                      <label id="familiar-harness-row" hidden>Run with<select id="familiar-harness"><option value="coven-code">Coven Code</option><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label>
+                      <label class="sr-only" for="familiar-history-search">Search this conversation</label><input id="familiar-history-search" type="search" placeholder="Search conversation…" hidden>
+                      <p id="familiar-chat-error" role="alert" hidden></p><p id="familiar-history-notice" hidden></p><div id="familiar-messages" role="log" aria-live="off" aria-label="Conversation messages"></div>
+                      <form id="familiar-compose" hidden><label class="sr-only" for="familiar-message">Message your familiar</label><textarea id="familiar-message" rows="2" maxlength="20000" placeholder="Choose a familiar to begin…"></textarea><div><button type="button" id="familiar-dictate" aria-label="Dictate a message" title="Dictate, then review before sending"><i data-icon="mic"></i></button><small id="familiar-chat-status" role="status">Send when you’re ready.</small><button type="button" id="familiar-stop" hidden>Stop</button><button type="submit" id="familiar-send">Send<i data-icon="arrow-up"></i></button></div></form>
+                    </section></div>
+                  </section>
                   <section id="pane-agent-monitor" class="agent-monitor" role="tabpanel" aria-labelledby="agents-monitor" hidden>
                     <header class="agent-monitor-heading"><div><span class="agent-eyebrow">LOCAL AGENTS</span><h2>A little presence. A clear picture.</h2><p id="agent-connection" role="status">Connect Open Sesame Desktop to discover your agents.</p></div><button type="button" id="agent-refresh" aria-label="Refresh agents" title="Refresh agents"><i data-icon="reset"></i></button></header>
                     <div class="agent-filter-row"><label class="agent-search"><i data-icon="search"></i><input id="agent-search" type="search" aria-label="Find an agent" placeholder="Find an agent or PID…"></label><button type="button" id="agent-demo" aria-pressed="false">Try demo</button></div>
@@ -345,7 +358,7 @@
                   </section>
                   <div id="pane-terminal" role="tabpanel" aria-labelledby="agents-shells" class="widget-pane terminal-pane" hidden>
 
-                    <div id="terminal-create-menu" class="glass-popover workspace-menu terminal-create-menu" role="menu" aria-label="Add a pane" hidden><button id="terminal-new-shell" type="button" role="menuitem"><i data-icon="terminal"></i><span>Shell</span></button><button id="terminal-agent" type="button" role="menuitem"><i data-icon="chat"></i><span>Coven conversation</span><small>Preview</small></button></div>
+                    <div id="terminal-create-menu" class="glass-popover workspace-menu terminal-create-menu" role="menu" aria-label="Add a pane" hidden><button id="terminal-new-shell" type="button" role="menuitem"><i data-icon="terminal"></i><span>Shell</span></button><button id="terminal-agent" type="button" role="menuitem"><i data-icon="chat"></i><span>Chat with a familiar</span></button></div>
                     <div id="terminal-options" class="glass-popover terminal-options" aria-label="Terminal actions" hidden><div id="terminal-toolbar" class="terminal-toolbar"><i class="terminal-project-mark" data-icon="folder"></i><div class="terminal-project-picker"><i data-icon="folder"></i><label class="sr-only" for="terminal-project-filter">Terminal project</label><select id="terminal-project-filter"><option value="all">All projects</option></select></div><span id="terminal-title" class="console-title"></span><span id="terminal-state" role="status">Offline</span><button id="terminal-add" type="button" aria-label="Add new pane" title="Add new pane" aria-haspopup="menu" aria-expanded="false" aria-controls="terminal-create-menu"><i data-icon="plus"></i></button></div><label class="pane-rename" for="terminal-name">Pane name<input id="terminal-name" maxlength="28" autocomplete="off" placeholder="Shell"></label><button id="terminal-settings" aria-label="Configure terminal connection" title="Connection"><i data-icon="sliders"></i><span>Connection settings</span></button><button id="terminal-new-project" type="button" title="Connect a project folder"><i data-icon="folder"></i><span>Connect project</span></button><a id="terminal-desktop-download" role="menuitem" href="downloads/open-sesame-desktop-source.zip" download><i data-icon="download"></i><span>Desktop companion</span></a><button id="terminal-live-audio" type="button"><i data-icon="mic"></i><span>Live</span></button><button id="terminal-side" aria-label="Move pane rail to the right"><i data-icon="rail-right"></i><span>Rail on right</span></button><button id="terminal-disconnect" aria-label="Disconnect current terminal" disabled><i data-icon="stop"></i><span>Disconnect</span></button><button id="terminal-remove" aria-label="Remove current terminal pane"><i data-icon="close"></i><span>Close pane</span></button></div>
                     <div id="terminal-workspace" class="terminal-workspace"><nav id="terminal-rail" class="terminal-rail workspace-list-rail" aria-label="Terminal panes"><div id="terminal-rail-heading" class="workspace-rail-heading console-rail-heading"><div id="terminal-rail-title" class="console-rail-title"></div><span id="terminal-rail-count" class="workspace-rail-count" role="status"></span><form id="terminal-new-pane-form" class="pane-create-row"><button id="terminal-rail-add" type="submit" aria-label="Add new pane" title="Add new pane" aria-haspopup="menu" aria-expanded="false" aria-controls="terminal-create-menu"><i data-icon="plus"></i></button><label class="sr-only" for="terminal-new-pane-name">New pane name</label><input id="terminal-new-pane-name" maxlength="28" placeholder="Pane name" autocomplete="off"></form></div><div id="terminal-pane-list" class="workspace-rail-list" role="tablist" aria-label="Terminal carousel"></div><div id="terminal-rail-pages" class="terminal-rail-pages workspace-pagination"><button class="page-previous" id="terminal-rail-prev" aria-label="Previous pane group"><i data-icon="chevron"></i></button><span id="terminal-rail-page">1 / 1</span><button id="terminal-rail-next" aria-label="Next pane group"><i data-icon="chevron"></i></button></div></nav><div id="terminal-stage" class="terminal-stage"><div id="terminal-connect-empty" class="terminal-empty"><i data-icon="terminal"></i><strong id="terminal-empty-title">A real shell, within reach.</strong><span id="terminal-empty-description">Local and SSH sessions open in the desktop companion.</span><button id="terminal-connect-open">Set up a shell<i data-icon="arrow-up-right"></i></button><button id="terminal-agent-empty" type="button"><i data-icon="chat"></i>Start Coven conversation</button></div><div id="terminal-frames" class="terminal-frames"></div><button id="terminal-reconnect" type="button" hidden>Reconnect<i data-icon="reset"></i></button></div></div>
                     <form id="terminal-connect-form" class="terminal-connect-form glass-sheet" role="dialog" aria-label="Terminal connection" hidden novalidate><div class="setup-sheet-heading"><strong id="terminal-connect-title">Terminal connection</strong><button id="terminal-connect-cancel" type="button" aria-label="Close terminal connection settings"><i data-icon="close"></i></button></div><div class="setup-sheet-body"><div id="terminal-agent-task" class="terminal-agent-task" hidden><label id="terminal-task-label" class="sr-only" for="terminal-task">Request</label><textarea id="terminal-task" maxlength="2000" rows="3" spellcheck="false" autocapitalize="off" aria-describedby="terminal-task-help" placeholder="What should Coven work on?"></textarea><small id="terminal-task-help">Coven handles the conversation and tool permissions.</small></div><div class="shell-machine-types" role="group" aria-label="Connection type"><button type="button" data-shell-machine="local" aria-pressed="true">This Mac</button><button type="button" data-shell-machine="ssh" aria-pressed="false">SSH</button><button type="button" data-shell-machine="web" aria-pressed="false">Web</button></div><select hidden id="terminal-mode"><option value="local">This machine</option><option value="ssh">SSH / tailnet machine</option><option value="web">Web terminal</option></select><div id="terminal-ssh-fields" class="terminal-connection-grid" hidden><div><div class="inline-field"><label for="terminal-host">Host</label><input id="terminal-host" placeholder="mac-mini.tailnet.ts.net" autocomplete="off" spellcheck="false"></div></div><div><div class="inline-field"><label for="terminal-user">User</label><input id="terminal-user" placeholder="Optional" autocomplete="username" spellcheck="false"></div></div></div><div id="terminal-web-fields" hidden><div class="inline-field"><label for="terminal-url">Terminal page URL</label><input id="terminal-url" type="url" list="terminal-server-suggestions" placeholder="https://your-terminal.example" autocomplete="url" spellcheck="false"></div><datalist id="terminal-server-suggestions"></datalist></div><span hidden id="terminal-defaults" class="terminal-defaults">This machine · Inbox · Home folder</span><details id="terminal-advanced" class="terminal-advanced"><summary>Options</summary><div><div class="inline-field"><label for="terminal-pane-project">Project</label><select id="terminal-pane-project"><option value="">Inbox</option></select></div></div><div class="terminal-launcher-field"><div class="inline-field"><label for="terminal-launcher">Session</label><select id="terminal-launcher"><option value="shell">Shell</option><option value="bash">Bash command</option></select></div></div><div id="terminal-folder-fields"><div class="terminal-folder-row inline-field"><label for="terminal-cwd">Folder</label><input id="terminal-cwd" placeholder="Home folder" autocomplete="off" spellcheck="false"><button id="terminal-choose-folder" type="button" title="Choose folder" aria-label="Choose terminal working folder"><i data-icon="folder"></i></button></div></div><details class="terminal-install"><summary>Help &amp; desktop setup</summary><small id="terminal-connection-help">The desktop companion opens your login shell in a real PTY. Tab completion and command history come from your shell.</small><small id="terminal-coven-help" hidden>Runs <code>coven</code> in this folder. Install it on the selected machine first. Coven handles provider sign-in and model choices. <a href="https://github.com/OpenCoven/coven" target="_blank" rel="noopener noreferrer">Coven setup<i data-icon="arrow-up-right"></i></a></small><div id="terminal-desktop-setup" class="terminal-desktop-setup" hidden><a href="downloads/open-sesame-desktop-source.zip" download>Download macOS source<i data-icon="download"></i></a><details><summary>Build and run</summary><p>Requires macOS 13+, Xcode Command Line Tools, and Python 3. Extract the source, then run <code>./run-macos.sh</code>. Local and SSH shells run in that app.</p></details></div></details></details></div><footer class="setup-sheet-footer"><p id="terminal-connect-error" role="alert" hidden></p><button id="terminal-connect-submit" type="submit">Open shell<i data-icon="arrow-up-right"></i></button></footer></form>

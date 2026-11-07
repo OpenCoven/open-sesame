@@ -4,6 +4,7 @@ from controller import Controller
 from computer_controls import control as computer_control
 from live_agents import LiveAgents, agent_status
 from agent_monitor import snapshot as agent_snapshot
+from coven_runtime import CovenRuntime
 import argparse
 import base64
 import errno
@@ -159,9 +160,39 @@ class Bridge:
         self.live = LiveAgents()
         self.live_slot = threading.BoundedSemaphore(1)
         self.agent_scan_slot = threading.BoundedSemaphore(1)
+        self.coven = CovenRuntime(emit)
+        self.coven_slots = threading.BoundedSemaphore(6)
+        self.coven_threads = set()
+        self.coven_threads_lock = threading.Lock()
 
     def handle(self, message):
         request_id = message.get('requestId')
+        if message.get('method') in ('coven.status', 'coven.familiars', 'coven.open', 'coven.new', 'coven.send', 'coven.cancel'):
+            method, params = message['method'], message.get('params') or {}
+            if not isinstance(params, dict):
+                self.emit({'requestId': request_id, 'error': 'Invalid Coven request.'}); return
+            if method == 'coven.cancel':
+                try: self.emit({'requestId': request_id, 'result': self.coven.cancel(params.get('runId'))})
+                except Exception as error: self.emit({'requestId': request_id, 'error': str(error)[:2048]})
+                return
+            if not self.coven_slots.acquire(blocking=False):
+                self.emit({'requestId': request_id, 'error': 'Coven is busy. Try again shortly.'}); return
+            def coven_request():
+                try:
+                    if method == 'coven.status': result = self.coven.status()
+                    elif method == 'coven.familiars': result = self.coven.familiars()
+                    elif method == 'coven.open': result = self.coven.open(params.get('familiarId'))
+                    elif method == 'coven.new': result = self.coven.open(params.get('familiarId'), new=True, expected=params.get('conversationId'))
+                    else: result = self.coven.send(params)
+                    self.emit({'requestId': request_id, 'result': result})
+                except Exception as error:
+                    self.emit({'requestId': request_id, 'error': str(error)[:2048]})
+                finally:
+                    self.coven_slots.release()
+                    with self.coven_threads_lock: self.coven_threads.discard(threading.current_thread())
+            thread = threading.Thread(target=coven_request, daemon=True)
+            with self.coven_threads_lock: self.coven_threads.add(thread)
+            thread.start(); return
         if message.get('method') == 'agents.snapshot':
             if not self.agent_scan_slot.acquire(blocking=False):
                 self.emit({'requestId': request_id, 'error': 'An agent scan is already running.'})
@@ -267,6 +298,10 @@ class Bridge:
         return True
 
     def close(self):
+        self.coven.close()
+        with self.coven_threads_lock: threads = list(self.coven_threads)
+        deadline = time.monotonic() + 6
+        for thread in threads: thread.join(max(0, deadline - time.monotonic()))
         self.live.close()
         if self.controller: self.controller.close(); self.controller = None
         for session in list(self.sessions.values()):

@@ -1,45 +1,33 @@
 'use strict';
+// The pinned Coven runtime interface now uses the app's real, allowlisted host transport.
 (()=>{
-  const el=id=>document.getElementById(id),KEY='open-sesame-coven-preview-v1',records=new Map(),runs=new Map();let active=null,stored={};try{stored=JSON.parse(localStorage.getItem(KEY)||'{}')}catch{}
-  const runtime=OpenSesameCovenRuntime.create({available:()=>true,invoke:async(command,args={})=>{
-    if(command==='coven_runtime_status')return {available:true,version:'prototype',sdkHealth:'unavailable'};
-    if(command==='coven_runtime_cancel'){runs.get(args.runId)?.();return}
-    if(command!=='coven_runtime_send')throw new Error('This preview only supports mocked conversation turns.');
-    const {runId,prompt}=args.input,text=/^(hi|hello|hey)[.! ]*$/i.test(prompt)?'Hi. What would you like to work through?\n\nThis is a **mock reply** for testing the conversation. No model was called and no commands ran.':'I’d break this into a small first step, check the result, then continue from there.\n\nThis is a **mock reply** to your message. Your real Coven runtime is not connected, so no files, tools, or device settings were accessed.';
-    return new Promise((resolve,reject)=>{let index=0,timer;const parts=text.match(/.{1,28}(?:\s|$)|.{1,28}/gs)||[text],events=[];function finish(){clearTimeout(timer);runs.delete(runId)}runs.set(runId,()=>{finish();reject(new Error('Preview reply stopped.'))});const next=()=>{index++;const event={type:'assistant',message:{role:'assistant',content:[{type:'text',text:parts.slice(0,index).join('')}]}};args.onEvent.onmessage?.(event);if(index>=parts.length){events.push(event);finish();resolve({runId,events})}else timer=setTimeout(next,45)};timer=setTimeout(next,100)});
-  }});
-  function save(){try{const value={};for(const [id,r] of records)value[id]=r.messages.slice(-60);for(const [id,messages] of Object.entries(stored||{}))if(!records.has(id))value[id]=messages;localStorage.setItem(KEY,JSON.stringify(Object.fromEntries(Object.entries(value).slice(-20))))}catch{toast('Conversation is kept for this session.')}}
-  function highlight(body,query){
-    const walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
-    for(const node of nodes){const text=node.textContent,lower=text.toLowerCase();let offset=0,index=lower.indexOf(query);if(index<0)continue;const fragment=document.createDocumentFragment();let count=0;while(index>=0&&count++<100){fragment.append(document.createTextNode(text.slice(offset,index)));const mark=document.createElement('mark');mark.textContent=text.slice(index,index+query.length);fragment.append(mark);offset=index+query.length;index=lower.indexOf(query,offset)}fragment.append(document.createTextNode(text.slice(offset)));node.replaceWith(fragment)}
+  function createClient(bridge,subscribe){
+    const pending=new Map();
+    const request=(method,params)=>bridge.request(method,params).catch(error=>{throw Error(String(error?.message||error||'Local Coven operation failed.').slice(0,2048))});
+    const unsubscribe=subscribe(message=>{const entry=pending.get(message.runId);if(message.event==='coven.event'&&entry&&message.familiarId===entry.familiarId&&message.conversationId===entry.conversationId)entry.channel.onmessage?.(message.payload)});
+    const runtime=OpenSesameCovenRuntime.create({available:()=>bridge.available,invoke:async(command,args={})=>{
+      if(command==='coven_runtime_status')return request('coven.status');
+      if(command==='coven_runtime_familiars')return request('coven.familiars');
+      if(command==='coven_runtime_cancel')return request('coven.cancel',{runId:args.runId});
+      if(command!=='coven_runtime_send')throw Error('Unsupported Coven operation in this application.');
+      const input=args.input;
+      if(pending.has(input.runId))throw Error('This reply is already running.');
+      pending.set(input.runId,{channel:args.onEvent,familiarId:input.familiarId,conversationId:input.conversationId});
+      try{return await request('coven.send',input)}finally{pending.delete(input.runId)}
+    }});
+    return {
+      status:()=>bridge.available?runtime.status():Promise.resolve({available:false,error:'Open Open Sesame Desktop, or its local development preview, to connect to your Coven familiars.'}),
+      listFamiliars:()=>runtime.listFamiliars(),
+      openConversation:familiarId=>request('coven.open',{familiarId}),
+      newConversation:(familiarId,conversationId)=>request('coven.new',{familiarId,conversationId}),
+      sendMessage:(input,onEvent)=>runtime.send(input,onEvent),cancel:runId=>runtime.cancel(runId),
+      get busy(){return pending.size>0},
+      close(){for(const runId of pending.keys())runtime.cancel(runId).catch(()=>{});unsubscribe?.()}
+    };
   }
-  function markCurrent(record,scroll=false){record.matches.forEach((node,i)=>node.classList.toggle('search-current',i===record.matchIndex));const count=record.matches.length;record.searchCount.textContent=count?(record.matchIndex+1)+' / '+count:record.query?'No matches':'';record.previous.disabled=record.next.disabled=!count;if(scroll)record.matches[record.matchIndex]?.scrollIntoView({block:'nearest',behavior:'auto'})}
-  function paint(record){
-    const atEnd=record.log.scrollHeight-record.log.scrollTop-record.log.clientHeight<60,query=(record.query||'').trim().toLowerCase(),oldScroll=record.log.scrollTop;record.log.replaceChildren();record.matches=[];record.empty.hidden=!!record.messages.length;
-    for(const message of record.messages){
-      const article=document.createElement('article');article.className='coven-message '+message.role;const meta=document.createElement('div'),label=document.createElement('span');meta.className='coven-message-meta';label.textContent=message.role==='user'?'You':'Coven · mock';meta.append(label);
-      const copy=document.createElement('button');copy.type='button';copy.innerHTML=icon('copy');copy.setAttribute('aria-label','Copy '+(message.role==='user'?'your message':'mock reply'));copy.title='Copy';copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(message.text);toast('Copied.')}catch{toast('Copy is unavailable in this browser.')}});meta.append(copy);
-      const body=document.createElement('div');body.className='coven-message-body';if(message.role==='assistant')body.append(OpenSesameContent.clean(OpenSesameGFM.parse(message.text),location.href));else body.textContent=message.text;
-      if(query&&body.textContent.toLowerCase().includes(query)){highlight(body,query);article.classList.add('search-match');record.matches.push(article)}article.append(meta,body);record.log.append(article);
-    }
-    record.matchIndex=Math.max(0,Math.min(record.matchIndex||0,record.matches.length-1));markCurrent(record);record.log.scrollTop=!query&&(atEnd||record.busy)?record.log.scrollHeight:oldScroll;record.stop.hidden=!record.busy;record.status.textContent=record.busy?'Mock reply…':'Mock replies';
-  }
-  function setupSearch(record,top){
-    const button=document.createElement('button');button.type='button';button.innerHTML=icon('search');button.title='Search conversation · ⌘F';button.setAttribute('aria-label','Search this conversation');button.setAttribute('aria-expanded','false');top.append(button);
-    const row=document.createElement('form');row.className='coven-chat-search';row.hidden=true;row.id='chat-search-'+record.paneId;button.setAttribute('aria-controls',row.id);
-    const input=document.createElement('input');input.type='search';input.placeholder='Search this conversation';input.maxLength=200;input.setAttribute('aria-label','Search this conversation');const count=document.createElement('output');count.setAttribute('aria-live','polite');
-    const make=(glyph,label)=>{const b=document.createElement('button');b.type='button';b.innerHTML=icon(glyph);b.title=label;b.setAttribute('aria-label',label);return b};
-    const mic=make('mic','Search conversation by voice'),previous=make('chevron','Previous matching message'),next=make('chevron','Next matching message'),close=make('close','Close conversation search');previous.className='page-previous';
-    Object.assign(record,{searchButton:button,searchRow:row,searchInput:input,searchCount:count,previous,next,query:'',matches:[],matchIndex:0});row.append(input,mic,count,previous,next,close);record.element.insertBefore(row,record.empty);
-    function apply(){record.query=input.value.trim();record.matchIndex=0;paint(record);markCurrent(record,true)}
-    function hide(){if(window.OpenSesameVoice?.target===input)window.OpenSesameVoice.cancel();row.hidden=true;button.setAttribute('aria-expanded','false');input.value=record.query='';paint(record);button.focus({preventScroll:true})}
-    button.addEventListener('click',()=>{if(!row.hidden){hide();return}row.hidden=false;button.setAttribute('aria-expanded','true');input.focus({preventScroll:true})});close.addEventListener('click',hide);input.addEventListener('input',apply);
-    const jump=delta=>{if(record.matches.length){record.matchIndex=(record.matchIndex+delta+record.matches.length)%record.matches.length;markCurrent(record,true)}};
-    previous.addEventListener('click',()=>jump(-1));next.addEventListener('click',()=>jump(1));row.addEventListener('submit',e=>{e.preventDefault();jump(1)});row.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();hide()}});
-    mic.addEventListener('click',()=>window.OpenSesameVoice?.start({target:input,button:mic,search:true}));record.search=query=>{row.hidden=false;button.setAttribute('aria-expanded','true');input.value=String(query||'').slice(0,200);apply();input.focus({preventScroll:true})};
-  }
-  function activate(record){const next=record?.chat?record:null;if(next!==active){window.OpenSesameVoice?.cancel();active=next;window.dispatchEvent(new Event('open-sesame-chat-changed'))}renderDraft()}
-  function mount(pane){const surface=document.createElement('section');surface.id='terminal-frame-'+pane.id;surface.className='coven-chat-surface';surface.setAttribute('role','tabpanel');surface.setAttribute('aria-label',pane.name+' conversation');const top=document.createElement('div'),status=document.createElement('span'),project=document.createElement('span'),stop=document.createElement('button');top.className='coven-chat-header';status.className='coven-chat-preview';status.textContent='Mock replies';status.title='Local prototype. No live model or device actions.';project.textContent=projectName(pane.projectId);stop.type='button';stop.innerHTML=icon('stop');stop.title='Stop mock reply';stop.setAttribute('aria-label','Stop mock reply');stop.hidden=true;top.append(status,project,stop);const empty=document.createElement('div');empty.className='coven-chat-empty';empty.innerHTML=mark+'<strong>A little room to work things through.</strong><p>Start with a thought in the bar below.</p><small>Preview conversation · replies are mocked</small>';const log=document.createElement('div');log.className='coven-chat-log';log.setAttribute('role','log');log.setAttribute('aria-label','Coven conversation');log.setAttribute('aria-live','off');const messages=Array.isArray(stored?.[pane.id])?stored[pane.id].filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').map(m=>({...m,text:m.text.slice(0,12000)})).slice(-60):[];const record={chat:true,element:surface,live:false,mode:'chat',messages,log,empty,status,stop,busy:false,paneId:pane.id};surface.append(top,empty,log);setupSearch(record,top);records.set(pane.id,record);stop.addEventListener('click',()=>{if(record.runId)runtime.cancel(record.runId)});record.focus=()=>el('capture-input').focus({preventScroll:true});record.dispose=()=>{if(record.runId)runtime.cancel(record.runId);records.delete(pane.id);if(active===record){window.OpenSesameVoice?.cancel();active=null}};paint(record);return record}
-  function send(text){const record=active;if(!record||state.scenario!=='terminal')return false;if(record.busy){toast('A mock reply is in progress. Stop it to send another message.');return false}text=String(text||'').trim().slice(0,2000);if(!text)return false;record.messages.push({role:'user',text});const answer={role:'assistant',text:''};record.messages.push(answer);record.busy=true;record.runId=newId();save();paint(record);runtime.send({runId:record.runId,prompt:text},event=>{if(event.type==='assistant')answer.text=(event.message?.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');paint(record)}).catch(error=>{if(!answer.text)answer.text=error.message;else answer.text+='\n\n*Preview reply stopped.*'}).finally(()=>{record.busy=false;record.runId='';save();paint(record)});return true}
-  window.OpenSesameCovenChat={mount,activate,send,search:query=>{if(!active||state.scenario!=='terminal'){toast('Open a conversation to search its messages.');return false}active.search(query);return true},isActive:()=>!!active&&state.scenario==='terminal'};document.addEventListener('keydown',event=>{if(active&&state.scenario==='terminal'&&(event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='f'&&document.getElementById('widget-panel').contains(event.target)){event.preventDefault();active.search(active.query)}});window.addEventListener('pagehide',()=>{for(const cancel of runs.values())cancel();save()});
+  window.OpenSesameCreateCovenClient=createClient;
+  if(window.openSesameBridge)window.OpenSesameCovenClient=createClient(window.openSesameBridge,listener=>{const callback=event=>listener(event.detail);window.addEventListener('open-sesame-desktop-event',callback);return()=>window.removeEventListener('open-sesame-desktop-event',callback)});
+  // Old saved Shells panes redirect to Familiars instead of fabricating replies.
+  window.OpenSesameCovenChat={activate(){},isActive:()=>false,send:()=>false,search:query=>window.OpenSesameFamiliars?.search(query)||false};
+  window.addEventListener('pagehide',()=>window.OpenSesameCovenClient?.close());
 })();

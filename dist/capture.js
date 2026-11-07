@@ -1,13 +1,13 @@
 'use strict';
 (()=>{
-  const views={plugins:'plugins',console:'agents',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
+  const views={plugins:'plugins',console:'agents',familiars:'familiars',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
   function isReservedCommand(name){
     const first=name.trim().toLowerCase().split(/\s+/)[0];
     return Object.hasOwn(views,first) || ['record','transcribe','agent','computer','note','outline','task','todo','bookmark','search','find','screenshot'].includes(first);
   }
   function interpret(raw,type='auto',context=''){
     if(window.OpenSesameLauncher?.active)context='';
-    const text=raw.trim();if(!text)return context==='terminal'&&window.OpenSesameCovenChat?.isActive()?{kind:'chat',task:'',incomplete:true,hint:'Enter to send · Shift Enter for a new line',label:'Send to Coven preview'}:{kind:'item',hint:'Capture, or type / for commands'};
+    const text=raw.trim();if(!text)return context==='terminal'&&window.OpenSesameCovenChat?.isActive()?{kind:'chat',task:'',incomplete:true,hint:'Enter to send · Shift Enter for a new line',label:'Send to familiar'}:{kind:'item',hint:'Capture, or type / for commands'};
     const calculation=type==='auto'&&!/^[!\/]/.test(text)?window.OpenSesameCalculator?.calculate(text):null;
     if(calculation)return {kind:'calculation',calculation,incomplete:!!calculation.error,label:'Copy result',hint:calculation.error||'Enter to copy result'};
     if(context==='audio' && window.OpenSesameLive?.inQuestions?.() && text.startsWith('/') && text.length>1){
@@ -33,10 +33,10 @@
     if(text.startsWith('/'))return {kind:'error',hint:'Choose a command · type / for options'};
     if(context==='audio'&&window.OpenSesameLive?.inQuestions?.()!==false&&type==='auto')return {kind:'live',question:text,label:'Ask about transcript',hint:'Ask about the transcript · Enter'};
     if(type!=='auto')return {kind:'item',hint:'Save '+type};
-    if(context==='terminal'&&window.OpenSesameCovenChat?.isActive())return {kind:'chat',task:text,hint:'Enter to send · Shift Enter for a new line',label:'Send to Coven preview'};
+    if(context==='terminal'&&window.OpenSesameCovenChat?.isActive())return {kind:'chat',task:text,hint:'Enter to send · Shift Enter for a new line',label:'Send to familiar'};
     if(/^(?:hf|arxiv)\s*[: ]\s*\S+/i.test(text))return {kind:'view',view:'reading',value:text,hint:'Read paper',label:'Open in Reading'};
     if(context==='reading'&&typeof pageUrl==='function'&&pageUrl(text))return {kind:'view',view:'reading',value:text,hint:'Add article to Reading',label:'Add to Reading'};
-    const open=text.match(/^(?:open|show|go to)\s+(plugins|console|library|reader|live|agents|desktops|lockin|music|focus|youtube|media|terminal|shells|items|reading|vnc)(?:\s+([\s\S]*))?$/i);
+    const open=text.match(/^(?:open|show|go to)\s+(plugins|familiars|console|library|reader|live|agents|desktops|lockin|music|focus|youtube|media|terminal|shells|items|reading|vnc)(?:\s+([\s\S]*))?$/i);
     if(open)return {kind:'view',view:views[open[1].toLowerCase()],value:open[2]?.trim()||'',hint:'Open '+open[1],label:'Open '+open[1]};
     const control=window.OpenSesameComputer?.parse(text);if(control)return {kind:'computer',control,label:control.label,hint:window.openSesameBridge?.available?'Run on this Mac':'Desktop companion required'};
     if(context==='audio'&&window.OpenSesameLive?.inQuestions?.()!==false){
@@ -124,7 +124,7 @@
     if(value!==dismissedValue)dismissedValue=null;
     const typed=value.trimStart(), live=liveMenu(), partial=live && typed.startsWith('/') && window.OpenSesameQuestionShortcuts.all().some(s=>('/'+s.name).startsWith(typed.trim().replace(/\s+/g,' ').toLowerCase()));
     if(!menu().hidden&&manualMenu&&value===menuInputValue)show(true);else if(typed.startsWith('/')&&(!/\s/.test(typed)||partial)&&value!==dismissedValue)show();else if(window.OpenSesameLauncher?.active&&!typed.startsWith('/')&&!typed.startsWith('!')&&!window.OpenSesameCalculator?.calculate(value)&&value!==dismissedValue)show();else hide();resize();
-    const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={plugins:'Plugins',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
+    const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={familiars:'Familiars',plugins:'Plugins',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
     const mode=intent.kind==='calculation'?'Calculate':intent.kind==='live'?'Live':intent.kind==='find'?'Find':intent.kind==='chat'?'Coven':intent.kind==='bash'?'Bash':intent.kind==='agent'?(intent.computer?'Computer':'Coven'):intent.kind==='view'?labels[intent.view]||'Open':kind==='task'?'Task':kind==='note'?'Note':url||kind==='bookmark'?'Bookmark':'Note';el('capture-intent').textContent=mode;el('capture-intent').hidden=!value.trim()&&!url;el('capture-intent').dataset.mode=mode.toLowerCase();el('capture-command-toggle').innerHTML=icon(intent.kind==='agent'||intent.kind==='bash'?'terminal':intent.kind==='view'&&intent.view==='reading'?'rss':mode==='Task'?'task':mode==='Bookmark'?'bookmark':'capture');
     clearTimeout(draftTimer);draftTimer=setTimeout(writeDraft,200);
   }
@@ -136,7 +136,7 @@
     if(intent.kind==='live')return window.OpenSesameLive?.ask(intent.question)===true;
     if(intent.kind==='find')return window.OpenSesameCovenChat?.search(intent.query)===true;
     if(intent.kind==='chat')return window.OpenSesameCovenChat?.send(intent.task)===true;
-    if(['agent','bash'].includes(intent.kind)){if(intent.incomplete){input().focus();return false}if(!window.openSesameStartAgent){toast('Terminal is unavailable. Keep your request and reload.');return false}window.openSesameStartAgent({launcher:intent.kind==='bash'?'bash':'coven',task:(intent.computer?'Computer use request: ':'')+intent.task,projectId:document.getElementById('capture-project').value});return true}
+    if(['agent','bash'].includes(intent.kind)){if(intent.incomplete){input().focus();return false}if(!window.openSesameStartAgent){toast('Terminal is unavailable. Keep your request and reload.');return false}return window.openSesameStartAgent({launcher:intent.kind==='bash'?'bash':'coven',task:(intent.computer?'Computer use request: ':'')+intent.task,projectId:document.getElementById('capture-project').value})!==false}
     if(intent.kind==='view'){
       if(intent.view==='focus'&&intent.value&&(!/^\d+(?:\s*(?:m|min|minutes))?$/i.test(intent.value)||!OpenSesameFocusCalendarModel.validDuration(parseInt(intent.value,10)))){toast('Use /focus with 15–1440 whole minutes.');return false}
       changeScenario(intent.view);

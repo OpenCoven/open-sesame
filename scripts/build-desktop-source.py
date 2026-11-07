@@ -5,7 +5,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'dist/downloads/open-sesame-desktop-source.zip'
-SOURCES = ('README.md', '.gitignore', 'package.json', 'run-macos.sh', 'desktop', 'dist', 'docs', 'scripts', 'vendor-src')
+SOURCES = ('README.md', '.gitignore', 'package.json', 'run-macos.sh', 'desktop', 'dist', 'docs', 'scripts', 'vendor-src', 'examples')
 
 
 def build():

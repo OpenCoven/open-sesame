@@ -12,7 +12,7 @@ mkdir -p "$open_sesame_app/Contents/MacOS" "$open_sesame_app/Contents/Resources/
 xcrun swiftc -O -target "$(uname -m)-apple-macosx13.0" -o "$open_sesame_app/Contents/MacOS/OpenSesame" "$open_sesame_root/desktop/OpenSesame.swift" "$open_sesame_root/desktop/VoiceInput.swift" "$open_sesame_root/desktop/AudioRecorder.swift" "$open_sesame_root/desktop/GlobalShortcut.swift" "$open_sesame_root/desktop/EmbeddedWebSurface.swift" -framework Carbon -framework AppKit -framework WebKit -framework Speech -framework AVFoundation
 cp -R "$open_sesame_root/dist/." "$open_sesame_app/Contents/Resources/web/"
 rm -rf "$open_sesame_app/Contents/Resources/web/downloads" "$open_sesame_app/Contents/Resources/web/.openai"
-cp "$open_sesame_root/desktop/agent_monitor.py" "$open_sesame_root/desktop/live_agents.py" "$open_sesame_root/desktop/bridge.py" "$open_sesame_root/desktop/feeds.py" "$open_sesame_root/desktop/reader.py" "$open_sesame_root/desktop/controller.py" "$open_sesame_root/desktop/computer_controls.py" "$open_sesame_app/Contents/Resources/"
+cp "$open_sesame_root/desktop/coven_runtime.py" "$open_sesame_root/desktop/agent_monitor.py" "$open_sesame_root/desktop/live_agents.py" "$open_sesame_root/desktop/bridge.py" "$open_sesame_root/desktop/feeds.py" "$open_sesame_root/desktop/reader.py" "$open_sesame_root/desktop/controller.py" "$open_sesame_root/desktop/computer_controls.py" "$open_sesame_app/Contents/Resources/"
 printf '%s\n' "$open_sesame_python" > "$open_sesame_app/Contents/Resources/python-path.txt"
 # Keep the installed bundle identity stable so existing website data and permissions survive.
 cat > "$open_sesame_app/Contents/Info.plist" <<'PLIST'

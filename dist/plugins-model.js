@@ -1,6 +1,7 @@
 'use strict';
 (()=>{
   const catalog=[
+    {id:'coven',name:'Coven Familiars',category:'agents',glyph:'chat',description:'Your familiars, in conversation.',detail:'Connect local Coven, choose any familiar from its roster, and chat with streamed replies and saved conversations.',access:'Messages run only when you press Send. Coven supplies the familiar identity, provider sign-in, and read-only workspace.',kind:'familiars',docs:'https://github.com/OpenCoven/open-sesame/blob/main/docs/coven-familiars-integration.md'},
     {id:'spotify',name:'Spotify',category:'media',logo:'spotify',description:'Your music, within reach.',detail:'Connect your Spotify account and open songs, albums, or playlists in Focus.',access:'Basic account profile. Embedded playback follows Spotify’s own sign-in and availability.',kind:'music'},
     {id:'apple',name:'Apple Music',category:'media',logo:'applemusic',description:'A soundtrack for your flow.',detail:'Authorize MusicKit to play your Apple Music selections inside Open Sesame.',access:'Apple Music account authorization. Full playback requires an eligible subscription.',kind:'music'},
     {id:'youtube',name:'YouTube',category:'media',logo:'youtube',description:'Videos, music, and playlists.',detail:'Connect with Google for read-only YouTube account access. Play a link in Focus without connecting.',access:'Read-only YouTube account access. Open Sesame does not publish or change your videos.',kind:'music'},
@@ -8,8 +9,9 @@
     {id:'codex',name:'Codex',category:'agents',logo:'openai',description:'A second mind for your notes.',detail:'Use the Codex CLI on your Mac to answer questions about your Live transcript.',access:'Your question, recent transcript, and recent Q&A are sent only when you ask. Uses your terminal sign-in.',kind:'agent',docs:'https://developers.openai.com/codex/cli/'},
     {id:'rss',name:'RSS & Atom',category:'reading',glyph:'rss',description:'Follow what matters to you.',detail:'Bring feeds and saved articles into Reader. Add a feed URL or discover one from a website.',access:'Fetches your subscribed feeds when refreshed. Subscriptions and read states stay on this device.',kind:'feeds'}
   ];
-  function status(plugin,{music={},desktop=false,agents=null,error='',feedCount=0}={}){
+  function status(plugin,{music={},desktop=false,agents=null,error='',feedCount=0,familiars={}}={}){
     if(plugin.kind==='music'){const s=music[plugin.id]||{};return s.connected?{label:'Connected',tone:'connected',action:'Manage'}:s.busy||s.loading?{label:'Connecting',tone:'pending',action:'View'}:s.error||s.expired?{label:s.expired?'Session expired':'Needs attention',tone:'attention',action:'Reconnect'}:{label:s.configured?'Not connected':'Setup needed',tone:'idle',action:s.configured?'Connect':'Set up'};}
+    if(plugin.kind==='familiars')return !desktop?{label:'Desktop required',tone:'idle',action:'Set up'}:familiars.connected?{label:familiars.count+' familiars',tone:'connected',action:'Open'}:familiars.error?{label:'Needs attention',tone:'attention',action:'Reconnect'}:{label:'Ready to connect',tone:'idle',action:'Connect'};
     if(plugin.kind==='agent')return !desktop?{label:'Desktop required',tone:'idle',action:'Set up'}:error?{label:'Check connection',tone:'attention',action:'Details'}:agents===null?{label:'Not checked',tone:'pending',action:'Check'}:agents[plugin.id]===true?{label:'CLI detected',tone:'detected',action:'Open'}:{label:'Not installed',tone:'idle',action:'Set up'};
     return {label:feedCount?feedCount+' feed'+(feedCount===1?'':'s'):'No feeds yet',tone:feedCount?'configured':'idle',action:feedCount?'Manage':'Add feed'};
   }
