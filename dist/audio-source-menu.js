@@ -3,13 +3,17 @@
 (()=>{
   const el=id=>document.getElementById(id),pane=el('pane-audio'),source=el('audio-source'),language=el('audio-language');
   const setup=document.createElement('section');setup.id='live-capture';setup.setAttribute('aria-label','Live audio capture');
-  setup.innerHTML='<div class="live-capture-fields"><label for="live-capture-mode">Output<select id="live-capture-mode"><option value="transcribe">Transcribe</option><option value="record">Record audio</option></select></label><label id="live-capture-source-label" for="audio-source">Source</label><label id="live-capture-language-label" for="audio-language">Language</label></div><p id="live-capture-help"></p><div class="live-capture-actions"><div id="live-capture-state"></div></div>';
+  setup.innerHTML='<div class="live-capture-toolbar"><div class="live-capture-fields"><label for="live-capture-mode"><span class="sr-only">Output</span><select id="live-capture-mode" title="Capture output"><option value="transcribe">Transcribe</option><option value="record">Record audio</option></select></label><label id="live-capture-source-label" for="audio-source"><span class="sr-only">Audio source</span></label><label id="live-capture-language-label" for="audio-language"><span class="sr-only">Transcription language</span></label></div><div class="live-capture-actions"></div></div><div class="live-capture-summary"><small id="live-capture-output-hint"></small><div id="live-capture-state"></div><button id="live-capture-help-toggle" type="button" aria-label="Capture details" title="Capture details" aria-expanded="false" aria-controls="live-capture-help"></button></div><p id="live-capture-help" hidden></p>';
   pane.insertBefore(setup,el('live-workspace'));
   el('live-capture-source-label').append(source);el('live-capture-language-label').append(language);
   el('audio-source-help').hidden=true;el('live-options').querySelector('.audio-source-row').remove();
   el('live-options').querySelector('.audio-options').hidden=true;
   const mode=el('live-capture-mode'),actions=setup.querySelector('.live-capture-actions'),status=el('live-capture-state');
   actions.prepend(el('live-input-controls'));status.append(pane.querySelector('.live-status'),pane.querySelector('.live-clock'),el('audio-meter'));
+  el('live-input-controls').setAttribute('aria-label','Capture controls');
+  actions.append(el('live-settings'));setup.querySelector('.live-capture-summary').append(el('live-sample'));pane.querySelector('.live-bar').hidden=true;
+  const helpToggle=el('live-capture-help-toggle');helpToggle.innerHTML=icon('info');let detailsOpen=false;
+  helpToggle.addEventListener('click',()=>{detailsOpen=!detailsOpen;sync()});
   const result=document.createElement('section');result.id='live-recording-result';result.setAttribute('aria-label','Audio recording');
   result.innerHTML='<strong id="live-recording-heading">Your audio file</strong><p id="live-recording-help">Start recording, then Stop to save an audio file.</p><div><button type="button" id="live-recording-clear">Clear recording</button></div>';
   el('live-workspace').append(result);result.querySelector('div').prepend(el('audio-download'));
@@ -32,9 +36,12 @@
     const output=record?'Save an audio file. No transcript is created.':'Turn speech into text. No audio file is saved.';
     const help=source.value==='mic'?'Uses your Mac or browser’s selected microphone.':(source.value==='both'?'Includes your microphone. ':'')+'Choose a tab or screen and enable Share audio in the picker.';
     el('live-capture-help').textContent=!supported.available?supported.reason:output+' '+help;
+    el('live-capture-help').hidden=!detailsOpen&&supported.available;
+    helpToggle.setAttribute('aria-expanded',String(!el('live-capture-help').hidden));
+    el('live-capture-output-hint').textContent=record?'Audio file only':'Text only · audio not saved';
     el('live-capture-language-label').hidden=record;
     el('audio-start').disabled=running||!supported.available||!!window.OpenSesameLive?.busy;
-    el('audio-start').textContent=record?'Start recording':'Start transcription';
+    el('audio-start').textContent='Start';el('audio-start').title=record?'Start recording':'Start transcription';
     el('audio-stop').textContent=audioSession.stopping?'Finishing…':window.OpenSesameLive?.demoRunning?'Stop demo':'Stop';
     el('audio-start').setAttribute('aria-describedby','live-capture-help');
     el('live-transcript-view').hidden=record;el('live-questions-view').hidden=record||!audioSession.final.trim()&&!audioSession.interim.trim();result.hidden=!record;

@@ -7,3 +7,13 @@ node_modules/
 .env
 .env.*
 !.env.example
+*.p8
+*.key
+*.p12
+*.pfx
+.credentials/
+credentials.json
+tokens.json
+client_secret*.json
+service-account*.json
+music-auth-config.local.js
