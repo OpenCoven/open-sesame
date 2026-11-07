@@ -3,7 +3,7 @@
 (()=>{
   const el=id=>document.getElementById(id),root=document.documentElement,popout=el('panel-popout'),full=el('panel-fullscreen');
   const embedded=new URL(location.href).searchParams.get('open-sesame-window')==='1';
-  let detached=embedded,nativeDetached=false,nativeMaximized=false,active=null,opening=false,resizeFrame=0,owner=null,restoreSize='medium',lastFull=false,preferPopup=false;
+  let detached=embedded,nativeDetached=false,nativeMaximized=false,active=null,opening=false,collapsing=false,resizeFrame=0,owner=null,restoreSize='medium',lastFull=false,preferPopup=false;
   try{if(embedded)owner=window.parent.__openSesameOwner||null}catch{}
   const clone=data=>JSON.parse(JSON.stringify(data));
   function snapshot(){
@@ -60,7 +60,7 @@
     if(!detached){restoreSize=state.size;state.size='full';state.expanded=true;render()}
     try{if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else if(detached)toast('Use your window’s maximize control to fill the display.')}catch{toast('Filling this window. Your browser did not allow full screen.')}sync();
   }
-  function dock(force=false){
+  function dock(force=false,{focus=true}={}){
     if(active){
       const current=active;let data=current.latest||current.initial;
       try{if((!force||!current.latest)&&current.frame.contentWindow.OpenSesameWindow){if(!force&&current.frame.contentWindow.OpenSesameWindow.busy()){toast('Stop recording or finish the current answer before docking.');current.host.focus();return}data=current.frame.contentWindow.OpenSesameWindow.snapshot()}}catch{}
@@ -69,9 +69,21 @@
     }
     if(owner?.OpenSesameWindow?.owns(window)){owner.OpenSesameWindow.dock();return}
     if(nativeDetached){
-      openSesameBridge.request('window.detach',{detached:false}).then(()=>{nativeDetached=false;nativeMaximized=false;detached=false;state.size=restoreSize;render()}).catch(error=>toast(error.message));return;
+      return openSesameBridge.request('window.detach',{detached:false,focus}).then(()=>{nativeDetached=false;nativeMaximized=false;detached=false;state.size=restoreSize;render();return true}).catch(error=>{toast(error.message);return false});
     }
     if(embedded){const url=new URL(location.href);url.searchParams.delete('open-sesame-window');location.replace(url.href)}
+  }
+  async function collapse({outside=false,focus=false}={}){
+    if(collapsing||active||embedded||outside&&(state.pinned||window.OpenSesameFrame?.dragging||document.querySelector('dialog[open]')))return false;
+    if(!state.expanded&&!detached&&!window.OpenSesameLauncher?.active)return false;
+    collapsing=true;
+    try{
+      if(document.fullscreenElement)await document.exitFullscreen();
+      if(nativeDetached&&await dock(false,{focus})===false)return false;
+      if(window.OpenSesameLauncher?.active)window.OpenSesameLauncher.close(false);
+      if(state.size==='full')state.size=restoreSize;
+      setExpanded(false,{focus});return true;
+    }catch(error){toast(error.message||'Could not collapse the widget.');return false}finally{collapsing=false}
   }
   function ready(child){
     if(!active||child!==active.frame.contentWindow)return;
@@ -111,13 +123,18 @@
   // Docking is distinct from collapsing: a detached window always uses its available area.
   el('panel-close').addEventListener('click',event=>{if(detached){event.preventDefault();event.stopImmediatePropagation();dock()}},true);
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&!detached&&state.size==='full')state.size=restoreSize;render()});
+  document.addEventListener('pointerdown',event=>{
+    if(![0,1,2].includes(event.button))return;
+    if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification'].includes(node.id)))return;
+    void collapse({outside:true});
+  });
   document.addEventListener('keydown',event=>{
     if(event.key!=='Escape'||event.defaultPrevented||document.querySelector('dialog[open]')||event.target.closest('input,textarea,select,[contenteditable],.terminal-native'))return;
     if(!detached&&state.size==='full'&&!document.fullscreenElement){event.preventDefault();event.stopImmediatePropagation();state.size=restoreSize;render()}
   },true);
   window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{sync();window.dispatchEvent(new Event('open-sesame-layout'))})});
   window.addEventListener('pagehide',()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
-  window.OpenSesameWindow={sync,open,dock,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
+  window.OpenSesameWindow={sync,open,dock,collapse,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
   window.addEventListener('beforeunload',()=>{try{if(owner?.OpenSesameWindow?.owns(window))owner.OpenSesameWindow.checkpoint(window,snapshot())}catch{}});
   if(embedded){state.expanded=true;document.title='Open Sesame · Floating workspace';render();if(owner?.OpenSesameWindow)owner.OpenSesameWindow.ready(window)}else sync();
 })();

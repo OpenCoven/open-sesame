@@ -154,7 +154,6 @@ const hoverOpen=()=>{clearTimeout(hoverTimer);if(state.hover&&!state.expanded&&$
 $('widget-anchor').addEventListener('pointerenter',hoverOpen);$('menu-trigger').addEventListener('pointerenter',hoverOpen);
 $('widget-anchor').addEventListener('pointerleave',()=>{clearTimeout(hoverTimer);if(!state.pinned&&!window.OpenSesameFrame?.dragging&&state.hover&&!$('widget-anchor').contains(document.activeElement))hoverTimer=setTimeout(()=>setExpanded(false),600)});
 $('menu-trigger').addEventListener('pointerleave',()=>clearTimeout(hoverTimer));
-$('desktop').addEventListener('click',e=>{if(state.expanded&&!state.pinned&&!e.composedPath().some(el=>['widget-anchor','menu-trigger','desktop-notification'].includes(el.id)))setExpanded(false)});
 $('zoom').addEventListener('click',()=>{inspecting=!inspecting;document.body.classList.toggle('inspecting',inspecting);$('zoom').setAttribute('aria-pressed',inspecting);$('zoom').querySelector('span').textContent=inspecting?'Fit desktop':'Inspect';fit()});
 function present(value){presenting=value;document.body.classList.toggle('presenting',value);$('exit-present').hidden=!value;requestAnimationFrame(fit)}
 $('present').addEventListener('click',()=>present(true));$('exit-present').addEventListener('click',()=>present(false));
