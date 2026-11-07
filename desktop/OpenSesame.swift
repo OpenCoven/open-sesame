@@ -248,8 +248,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 let storedWidth = UserDefaults.standard.double(forKey: "openSesame.floatingWidth")
                 let preferredWidth = detachedFrame.map { panel.contentRect(forFrameRect: $0).width } ?? (storedWidth.isFinite && storedWidth > 0 ? CGFloat(storedWidth) : currentSize.width)
                 let limit = max(1, min(contentArea.width, contentArea.height * aspectRatio))
-                let width = min(limit, max(640, preferredWidth))
-                panel.contentMinSize = NSSize(width: min(640, limit), height: min(640, limit) / aspectRatio)
+                let width = min(limit, max(800, preferredWidth))
+                panel.contentMinSize = NSSize(width: min(800, limit), height: min(800, limit) / aspectRatio)
                 panel.contentAspectRatio = NSSize(width: aspectRatio, height: 1)
                 let size = panel.frameRect(forContentRect: NSRect(x: 0, y: 0, width: width, height: width / aspectRatio)).size
                 let x = max(area.minX, min(area.maxX-size.width, detachedFrame?.minX ?? area.midX-size.width/2))

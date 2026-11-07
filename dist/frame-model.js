@@ -15,7 +15,7 @@
   function nearest(width,sizes){return sizes.reduce((best,size)=>Math.abs(size.width-width)<Math.abs(best.width-width)?size:best,sizes[0])}
   function floating(width,availableWidth,availableHeight){
     const positive=(value,fallback)=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):fallback;
-    const fitted=Math.max(1,Math.floor(Math.min(Math.max(640,positive(width,800)),positive(availableWidth,1200),positive(availableHeight,800)*ratio)));
+    const fitted=Math.max(1,Math.floor(Math.min(Math.max(800,positive(width,800)),positive(availableWidth,1200),positive(availableHeight,800)*ratio)));
     return {width:fitted,height:Math.round(fitted/ratio)};
   }
   function resize(start,edge,dx,dy,{centered=true,min=0,max=Infinity}={}){
