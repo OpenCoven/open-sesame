@@ -24,3 +24,11 @@ A real GUI session is still required to accept Option–Space from another appli
 ## Navigation follow-up in v0.0.2
 
 The primary Focus, Projects, Console, Reader, Live, and Plugins tabs now form a compact column of icons on the left. Each keeps its view name as a tooltip and accessible label. Up/Down and Home/End navigate the vertical tab list. Widget options sits at the bottom of the rail; each workspace keeps its own secondary tabs and sidebar. The standalone launcher retains its full-width layout.
+
+## Live content and Markdown preview
+
+Live now puts output, source, language, Start/Stop, and settings in a compact toolbar. The status strip distinguishes text-only transcription from an audio file, keeps elapsed time visible, and exposes the longer capture explanation through Capture details. Unsupported-source explanations open automatically. Source/mode controls remain locked while capture is starting, active, or stopping. Removing the empty settings row and separate field headings leaves more of the fixed widget for the transcript and answer columns; narrow layouts retain a stacked fallback.
+
+Agent replies render through the bundled GFM parser and HTML sanitizer, including headings, emphasis, lists, tables, links, and code blocks. Raw HTML and images are removed before DOM parsing, and links are limited to credential-free HTTP(S) targets with noreferrer. Answers cannot automatically load remote images or media. Errors and pending messages stay plain text. Question text, saved answer text, and the transcript supplied to a CLI remain unchanged. The preview renderer is isolated from the reader's normal Markdown/image handling.
+
+Plugin setup, current native OAuth limits, and private configuration handling are documented in the [plugin setup notes](desktop-polish-plan.md#plugin-setup-and-private-configuration). Verification uses synthetic transcripts and credentials; the user's screenshot was used only as a layout reference, with none of its conversation content copied into fixtures or documentation. Native rendered layout, live OAuth authorization, and actual media playback still require device acceptance.

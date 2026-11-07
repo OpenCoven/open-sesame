@@ -1,5 +1,7 @@
 # Open Sesame — Widget Studio
 
+Plugin cards include setup and repair instructions. See [plugin setup and private configuration](docs/desktop-polish-plan.md#plugin-setup-and-private-configuration) for supported hosts, credential handling, and the remaining native OAuth work. Live answers render as sanitized Markdown inside a compact transcript workspace; see [Live content and Markdown preview](docs/widget-input-capture.md#live-content-and-markdown-preview).
+
 A private interactive prototype with a native macOS companion source package. Buildless HTML, CSS, and JavaScript live in `dist/`; the AppKit/WKWebView host and real PTY bridge live in `desktop/`. See [desktop setup](desktop/README.md).
 
 For the current review, priorities, integration gaps, and platform exploration, see the [desktop polish plan](docs/desktop-polish-plan.md).

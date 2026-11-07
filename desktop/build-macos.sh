@@ -7,6 +7,7 @@ open_sesame_version="${OPEN_SESAME_VERSION:-0.0.0}"
 command -v xcrun >/dev/null || { echo 'Install Xcode Command Line Tools first: xcode-select --install'; exit 1; }
 open_sesame_python="$(command -v python3 || true)"
 [[ -n "$open_sesame_python" ]] || { echo 'Install Python 3 before building Open Sesame.'; exit 1; }
+"$open_sesame_python" -B "$open_sesame_root/scripts/distribution_safety.py" "$open_sesame_root/dist"
 rm -rf "$open_sesame_app"
 mkdir -p "$open_sesame_app/Contents/MacOS" "$open_sesame_app/Contents/Resources/web"
 xcrun swiftc -O -target "$(uname -m)-apple-macosx13.0" -o "$open_sesame_app/Contents/MacOS/OpenSesame" "$open_sesame_root/desktop/OpenSesame.swift" "$open_sesame_root/desktop/VoiceInput.swift" "$open_sesame_root/desktop/AudioRecorder.swift" "$open_sesame_root/desktop/GlobalShortcut.swift" "$open_sesame_root/desktop/EmbeddedWebSurface.swift" -framework Carbon -framework AppKit -framework WebKit -framework Speech -framework AVFoundation

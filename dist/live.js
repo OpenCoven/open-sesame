@@ -77,6 +77,7 @@
       !text ? 'Start transcription or try the demo.' :
       !cli ? 'Type / for question shortcuts. Answers here use transcript excerpts.' :
       installed ? 'Ask sends your question, recent transcript, and recent Q&A to '+providerNames[selector.value]+'.' : el('live-agent-status').textContent;
+    el('live-question-hint').title=el('live-question-hint').textContent;
     if (state.scenario==='audio') window.OpenSesameComposer?.sync();
     window.OpenSesameLiveCapture?.sync();
   }
@@ -115,10 +116,12 @@
     }
     for (const entry of entries) {
       const card = document.createElement('article');
-      const question = document.createElement('strong'), meta = document.createElement('small'), answer = document.createElement('p');
+      const question = document.createElement('strong'), meta = document.createElement('small'), answer = document.createElement('div');
       question.textContent = entry.question;
       meta.textContent = providerNames[entry.agent]+' · '+entry.at;
-      answer.textContent = entry.answer || 'Waiting for an answer…';
+      answer.className='live-answer-body';
+      if(entry.answer&&!entry.error&&window.OpenSesameContent?.answerMarkdown){answer.replaceChildren(OpenSesameContent.answerMarkdown(entry.answer,location.href))}
+      else answer.textContent=entry.answer||'Waiting for an answer…';
       card.append(question,meta,answer);
       log.append(card);
     }
