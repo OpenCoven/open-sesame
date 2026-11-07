@@ -23,9 +23,9 @@
 #widget-panel #familiar-thread-header{display:flex;align-items:center;gap:6px;flex:none;min-height:34px}
 #widget-panel #familiar-thread-header>div{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
 #widget-panel #familiar-name{font-size:14px;font-weight:500;color:#e5d9ed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#widget-panel #familiar-workspace{font-size:9px;color:#a597af}
+#widget-panel #familiar-workspace{font-size:9px;color:#a597af;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #widget-panel #familiar-search-open svg{height:13px;width:13px}
-#widget-panel #familiar-harness-row{display:flex;align-items:center;gap:8px;font-size:10px;color:#afa0bb;flex:none}
+#widget-panel #familiar-harness-row{display:flex;align-items:center;gap:6px;font-size:10px;color:#afa0bb;flex:none;white-space:nowrap}
 #widget-panel #familiar-harness{height:26px;padding:4px 24px 4px 8px;border:1px solid #ffffff10;border-radius:6px;background-color:#ffffff05;color:#cfc1da;font-size:10px}
 #widget-panel #familiar-messages{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#a99ab444 transparent;padding:0 5px 0 0}
 #widget-panel .familiar-message{padding:12px 0;border-bottom:1px solid #ffffff08;font-size:12px;line-height:1.75;color:#dfd4e7}
@@ -49,3 +49,4 @@ body:not(.capture-launcher-open) #widget-anchor.familiars-active .widget-capture
 
 #widget-panel #agents-context{min-width:0;max-width:100%}
 #widget-panel #agents-context .agents-mode-tabs{min-width:0;overflow-x:auto;scrollbar-width:none}
+@container open-sesame-widget (max-width:580px){#widget-panel #familiar-thread-header{flex-wrap:wrap}#widget-panel #familiar-thread-header>div{flex-basis:100%}}

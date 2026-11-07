@@ -32,6 +32,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var placement = "notch"
     var detached = false
     var detachedFrame: NSRect?
+    var detachedRatio: CGFloat = 16.0 / 9.0
     var beforeFullscreen: NSRect?
     var shortcut: GlobalShortcut?
     var pendingLauncher = false
@@ -224,29 +225,42 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     // Keep the same web view, streams and PTYs while changing the window shell.
-    func setDetached(_ value: Bool) {
+    func rememberDetachedFrame(_ frame: NSRect) {
+        detachedFrame = frame
+        UserDefaults.standard.set(Double(panel.contentRect(forFrameRect: frame).width), forKey: "openSesame.floatingWidth")
+    }
+
+    func setDetached(_ value: Bool, aspectRatio: CGFloat) {
         guard value != detached else { return }
-        if !value { detachedFrame = panel.frame }
+        if !value { rememberDetachedFrame(beforeFullscreen ?? panel.frame) }
         detached = value
         beforeFullscreen = nil
         if value {
+            detachedRatio = aspectRatio
             panel.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            panel.minSize = NSSize(width: 360, height: 300)
             panel.title = "Open Sesame"
             panel.titleVisibility = .visible
             panel.level = .floating
             panel.isMovable = true
-            if let saved = detachedFrame, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(saved) }) {
-                panel.setFrame(saved, display: true)
-            } else if let screen = panel.screen ?? NSScreen.main {
+            if let screen = panel.screen ?? placementScreen() {
                 let area = screen.visibleFrame
-                let width = min(area.width, max(480, currentSize.width))
-                let height = min(area.height, max(400, currentSize.height))
-                panel.setFrame(NSRect(x: area.midX-width/2, y: area.midY-height/2, width: width, height: height), display: true)
+                let contentArea = panel.contentRect(forFrameRect: area).size
+                let storedWidth = UserDefaults.standard.double(forKey: "openSesame.floatingWidth")
+                let preferredWidth = detachedFrame.map { panel.contentRect(forFrameRect: $0).width } ?? (storedWidth.isFinite && storedWidth > 0 ? CGFloat(storedWidth) : currentSize.width)
+                let limit = max(1, min(contentArea.width, contentArea.height * aspectRatio))
+                let width = min(limit, max(640, preferredWidth))
+                panel.contentMinSize = NSSize(width: min(640, limit), height: min(640, limit) / aspectRatio)
+                panel.contentAspectRatio = NSSize(width: aspectRatio, height: 1)
+                let size = panel.frameRect(forContentRect: NSRect(x: 0, y: 0, width: width, height: width / aspectRatio)).size
+                let x = max(area.minX, min(area.maxX-size.width, detachedFrame?.minX ?? area.midX-size.width/2))
+                let y = max(area.minY, min(area.maxY-size.height, detachedFrame?.minY ?? area.midY-size.height/2))
+                panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
             }
             effect.layer?.cornerRadius = 0
             surface.layer?.cornerRadius = 0
         } else {
+            panel.contentAspectRatio = .zero
+            panel.contentMinSize = .zero
             panel.styleMask = [.borderless]
             panel.minSize = .zero
             panel.level = .statusBar
@@ -263,7 +277,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        if detached { detachedFrame = panel.frame }
+        if detached && beforeFullscreen == nil { rememberDetachedFrame(panel.frame) }
     }
 
     func startBridge(resources: URL) {
@@ -355,13 +369,15 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             guard let level = params["level"] as? NSNumber, level.doubleValue.isFinite else { respond(requestId, error: "Invalid glass level."); return }; setGlassLevel(level.doubleValue, transient: params["transient"] as? Bool == true); respond(requestId, result: true); return
         }
         if method == "window.detach" {
-            setDetached(params["detached"] as? Bool == true)
+            let ratio = (params["aspectRatio"] as? NSNumber)?.doubleValue ?? Double(detachedRatio)
+            guard ratio.isFinite, ratio >= 1, ratio <= 3 else { respond(requestId, error: "Invalid window ratio."); return }
+            setDetached(params["detached"] as? Bool == true, aspectRatio: CGFloat(ratio))
             respond(requestId, result: ["detached": detached, "alwaysOnTop": true]); return
         }
         if method == "window.fullscreen" {
             if detached, let screen = panel.screen ?? NSScreen.main {
-                if let previous = beforeFullscreen { panel.setFrame(previous, display: true); beforeFullscreen = nil }
-                else { beforeFullscreen = panel.frame; panel.setFrame(screen.visibleFrame, display: true) }
+                if let previous = beforeFullscreen { panel.contentAspectRatio = NSSize(width: detachedRatio, height: 1); panel.setFrame(previous, display: true); beforeFullscreen = nil }
+                else { beforeFullscreen = panel.frame; panel.contentAspectRatio = .zero; panel.setFrame(screen.visibleFrame, display: true) }
             }
             respond(requestId, result: ["fullscreen": beforeFullscreen != nil]); return
         }

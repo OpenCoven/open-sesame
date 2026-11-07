@@ -83,12 +83,12 @@
     if(detached){dock();return}if(active){active.host.focus();return}if(opening)return;
     if(window.__OPEN_SESAME_NATIVE__){
       restoreSize=state.size==='full'?'medium':state.size;
-      try{await openSesameBridge.request('window.detach',{detached:true});nativeDetached=detached=true;state.expanded=true;render()}catch(error){toast(error.message)}return;
+      try{await openSesameBridge.request('window.detach',{detached:true,aspectRatio:window.OpenSesameFrameModel.ratio});nativeDetached=detached=true;state.expanded=true;render()}catch(error){toast(error.message)}return;
     }
     if(busy()){toast('Stop recording or finish the current answer before popping out.');return}
-    let initial;try{initial=snapshot()}catch{toast('Could not move this workspace. Your current window is unchanged.');return}const rect=el('widget-anchor').getBoundingClientRect();let size={width:Math.max(480,Math.round(rect.width)),height:Math.max(400,Math.round(rect.height))};
-    try{const saved=JSON.parse(localStorage.getItem('open-sesame-floating-size')||'null');if(saved&&saved.width>=360&&saved.height>=300)size=saved}catch{}
-    size.width=Math.min(size.width,screen.availWidth||1200);size.height=Math.min(size.height,screen.availHeight||800);
+    let initial;try{initial=snapshot()}catch{toast('Could not move this workspace. Your current window is unchanged.');return}let width=el('widget-anchor').getBoundingClientRect().width;
+    try{const saved=JSON.parse(localStorage.getItem('open-sesame-floating-size')||'null');if(Number.isFinite(saved?.width)&&saved.width>=360)width=saved.width}catch{}
+    const size=window.OpenSesameFrameModel.floating(width,screen.availWidth,screen.availHeight);
     opening=true;let host,kind='window';
     try{
       if(!preferPopup&&window.documentPictureInPicture&&window===window.top){host=await window.documentPictureInPicture.requestWindow(size);kind='pip'}

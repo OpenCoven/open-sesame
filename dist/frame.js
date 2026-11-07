@@ -24,7 +24,7 @@
     anchor.classList.toggle('frame-full',state.size==='full');
     context=next;const size=sizes().find(s=>s.key===state.size)||sizes()[1];describe(size);
     if(interrupted){paint(size);fit();syncNativeWindow()}
-    el('size-preset-note').textContent=`${size.width} × ${size.height} · ${size.key==='full'?'Full desktop':'4:3'} · drag an outer edge`;
+    el('size-preset-note').textContent=`${size.width} × ${size.height} · ${size.key==='full'?'Full desktop':model.ratioLabel} · drag an outer edge`;
     el('frame-resize-layer').hidden=!state.expanded;
   }
   function finish(commit){
