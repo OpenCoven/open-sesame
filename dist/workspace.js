@@ -12,9 +12,9 @@
   function set(id,open){if(!known.includes(id))return;preferences[id]=!!open;try{localStorage.setItem(KEY,JSON.stringify(preferences))}catch{}apply(id);window.dispatchEvent(new Event('open-sesame-rails-changed'));window.dispatchEvent(new Event('open-sesame-layout'))}
   function toggle(id){const c=contexts.get(id);set(id,!isOpen(id,c?.defaultOpen??true))}
   function sync(){
-    const remote=state.scenario==='remote',monitor=state.scenario==='agent-monitor';el('terminal-more').hidden=remote||monitor;el('remote-settings').hidden=true;
-    document.querySelectorAll('[data-agents]').forEach(b=>{const active=b.dataset.agents===(monitor?'agent-monitor':remote?'remote':'terminal');b.setAttribute('aria-selected',active);b.tabIndex=active?0:-1});
-    if(monitor)el('agents-rail-toggle').hidden=true;else apply(remote?'remote':'terminal');apply('reading');
+    const remote=state.scenario==='remote',monitor=state.scenario==='agent-monitor',familiars=state.scenario==='familiars';el('terminal-more').hidden=remote||monitor||familiars;el('remote-settings').hidden=true;
+    document.querySelectorAll('[data-agents]').forEach(b=>{const active=b.dataset.agents===(familiars?'familiars':monitor?'agent-monitor':remote?'remote':'terminal');b.setAttribute('aria-selected',active);b.tabIndex=active?0:-1});
+    if(monitor||familiars)el('agents-rail-toggle').hidden=true;else apply(remote?'remote':'terminal');apply('reading');
   }
   el('agents-rail-toggle').addEventListener('click',()=>toggle(state.scenario==='remote'?'remote':'terminal'));el('reading-rail-toggle').addEventListener('click',()=>toggle('reading'));el('media-queue-toggle').addEventListener('click',()=>toggle('media'));
   const modeTabs=[...document.querySelectorAll('[data-agents]')];

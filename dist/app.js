@@ -4,14 +4,14 @@ const $=id=>document.getElementById(id);
 const newId=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
 const icon=(name)=>`<svg viewBox="0 0 24 24" data-glyph="${name}" aria-hidden="true">${icons[name]||icons.info}</svg>`;
 document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
-const defaults={layout:'notch',expanded:false,pinned:false,width:280,ratio:8,hover:false,playful:false,scenario:'focus',lockinView:'focus',focusOverview:true,agentsView:'agent-monitor',resolution:'1512,982',volume:65,size:'medium',speakNotifications:true};
+const defaults={layout:'notch',expanded:false,pinned:false,width:280,ratio:8,hover:false,playful:false,scenario:'focus',lockinView:'focus',focusOverview:true,agentsView:'familiars',resolution:'1512,982',volume:65,size:'medium',speakNotifications:true};
 let saved={};try{saved=JSON.parse(localStorage.getItem('open-sesame-settings-v1')||'{}')}catch{}
 const state={...defaults,...saved};
 state.pinned=state.pinned===true;
-state.layout=['notch','menu'].includes(state.layout)?state.layout:'notch';state.scenario=['capture','bookmarks'].includes(state.scenario)?'items':state.scenario;if(state.scenario==='chat')state.scenario='terminal';state.scenario=['music','focus','youtube','media','items','audio','terminal','remote','agent-monitor','reading','plugins'].includes(state.scenario)?state.scenario:'music';
+state.layout=['notch','menu'].includes(state.layout)?state.layout:'notch';state.scenario=['capture','bookmarks'].includes(state.scenario)?'items':state.scenario;if(state.scenario==='chat')state.scenario='familiars';state.scenario=['music','focus','youtube','media','items','audio','terminal','remote','agent-monitor','familiars','reading','plugins'].includes(state.scenario)?state.scenario:'music';
 const lockinViews=['music','focus','youtube','media'];
 state.lockinView=lockinViews.includes(state.scenario)?state.scenario:lockinViews.includes(state.lockinView)?state.lockinView:'music';
-const agentsViews=['terminal','remote','agent-monitor'];
+const agentsViews=['terminal','remote','agent-monitor','familiars'];
 state.agentsView=agentsViews.includes(state.scenario)?state.scenario:agentsViews.includes(state.agentsView)?state.agentsView:'terminal';
 const activityFor=scenario=>lockinViews.includes(scenario)?'lockin':agentsViews.includes(scenario)?'agents':scenario;
 state.focusOverview=state.focusOverview!==false;state.playful=state.playful===true;state.size=OpenSesameFrameModel.keys.includes(state.size)?state.size:'medium';state.speakNotifications=state.speakNotifications!==false;
@@ -95,6 +95,7 @@ function renderCompact(){
   if(state.scenario==='terminal'){$('compact-left').innerHTML=icon('terminal');$('compact-right').textContent=(window.openSesameTerminalCount?.()??1)+' panes'}
   if(state.scenario==='plugins'){$('compact-left').innerHTML=icon('plugins');$('compact-right').textContent='Plugins'}
   if(state.scenario==='reading'){$('compact-left').innerHTML=icon('rss');$('compact-right').textContent='Reading'}
+  if(state.scenario==='familiars'){$('compact-left').innerHTML=icon('chat');$('compact-right').textContent=window.OpenSesameFamiliars?.summary()||'Familiars'}
   if(state.scenario==='agent-monitor'){$('compact-left').innerHTML=icon('agents');$('compact-right').textContent=window.OpenSesameAgentMonitor?.summary()||'Agents'}
   if(state.scenario==='remote'){$('compact-left').innerHTML=icon('monitor');$('compact-right').textContent='Remote'}
   $('compact-widget').setAttribute('aria-label',`${state.expanded?'Collapse':'Expand'} ${state.scenario} widget`);window.OpenSesameCompact?.sync();
@@ -105,14 +106,14 @@ function render(){
   document.querySelectorAll('[data-scenario]').forEach(b=>{let yes=b.dataset.scenario===activityFor(state.scenario);b.classList.toggle('selected',yes);b.setAttribute('aria-pressed',yes)});
   document.querySelectorAll('[data-tab]').forEach(b=>{let yes=b.dataset.tab===activityFor(state.scenario);b.setAttribute('aria-selected',yes);b.tabIndex=yes?0:-1});
   const focusOverview=lockinViews.includes(state.scenario)&&state.focusOverview;
-  ['music','focus','youtube','media','items','audio','terminal','remote','agent-monitor','reading','plugins'].forEach(name=>$('pane-'+name).hidden=name!==state.scenario||(focusOverview&&lockinViews.includes(name)));
+  ['music','focus','youtube','media','items','audio','terminal','remote','agent-monitor','familiars','reading','plugins'].forEach(name=>$('pane-'+name).hidden=name!==state.scenario||(focusOverview&&lockinViews.includes(name)));
   $('focus-overview').hidden=!focusOverview;$('lockin-tabs').hidden=focusOverview;
   $('agents-workspace').hidden=!agentsViews.includes(state.scenario);window.OpenSesameWorkspace?.sync();$('lockin-workspace').hidden=!lockinViews.includes(state.scenario);document.querySelectorAll('[data-lockin]').forEach(b=>{const active=b.dataset.lockin===state.scenario;b.setAttribute('aria-selected',active);b.tabIndex=active?0:-1});
-  const wide=libraryOpen&&state.scenario==='items',terminalWide=['music','items','terminal','remote','agent-monitor','reading','youtube','media'].includes(state.scenario);
+  const wide=libraryOpen&&state.scenario==='items',terminalWide=['music','items','terminal','remote','agent-monitor','familiars','reading','youtube','media'].includes(state.scenario);
   const height=Math.round(state.width/state.ratio);
   const expandedScale=1.2;
   const {width:panelWidth,height:panelHeight}=expandedFrame();
-  $('widget-anchor').className=`widget-anchor ${state.layout==='notch'?'notch-mode':'menu-mode'}${state.expanded?' expanded':''}${wide?' library-open':''}${state.playful?' playful-shape':''}${['focus','audio','terminal','remote','agent-monitor','reading','youtube','media'].includes(state.scenario)?' tall-panel':''}${state.scenario==='audio'?' audio-panel':''}${state.scenario==='focus'?' focus-panel':''}${terminalWide?' terminal-panel':''}${state.scenario==='terminal'?' terminal-active':''}${state.scenario==='reading'?' reading-active':''}${['youtube','media'].includes(state.scenario)?' lockin-player-active':''}`;
+  $('widget-anchor').className=`widget-anchor ${state.layout==='notch'?'notch-mode':'menu-mode'}${state.expanded?' expanded':''}${wide?' library-open':''}${state.playful?' playful-shape':''}${['focus','audio','terminal','remote','agent-monitor','familiars','reading','youtube','media'].includes(state.scenario)?' tall-panel':''}${state.scenario==='audio'?' audio-panel':''}${state.scenario==='focus'?' focus-panel':''}${terminalWide?' terminal-panel':''}${state.scenario==='terminal'?' terminal-active':''}${state.scenario==='familiars'?' familiars-active':''}${state.scenario==='reading'?' reading-active':''}${['youtube','media'].includes(state.scenario)?' lockin-player-active':''}`;
   $('widget-anchor').style.setProperty('--notch-width',state.width+'px');$('widget-anchor').style.setProperty('--notch-height',height+'px');$('widget-anchor').style.setProperty('--panel-width',panelWidth+'px');$('widget-anchor').style.setProperty('--panel-height',panelHeight+'px');$('widget-anchor').style.setProperty('--expanded-scale',expandedScale);
   $('widget-panel').hidden=!state.expanded;if(!state.expanded)closeUrlEditor();$('compact-widget').setAttribute('aria-expanded',state.expanded);$('compact-widget').tabIndex=state.expanded?-1:0;
   $('menu-trigger').hidden=state.layout!=='menu';$('menu-trigger').setAttribute('aria-expanded',state.expanded);
@@ -142,7 +143,7 @@ new ResizeObserver(fit).observe($('preview-well'));
 document.querySelectorAll('[data-layout]').forEach(b=>b.addEventListener('click',()=>{state.layout=b.dataset.layout;render()}));
 document.querySelectorAll('[data-state]').forEach(b=>b.addEventListener('click',()=>setExpanded(b.dataset.state==='expanded')));
 document.querySelectorAll('[data-scenario]').forEach(b=>b.addEventListener('click',()=>changeScenario(b.dataset.scenario)));
-function tabHome(tab){if(tab==='items'){itemsArchive=false;$('project-form').hidden=true;libraryOpen=false;detailFullWidth=false;selectedItemId='';categoryFilter='all';libraryQuery='';itemsSearchOpen=false;itemsPage=0;expandedCategories.clear();expandedCategories.add('note');$('library-search').value='';closeBookmarkUrl()}if(tab==='agents')state.agentsView='terminal';changeScenario(tab);window.dispatchEvent(new CustomEvent('open-sesame-home',{detail:tab}))}
+function tabHome(tab){if(tab==='items'){itemsArchive=false;$('project-form').hidden=true;libraryOpen=false;detailFullWidth=false;selectedItemId='';categoryFilter='all';libraryQuery='';itemsSearchOpen=false;itemsPage=0;expandedCategories.clear();expandedCategories.add('note');$('library-search').value='';closeBookmarkUrl()}if(tab==='agents')state.agentsView='familiars';changeScenario(tab);window.dispatchEvent(new CustomEvent('open-sesame-home',{detail:tab}))}
 document.querySelectorAll('[data-tab]').forEach(b=>{b.addEventListener('click',()=>tabHome(b.dataset.tab));b.addEventListener('keydown',e=>{const tabs=[...document.querySelectorAll('[data-tab]')],i=tabs.indexOf(b);let n;if(e.key==='ArrowDown')n=(i+1)%tabs.length;if(e.key==='ArrowUp')n=(i+tabs.length-1)%tabs.length;if(e.key==='Home')n=0;if(e.key==='End')n=tabs.length-1;if(n!==undefined){e.preventDefault();changeScenario(tabs[n].dataset.tab);tabs[n].focus()}})});
 document.querySelectorAll('[data-widget-size]').forEach(b=>b.addEventListener('click',()=>{state.size=b.dataset.widgetSize;render()}));
 $('speak-notifications').addEventListener('change',()=>{state.speakNotifications=$('speak-notifications').checked;persist();if(state.speakNotifications)window.openSesameSpeech?.speak('Spoken notifications enabled.','notification')});

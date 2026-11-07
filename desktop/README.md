@@ -18,7 +18,7 @@ Extract the ZIP, open Terminal in its `open-sesame-desktop` directory, and run:
 
 The script compiles `desktop/OpenSesame.swift`, bundles the web assets and Python bridge into `build/Open Sesame.app`, signs it ad hoc for local development, and opens it. This is source for a development build, not a notarized distribution binary. If Xcode tools are missing, install them with `xcode-select --install`. Python 3 must already be installed and executable. Rebuild after moving or replacing the Python installation.
 
-The menu-bar eyes show/hide Open Sesame. Right-click them to quit. Click the compact notch to expand; choose the Terminal tab at the top. M switches notch/menu placement, E toggles expansion, and Escape closes contextual UI or collapses the panel when not editing text. The same browser controls remain available in the hosted studio for exploring geometry.
+The menu-bar eyes show/hide Open Sesame. Right-click them to quit. Click the compact notch to expand; choose Console in the left icon rail, then Shells. M switches notch/menu placement, E toggles expansion, and Escape closes contextual UI or collapses the panel when not editing text. The same browser controls remain available in the hosted studio for exploring geometry.
 
 ## Connect a project and open panes
 
@@ -60,13 +60,15 @@ The native helper loads feeds on background threads through Python's HTTP client
 
 The native build now bundles `feeds.py` alongside `bridge.py`. Run the eleven integration tests with the same unittest command above. The Apple host still requires compilation and hardware validation on a Mac.
 
-## Coven conversations
+## Coven Familiars
 
-Use the conversation icon in Terminal to create a Coven agent pane. Choose a project, local or SSH machine, and working folder, then click Launch Coven. Install [Coven](https://github.com/OpenCoven/coven) on that machine first; `coven` opens its interactive interface and handles provider sign-in. The launcher uses your interactive login shell so your normal CLI PATH is available. Open Sesame does not install Coven or reuse the hosted Site's ChatGPT sign-in as a model account. A missing CLI is reported by the actual shell. Reloading restores configuration without launching it. Shell panes and agent panes share the project-filtered carousel. Live audio is under Terminal → More.
+Open Console → Familiars and click Connect Coven. Choose a familiar from the installed roster, type a message, and press Send. Replies stream into that familiar’s own saved conversation. Stop preserves captured text; New chat preserves the previous local history. The Run with selector uses Coven Code, Codex, or Claude Code through the installed CLI and its provider sign-in. Messages use the familiar’s dedicated workspace with a read-only policy; browsing the roster and reopening a chat never start a provider turn.
+
+See the [complete integration happy path](../docs/coven-familiars-integration.md), [runnable consumer example](../examples/coven_familiars.py), and fixture verification instructions. The historical mocked chat has been replaced by this live host transport. Existing saved Coven panes redirect to the familiar picker. `/agent` prepares a draft there for review; it does not automatically send the request.
 
 Lockin combines Music, Focus, YouTube, and Media. Media can open local audio/video files through the native picker; the file is played locally and not uploaded. Codec support depends on WebKit. The YouTube embed requires internet access and the video's permission to embed; file-based native WebKit playback and YouTube's application/referrer requirements need Mac validation. The small external icon remains available.
 
-The capture row also accepts `/computer <instruction>` or `/agent <task>` and opens an editable, project-aware Coven request. Review and explicitly launch it; computer actions require a configured Coven tool/provider. Task text is passed as one literal CLI argument. Pane requests save on this device and reopening them shows the review sheet again. Hover a pane for its trash icon; the inline red six-second confirmation cancels unless you explicitly confirm.
+The capture row also accepts `/computer <instruction>` or `/agent <task>` and prepares a draft in Familiars. Choose the familiar and explicitly Send; Coven supplies its own workspace and configured provider. Message text is passed as one literal CLI argument. Bash remains a separately reviewed Shells action. Hover a pane for its trash icon; the inline red six-second confirmation cancels unless you explicitly confirm.
 
 Terminal fitting now excludes viewport padding, waits for visible layout, refreshes on pane/window/font changes, and coalesces PTY resize messages. Rebuild the app to update a previously built copy. Linux Chromium QA used a live curses interface across both placements; AppKit/WebKit hardware behavior remains unverified.
 
@@ -84,7 +86,7 @@ Reading → Add → Site → RSS discovers a published feed or generates entries
 
 Hold an empty widget background to cycle its material opacity; release to keep the level. The next hold reverses. Focus the widget panel and hold Space for the same behavior, or Escape to cancel the current adjustment. This replaces the previous release-to-restore gesture. Rebuild for the material/content sibling layers and committed-level watchdog; text stays opaque.
 
-The capture bar starts collapsed. Click its microphone to dictate a message or prepare a command, then review the draft before sending. Chat search also has a microphone. The native build now compiles VoiceInput.swift with Speech and AVFoundation and declares both speech-recognition and microphone usage descriptions. It asks permission only after clicking voice input, prefers on-device recognition when available, and releases microphone resources on completion/cancellation with a 30-second maximum. Browser speech requires support from the browser's recognition service. Conversations remain explicitly mocked.
+The capture bar starts collapsed. Click its microphone to dictate a message or prepare a command, then review the draft before sending. Chat search also has a microphone. The native build now compiles VoiceInput.swift with Speech and AVFoundation and declares both speech-recognition and microphone usage descriptions. It asks permission only after clicking voice input, prefers on-device recognition when available, and releases microphone resources on completion/cancellation with a 30-second maximum. Browser speech requires support from the browser's recognition service. Coven conversations use the native CLI transport described above; voice input prepares a draft before Send.
 
 Focus adds a device-local Day/Week/Month calendar beside its agenda. Scheduling stores a plan; it does not create system reminders or auto-start timers. Start now explicitly loads that agenda and starts the timer. Arrow-key pagination avoids typing and terminal contexts. Existing microphone/terminal/native device limitations remain: the new AppKit speech path cannot be compiled or exercised in this Linux environment, and browser visual QA is unavailable.
 
