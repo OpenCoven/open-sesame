@@ -38,6 +38,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var pendingLauncher = false
     var dockedScreenID: NSNumber?
     var embeddedPages: [String: EmbeddedWebSurface] = [:]
+    var outsideClickMonitors: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -98,6 +99,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         surface.addSubview(effect)
         surface.addSubview(web)
         createStatusItem()
+        watchOutsideClicks()
         shortcut = GlobalShortcut { [weak self] in self?.openLauncher() }
         web.configuration.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_GLOBAL_SHORTCUT__=\(shortcut?.available == true ? "true" : "false");", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         status.button?.toolTip = shortcut?.available == true ? "Open Sesame · Option–Space" : "Open Sesame · Option–Space unavailable"
@@ -166,6 +168,24 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         setGlassLevel(glassSavedLevel, transient: false); positionPanel(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
     }
 
+    func watchOutsideClicks() {
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in self?.outsideClick(event) }) { outsideClickMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in self?.outsideClick(event); return event }) { outsideClickMonitors.append(monitor) }
+    }
+
+    func outsideClick(_ event: NSEvent) {
+        let point = NSEvent.mouseLocation
+        guard panel.isVisible, !panel.frame.contains(point), NSApp.modalWindow == nil, panel.attachedSheet == nil else { return }
+        // App-owned menus and pickers are part of the current interaction.
+        if let window = event.window, window !== panel { return }
+        if NSApp.windows.contains(where: { ($0 is NSSavePanel) && $0.isVisible }) { return }
+        if let button = status.button, let window = button.window, window.convertToScreen(button.convert(button.bounds, to: nil)).contains(point) { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.web.evaluateJavaScript("void window.OpenSesameWindow?.collapse({outside:true})", completionHandler: nil)
+        }
+    }
+
     @objc func openLauncher() {
         let toggle = panel.isVisible && panel.isKeyWindow
         showPanel()
@@ -230,7 +250,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         UserDefaults.standard.set(Double(panel.contentRect(forFrameRect: frame).width), forKey: "openSesame.floatingWidth")
     }
 
-    func setDetached(_ value: Bool, aspectRatio: CGFloat) {
+    func setDetached(_ value: Bool, aspectRatio: CGFloat, focus: Bool = true) {
         guard value != detached else { return }
         if !value { rememberDetachedFrame(beforeFullscreen ?? panel.frame) }
         detached = value
@@ -267,12 +287,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             positionPanel()
         }
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.makeKeyAndOrderFront(nil)
+        if focus { panel.makeKeyAndOrderFront(nil) }
         web.evaluateJavaScript("window.dispatchEvent(new Event('resize'))", completionHandler: nil)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        web.evaluateJavaScript("window.OpenSesameWindow?.dock()", completionHandler: nil)
+        web.evaluateJavaScript("void window.OpenSesameWindow?.collapse({focus:true})", completionHandler: nil)
         return false
     }
 
@@ -371,7 +391,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "window.detach" {
             let ratio = (params["aspectRatio"] as? NSNumber)?.doubleValue ?? Double(detachedRatio)
             guard ratio.isFinite, ratio >= 1, ratio <= 3 else { respond(requestId, error: "Invalid window ratio."); return }
-            setDetached(params["detached"] as? Bool == true, aspectRatio: CGFloat(ratio))
+            setDetached(params["detached"] as? Bool == true, aspectRatio: CGFloat(ratio), focus: params["focus"] as? Bool ?? true)
             respond(requestId, result: ["detached": detached, "alwaysOnTop": true]); return
         }
         if method == "window.fullscreen" {
@@ -448,7 +468,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         let picker = NSOpenPanel(); picker.canChooseFiles = !parameters.allowsDirectories; picker.canChooseDirectories = parameters.allowsDirectories; picker.allowsMultipleSelection = parameters.allowsMultipleSelection; picker.prompt = "Open"
         picker.begin { response in completionHandler(response == .OK ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

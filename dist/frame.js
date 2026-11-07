@@ -29,8 +29,14 @@
   }
   function finish(commit){
     if(!drag)return;cancelAnimationFrame(raf);raf=0;
-    const session=drag;drag=null;anchor.classList.remove('frame-resizing');document.body.classList.remove('frame-dragging');
+    const session=drag;drag=null;anchor.classList.remove('frame-resizing','frame-collapse-ready');document.body.classList.remove('frame-dragging');
     try{if(session.handle.hasPointerCapture(session.id))session.handle.releasePointerCapture(session.id)}catch{}
+    if(commit&&session.moved&&session.collapseReady){
+      state.size=session.original.key;hud.hidden=true;clearTimeout(hideTimer);
+      el('frame-announcement').textContent='Widget collapsed. Your expanded size is remembered.';
+      if(window.OpenSesameWindow?.collapse)void window.OpenSesameWindow.collapse();else setExpanded(false);
+      return;
+    }
     const chosen=commit&&session.moved?model.nearest(session.next.width,session.sizes):session.original;
     // Apply only the geometry. Do not remount editors, terminals, iframes, or media.
     state.size=chosen.key;paint(chosen);fit();persist();syncNativeWindow();sync();window.OpenSesameWindow?.sync();
@@ -52,10 +58,14 @@
     if(!drag||drag.id!==event.pointerId)return;event.preventDefault();
     const dx=(event.clientX-drag.x)/drag.scale,dy=(event.clientY-drag.y)/drag.scale;
     if(!drag.moved&&Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<4)return;
-    drag.moved=true;drag.next=model.resize(drag.start,drag.edge,dx,dy,{centered:state.layout==='notch',min:drag.sizes[0].width,max:drag.sizes.at(-1).width});
+    drag.moved=true;
+    const smallest=drag.sizes[0],raw=model.resize(drag.start,drag.edge,dx,dy,{centered:state.layout==='notch',max:drag.sizes.at(-1).width});
+    const collapseReady=raw.width<smallest.width-Math.max(80,smallest.width*.22);
+    if(collapseReady!==!!drag.collapseReady){drag.collapseReady=collapseReady;anchor.classList.toggle('frame-collapse-ready',collapseReady);el('frame-announcement').textContent=collapseReady?'Release to collapse the widget. Drag back to keep it open.':'Widget stays open.'}
+    drag.next={width:Math.max(smallest.width,raw.width),height:Math.max(smallest.height,raw.height)};
     const regular=drag.sizes[3],full=drag.sizes.at(-1);
     if(drag.next.width>regular.width){const t=(drag.next.width-regular.width)/(full.width-regular.width);drag.next.height=Math.round(regular.height+t*(full.height-regular.height))}
-    if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(drag){paint(drag.next);describe(model.nearest(drag.next.width,drag.sizes))}});
+    if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(drag){paint(drag.next);describe(model.nearest(drag.next.width,drag.sizes));if(drag.collapseReady){hud.querySelector('span').textContent='Release to collapse';slider.setAttribute('aria-valuetext','Release to collapse the widget')}}});
   }
   handles.forEach(handle=>{
     handle.addEventListener('pointerdown',start);handle.addEventListener('pointermove',move);
