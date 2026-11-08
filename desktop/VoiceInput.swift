@@ -68,6 +68,8 @@ final class OpenSesameVoiceInput {
                 DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "voice.level", "id": id, "level": value]) }
             }, failed: { [weak self] message in
                 guard self?.session == id else { return }; self?.emit(["event": "voice.error", "id": id, "message": message]); self?.stop(id: id, cancel: true)
+            }, activity: { [weak self] activity in
+                DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "voice.input", "id": id, "activity": activity]) }
             })
             systemAudio = capture; capture.start(source: source, completion: ready); return
         }

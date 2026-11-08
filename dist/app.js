@@ -93,7 +93,7 @@ function renderCompact(){
   if(state.scenario==='items'){$('compact-left').innerHTML=icon('items');$('compact-right').textContent=`${scopedItemCount()} items`}
   if(state.scenario==='audio'){$('compact-left').innerHTML=icon('mic');$('compact-right').textContent=document.body.classList.contains('audio-active')?($('audio-record').checked?'Recording':'Transcribing'):'Live'}
   if(state.scenario==='terminal'){$('compact-left').innerHTML=icon('terminal');$('compact-right').textContent=(window.openSesameTerminalCount?.()??1)+' panes'}
-  if(state.scenario==='plugins'){$('compact-left').innerHTML=icon('plugins');$('compact-right').textContent='Plugins'}
+  if(state.scenario==='plugins'){$('compact-left').innerHTML=icon('plugins');$('compact-right').textContent='Widgets'}
   if(state.scenario==='reading'){$('compact-left').innerHTML=icon('rss');$('compact-right').textContent='Reading'}
   if(state.scenario==='familiars'){$('compact-left').innerHTML=icon('chat');$('compact-right').textContent=window.OpenSesameFamiliars?.summary()||'Familiars'}
   if(state.scenario==='agent-monitor'){$('compact-left').innerHTML=icon('agents');$('compact-right').textContent=window.OpenSesameAgentMonitor?.summary()||'Agents'}

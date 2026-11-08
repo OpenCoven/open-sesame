@@ -9,6 +9,11 @@ import CryptoKit
         precondition(first.challenge == OpenSesameSpotify.base64URL(Data(SHA256.hash(data: Data(first.verifier.utf8)))))
         precondition(OpenSesameSpotify.validClient(String(repeating: "a", count: 32)))
         precondition(!OpenSesameSpotify.validClient("client-secret"))
+        precondition(OpenSesameSpotify.validClient(OpenSesameSpotify.defaultClientID))
+        precondition(OpenSesameSpotify.effectiveClientID(nil) == OpenSesameSpotify.defaultClientID)
+        precondition(OpenSesameSpotify.effectiveClientID("") == OpenSesameSpotify.defaultClientID)
+        precondition(OpenSesameSpotify.effectiveClientID("invalid") == OpenSesameSpotify.defaultClientID)
+        precondition(OpenSesameSpotify.effectiveClientID(String(repeating: "b", count: 32)) == String(repeating: "b", count: 32), "Existing explicit public-client overrides are preserved")
         let url = OpenSesameSpotify.redirect + "?state=" + first.state + "&code=fixture-code"
         let returned = try OpenSesameSpotify.code(URL(string: url)!, state: first.state)
         precondition(returned == "fixture-code")

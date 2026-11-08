@@ -22,6 +22,22 @@ import CoreGraphics
         precondition(Placement.screenIndex(pointer: nil, frames: [invalid, laptop], fallback: 0) == 1)
         precondition(Placement.screenIndex(pointer: nil, frames: [invalid], fallback: 0) == nil)
         precondition(Placement.screenIndex(pointer: nil, frames: [], fallback: nil) == nil)
+        precondition(Placement.screenIndex(pointer: CGPoint(x: -500, y: 100), frames: screens, fallback: 1, pinned: 2) == 2, "A valid pin overrides pointer and previous display")
+        precondition(Placement.screenIndex(pointer: CGPoint(x: -500, y: 100), frames: screens, fallback: 0, pinned: 9) == 1, "A missing pin safely follows the pointer")
+        precondition(Placement.screenIndex(pointer: CGPoint(x: 500, y: 100), frames: [invalid, laptop], fallback: 1, pinned: 0) == 1)
+        let suite = "computer.opensesame.display-test-" + UUID().uuidString
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let firstID = "12345678-1234-1234-1234-123456789abc", secondID = "ABCDEFAB-1234-1234-1234-123456789ABC"
+        OpenSesameDisplayPreference(uuid: firstID, name: "Studio display").save(to: preferences)
+        let restored = OpenSesameDisplayPreference.load(from: preferences)
+        precondition(restored.name == "Studio display" && restored.index(in: [secondID, firstID]) == 1)
+        precondition(restored.index(in: [secondID]) == nil && restored.uuid != nil, "Disconnecting does not erase the preferred hardware identity")
+        precondition(restored.index(in: [firstID, secondID]) == 0, "Reconnection works after display IDs or ordering change")
+        OpenSesameDisplayPreference().save(to: preferences)
+        precondition(OpenSesameDisplayPreference.load(from: preferences).uuid == nil && preferences.string(forKey: "openSesame.display.name") == nil)
+        preferences.set("corrupt", forKey: "openSesame.display.uuid")
+        precondition(OpenSesameDisplayPreference.load(from: preferences).uuid == nil)
 
         let desired = CGSize(width: 1100, height: 619)
         func notch(_ frame: CGRect, requested: CGSize = desired, full: Bool = false) -> CGRect {
@@ -51,9 +67,11 @@ import CoreGraphics
 
         precondition(Placement.shouldFollow(placement: "notch", detached: false, visible: true, interacting: false))
         for placement in ["menu", "capture"] { precondition(!Placement.shouldFollow(placement: placement, detached: false, visible: true, interacting: false)) }
+        precondition(Placement.shouldFollow(placement: "capture", detached: false, visible: true, interacting: false, reconfigure: true), "Launcher placement recovers after display reconnection")
+        precondition(!Placement.shouldFollow(placement: "capture", detached: false, visible: true, interacting: true, reconfigure: true), "Reconfiguration waits until interaction ends")
         precondition(!Placement.shouldFollow(placement: "notch", detached: true, visible: true, interacting: false))
         precondition(!Placement.shouldFollow(placement: "notch", detached: false, visible: false, interacting: false))
         precondition(!Placement.shouldFollow(placement: "notch", detached: false, visible: true, interacting: true))
-        print("Screen placement: pointer priority, offset/shared/mirrored displays, display removal, retained sizes, bounded frames, Full, launcher/menu anchors and interaction guards passed. No display or pointer was moved.")
+        print("Screen placement: pointer/pin priority, persisted UUID restoration, disconnect/reconnect and corrupt preference fallback, offset/shared/mirrored displays, retained sizes, bounded frames, Full and interaction guards passed. No display or pointer was moved.")
     }
 }

@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const window={};vm.runInNewContext(fs.readFileSync('dist/music-auth-config.js','utf8'),{window});
+const configured=window.OpenSesameMusicAuthConfig.spotifyClientId;
+assert.match(configured,/^[a-f0-9]{32}$/);
+const native=fs.readFileSync('desktop/SpotifyAuthentication.swift','utf8');
+assert.equal(native.match(/static let defaultClientID = "([a-f0-9]+)"/)[1],configured,'Native and bundled UI use the same public app client');
+const {setup,catalog}=await import('../dist/plugins-model.js').then(module=>module.default);
+const instructions=setup(catalog.find(plugin=>plugin.id==='spotify')).steps.join(' ');
+assert.match(instructions,/Open Sesame includes/);assert.match(instructions,/do not need to create a Spotify developer app/);
+assert.ok(!instructions.includes('Enter only the public client ID'));
+console.log('Bundled public Spotify client, native/UI consistency and sign-in instructions require no per-user developer registration. No user token, client secret or live sign-in was used.');

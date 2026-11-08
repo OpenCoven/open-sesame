@@ -10,5 +10,11 @@
     return {available:true,reason:''};
   }
   const sources=window.__OPEN_SESAME_NATIVE__?{mic:'Microphone',system:'System audio',both:'Microphone + system audio'}:{mic:'Microphone',system:'Shared tab or screen audio',both:'Microphone + shared audio'};
-  window.OpenSesameLiveCaptureModel={capability,sources};
+  function inputStatus(source,activity={}) {
+    if(!activity||typeof activity!=='object')activity={};
+    const label=(name,state)=>state==='detected'?name+' detected':state==='silent'?name+' is silent':'Waiting for '+name.toLowerCase();
+    if(source==='both')return label('System audio',activity.system)+' · '+label('Microphone',activity.mic);
+    return source==='system'?label('System audio',activity.system):label('Microphone',activity.mic);
+  }
+  window.OpenSesameLiveCaptureModel={capability,sources,inputStatus};
 })();

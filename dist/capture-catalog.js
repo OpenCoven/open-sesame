@@ -20,7 +20,7 @@
     action('record','/record','Recorder','Record microphone audio to a file','mic','write'),
     action('transcribe','/transcribe','Transcriber','Start a live transcript and questions','capture','write'),
     action('screenshot','/screenshot ','Screen notes','Review a demo screen and placeholder notes','monitor','write'),
-    action('open','/projects','Go to','Jump to another part of Open Sesame','arrow-up-right','open',{children:[action('projects','/projects','Projects','Notes, bookmarks, and tasks','items','open'),action('reader','/reader','Reader','Articles, papers, and feeds','rss','open'),action('console','/console','Console','Familiars, processes, shells, and desktops','terminal','open'),action('live','/live','Live','Transcribe and ask about a conversation','mic','open'),action('plugins','/plugins','Plugins','Apps, accounts, and local connections','plugins','open')]})
+    action('open','/projects','Go to','Jump to another part of Open Sesame','arrow-up-right','open',{children:[action('projects','/projects','Projects','Notes, bookmarks, and tasks','items','open'),action('reader','/reader','Reader','Articles, papers, and feeds','rss','open'),action('console','/console','Console','Familiars, processes, shells, and desktops','terminal','open'),action('live','/live','Live','Transcribe and ask about a conversation','mic','open'),action('plugins','/widgets','Widgets','Apps, accounts, and local connections','plugins','open')]})
   ];
   const groups=[['all','All'],['write','Capture'],['focus','Focus'],['media','Media'],['agents','Agents'],['open','Go to']];
   const flat=entries=>entries.flatMap(row=>row.children?flat(row.children):[row]);

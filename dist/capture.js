@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
-  const views={plugins:'plugins',console:'agents',familiars:'familiars',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
+  const views={widgets:'plugins',plugins:'plugins',console:'agents',familiars:'familiars',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
   function isReservedCommand(name){
     const first=name.trim().toLowerCase().split(/\s+/)[0];
     return Object.hasOwn(views,first) || ['record','transcribe','agent','computer','note','outline','task','todo','bookmark','search','find','screenshot'].includes(first);
@@ -72,27 +72,30 @@
     const panel=el('widget-panel'),footer=el('capture-form').closest('.widget-capture-footer');
     const available=window.OpenSesameLauncher?.active?Math.min(440,frameScreen()[1]-180):window.OpenSesameComposer?.full?panel.clientHeight-116:Math.max(100,panel.clientHeight-footer.offsetHeight-65);
     menu().style.setProperty('--capture-menu-space',Math.floor(available)+'px');
-    const columns=panel.clientWidth>=760?2:1;
-    pageSize=Math.max(columns,Math.min(6,Math.floor((available-(el('capture-settings')?.open?192:130))/46)*columns));
+    const columns=window.OpenSesameLauncher?.active?1:panel.clientWidth>=760?2:1;
+    pageSize=window.OpenSesameLauncher?.active?Math.max(1,Math.min(60,matches.length||1)):Math.max(columns,Math.min(6,Math.floor((available-(el('capture-settings')?.open?192:130))/46)*columns));
   }
   function renderMenu(){
     const list=el('capture-command-list');list.replaceChildren();
+    let previousGroup='';
     matches.slice(menuPage*pageSize,(menuPage+1)*pageSize).forEach((command,index)=>{
+      if(window.OpenSesameLauncher?.active&&command.group!==previousGroup){const heading=document.createElement('div');heading.className='launcher-result-group';heading.setAttribute('role','presentation');heading.textContent=catalog.groups.find(([id])=>id===command.group)?.[1]||'Commands';list.append(heading);previousGroup=command.group}
       const button=document.createElement('button');button.type='button';button.id='capture-suggestion-'+index;button.tabIndex=-1;button.setAttribute('role','option');button.dataset.value=command.value;
+      button.dataset.actionLabel=command.children?'Show options':command.kind==='destination'?'Open':'Choose';
       const glyph=document.createElement('i'),copy=document.createElement('span'),title=document.createElement('strong'),help=document.createElement('small'),shortcut=document.createElement('kbd');
       glyph.innerHTML=icon(command.icon||'capture');glyph.dataset.group=command.group;title.textContent=command.label;help.textContent=command.description;
       if(command.children){shortcut.innerHTML=icon('chevron');button.setAttribute('aria-label',command.label+' · Show options')}else shortcut.textContent=command.kind==='question'?'/':command.value.trim();
       copy.append(title,help);button.append(glyph,copy,shortcut);button.addEventListener('pointerdown',event=>event.preventDefault());button.addEventListener('click',()=>choose(index,true));list.append(button);
     });
-    if(!matches.length){const empty=document.createElement('p');empty.textContent=liveMenu()?'Press Enter to ask this question.':'No matches. Try “note”, “focus”, or “outline”.';list.append(empty)}
+    if(!matches.length){const empty=document.createElement('p'),intent=interpret(input().value,el('capture-type').value);empty.textContent=liveMenu()?'Press Enter to ask this question.':window.OpenSesameLauncher?.active?(intent.hint||'Press Enter to save this as a note.'):'No matches. Try “note”, “focus”, or “outline”.';list.append(empty)}
     const pages=Math.max(1,Math.ceil(matches.length/pageSize));el('capture-command-page').textContent=matches.length?matches.length+' '+(matches.length===1?'option':'options')+(pages>1?' · '+(menuPage+1)+' / '+pages:''):'No matches';el('capture-command-prev').disabled=menuPage===0;el('capture-command-next').disabled=menuPage===pages-1;el('capture-command-prev').hidden=el('capture-command-next').hidden=pages===1;select(active);
   }
-  function liveMenu(){return state.scenario==='audio'&&window.OpenSesameLive?.inQuestions?.()}
+  function liveMenu(){return !window.OpenSesameLauncher?.active&&state.scenario==='audio'&&window.OpenSesameLive?.inQuestions?.()}
   function show(manual=false){
     const term=manual?'':input().value.trim().replace(/\s+/g,' ').toLowerCase(),live=liveMenu(),query=(live?'live:':'global:')+term;
     if(query!==lastQuery&&!manual){menuPage=active=0;trail=[];group='all'}lastQuery=query;manualMenu=manual;menuInputValue=input().value;
     const questions=live?window.OpenSesameQuestionShortcuts.all().map(s=>({id:s.name,value:'/'+s.name,label:s.name,description:s.prompt,kind:'question',icon:'chat',group:'questions'})):[];
-    const destinations=[['focus','Focus','Music, timer, YouTube, and media','focus'],['projects','Projects','Notes, bookmarks, tasks, and recent items','items'],['console','Console','Shells, agents, and desktops','terminal'],['reader','Reader','Articles, papers, and saved reading','rss'],['live','Live','Transcribe and ask about a conversation','mic'],['plugins','Plugins','Apps, accounts, and local connections','plugins']].map(([id,label,description,icon])=>({id:'launch-'+id,value:'/'+id,label,description,icon,group:'open',kind:'destination'}));
+    const destinations=[['focus','Focus','Music, timer, YouTube, and media','focus'],['projects','Projects','Notes, bookmarks, tasks, and recent items','items'],['console','Console','Shells, agents, and desktops','terminal'],['reader','Reader','Articles, papers, and saved reading','rss'],['live','Live','Transcribe and ask about a conversation','mic'],['widgets','Widgets','Apps, accounts, and local connections','plugins']].map(([id,label,description,icon])=>({id:'launch-'+id,value:'/'+id,label,description,icon,group:'open',kind:'destination'}));
     const entries=window.OpenSesameLauncher?.active?[...destinations,...catalog.roots.filter(row=>!['open','focus'].includes(row.id))]:[...questions,...catalog.roots],branch=trail.at(-1);
     matches=branch?branch.children:catalog.search(term,entries).filter(row=>group==='all'||row.group===group);
     measureMenu();menuPage=Math.min(menuPage,Math.max(0,Math.ceil(matches.length/pageSize)-1));
@@ -124,11 +127,11 @@
     if(value!==dismissedValue)dismissedValue=null;
     const typed=value.trimStart(), live=liveMenu(), partial=live && typed.startsWith('/') && window.OpenSesameQuestionShortcuts.all().some(s=>('/'+s.name).startsWith(typed.trim().replace(/\s+/g,' ').toLowerCase()));
     if(!menu().hidden&&manualMenu&&value===menuInputValue)show(true);else if(typed.startsWith('/')&&(!/\s/.test(typed)||partial)&&value!==dismissedValue)show();else if(window.OpenSesameLauncher?.active&&!typed.startsWith('/')&&!typed.startsWith('!')&&!window.OpenSesameCalculator?.calculate(value)&&value!==dismissedValue)show();else hide();resize();
-    const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={familiars:'Familiars',plugins:'Plugins',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
+    const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={familiars:'Familiars',plugins:'Widgets',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
     const mode=intent.kind==='calculation'?'Calculate':intent.kind==='live'?'Live':intent.kind==='find'?'Find':intent.kind==='chat'?'Coven':intent.kind==='bash'?'Bash':intent.kind==='agent'?(intent.computer?'Computer':'Coven'):intent.kind==='view'?labels[intent.view]||'Open':kind==='task'?'Task':kind==='note'?'Note':url||kind==='bookmark'?'Bookmark':'Note';el('capture-intent').textContent=mode;el('capture-intent').hidden=!value.trim()&&!url;el('capture-intent').dataset.mode=mode.toLowerCase();el('capture-command-toggle').innerHTML=icon(intent.kind==='agent'||intent.kind==='bash'?'terminal':intent.kind==='view'&&intent.view==='reading'?'rss':mode==='Task'?'task':mode==='Bookmark'?'bookmark':'capture');
     clearTimeout(draftTimer);draftTimer=setTimeout(writeDraft,200);
   }
-  window.openSesameCapture={openMenu:()=>{dismissedValue=null;group='all';trail=[];show(false)},interpret,isReservedCommand,hide,refresh,resize,execute(intent){
+  window.openSesameCapture={openMenu:()=>{dismissedValue=null;group='all';trail=[];show(false)},choose:()=>choose(active,true),back,interpret,isReservedCommand,hide,refresh,resize,execute(intent){
     if(intent.kind==='computer'){window.OpenSesameComputer?.run(intent.control);return false}
     if(intent.kind==='audio-mode'){window.OpenSesameVoiceCommand?.startAudio(intent.mode);return true}
     if(intent.kind==='calculation'){window.OpenSesameInputTools?.copyCalculation();return false}
@@ -173,7 +176,7 @@
       if(event.key==='ArrowRight'&&matches[menuPage*pageSize+active]?.children){event.preventDefault();event.stopPropagation();choose();return}
       if(event.key==='ArrowLeft'&&trail.length){event.preventDefault();event.stopPropagation();back();return}
       if(['PageDown','PageUp'].includes(event.key)){event.preventDefault();menuPage=Math.max(0,Math.min(Math.max(0,Math.ceil(matches.length/pageSize)-1),menuPage+(event.key==='PageDown'?1:-1)));active=0;renderMenu();return}
-      if(event.key==='Enter'||event.key==='Tab'&&!window.OpenSesameLauncher?.active){if(event.key==='Enter'&&!matches.length&&liveMenu())hide();else{event.preventDefault();choose(active,event.key==='Enter');return}}
+      if(event.key==='Enter'||event.key==='Tab'&&!window.OpenSesameLauncher?.active){if(event.key==='Enter'&&!matches.length&&(liveMenu()||window.OpenSesameLauncher?.active))hide();else{event.preventDefault();choose(active,event.key==='Enter');return}}
     }
     if(event.key==='Enter'&&!event.shiftKey&&(!window.OpenSesameComposer?.full||event.metaKey||event.ctrlKey)){event.preventDefault();const button=el('capture-form').querySelector('[type=submit]');if(!button.disabled)el('capture-form').requestSubmit();return}if(event.key==='Enter')hide();
   });

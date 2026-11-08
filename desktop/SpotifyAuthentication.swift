@@ -10,6 +10,7 @@ private final class SpotifyRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
 // Public-client PKCE. User credentials and provider tokens never enter the widget page.
 @MainActor
 final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let defaultClientID = "000d9575abe844d9a0c258ddc9c0bc09"
     static let redirect = "opensesame-spotify://auth/callback"
     private var browser: ASWebAuthenticationSession?
     private var task: Task<Void, Never>?
@@ -21,7 +22,8 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
     private(set) var busy = false
     weak var window: NSWindow?
     var changed: (() -> Void)?
-    var clientID: String { UserDefaults.standard.string(forKey: "openSesame.spotify.publicClientID") ?? "" }
+    var clientID: String { Self.effectiveClientID(UserDefaults.standard.string(forKey: "openSesame.spotify.publicClientID")) }
+    static func effectiveClientID(_ stored: String?) -> String { stored.flatMap { validClient($0) ? $0 : nil } ?? defaultClientID }
     var status: [String: Any] {
         let connected = accessToken != nil && expires > Date()
         return ["connected": connected, "busy": busy, "name": connected ? name : "", "expiresAt": connected ? expires.timeIntervalSince1970 * 1000 : 0, "clientId": clientID, "redirectURI": Self.redirect, "error": error]
@@ -90,7 +92,7 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
     }
     private func failed(_ ticket: Int) {
         guard ticket == epoch else { return }
-        browser = nil; busy = false; error = "Spotify could not connect. Check your public client ID, registered redirect and Spotify app access, then retry."; changed?()
+        browser = nil; busy = false; error = "Spotify could not connect. Retry sign-in and check that your account can access Open Sesame in Spotify."; changed?()
     }
     private static func json(_ input: URLRequest) async throws -> [String: Any] {
         var request = input; request.timeoutInterval = 20; request.cachePolicy = .reloadIgnoringLocalCacheData
