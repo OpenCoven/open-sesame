@@ -47,7 +47,7 @@ private final class ProtectedShareVideo: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true; layer?.backgroundColor = NSColor.black.cgColor
-        video.videoGravity = .resizeAspect; layer?.addSublayer(video)
+        video.videoGravity = .resizeAspect; video.frame = bounds; layer?.addSublayer(video)
     }
     required init?(coder: NSCoder) { fatalError("Not a storyboard view") }
     override func layout() { super.layout(); video.frame = bounds }
@@ -158,7 +158,7 @@ final class OpenSesameProtectedShare: NSObject, SCStreamDelegate, NSWindowDelega
 
     private func openWindow(ratio: CGFloat, displayID: CGDirectDisplayID) {
         let area = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID }?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let width = min(1000, area.width * 0.7, (area.height - 80) * ratio)
+        let width = max(1, min(1000, area.width * 0.7, max(1, area.height - 80) * ratio))
         let window = NSWindow(contentRect: NSRect(x: area.midX - width / 2, y: area.midY - width / ratio / 2, width: width, height: width / ratio), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = Self.title; window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false; window.delegate = self
