@@ -1,7 +1,8 @@
 """Coven-owned familiar discovery and JSONL chat, without a shell or model API keys.
 
 The renderer supplies identity and message text, never executable paths, working
-directories, permission flags, or arbitrary CLI arguments. Coven owns execution.
+directories or arbitrary CLI arguments. Elevated replies need a native-only,
+single-use confirmation; renderer permission fields alone confer no authority.
 """
 from contextlib import contextmanager
 from collections import OrderedDict
@@ -191,6 +192,78 @@ class CovenRuntime:
         self.closed = False
         self.shutdown = threading.Event()
         self.cancelled = OrderedDict()
+        self.permission_proposals = {}
+
+    def _permission_scope(self, operation, params):
+        if operation not in ('send', 'avatar') or not isinstance(params, dict):
+            raise ValueError('Unsupported familiar permission request.')
+        fid = identifier(params.get('familiarId'))
+        familiar = self._familiar(fid)
+        folder = self._workspace(familiar)
+        stat = Path(folder).stat()
+        scope = {'operation': operation, 'params': params, 'workspace': folder,
+                 'device': stat.st_dev, 'inode': stat.st_ino, 'name': familiar['displayName']}
+        if operation == 'send':
+            allowed = {'runId', 'prompt', 'familiarId', 'sessionId', 'harness', 'conversationId', 'revision', 'permission'}
+            if set(params) - allowed or params.get('permission') != 'full':
+                raise ValueError('Choose full access only for a specific reply.')
+            identifier(params.get('runId'))
+            prompt = params.get('prompt')
+            if not isinstance(prompt, str) or not prompt.strip() or '\0' in prompt or len(prompt.encode()) > 32768:
+                raise ValueError('Enter a message between 1 and 32768 UTF-8 bytes.')
+            value = self._load(fid)
+            if not value or any(params.get(k) != value[k] for k in ('conversationId', 'revision', 'sessionId')) or type(params.get('revision')) is not int:
+                raise ValueError('This conversation changed. Reopen it before requesting access.')
+            if value['status'] == 'responding' or value['workspace'] != folder:
+                raise ValueError('This conversation or workspace is busy or changed. Refresh before requesting access.')
+            harness = params.get('harness', value['harness'])
+            if harness not in HARNESSES or value['sessionId'] and harness != value['harness']:
+                raise ValueError('Continue with this persistent chat’s original harness.')
+            scope['harness'] = harness
+        else:
+            if set(params) != {'familiarId', 'png'}:
+                raise ValueError('Choose a specific familiar avatar.')
+            # Decode/validate before asking. Only the canonical avatar is writable.
+            familiar_avatars.png_bytes(params.get('png'))
+        return scope
+
+    @staticmethod
+    def _scope_digest(scope):
+        return hashlib.sha256(json.dumps(scope, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    def prepare_permission(self, operation, params):
+        """Private stdio host operation. Never exposed as a renderer method."""
+        params = json.loads(json.dumps(params))
+        with self.lock:
+            if self.closed: raise ValueError('Desktop connection closed.')
+            now = time.monotonic()
+            self.permission_proposals = {k: v for k, v in self.permission_proposals.items() if v['expires'] > now}
+            if self.permission_proposals: raise ValueError('Finish or cancel the current permission request first.')
+            scope = self._permission_scope(operation, params)
+            token = uuid.uuid4().hex
+            self.permission_proposals[token] = {'scope': scope, 'digest': self._scope_digest(scope), 'expires': now + 90}
+            return {'token': token, 'operation': operation, 'familiar': scope['name'], 'workspace': scope['workspace'],
+                    'harness': scope.get('harness', ''), 'message': clip(params.get('prompt', ''), 240)}
+
+    def finish_permission(self, token, approved):
+        # Pop under the instance lock before any work. The token never leaves the
+        # private native pipe and is lost at bridge restart, not a durable grant.
+        with self.lock:
+            proposal = self.permission_proposals.pop(token, None)
+            if not proposal or self.closed or proposal['expires'] <= time.monotonic():
+                raise ValueError('This permission request expired or was already used. Review and try again.')
+            if approved is not True: raise ValueError('Permission cancelled. Your message is kept.')
+            scope = proposal['scope']
+            if self._scope_digest(self._permission_scope(scope['operation'], scope['params'])) != proposal['digest']:
+                raise ValueError('This familiar or workspace changed. Review a new permission request.')
+        if scope['operation'] == 'send':
+            return self.send(scope['params'], _approved_scope=scope)
+        with self._exclusive(scope['params']['familiarId']):
+            if self._scope_digest(self._permission_scope('avatar', scope['params'])) != proposal['digest']:
+                raise ValueError('The avatar destination changed. Choose the image again.')
+            fid = scope['params']['familiarId']
+            image = familiar_avatars.write_avatar(scope['workspace'], fid, scope['params']['png'])
+            return {'familiarId': fid, 'avatarUrl': image, 'location': 'avatars/' + fid + '.png'}
 
     def status(self):
         try:
@@ -375,8 +448,10 @@ class CovenRuntime:
                 rows = [[s.get('name') or s.get('id'), s.get('version')] for s in value if isinstance(s, dict)]
         return {'familiarId': fid, 'name': name, 'columns': columns, 'rows': [[clip(str(cell) if type(cell) in (str, int) else '—', 160) for cell in row] for row in rows[:50]], 'truncated': len(rows) > 50}
 
-    def send(self, params):
+    def send(self, params, *, _approved_scope=None):
         allowed = {'runId', 'prompt', 'familiarId', 'sessionId', 'harness', 'conversationId', 'revision'}
+        permission = 'full' if _approved_scope is not None else 'read-only'
+        if _approved_scope is not None: allowed.add('permission')
         if not isinstance(params, dict) or set(params) - allowed:
             raise ValueError('Unsupported Coven chat parameters.')
         run_id, fid = identifier(params.get('runId')), identifier(params.get('familiarId'))
@@ -393,6 +468,8 @@ class CovenRuntime:
         try:
             with self._exclusive(fid):
                 familiar = self._familiar(fid, cancel); folder = self._workspace(familiar); value = self._load(fid)
+                if _approved_scope is not None and self._scope_digest(self._permission_scope('send', params)) != self._scope_digest(_approved_scope):
+                    raise ValueError('The approved reply changed. Review its permissions again.')
                 if not value or params.get('conversationId') != value['conversationId'] or type(params.get('revision')) is not int or params.get('revision') != value['revision'] or params.get('sessionId') != value['sessionId']:
                     raise ValueError('This conversation changed. Reopen the familiar before sending.')
                 if folder != value['workspace']:
@@ -410,7 +487,7 @@ class CovenRuntime:
                 sent_prompt, truncated = replay(value['messages'], prompt) if harness == 'coven-code' else (prompt, False)
                 context = {'application': 'Open Sesame', 'surface': 'desktop familiar chat', 'conversationId': value['conversationId'], 'familiarId': fid}
                 sent_prompt = 'Open Sesame application session\n' + json.dumps(context, separators=(',', ':')) + '\nThis is the same persistent application conversation. Reply to the user through Open Sesame.\n\n' + sent_prompt
-                args = ['run', harness, '--stream-json', '--permission', 'read-only', '--cwd', folder, '--familiar', fid, '--title', 'Open Sesame · ' + fid, '--labels', 'open-sesame']
+                args = ['run', harness, '--stream-json', '--permission', permission, '--cwd', folder, '--familiar', fid, '--title', 'Open Sesame · ' + fid, '--labels', 'open-sesame']
                 if value['sessionId']:
                     args += ['--continue', value['sessionId']]
                 args += ['--', sent_prompt]
@@ -438,8 +515,8 @@ class CovenRuntime:
                                 raise ValueError('Coven returned another session identity.')
                             return
                         session_id = identifier(event.get('session_id'))
-                        if event.get('cwd') != folder or event.get('permission') != 'read-only':
-                            raise ValueError('Coven did not confirm this workspace and read-only policy. The reply was stopped.')
+                        if event.get('cwd') != folder or event.get('permission') != permission:
+                            raise ValueError('Coven did not confirm this workspace and ' + permission + ' policy. The reply was stopped.')
                         initialized = True; value['sessionId'] = session_id; self._save(value)
                         public = {k: event[k] for k in ('type', 'subtype', 'session_id', 'cwd', 'permission')}
                         events.append(public); publish(public)
@@ -524,6 +601,7 @@ class CovenRuntime:
     def close(self):
         with self.lock:
             self.closed = True
+            self.permission_proposals.clear()
             self.shutdown.set()
             for _, cancel in self.runs.values():
                 cancel.set()

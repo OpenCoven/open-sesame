@@ -49,6 +49,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var protectedShare: OpenSesameProtectedShare!
     var appUnlocked = false
     var pendingAuthenticationURLs: [URL] = []
+    var familiarPermissions = OpenSesameFamiliarPermissions()
+    var nativeCallbacks: [String: ([String: Any]) -> Void] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -118,6 +120,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             self.web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
         }
         authentication = OpenSesameAuthentication()
+        familiarPermissions.window = panel
+        familiarPermissions.authenticated = { [weak self] in self?.authentication?.authenticated == true }
+        familiarPermissions.call = { [weak self] method, params, completion in self?.nativeCall(method, params: params, completion: completion) }
         authentication.window = panel
         authentication.changed = { [weak self] in self?.authenticationChanged() }
         showSignIn()
@@ -143,6 +148,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
             }
         } else if appUnlocked {
+            familiarPermissions.cancel()
+            failNativeCallbacks()
             protectedShare.stop()
             spotify.disconnect()
             appUnlocked = false; pendingLauncher = false
@@ -436,7 +443,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         }
         // Drain diagnostic stderr without exposing shell contents in application logs.
         stderr.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
-        process.terminationHandler = { [weak self, weak process] _ in DispatchQueue.main.async { guard let process, self?.bridge === process else { return }; self?.web.evaluateJavaScript("window.dispatchEvent(new Event('open-sesame-desktop-disconnected'))", completionHandler: nil) } }
+        process.terminationHandler = { [weak self, weak process] _ in DispatchQueue.main.async { guard let process, self?.bridge === process else { return }; self?.familiarPermissions.cancel(); self?.failNativeCallbacks(); self?.web.evaluateJavaScript("window.dispatchEvent(new Event('open-sesame-desktop-disconnected'))", completionHandler: nil) } }
         do { try process.run(); bridge = process; input = stdin.fileHandleForWriting } catch {
             let alert = NSAlert(); alert.messageText = "Could not start the desktop connection"; alert.informativeText = error.localizedDescription; alert.runModal()
         }
@@ -446,10 +453,28 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         readBuffer.append(data)
         while let end = readBuffer.firstIndex(of: 10) {
             let line = readBuffer[..<end]; readBuffer.removeSubrange(...end)
-            if let text = String(data: Data(line), encoding: .utf8), (try? JSONSerialization.jsonObject(with: Data(line))) != nil {
+            if let text = String(data: Data(line), encoding: .utf8), let value = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] {
+                if let id = value["requestId"] as? String, id.hasPrefix("native-"), let callback = nativeCallbacks.removeValue(forKey: id) { callback(value); continue }
+                if (value["requestId"] as? String)?.hasPrefix("native-") == true { continue }
                 web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(text))", completionHandler: nil)
             }
         }
+    }
+
+    func failNativeCallbacks() {
+        let callbacks = nativeCallbacks; nativeCallbacks.removeAll()
+        for callback in callbacks.values { callback(["error": "Desktop connection closed. Your message is kept."]) }
+    }
+
+    func nativeCall(_ method: String, params: [String: Any], completion: @escaping ([String: Any]) -> Void) {
+        guard authentication.authenticated, let input, bridge?.isRunning == true else { completion(["error": "Desktop connection unavailable."]); return }
+        let id = "native-" + UUID().uuidString
+        nativeCallbacks[id] = completion
+        do {
+            var data = try JSONSerialization.data(withJSONObject: ["requestId": id, "method": method, "params": params]); data.append(10)
+            try input.write(contentsOf: data)
+        } catch { nativeCallbacks.removeValue(forKey: id)?(["error": "Could not reach the desktop connection."]) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 330) { [weak self] in self?.nativeCallbacks.removeValue(forKey: id)?(["error": "The permission operation timed out. Refresh its state before retrying."]) }
     }
 
     func respond(_ id: Any?, result: Any? = nil, error: String? = nil) {
@@ -463,12 +488,20 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, source.isFileURL, source.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/"), let body = message.body as? [String:Any], let method = body["method"] as? String else { return }
         let params = body["params"] as? [String:Any] ?? [:], requestId = body["requestId"]
+        guard !(requestId as? String ?? "").hasPrefix("native-") else { return }
         if method == "auth.status" { respond(requestId, result: authentication.status); return }
         if method == "auth.signIn" { respond(requestId, result: true); authentication.signIn(); return }
         if method == "auth.cancel" { respond(requestId, result: true); authentication.cancel(); return }
         if method == "auth.signOut" { respond(requestId, result: true); authentication.signOut(); return }
         if method == "system.info", !authentication.authenticated { respond(requestId, result: ["platform": "darwin", "authenticated": false]); return }
         guard authentication.authenticated || method == "window.focus" else { respond(requestId, error: "Sign in to Open Sesame before using this tool."); return }
+        if method == "coven.permissions.cancel" { familiarPermissions.cancel(); respond(requestId, result: true); return }
+        if method == "coven.avatar.set" || method == "coven.send" && params["permission"] as? String == "full" {
+            familiarPermissions.request(operation: method == "coven.send" ? "send" : "avatar", input: params) { [weak self] response in
+                self?.respond(requestId, result: response["result"], error: response["error"] as? String)
+            }
+            return
+        }
         if method == "window.focus" {
             NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(web)
             respond(requestId, result: true); return
@@ -595,7 +628,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             }
             return
         }
-        let allowed = ["coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
+        let allowed = ["github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
         guard allowed.contains(method), let input = input, bridge?.isRunning == true else { respond(requestId, error: "The desktop terminal bridge is unavailable."); return }
         do { var data = try JSONSerialization.data(withJSONObject: body); data.append(10); try input.write(contentsOf: data) } catch { respond(requestId, error: "Could not reach the desktop terminal bridge.") }
     }
@@ -614,7 +647,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

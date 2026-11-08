@@ -65,4 +65,4 @@ with tempfile.TemporaryDirectory() as directory:
     except ValueError as error:assert 'SYNTHETIC' not in str(error)
     else:raise AssertionError('Nonpublic setting was accepted')
 `],{encoding:'utf8',timeout:15000});assert.equal(result.status,0,result.stderr);
-console.log('Plugin setup for seven integrations, host gating, masked session fields, memory-only token use, safe errors, callback cleanup, and private distribution exclusions passed with synthetic data.');
+console.log('Widget setup for eight integrations, host gating, masked session fields, memory-only token use, safe errors, callback cleanup, and private distribution exclusions passed with synthetic data.');

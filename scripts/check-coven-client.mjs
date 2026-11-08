@@ -43,7 +43,9 @@ try{
   assert.equal(fs.existsSync(path.join(root,'calls.jsonl')),false,'Discovery and opening must not send a prompt');
   const status=await client.command('nova','status');assert.equal(status.familiarId,'nova');assert.equal(status.rows[0][1],'Ready');assert.ok(!JSON.stringify(status).includes('fixture-private-token'));
   await assert.rejects(bridge.request('coven.new',{familiarId:'nova',conversationId:nova.conversationId}));assert.equal((await client.openConversation('nova')).conversationId,nova.conversationId,'Removed reset requests cannot replace the persistent conversation');
-  const avatar=await client.setAvatar('nova','data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP43+DwHwAHAAK/K9fH4gAAAABJRU5ErkJggg==');assert.equal(avatar.familiarId,'nova');assert.equal(avatar.location,'avatars/nova.png');assert.ok(fs.existsSync(path.join(root,'nova','avatars','nova.png')));assert.ok((await client.listFamiliars()).find(f=>f.id==='nova').avatarUrl.startsWith('data:image/png;base64,'));assert.equal(fs.existsSync(path.join(root,'calls.jsonl')),false,'Avatar editing must not send a model prompt');
+  await assert.rejects(client.setAvatar('nova','data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP43+DwHwAHAAK/K9fH4gAAAABJRU5ErkJggg=='));
+  await assert.rejects(bridge.request('native.coven.prepare',{operation:'avatar',input:{familiarId:'nova'}}));
+  assert.equal(fs.existsSync(path.join(root,'nova','avatars','nova.png')),false,'A preview/integrator transport cannot bypass native avatar confirmation');
   const input=(state,runId,prompt)=>({runId,prompt,familiarId:state.familiarId,conversationId:state.conversationId,revision:state.revision,sessionId:state.sessionId,harness:state.harness});
   const events=[];const reply=await client.sendMessage(input(nova,'first-run','hello'),e=>events.push(e));
   assert.ok(reply.sessionId);assert.deepEqual(events.map(e=>e.type),['system','assistant','assistant','result']);
