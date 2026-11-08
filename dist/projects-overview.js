@@ -20,11 +20,16 @@
     const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:event.key==='ArrowRight'?(index+1)%buttons.length:event.key==='ArrowLeft'?(index+buttons.length-1)%buttons.length:null;
     if(next===null)return;event.preventDefault();if(collection(buttons[next].dataset.kind))buttons[next].focus({preventScroll:true});
   });
-  toolbar.append(tabs);pane.prepend(toolbar);pane.classList.add('projects-tabbed');
+  const actions=document.createElement('div'),count=document.createElement('span');
+  actions.id='projects-rail-actions';actions.setAttribute('role','group');actions.setAttribute('aria-label','Collection sidebar controls');count.id='projects-item-count';
+  actions.append(el('item-search-toggle'),el('detail-width-toggle'));el('items-rail-heading').append(count,actions);
+  toolbar.append(tabs,pane.querySelector('.global-project'),pane.querySelector('.library-tools'));pane.prepend(toolbar);pane.classList.add('projects-tabbed');
   function sync(){
     const kind=groups.some(group=>group[0]===categoryFilter)?categoryFilter:'all';if(!itemsArchive)lastKind=kind;
     for(const button of buttons){const selected=button.dataset.kind===kind&&!itemsArchive;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;}
-    workspace.setAttribute('aria-labelledby','projects-'+kind);el('collection-title').textContent=itemsArchive?'Archived':groups.find(group=>group[0]===kind)[1];
+    const title=itemsArchive?'Archived':groups.find(group=>group[0]===kind)[1],total=filteredItems().length;
+    workspace.setAttribute('aria-labelledby','projects-'+kind);el('collection-title').textContent=title;el('capture-list').setAttribute('aria-label',title);
+    count.textContent=String(total);count.setAttribute('aria-label',title+': '+total);
   }
   function show(){collection(lastKind)}
   window.addEventListener('open-sesame-home',event=>{if(event.detail==='items')show()});

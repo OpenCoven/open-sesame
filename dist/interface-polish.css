@@ -1,13 +1,40 @@
 /* Projects shares the compact segmented navigation used by Focus and Console. */
-#widget-anchor #widget-panel .projects-mode-tabs>button[aria-selected=true]{background:var(--surface-selected);color:var(--ink-primary);border-color:#453b50;box-shadow:none}
+#widget-anchor #widget-panel .console-toolbar .console-mode-tabs>button{appearance:none;-webkit-appearance:none;margin:0;border:1px solid transparent;background:transparent;box-shadow:none;color:var(--ink-secondary);font-family:inherit;font-weight:450;line-height:18px;text-align:center}
+#widget-anchor #widget-panel .console-toolbar .console-mode-tabs>button:hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-anchor #widget-panel .console-toolbar .console-mode-tabs>button[aria-selected=true]{background:var(--surface-selected);color:var(--ink-primary);border-color:#453b50;box-shadow:none}
 #widget-anchor #widget-panel .projects-mode-tabs>button svg{width:13px;height:13px;flex:none}
 #widget-anchor #widget-panel .projects-tabbed :is(#category-filter,#rail-all,#library-toggle){display:none!important}
 #widget-anchor #widget-panel .projects-tabbed #project-rail:has(#project-form[hidden]){display:none}
-#widget-anchor #widget-panel .projects-tabbed .capture-list-heading{min-height:30px;gap:8px;padding:0;margin:0}
+#widget-anchor #widget-panel .projects-tabbed .capture-list-heading{display:none}
+#widget-anchor #widget-panel .console-toolbar.projects-toolbar{height:auto;min-height:30px;align-items:center;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px}
+#widget-anchor #widget-panel .projects-toolbar .projects-mode-tabs{min-width:0;flex:0 1 auto}
+#widget-anchor #widget-panel .projects-toolbar>.global-project{flex:0 1 136px;min-width:56px;max-width:150px;height:28px;margin:0 0 0 auto;padding:0 7px;gap:7px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:11px;line-height:18px;color:var(--ink-secondary);box-sizing:border-box}
+#widget-anchor #widget-panel .projects-toolbar>.global-project:is(:hover,:focus-within){background:var(--surface-hover);border-color:var(--line)}
 #widget-anchor #widget-panel .projects-tabbed .library-tools{gap:4px}
 #widget-anchor #widget-panel .projects-tabbed .library-tools>button{width:28px;height:28px;min-height:28px;padding:6px;border:1px solid transparent;background:transparent;border-radius:7px}
 #widget-anchor #widget-panel .projects-tabbed .library-tools>button:hover{background:var(--surface-hover);border-color:var(--line)}
 #widget-anchor #widget-panel .projects-tabbed .items-workspace{flex:1;min-height:0}
+#widget-anchor.library-open:not(.details-full-width) #widget-panel .projects-tabbed .items-workspace{grid-template-columns:var(--console-rail-width) minmax(0,1fr);gap:12px}
+#widget-anchor #widget-panel .projects-tabbed #items-sidebar{min-width:0;gap:4px;padding:2px 10px 0 0;border-left:0;border-right:1px solid var(--line);box-sizing:border-box}
+#widget-anchor #widget-panel .projects-tabbed #items-rail-heading{display:flex;align-items:center;gap:6px;height:28px;min-height:28px;margin:0;padding:0 2px;border:0}
+#widget-anchor #widget-panel .projects-tabbed .library-heading{flex:1;min-width:0}
+#widget-anchor #widget-panel .projects-tabbed #collection-title{font-size:11px;line-height:16px;font-weight:450;color:var(--ink-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#widget-anchor #widget-panel #projects-item-count{flex:none;font-size:10px;line-height:16px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+#widget-anchor #widget-panel #projects-rail-actions{display:flex;align-items:center;gap:2px;flex:none}
+#widget-anchor #widget-panel #projects-rail-actions>button{appearance:none;display:grid;place-items:center;flex:none;width:24px;height:24px;min-height:24px;margin:0;padding:5px;border:1px solid transparent;border-radius:6px;background:transparent;box-shadow:none;color:var(--ink-secondary)}
+#widget-anchor #widget-panel #projects-rail-actions>button:hover{background:var(--surface-hover);border-color:var(--line);color:var(--ink-primary)}
+#widget-anchor #widget-panel #projects-rail-actions>button svg{display:block;width:13px;height:13px}
+#widget-anchor #widget-panel .projects-tabbed #capture-list{--rail-row-height:42px;gap:4px;padding:2px;min-width:0}
+#widget-anchor #widget-panel .projects-tabbed #capture-list[data-view=list] .capture-item{display:flex;align-items:center;gap:8px;height:42px;min-height:42px;max-height:42px;margin:0;padding:4px 7px;border:1px solid transparent;border-radius:7px;background:transparent;box-shadow:none;box-sizing:border-box;overflow:hidden}
+#widget-anchor #widget-panel .projects-tabbed #capture-list[data-view=list] .capture-item:hover{background:var(--surface-hover)}
+#widget-anchor #widget-panel .projects-tabbed #capture-list[data-view=list] .capture-item.active{background:var(--surface-selected);border-color:#453b50;box-shadow:inset 2px 0 var(--accent)}
+#widget-anchor #widget-panel .projects-tabbed .capture-item>.thought-content{display:flex;flex-direction:column;align-items:stretch;justify-content:center;flex:1;min-width:0;gap:1px;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;appearance:none;overflow:hidden}
+#widget-anchor #widget-panel .projects-tabbed .capture-item .thought-text{font-size:11px!important;line-height:16px;font-weight:450;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#widget-anchor #widget-panel .projects-tabbed .capture-item .thought-url{width:100%;max-width:none;font-size:10px!important;line-height:14px;color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#widget-anchor #widget-panel .projects-tabbed .capture-item>.item-kind{display:grid;place-items:center;flex:0 0 16px;width:16px;height:24px;min-height:24px;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--ink-secondary);box-shadow:none}
+#widget-anchor #widget-panel .projects-tabbed .capture-item>.item-check{flex:0 0 16px;width:16px;height:16px;min-height:16px;margin:0;padding:2px;border:1px solid #51465f;border-radius:4px;background:transparent;align-self:center;box-shadow:none;color:var(--accent)}
+#widget-anchor #widget-panel .projects-tabbed .capture-item button:focus-visible{outline-offset:-2px}
+@container open-sesame-widget (max-width:600px){#widget-anchor #widget-panel .projects-toolbar .projects-mode-tabs{flex:1 0 100%;width:100%}#widget-anchor #widget-panel .projects-toolbar>.global-project{flex:1;max-width:none;margin-left:0}#widget-anchor #widget-panel .projects-toolbar>.library-tools{margin-left:auto;flex:0 0 auto}}
 /* One uninterrupted music field, with fitted service and action controls. */
 #widget-anchor #widget-panel .music-source-form{display:flex;align-items:center;gap:6px;min-height:38px;padding:4px 6px;background:var(--surface-raised);border:1px solid var(--line);border-radius:9px;min-width:0}
 #widget-anchor #widget-panel .music-service-picker{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:0 8px 0 4px;border-right:1px solid var(--line);min-width:0}

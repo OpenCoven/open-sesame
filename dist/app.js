@@ -273,7 +273,10 @@ function itemRow(n){
   const control=document.createElement('button');control.type='button';control.className=task?'item-check':'item-kind';control.innerHTML=task?(OpenSesameItemWorkflow.isArchived(n)?icon('check'):''):icon(kind==='bookmark'?'bookmark':'capture');
   control.setAttribute('aria-label',task?(OpenSesameItemWorkflow.isArchived(n)?'Restore task: ':'Complete and archive task: ')+title:'Open '+kind+': '+title);if(task)control.setAttribute('aria-pressed',OpenSesameItemWorkflow.isArchived(n));
   control.addEventListener('click',()=>{if(!task){openItem(n.id);return}setItemStatus(n,OpenSesameItemWorkflow.isArchived(n)?'restore':'done');[...$('capture-list').querySelectorAll('[data-item-id]')].find(el=>el.dataset.itemId===n.id)?.querySelector('button')?.focus({preventScroll:true})});
-  const content=document.createElement('button');content.type='button';content.className='thought-content';content.title=title;content.setAttribute('aria-label',(kind==='bookmark'?'Preview bookmark: ':'Open '+kind+': ')+title);content.addEventListener('click',()=>openItem(n.id));const label=document.createElement('span');label.className='thought-text';label.textContent=title;const meta=document.createElement('small');meta.className='thought-url';meta.textContent=kind==='bookmark'?new URL(n.url).hostname.replace(/^www\./,'')+' · '+projectName(n.projectId):task?OpenSesameItemWorkflow.label(n)+' · '+projectName(n.projectId):n.body?OpenSesameItemWorkflow.excerpt(n.body):projectName(n.projectId);content.title=title+' · '+meta.textContent;content.append(label,meta);
+  const content=document.createElement('button');content.type='button';content.className='thought-content';content.title=title;content.setAttribute('aria-label',(kind==='bookmark'?'Preview bookmark: ':'Open '+kind+': ')+title);if(libraryOpen&&n.id===selectedItemId)content.setAttribute('aria-current','true');content.addEventListener('click',()=>openItem(n.id));const label=document.createElement('span');label.className='thought-text';label.textContent=title;const meta=document.createElement('small');meta.className='thought-url';
+  const project=projectFilter==='all'?projectName(n.projectId):'',domain=kind==='bookmark'?new URL(n.url).hostname.replace(/^www\./,''):'';
+  meta.textContent=kind==='bookmark'?[title.toLowerCase()===domain.toLowerCase()?'':domain,project].filter(Boolean).join(' · '):task?[OpenSesameItemWorkflow.label(n),project].filter(Boolean).join(' · '):n.body?OpenSesameItemWorkflow.excerpt(n.body):project;
+  meta.hidden=!meta.textContent;content.title=[title,meta.textContent].filter(Boolean).join(' · ');content.append(label,meta);
   const remove=document.createElement('button');remove.className='delete-thought';remove.innerHTML=icon('trash');remove.setAttribute('aria-label','Delete '+kind+': '+title);remove.addEventListener('click',()=>deleteItem(n.id));row.append(control,content,remove);return row;
 }
 function renderItemsPage(visible=filteredItems()){
@@ -350,7 +353,7 @@ function syncDetailWidth(){
   if(!libraryOpen||!currentItem())detailFullWidth=false;
   const full=libraryOpen&&state.scenario==='items'&&detailFullWidth,button=$('detail-width-toggle');
   $('widget-anchor').classList.toggle('details-full-width',full);$('capture-list').parentElement.hidden=full;$('library-search-row').hidden=full||!itemsSearchOpen;$('item-search-toggle').hidden=full;$('item-search-toggle').setAttribute('aria-expanded',itemsSearchOpen);
-  const buttonHome=$(full?'items-rail-reopen':'items-rail-heading');if(button.parentElement!==buttonHome)buttonHome.prepend(button);
+  const buttonHome=full?$('items-rail-reopen'):($('projects-rail-actions')||$('items-rail-heading'));if(button.parentElement!==buttonHome)buttonHome.append(button);
   button.hidden=!libraryOpen||!currentItem();button.setAttribute('aria-pressed',full);button.setAttribute('aria-label',full?'Show items sidebar':'Hide items sidebar');button.title=full?'Show items sidebar':'Hide items sidebar · Esc to restore';button.setAttribute('aria-expanded',!full);button.innerHTML=icon('rail-left');
   detailEditor.layout();
 }
