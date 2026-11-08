@@ -35,6 +35,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var dockedScreenID: NSNumber?
     var embeddedPages: [String: EmbeddedWebSurface] = [:]
     var outsideClickMonitors: [Any] = []
+    var authentication: OpenSesameAuthentication!
+    var appUnlocked = false
+    var pendingAuthenticationURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -89,11 +92,54 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         shortcut = GlobalShortcut { [weak self] in self?.openLauncher() }
         web.configuration.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_GLOBAL_SHORTCUT__=\(shortcut?.available == true ? "true" : "false");", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         status.button?.toolTip = shortcut?.available == true ? "Open Sesame · Option–Space" : "Open Sesame · Option–Space unavailable"
-        startBridge(resources: resources)
-        web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
+        authentication = OpenSesameAuthentication()
+        authentication.window = panel
+        authentication.changed = { [weak self] in self?.authenticationChanged() }
+        showSignIn()
+        authentication.restore()
+        let pendingURLs = pendingAuthenticationURLs; pendingAuthenticationURLs.removeAll()
+        if !pendingURLs.isEmpty { application(NSApp, open: pendingURLs) }
         positionPanel()
         panel.orderFrontRegardless()
     }
+
+    func showSignIn() {
+        currentSize = NSSize(width: 680, height: 382)
+        positionPanel()
+        web.loadFileURL(assets.appendingPathComponent("sign-in.html"), allowingReadAccessTo: assets)
+    }
+
+    func authenticationChanged() {
+        if authentication.authenticated {
+            if !appUnlocked {
+                appUnlocked = true
+                startBridge(resources: Bundle.main.resourceURL!)
+                web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
+            }
+        } else if appUnlocked {
+            appUnlocked = false; pendingLauncher = false
+            voice.cancel(); audioRecorder.clear()
+            for window in NSApp.windows { if let picker = window as? NSSavePanel, picker.isVisible { picker.cancel(nil) } }
+            embeddedPages.values.forEach { $0.close() }; embeddedPages.removeAll()
+            let previous = bridge; bridge = nil
+            try? input?.close(); input = nil; readBuffer.removeAll()
+            // EOF lets the host close its PTYs, agent jobs and workers before an eventual termination.
+            DispatchQueue.main.asyncAfter(deadline: .now()+3) { if previous?.isRunning == true { previous?.terminate() } }
+            if detached { setDetached(false, aspectRatio: detachedRatio, focus: false) }
+            showSignIn()
+        }
+        web.evaluateJavaScript("window.dispatchEvent(new Event('open-sesame-auth-changed'))", completionHandler: nil)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "opensesame" && url.host == "auth" {
+            guard authentication != nil else { pendingAuthenticationURLs = [url]; return }
+            if url.path == "/login" { showPanel(); if !authentication.authenticated { authentication.signIn() } }
+            else if url.path == "/signed-out" { authentication.signOut(endRemoteSession: false); showPanel() }
+        }
+    }
+
+    @objc func signOut() { authentication.signOut() }
 
     func createMainMenu() {
         let main = NSMenu(), appItem = NSMenuItem(), editItem = NSMenuItem()
@@ -142,6 +188,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 notice.isEnabled = false
             }
             menu.addItem(.separator())
+            if authentication.authenticated { menu.addItem(withTitle: "Sign out of Open Sesame", action: #selector(signOut), keyEquivalent: "").target = self }
             menu.addItem(withTitle: "Quit Open Sesame", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             for item in menu.items where item.action == #selector(showPanel) { item.target = self }
             status.menu = menu
@@ -161,18 +208,21 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func outsideClick(_ event: NSEvent) {
+        if authentication?.busy == true { return }
         let point = NSEvent.mouseLocation
         guard panel.isVisible, !panel.frame.contains(point), NSApp.modalWindow == nil, panel.attachedSheet == nil else { return }
         // App-owned menus and pickers are part of the current interaction.
         if let window = event.window, window !== panel { return }
         if NSApp.windows.contains(where: { ($0 is NSSavePanel) && $0.isVisible }) { return }
         if let button = status.button, let window = button.window, window.convertToScreen(button.convert(button.bounds, to: nil)).contains(point) { return }
+        if !authentication.authenticated { panel.orderOut(nil); return }
         DispatchQueue.main.async { [weak self] in
             self?.web.evaluateJavaScript("void window.OpenSesameWindow?.collapse({outside:true})", completionHandler: nil)
         }
     }
 
     @objc func openLauncher() {
+        guard authentication.authenticated else { showPanel(); return }
         let toggle = panel.isVisible && panel.isKeyWindow
         showPanel()
         panel.makeFirstResponder(web)
@@ -182,7 +232,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView === web, pendingLauncher { pendingLauncher = false; openLauncher() }
+        if webView === web, authentication.authenticated, pendingLauncher { pendingLauncher = false; openLauncher() }
     }
 
     func placementScreen() -> NSScreen? {
@@ -260,6 +310,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if !authentication.authenticated { panel.orderOut(nil); return false }
         web.evaluateJavaScript("void window.OpenSesameWindow?.collapse({focus:true})", completionHandler: nil)
         return false
     }
@@ -278,14 +329,14 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         process.executableURL = URL(fileURLWithPath: python)
         process.arguments = ["-B", "-u", resources.appendingPathComponent("bridge.py").path, "--stdio"]
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = stderr
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stdout.fileHandleForReading.readabilityHandler = { [weak self, weak process] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            DispatchQueue.main.async { self?.consume(data) }
+            DispatchQueue.main.async { guard let process, self?.bridge === process, self?.authentication.authenticated == true else { return }; self?.consume(data) }
         }
         // Drain diagnostic stderr without exposing shell contents in application logs.
         stderr.fileHandleForReading.readabilityHandler = { handle in _ = handle.availableData }
-        process.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.web.evaluateJavaScript("window.dispatchEvent(new Event('open-sesame-desktop-disconnected'))", completionHandler: nil) } }
+        process.terminationHandler = { [weak self, weak process] _ in DispatchQueue.main.async { guard let process, self?.bridge === process else { return }; self?.web.evaluateJavaScript("window.dispatchEvent(new Event('open-sesame-desktop-disconnected'))", completionHandler: nil) } }
         do { try process.run(); bridge = process; input = stdin.fileHandleForWriting } catch {
             let alert = NSAlert(); alert.messageText = "Could not start the desktop connection"; alert.informativeText = error.localizedDescription; alert.runModal()
         }
@@ -312,6 +363,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, source.isFileURL, source.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/"), let body = message.body as? [String:Any], let method = body["method"] as? String else { return }
         let params = body["params"] as? [String:Any] ?? [:], requestId = body["requestId"]
+        if method == "auth.status" { respond(requestId, result: authentication.status); return }
+        if method == "auth.signIn" { respond(requestId, result: true); authentication.signIn(); return }
+        if method == "auth.cancel" { respond(requestId, result: true); authentication.cancel(); return }
+        if method == "auth.signOut" { respond(requestId, result: true); authentication.signOut(); return }
+        if method == "system.info", !authentication.authenticated { respond(requestId, result: ["platform": "darwin", "authenticated": false]); return }
+        guard authentication.authenticated || method == "window.focus" else { respond(requestId, error: "Sign in to Open Sesame before using this tool."); return }
         if method == "window.focus" {
             NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(web)
             respond(requestId, result: true); return
@@ -328,7 +385,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                     }
                     try embeddedPages[id]?.open(params)
                 } else if let page = embeddedPages[id], page.matches(params["generation"]) {
-                    if method == "webview.frame" { try page.frame(params, bounds: web.bounds) }
+                    if method == "webview.frame" { try page.frame(params) }
                     else if method == "webview.command" { try page.command(params) }
                     else if method == "webview.close" { page.close(); embeddedPages.removeValue(forKey: id) }
                     else { throw EmbeddedWebSurface.SurfaceError.invalidCommand }
@@ -419,18 +476,18 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard action.targetFrame?.isMainFrame != false, let url = action.request.url else { decisionHandler(.allow); return }
-        if url.isFileURL && url.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/") { decisionHandler(.allow) }
+        if url.isFileURL && url.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/") { decisionHandler(authentication?.authenticated == true || url.lastPathComponent == "sign-in.html" ? .allow : .cancel) }
         else { if ["https", "http"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }; decisionHandler(.cancel) }
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url, ["https", "http"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }; return nil
     }
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
-        guard frame.isMainFrame, let url = frame.request.url, url.isFileURL, url.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/") else { completionHandler(nil); return }
+        guard authentication.authenticated, frame.isMainFrame, let url = frame.request.url, url.isFileURL, url.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/") else { completionHandler(nil); return }
         let picker = NSOpenPanel(); picker.canChooseFiles = !parameters.allowsDirectories; picker.canChooseDirectories = parameters.allowsDirectories; picker.allowsMultipleSelection = parameters.allowsMultipleSelection; picker.prompt = "Open"
         picker.begin { response in completionHandler(response == .OK ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

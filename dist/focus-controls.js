@@ -13,14 +13,13 @@
   }
   function close(restore=true){dialog.hidden=true;trigger.setAttribute('aria-expanded','false');if(restore)returnTo?.focus({preventScroll:true})}
   function open(from=trigger){if(focusRunning){toast('Pause your timer to adjust its duration.');return}returnTo=from;custom.value=focusMinutes;dialog.hidden=false;trigger.setAttribute('aria-expanded','true');sync();preview();(dialog.querySelector('[aria-pressed="true"]')||custom).focus({preventScroll:true})}
-  function apply(minutes){if(setFocusDuration(minutes)){close();window.OpenSesameFocusOverview?.sync()}else preview()}
+  function apply(minutes){if(setFocusDuration(minutes)){close();}else preview()}
   trigger.addEventListener('click',()=>dialog.hidden?open():close());el('focus-duration-close').addEventListener('click',()=>close());
   dialog.querySelectorAll('[data-duration]').forEach(button=>button.addEventListener('click',()=>apply(Number(button.dataset.duration))));
   dialog.querySelectorAll('[data-duration-step]').forEach(button=>button.addEventListener('click',()=>{custom.value=Math.max(15,Math.min(1440,(Number(custom.value)||focusMinutes)+Number(button.dataset.durationStep)));preview()}));
   custom.addEventListener('input',preview);el('focus-duration-form').addEventListener('submit',event=>{event.preventDefault();if(custom.checkValidity())apply(Number(custom.value))});
-  document.addEventListener('pointerdown',event=>{if(!dialog.hidden&&!dialog.contains(event.target)&&!trigger.contains(event.target)&&!event.target.closest('#bento-duration-open'))close(false)});
+  document.addEventListener('pointerdown',event=>{if(!dialog.hidden&&!dialog.contains(event.target)&&!trigger.contains(event.target))close(false)});
   document.addEventListener('keydown',event=>{if(dialog.hidden)return;if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();close()}else if(event.key==='Tab'){const buttons=[...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled)')],first=buttons[0],last=buttons.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}},true);
-  const more=document.createElement('button');more.id='bento-duration-open';more.type='button';more.innerHTML=icon('sliders');more.setAttribute('aria-label','Choose a custom focus duration');more.title='Adjust focus duration';more.addEventListener('click',()=>open(more));panel.querySelector('.bento-durations')?.append(more);
 
   // An agenda-specific composer occupies the same footer; general capture drafts stay intact.
   const form=document.createElement('form');form.id='agenda-capture-form';form.hidden=true;

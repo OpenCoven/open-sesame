@@ -7,11 +7,20 @@
   function geometry(record){
     const r=record.element.getBoundingClientRect(),style=getComputedStyle(record.element);
     let visible=record.element.isConnected&&record.element.getClientRects().length>0&&style.visibility!=='hidden'&&!document.hidden&&state.expanded===true&&!window.OpenSesameLauncher?.active;
+    const clip={left:Math.max(0,r.left),top:Math.max(0,r.top),right:Math.min(window.innerWidth,r.right),bottom:Math.min(window.innerHeight,r.bottom)};
+    // Native child views do not inherit CSS overflow clipping from their DOM placeholder.
+    for(let parent=record.element.parentElement;parent;parent=parent.parentElement){
+      const css=getComputedStyle(parent),bounds=parent.getBoundingClientRect();
+      if(css.visibility==='hidden'||css.display==='none')visible=false;
+      if(/^(hidden|clip|scroll|auto)$/.test(css.overflowX)){clip.left=Math.max(clip.left,bounds.left);clip.right=Math.min(clip.right,bounds.right)}
+      if(/^(hidden|clip|scroll|auto)$/.test(css.overflowY)){clip.top=Math.max(clip.top,bounds.top);clip.bottom=Math.min(clip.bottom,bounds.bottom)}
+    }
+    visible=visible&&clip.right>clip.left&&clip.bottom>clip.top;
     if(visible)for(const overlay of document.querySelectorAll('dialog[open],[role=dialog],[role=listbox],[role=menu],.voice-popover,.glass-sheet,.glass-popover,.workspace-menu,.bookmark-batch,#capture-commands,.playlist-overlay #youtube-queue')){
       if(overlay.hidden||overlay.contains(record.element)||!overlay.getClientRects().length)continue;
       if(intersects(r,overlay.getBoundingClientRect())){visible=false;break}
     }
-    return {x:r.left,y:r.top,width:r.width,height:r.height,visible};
+    return {x:r.left,y:r.top,width:r.width,height:r.height,clip:{x:clip.left,y:clip.top,width:Math.max(0,clip.right-clip.left),height:Math.max(0,clip.bottom-clip.top)},visible};
   }
   function sync(){
     frame=0;for(const record of records.values()){

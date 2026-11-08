@@ -17,7 +17,7 @@ The three stale check fixtures identified below have been repaired against the c
 | `dist/` | Authored, buildless widget UI, models, styles, bundled libraries, and browser fallbacks. Despite the directory name, much of this is application source. |
 | `desktop/OpenSesame.swift`, `VoiceInput.swift` | AppKit panel, menu bar, WKWebView, native dialogs, window behavior, and microphone/speech entry. |
 | `desktop/bridge.py` and helper modules | Stdio RPC, POSIX PTYs/SSH, feeds/reader retrieval, CLI transcript answers, process discovery, optional message controller, and Mac controls. |
-| `desktop/dev_server.py` | Loopback web preview with a same-origin WebSocket connection to the local bridge. |
+| `desktop/dev_server.py` | Login/download preview; the old unauthenticated WebSocket host is disabled. |
 | `scripts/check-*.mjs`, `desktop/tests/` | JavaScript model/simulated-DOM checks and Python unit/integration checks. |
 | `vendor-src/`, `dist/vendor/` | Upstream sources and bundled browser dependencies. |
 
@@ -132,3 +132,13 @@ The widget now uses a fixed, opaque charcoal base (`#101113`) with matching nati
 | Quiet, accessible feedback | The animated edge is replaced by a static dot on the relevant navigation icon. Keyboard focus uses a visible two-pixel outline, disabled controls use a steady color, and view transitions do not fade content. | Simulated state checks cover focus/process/microphone priority, the retained enabled preference, preview expiry, and status announcements. Reduced-motion and forced-color hooks remain present. |
 
 The compact indicator reflects observed state only; it does not claim task progress or approval status. Native compilation and signed packaging are separate from visual/device acceptance. The computer-use service remained unavailable during this pass, so the new rendered surfaces, OS title bar, focus appearance, and contrast of every inherited component have not been accepted on hardware. No provider request or account authorization is needed to exercise this appearance change.
+
+## Native previews and Console follow-up
+
+The shared WKWebView positioning now respects the parent view's top-down coordinates. A clipped native viewport keeps YouTube and both bookmark surfaces inside their DOM content area, preserving the original page dimensions during clipping. Search bars, tabs and app dialogs retain their space. Native geometry checks cover both coordinate systems, ancestor clipping, window bounds and invalid inputs. Installed visual verification remains open because native/browser automation and the isolated WebKit rendering probe were unavailable.
+
+Focus opens directly into Music, Timer, YouTube and Media tabs using Console's shared toolbar style; its former overview and duplicate controls have been removed. Familiars, Shells and Machines declare vertical tabs and share the same rail frame, width, 30 CSS px row height, padding, selection treatment and scroll behavior. Icon identifiers fall back to a real app glyph. Long familiar names ellipsize without a horizontal scrollbar.
+
+Processes now uses neutral solid cards, a concise empty state and real process snapshots; Try demo and warm/red decorative trim have been removed. Search, state filters, Clear filters and Refresh retain the last snapshot and scroll position. Stale responses cannot reconnect a disconnected host. Familiars has distinct disconnected, roster-ready, new-conversation, searching and replying states. New chat clears stale history search; stopped replies are a status; late conversation loads cannot replace the current selection. Simulated-host checks cover these actions without sending real prompts or modifying familiar workspaces.
+
+The application now also requires [WorkOS login](workos-login.md). Callback and sign-out URLs were saved and read back for the existing OpenSesame production environment. The Initiate login setting and real installed browser/Keychain flow remain explicit acceptance items in that guide.

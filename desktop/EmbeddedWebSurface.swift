@@ -1,10 +1,15 @@
 import AppKit
 import WebKit
 
+private final class EmbeddedWebViewport: NSView {
+    override var isFlipped: Bool { true }
+}
+
 // External pages have their own WKWebView configuration, without the app bridge.
 final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     let id: String
     let view: WKWebView
+    private let viewport = EmbeddedWebViewport(frame: .zero)
     private let assets: URL
     private let emit: ([String: Any]) -> Void
     private var generation = ""
@@ -20,10 +25,11 @@ final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         view.navigationDelegate = self; view.uiDelegate = self
         view.underPageBackgroundColor = NSColor(calibratedWhite: 0.06, alpha: 1)
         view.appearance = NSAppearance(named: .darkAqua)
-        view.wantsLayer = true; view.layer?.cornerRadius = 8; view.layer?.masksToBounds = true
-        view.isHidden = true
+        viewport.wantsLayer = true; viewport.layer?.cornerRadius = 8; viewport.layer?.masksToBounds = true
+        viewport.isHidden = true
         if id == "youtube" { configuration.userContentController.add(self, name: "youtubePlayer") }
-        parent.addSubview(view)
+        viewport.addSubview(view)
+        parent.addSubview(viewport)
     }
 
     static func pageURL(_ value: Any?) -> URL? {
@@ -53,13 +59,35 @@ final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         }
     }
 
-    func frame(_ params: [String: Any], bounds: NSRect) throws {
+    struct Layout {
+        let viewport: NSRect
+        let content: NSRect
+    }
+
+    static func layout(_ params: [String: Any], bounds: NSRect, flipped: Bool) throws -> Layout {
         guard let x = params["x"] as? NSNumber, let y = params["y"] as? NSNumber,
               let width = params["width"] as? NSNumber, let height = params["height"] as? NSNumber,
               [x, y, width, height].allSatisfy({ $0.doubleValue.isFinite }) else { throw SurfaceError.invalidFrame }
-        let rectangle = NSRect(x: x.doubleValue, y: bounds.height - y.doubleValue - height.doubleValue, width: max(0, width.doubleValue), height: max(0, height.doubleValue)).intersection(bounds)
-        view.isHidden = params["visible"] as? Bool != true || rectangle.isEmpty || (id == "youtube" && (rectangle.width < 200 || rectangle.height < 200))
-        if !rectangle.isEmpty { view.frame = rectangle }
+        let element = NSRect(x: x.doubleValue, y: y.doubleValue, width: max(0, width.doubleValue), height: max(0, height.doubleValue))
+        var clip = element
+        if let value = params["clip"] as? [String: Any] {
+            guard let cx = value["x"] as? NSNumber, let cy = value["y"] as? NSNumber,
+                  let cw = value["width"] as? NSNumber, let ch = value["height"] as? NSNumber,
+                  [cx, cy, cw, ch].allSatisfy({ $0.doubleValue.isFinite }) else { throw SurfaceError.invalidFrame }
+            clip = clip.intersection(NSRect(x: cx.doubleValue, y: cy.doubleValue, width: max(0, cw.doubleValue), height: max(0, ch.doubleValue)))
+        }
+        clip = clip.intersection(NSRect(origin: .zero, size: bounds.size))
+        guard !clip.isEmpty else { return Layout(viewport: .zero, content: .zero) }
+        // DOM rectangles are top-down. WKWebView is flipped on macOS; consult the parent instead of flipping twice.
+        let rectangle = NSRect(x: bounds.minX + clip.minX, y: flipped ? bounds.minY + clip.minY : bounds.maxY - clip.maxY, width: clip.width, height: clip.height)
+        return Layout(viewport: rectangle, content: NSRect(x: element.minX - clip.minX, y: element.minY - clip.minY, width: element.width, height: element.height))
+    }
+
+    func frame(_ params: [String: Any]) throws {
+        guard let parent = viewport.superview else { return }
+        let layout = try Self.layout(params, bounds: parent.bounds, flipped: parent.isFlipped)
+        viewport.isHidden = params["visible"] as? Bool != true || layout.viewport.isEmpty || (id == "youtube" && (layout.content.width < 200 || layout.content.height < 200))
+        if !layout.viewport.isEmpty { viewport.frame = layout.viewport; view.frame = layout.content }
     }
 
     func command(_ params: [String: Any]) throws {
@@ -101,7 +129,7 @@ final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         return nil
     }
 
-    func close() { view.stopLoading(); view.configuration.userContentController.removeScriptMessageHandler(forName: "youtubePlayer"); view.removeFromSuperview() }
+    func close() { view.stopLoading(); view.configuration.userContentController.removeScriptMessageHandler(forName: "youtubePlayer"); viewport.removeFromSuperview() }
     func matches(_ token: Any?) -> Bool { token as? String == generation }
     enum SurfaceError: LocalizedError {
         case invalidURL, invalidFrame, invalidCommand

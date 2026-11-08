@@ -1,5 +1,7 @@
 # Open Sesame — Widget Studio
 
+The Mac app now requires WorkOS login through the existing **OpenSesame** production project. Sign-in opens in the system browser; verified sessions stay in the macOS Keychain. See [login setup, saved application URLs and remaining live checks](docs/workos-login.md). The local HTTP preview shows the sign-in screen and downloads; machine operations are available through the authenticated native app.
+
 Plugin cards include setup and repair instructions. See [plugin setup and private configuration](docs/desktop-polish-plan.md#plugin-setup-and-private-configuration) for supported hosts, credential handling, and the remaining native OAuth work. Live answers render as sanitized Markdown inside a compact transcript workspace; see [Live content and Markdown preview](docs/widget-input-capture.md#live-content-and-markdown-preview).
 
 The current widget uses an opaque, flat charcoal palette. Transparency gestures, native vibrancy, animated edges, and view fades have been removed. Navigation, text hierarchy, controls, and static activity feedback share the [four UI refinements](docs/desktop-polish-plan.md#flat-dark-ui-polish); older glass sections below are historical and superseded.

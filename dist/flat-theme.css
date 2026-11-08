@@ -1,4 +1,5 @@
 /* Final widget palette: opaque surfaces, restrained contrast, one interaction vocabulary. */
+.account-session{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:10px;margin-top:8px;border-top:1px solid var(--line);font-size:10px;color:var(--ink-secondary)}.account-session>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-session>button{flex:none;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised);color:var(--ink-primary);font:inherit}
 #widget-anchor{
   --surface-base:#101113;--surface-inset:#0c0d0f;--surface-raised:#17181c;--surface-hover:#202126;--surface-selected:#26232d;
   --ink-primary:#e8e6ec;--ink-secondary:#b8b4bf;--ink-muted:#a09ba8;--ink-disabled:#74717d;--line:#2b2b33;--accent:#c6b8d9;

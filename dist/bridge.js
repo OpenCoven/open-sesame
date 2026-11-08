@@ -1,13 +1,14 @@
 'use strict';
 (()=>{
   const pending=new Map();let next=0,send=null,available=false;
+  const page=window.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   window.__openSesameReceive=message=>{
     if(message.requestId&&pending.has(message.requestId)){const task=pending.get(message.requestId);pending.delete(message.requestId);clearTimeout(task.timer);message.error?task.reject(new Error(message.error)):task.resolve(message.result);return}
     if(message.event)window.dispatchEvent(new CustomEvent('open-sesame-desktop-event',{detail:message}));
   };
   const request=(method,params={})=>new Promise((resolve,reject)=>{
     if(!send){reject(new Error('Open Open Sesame on your desktop to connect to this machine.'));return}
-    const requestId='request-'+(++next),timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('The desktop connection did not respond.'))},method==='coven.send'?240000:['project.chooseFolder','reading.saveEPUB','reading.saveRSS','speech.start','record.start','record.save','live.ask','coven.status','coven.familiars','coven.open','coven.new','reading.pdf'].includes(method)?180000:15000);pending.set(requestId,{resolve,reject,timer});try{send({requestId,method,params})}catch(error){clearTimeout(timer);pending.delete(requestId);reject(error)};
+    const requestId='request-'+page+'-'+(++next),timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('The desktop connection did not respond.'))},method==='coven.send'?240000:['project.chooseFolder','reading.saveEPUB','reading.saveRSS','speech.start','record.start','record.save','live.ask','coven.status','coven.familiars','coven.open','coven.new','reading.pdf'].includes(method)?180000:15000);pending.set(requestId,{resolve,reject,timer});try{send({requestId,method,params})}catch(error){clearTimeout(timer);pending.delete(requestId);reject(error)};
   });
   let ready;
   if(window.__OPEN_SESAME_NATIVE__&&window.webkit?.messageHandlers?.openSesame){send=message=>window.webkit.messageHandlers.openSesame.postMessage(message);document.documentElement.classList.add('native-desktop');ready=request('system.info').then(info=>{available=true;return info})}
