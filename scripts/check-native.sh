@@ -17,3 +17,5 @@ xcrun swiftc -o "$open_sesame_check/spotify-tests" "$open_sesame_root/desktop/Sp
 
 xcrun swiftc -o "$open_sesame_check/system-audio-tests" "$open_sesame_root/desktop/SystemAudio.swift" "$open_sesame_root/desktop/tests/SystemAudioTests.swift" -framework AppKit -framework AVFoundation -framework ScreenCaptureKit -framework CoreMedia
 "$open_sesame_check/system-audio-tests"
+
+bash scripts/check-vnc-native.sh

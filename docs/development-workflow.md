@@ -61,3 +61,9 @@ Before removal, the tool creates an archive ref and bundle, verifies the bundle,
 ## Interruptions and completion
 
 Before stopping, checkpoint exact head/base, dirty source fingerprint, commands and receipts, original failures, current owners, cleanup dispositions, unmet criteria, and one next action. Leave a copyable continuation prompt in `docs/work-tracking.md`. Completion requires evidence for every acceptance criterion; a host blocker must remain explicit. Do not turn unavailable GUI/device/provider/hosted evidence into a successful check.
+
+## Pre-commit secret checks
+
+Install Gitleaks (`brew install gitleaks` on Mac), then run `npm run hooks:install` in each working checkout. This installs the versioned pre-commit hook using worktree-local Git configuration and preserves existing custom hook paths. Run `npm run check:secrets` for the same explicit check before committing.
+
+The hook checks all staged paths and private-key blocks, and scans the staged diff with Gitleaks default rules, including the staged versions of partially staged files. Unchanged historical findings are outside the staged-diff scan; it is not a repository history audit. Missing scanners, unresolved files and findings block the commit. Scanner configuration, ignore files and inline allow comments cannot disable this scan. Hook output never includes matching source snippets. Git hooks are local safeguards that can be bypassed; a passing scan reduces risk and does not prove that a file contains no secret. Install this hook in new clones before committing.

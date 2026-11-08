@@ -70,6 +70,7 @@
   <script src="controller-model.js?v=94389a4a35" defer></script>
   <script src="controller.js?v=25229b93e7" defer></script>
   <script src="composer.js?v=22ec579aac" defer></script>
+  <script src="vnc-client.js" defer></script>
   <script src="remote.js?v=f167e1fa5d" defer></script>
   <script src="live-capture-model.js?v=0f40705a3c" defer></script>
   <script src="audio.js?v=f8b88535a9" defer></script>
@@ -402,7 +403,7 @@
                       <div class="setup-sheet-body">
                         <div class="shell-machine-types" role="group" aria-label="Machine network"><button type="button" data-remote-network="tailnet" aria-pressed="true">Tailnet</button><button type="button" data-remote-network="local" aria-pressed="false">Local network</button><button type="button" data-remote-network="other" aria-pressed="false">Other</button></div>
                         <select id="remote-network" hidden aria-label="Machine network"><option value="tailnet">Tailnet</option><option value="local">Local network</option><option value="other">Other</option></select>
-                        <div class="remote-field"><label for="remote-name">Machine name</label><input id="remote-name" maxlength="40" placeholder="Mac mini" autocomplete="off"></div>
+                        <div class="remote-field"><label for="remote-kind">Connection</label><select id="remote-kind"><option value="direct">VNC server (Mac app)</option><option value="gateway">Secure WebSocket gateway</option><option value="viewer">HTTPS web viewer</option></select></div><div id="remote-direct-fields"><label for="remote-host">Host</label><input id="remote-host" autocomplete="off"><label for="remote-port">Port</label><input id="remote-port" type="number" min="1" max="65535" value="5900"></div><div class="remote-field"><label for="remote-name">Machine name</label><input id="remote-name" maxlength="40" placeholder="Mac mini" autocomplete="off"></div>
                         <div class="remote-field"><label for="remote-url">Viewer URL <span>HTTPS</span></label><input id="remote-url" type="url" placeholder="https://machine.tailnet.ts.net/vnc.html" list="remote-server-suggestions" autocomplete="url" spellcheck="false" aria-describedby="remote-connection-help remote-connect-error"></div>
                         <datalist id="remote-server-suggestions"></datalist>
                         <p id="remote-connection-help">Use a web VNC gateway such as noVNC. Sign in securely in your viewer.</p>

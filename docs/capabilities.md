@@ -18,3 +18,11 @@ This matrix distinguishes implemented surfaces from evidence of operation. Consu
 | Windows / Linux desktop | No qualified packaged host. | Portable tests do not establish desktop support. |
 
 Items/settings are local to the device. Account sync, system reminders and native notifications are not qualified features. Protected Share readiness means filtered video reached its output window; it does not establish that a meeting app is sharing that window or exclude Open Sesame from another app's entire-display capture. Never display a protective or connected state based solely on a preview, executable presence, or successful compilation.
+
+## Built-in remote desktops
+
+Console → Desktops supports direct VNC host/port connections in the authenticated Mac app, secure `wss://` RFB gateways in Mac and browser, and existing HTTPS web viewers. The native bridge opens only explicitly requested sessions from the bundled main document; it does not expose a network listener. Ordinary direct TCP does not encrypt the desktop stream; use a trusted network or an independently secured transport. Tailnet and Local labels do not discover machines or establish network access.
+
+Connect explicitly, enter credentials when requested, and optionally remember them in macOS Keychain. Browser credentials stay in memory. Sessions offer fit/actual size, view-only, fullscreen, Ctrl-Alt-Del, manual text clipboard transfer, disconnect and reconnect. Up to four built-in connections can remain open while switching tools. Logout, reload and exit close them. Existing HTTPS viewer pages retain their separate authentication and cannot report an RFB handshake to Open Sesame.
+
+Real installed-app, macOS Screen Sharing, standard VNC server and secure gateway acceptance remains pending; local transport and controller tests alone do not establish interoperability.
