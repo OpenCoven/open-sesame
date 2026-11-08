@@ -1,19 +1,4 @@
-/* A warm edge, not a new surface: Open Sesame's glass stays quiet and readable. */
-#widget-anchor{--ember-rgb:228,153,96;--ember-alpha:.2;--ember-speed:7s}
-#widget-anchor[data-ember=focus]{--ember-rgb:241,177,101;--ember-alpha:.54;--ember-speed:7s}
-#widget-anchor[data-ember=working]{--ember-rgb:255,145,82;--ember-alpha:.7;--ember-speed:3.8s}
-#widget-anchor[data-ember=present]{--ember-rgb:233,170,118;--ember-alpha:.34;--ember-speed:8s}
-#widget-anchor[data-ember=listening]{--ember-rgb:237,149,174;--ember-alpha:.64;--ember-speed:4.5s}
-#widget-anchor[data-ember=attention]{--ember-rgb:246,128,103;--ember-alpha:.65}
-.open-sesame-ember{position:absolute;inset:0;z-index:90;pointer-events:none;border-radius:inherit;opacity:var(--ember-alpha);box-shadow:0 4px 24px -5px rgba(var(--ember-rgb),.65),inset 0 -4px 20px -8px rgba(var(--ember-rgb),.7),inset 0 -1px 0 rgba(var(--ember-rgb),.8);transition:opacity 1.2s,box-shadow 1.2s}
-.open-sesame-ember:before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1.5px;background:radial-gradient(ellipse at 24% 100%,rgba(var(--ember-rgb),1),transparent 50%),radial-gradient(ellipse at 90% 65%,rgba(var(--ember-rgb),.7),transparent 50%);background-size:160% 120%;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;animation:ember-edge var(--ember-speed) ease-in-out infinite alternate}
-.open-sesame-ember:after{content:'';position:absolute;left:12%;right:12%;height:26px;bottom:-12px;background:radial-gradient(ellipse at 25% 50%,rgba(var(--ember-rgb),.55),transparent 52%),radial-gradient(ellipse at 75% 50%,rgba(var(--ember-rgb),.4),transparent 48%);filter:blur(13px);transform-origin:center;animation:ember-breathe var(--ember-speed) ease-in-out infinite alternate}
-#widget-anchor[data-ember=off]>.open-sesame-ember{display:none}
-#widget-anchor:is([data-ember=idle],[data-ember=attention],[data-ember-paused=true])>.open-sesame-ember:before,#widget-anchor:is([data-ember=idle],[data-ember=attention],[data-ember-paused=true])>.open-sesame-ember:after{animation:none}
-@keyframes ember-edge{from{background-position:0% 0%;opacity:.55}to{background-position:85% 60%;opacity:1}}
-@keyframes ember-breathe{from{opacity:.45;transform:translateX(-3%) scaleY(.65)}to{opacity:.9;transform:translateX(3%) scaleY(1.15)}}
-@media(prefers-reduced-motion:reduce){.open-sesame-ember,.open-sesame-ember:before,.open-sesame-ember:after{animation:none!important;transition:none!important}}
-@media(forced-colors:active){.open-sesame-ember{display:none}}
+/* Activity is shown by static navigation indicators. Agent layout follows. */
 .ember-preview-control{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px;font-size:11px;color:#82778f}
 .ember-preview-control select{max-width:145px;min-width:0;background:#f4f2f7;color:#79658c;border:1px solid #e7e0ee;border-radius:7px;font-size:10px;padding:6px}
 #agents-context:has(#agents-monitor[aria-selected=true]){border-right:0;padding-right:0}

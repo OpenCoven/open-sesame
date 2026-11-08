@@ -177,10 +177,6 @@
   #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty)>span{font-size:12px;max-width:38ch}
   #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty)>button{font-size:11px;min-height:36px}
 }
-@media(prefers-reduced-motion:no-preference){
-  #widget-panel>.widget-pane:not([hidden]),#widget-panel>.lockin-workspace:not([hidden]),#widget-panel>.agents-workspace:not([hidden]){animation:open-sesame-view-arrive .18s ease-out}
-  @keyframes open-sesame-view-arrive{from{opacity:.82}to{opacity:1}}
-}
 @media(forced-colors:active){
   #widget-panel :is(button,a,input,textarea,select):focus-visible{outline-color:Highlight}
   #widget-panel [aria-selected=true],#widget-panel [aria-pressed=true]{border:1px solid Highlight}

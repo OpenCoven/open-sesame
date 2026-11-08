@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
   const el=id=>document.getElementById(id),anchor=el('widget-anchor'),enabled=el('ember-enabled'),preview=el('ember-preview');
-  const glow=document.createElement('div');glow.className='open-sesame-ember';glow.setAttribute('aria-hidden','true');anchor.append(glow);
+  const indicator=document.createElement('span');indicator.className='activity-indicator';indicator.setAttribute('aria-hidden','true');indicator.hidden=true;
   const status=document.createElement('span');status.className='sr-only';status.id='ember-state';status.setAttribute('role','status');anchor.append(status);
   const labels={idle:'At rest',focus:'Focus timer running',working:'Agent process active',present:'Agents connected',listening:'Voice or recording active',attention:'Agent process stopped, blocked or exited'};
   let agents=[],fresh=false,previewTimer=0,last='';
@@ -14,8 +14,10 @@
     if(window.OpenSesameVoice?.active||document.body.classList.contains('audio-active'))next='listening';
     const simulated=preview.value!=='auto';if(simulated)next=preview.value;
     anchor.dataset.ember=enabled.checked?next:'off';anchor.dataset.emberPreview=String(simulated);
-    const text=enabled.checked?(simulated?'Glow preview: ':'')+labels[next]:'Ember glow off';
-    if(text!==last){status.textContent=text;glow.title=text;last=text}
+    const host=el(next==='focus'?'tab-lockin':next==='listening'?'tab-audio':'tab-agents');if(indicator.parentElement!==host)host.append(indicator);
+    indicator.hidden=!enabled.checked||next==='idle';
+    const text=enabled.checked?(simulated?'Status preview: ':'')+labels[next]:'Activity indicators off';
+    if(text!==last){status.textContent=text;indicator.title=text;last=text}
   }
   enabled.addEventListener('change',()=>{try{localStorage.setItem('open-sesame-ember-enabled',String(enabled.checked))}catch{}preview.disabled=!enabled.checked;sync()});
   preview.addEventListener('change',()=>{clearTimeout(previewTimer);sync();if(preview.value!=='auto')previewTimer=setTimeout(()=>{preview.value='auto';sync()},12000)});

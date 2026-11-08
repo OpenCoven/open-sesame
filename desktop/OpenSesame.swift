@@ -16,11 +16,7 @@ final class NotchPanel: NSPanel {
 final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     var panel: NotchPanel!
     var web: WKWebView!
-    var effect: NSVisualEffectView!
     var surface: NSView!
-    var glassReset: Timer?
-    var glassSavedLevel = 0.13
-    var glassLevel = 0.13
     var voice: OpenSesameVoiceInput!
     var audioRecorder: OpenSesameAudioRecorder!
     var status: NSStatusItem!
@@ -79,24 +75,14 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: currentSize))
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 18
-        effect.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        effect.layer?.masksToBounds = true
         surface = NSView(frame: NSRect(origin: .zero, size: currentSize))
         surface.wantsLayer = true
+        surface.layer?.backgroundColor = NSColor(srgbRed: 16.0/255, green: 17.0/255, blue: 19.0/255, alpha: 1).cgColor
         surface.layer?.cornerRadius = 18
         surface.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         surface.layer?.masksToBounds = true
         panel.contentView = surface
-        effect.autoresizingMask = [.width, .height]
         web.autoresizingMask = [.width, .height]
-        // The material is a sibling so changing it never fades the web content.
-        surface.addSubview(effect)
         surface.addSubview(web)
         createStatusItem()
         watchOutsideClicks()
@@ -161,11 +147,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             status.menu = menu
             status.button?.performClick(nil)
             status.menu = nil
-        } else if panel.isVisible { web?.evaluateJavaScript("window.OpenSesameLive?.stopForHide()", completionHandler: nil); voice.cancel(); setGlassLevel(glassSavedLevel, transient: false); panel.orderOut(nil) } else { showPanel() }
+        } else if panel.isVisible { web?.evaluateJavaScript("window.OpenSesameLive?.stopForHide()", completionHandler: nil); voice.cancel(); panel.orderOut(nil) } else { showPanel() }
     }
 
     @objc func showPanel() {
-        setGlassLevel(glassSavedLevel, transient: false); positionPanel(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
+        positionPanel(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
     }
 
     func watchOutsideClicks() {
@@ -203,23 +189,6 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if let screen = panel?.screen { return screen }
         if let id = dockedScreenID, let screen = NSScreen.screens.first(where: { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber == id }) { return screen }
         return NSScreen.main ?? NSScreen.screens.first
-    }
-
-    func setGlassLevel(_ requested: Double, transient: Bool) {
-        guard requested.isFinite else { return }
-        let level = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? 0 : min(1, max(0, requested))
-        glassReset?.invalidate(); glassReset = nil
-        if transient {
-            let timer = Timer(timeInterval: 4, repeats: false) { [weak self] _ in
-                guard let self = self else { return }; self.setGlassLevel(self.glassSavedLevel, transient: false)
-            }
-            glassReset = timer; RunLoop.main.add(timer, forMode: .common)
-        } else { glassSavedLevel = level }
-        glassLevel = level
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : (transient ? 0.12 : 0.38)
-            effect.animator().alphaValue = 1 - level * 0.30
-        }
     }
 
     func positionPanel() {
@@ -276,7 +245,6 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 let y = max(area.minY, min(area.maxY-size.height, detachedFrame?.minY ?? area.midY-size.height/2))
                 panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
             }
-            effect.layer?.cornerRadius = 0
             surface.layer?.cornerRadius = 0
         } else {
             panel.contentAspectRatio = .zero
@@ -385,9 +353,6 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "speech.stop" {
             voice.stop(id: params["id"] as? String ?? "", cancel: params["cancel"] as? Bool == true); respond(requestId, result: true); return
         }
-        if method == "window.glass" {
-            guard let level = params["level"] as? NSNumber, level.doubleValue.isFinite else { respond(requestId, error: "Invalid glass level."); return }; setGlassLevel(level.doubleValue, transient: params["transient"] as? Bool == true); respond(requestId, result: true); return
-        }
         if method == "window.detach" {
             let ratio = (params["aspectRatio"] as? NSNumber)?.doubleValue ?? Double(detachedRatio)
             guard ratio.isFinite, ratio >= 1, ratio <= 3 else { respond(requestId, error: "Invalid window ratio."); return }
@@ -413,14 +378,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             let height = full ? Double(screenFrame.height) : min(Double(screenFrame.height) - 50, max(24, requestedHeight))
             currentSize = NSSize(width: width, height: height)
             placement = params["layout"] as? String ?? "notch"
-            effect.isHidden = placement == "capture"
-            effect.layer?.cornerRadius = placement == "capture" ? 18 : params["expanded"] as? Bool == true ? (placement == "notch" ? 28 : 22) : 18
-            effect.layer?.maskedCorners = placement == "notch" ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-            surface.layer?.cornerRadius = effect.layer?.cornerRadius ?? 18
-            surface.layer?.maskedCorners = effect.layer?.maskedCorners ?? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            surface.layer?.cornerRadius = placement == "capture" ? 18 : params["expanded"] as? Bool == true ? (placement == "notch" ? 28 : 22) : 18
+            surface.layer?.maskedCorners = placement == "notch" ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             if full {
                 panel.setFrame(screenFrame, display: true)
-                effect.layer?.cornerRadius = 0; surface.layer?.cornerRadius = 0
+                surface.layer?.cornerRadius = 0
             } else { positionPanel() }
             respond(requestId, result: true); return
         }
