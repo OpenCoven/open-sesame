@@ -8,9 +8,9 @@ Open Sesame is a reference consumer of Coven’s installed CLI, using the pinned
 2. Open Open Sesame Desktop, choose **Console → Familiars**, and click **Connect Coven**. Open Sesame checks the CLI and engine, then lists the complete installed familiar roster. The Plugins catalog also has a Coven Familiars entry that opens the same flow.
 3. Choose a familiar. Open Sesame reads that familiar’s saved conversation and restores its draft. Connecting, refreshing, choosing, and reopening never start a provider turn. After the first successful connection, app relaunch restores this local connection and selected familiar through read-only discovery.
 4. Type a message, review the chosen familiar’s name and the Run with choice, and press **Send**. Enter sends; Shift–Enter adds a line. The microphone prepares a draft for review. A reply streams into this familiar’s conversation.
-5. Use **Stop** to cancel the current reply while preserving text already captured. Switch familiars to keep separate histories and drafts. A later Send continues the selected familiar’s own conversation. **New chat** starts a fresh context and keeps the previous local history as an archive.
+5. Use **Stop** to cancel the current reply while preserving text already captured. Switch familiars to keep separate histories and drafts. A later Send continues the selected familiar’s own conversation. This application keeps one persistent conversation per familiar; reset actions are removed.
 
-Messages use the familiar’s dedicated workspace with `--permission read-only`. The renderer cannot supply working directories, executable paths, permission settings, model credentials, or arbitrary CLI arguments. New chats initially use the installed Coven Code engine, and your Run with choice is remembered per familiar; Codex and Claude Code are also supported where configured. Once a chat has a Coven session, its harness remains fixed until New chat.
+Messages use the familiar’s dedicated workspace with `--permission read-only`. The renderer cannot supply working directories, executable paths, permission settings, model credentials, or arbitrary CLI arguments. First-time conversations use the installed Coven Code engine, and your Run with choice is remembered per familiar; Codex and Claude Code are also supported where configured. Once a chat has a Coven session, its harness remains fixed for that persistent conversation.
 
 ## Run the small integration example
 
@@ -26,7 +26,7 @@ Then explicitly send to one exact id returned by that list:
 python3 -B examples/coven_familiars.py --familiar YOUR_FAMILIAR_ID --message "Hello. What can you help me with?"
 ```
 
-The example imports the same `CovenRuntime` adapter as the application. It prints JSONL stream events and the final session identity. Its conversation storage is separate from the application’s storage. Sending another message with the same familiar id continues the example’s conversation; `--harness codex` or `--harness claude` can choose a harness for a fresh example chat. Use `--new-chat --familiar YOUR_FAMILIAR_ID` to preserve the previous history and start fresh. Ctrl+C exits through cleanup. The message argument is explicit: listing never sends a greeting or test prompt.
+The example imports the same `CovenRuntime` adapter as the application. It prints JSONL stream events and the final session identity. Its conversation storage is separate from the application’s storage. Sending another message with the same familiar id continues the example’s conversation; `--harness codex` or `--harness claude` can choose a harness for a fresh example chat. Ctrl+C exits through cleanup. The message argument is explicit: listing never sends a greeting or test prompt.
 
 ## Integrate the browser client with your native host
 
@@ -92,17 +92,17 @@ For another host, `window.OpenSesameCreateCovenClient(transport, subscribe)` con
 | `coven.open` | `familiarId` | Consumer-owned `conversationId`, exact `familiarId`, current `sessionId` or null, `revision`, harness, messages, and status. |
 | `coven.send` | The explicit send object above | `runId`, Coven’s resulting `sessionId`, and init/completion events. Text is delivered through the stream and persisted in the conversation. |
 | `coven.cancel` | `runId` | Cancellation acknowledged; await the send request’s final settlement before another turn. |
-| `coven.new` | `familiarId`, expected `conversationId` | A fresh conversation after preserving the previous one. No provider turn runs. |
+| `coven.command` | `familiarId`, fixed command `name` | Bounded local status, sessions, familiars or skills metadata; no provider turn. |
 
 Stream envelopes have `event: "coven.event"`, `runId`, `familiarId`, `conversationId`, and `payload`. The payload is a validated Coven `system` init, a cumulative `assistant` text snapshot, a `result`, or a short `notice`. Render snapshots as updates to the current assistant turn; they are not additional messages on every event. Other familiars’ events and stale run ids must not update the active answer. Raw tool arguments and stderr are not streamed into the product UI.
 
-The host resolves the familiar from a fresh Coven roster and compares the stored conversation id, revision, familiar id, session id, harness, and canonical workspace before resuming. A changed workspace, mismatched session metadata, unfinalized previous reply, stale UI, missing familiar, or unsupported parameter stops the turn. An error is not converted into an unscoped fresh message. A new chat requires an explicit action.
+The host resolves the familiar from a fresh Coven roster and compares the stored conversation id, revision, familiar id, session id, harness, and canonical workspace before resuming. A changed workspace, mismatched session metadata, unfinalized previous reply, stale UI, missing familiar, or unsupported parameter stops the turn. An error is not converted into an unscoped fresh message. The application never silently replaces this persistent conversation.
 
 ### Context and storage
 
-Coven Code’s print-mode engine does not natively reopen a threaded chat in the verified contract. As OpenCoven Chat does, this consumer replays recent text: at most 24 KiB of history, with at most 4 KiB per message, followed by the current prompt. The product discloses this behavior. Codex and Claude Code use their native Coven continuation and receive the current prompt without replay. These behaviors were checked against the installed Coven 0.4.10 / Coven Code 0.8.0 help and the pinned Chat bridge; older or changed contracts must confirm workspace and permission fields before a reply is accepted.
+Coven Code’s print-mode engine does not natively reopen a threaded chat in the verified contract. As OpenCoven Chat does, this consumer replays recent text: at most 24 KiB of history, with at most 4 KiB per message, followed by the current prompt. See [persistent chat and commands](familiar-chat-commands.md) for the current UI and application-origin context. Codex and Claude Code use their native Coven continuation and receive the current prompt without replay. These behaviors were checked against the installed Coven 0.4.10 / Coven Code 0.8.0 help and the pinned Chat bridge; older or changed contracts must confirm workspace and permission fields before a reply is accepted.
 
-On macOS, Open Sesame owns `~/Library/Application Support/Open Sesame/familiars/<familiar-id>/head.json`; Linux uses the corresponding XDG data directory. Files are private to the current user and replaced atomically. Each familiar has a cross-process lock, up to 120 recent messages and 512 KiB of stored message text. Messages are limited to 32 KiB of UTF-8 input and 64 KiB of reply text; an oversized reply stops with an explicit error and preserves the captured portion. Older visible history can be truncated with a notice. New chat preserves an archive. Coven’s own session ledger remains authoritative for session metadata. This consumer does not modify OpenCoven Chat’s canonical head files or claim SDK mission/identity-ledger semantics.
+On macOS, Open Sesame owns `~/Library/Application Support/Open Sesame/familiars/<familiar-id>/head.json`; Linux uses the corresponding XDG data directory. Files are private to the current user and replaced atomically. Each familiar has a cross-process lock, up to 120 recent messages and 512 KiB of stored message text. Messages are limited to 32 KiB of UTF-8 input and 64 KiB of reply text; an oversized reply stops with an explicit error and preserves the captured portion. Older turns are preserved in private history segments under the same conversation identity before the active context is trimmed. Existing older archives are preserved. Every turn includes host-generated Open Sesame application context. Coven’s own session ledger remains authoritative for session metadata. This consumer does not modify OpenCoven Chat’s canonical head files or claim SDK mission/identity-ledger semantics.
 
 The desktop host exposes these operations only to its bundled top-level UI. Embedded websites receive no application bridge. The development WebSocket host is loopback-only and checks the page origin; it is a local development tool, not a public messaging server.
 
@@ -111,7 +111,7 @@ The desktop host exposes these operations only to its bundled top-level UI. Embe
 ```sh
 npm run check
 python3 -B -m unittest desktop.tests.test_coven_runtime -v
-OPEN_SESAME_VERSION=0.0.3 bash desktop/build-macos.sh
+OPEN_SESAME_VERSION=0.0.13 bash desktop/build-macos.sh
 ```
 
 The protocol fixture covers actual child-process JSONL delivery, full roster discovery, no automatic sends, literal prompt arguments, read-only confirmation, per-familiar context, continuation, stale revisions, workspace/session identity mismatches, provider errors, malformed and oversized output, timeouts, partial text after cancellation, cancellation before start, process reaping, and preserved archives. The JavaScript client test runs the same Python bridge end to end and checks parallel familiar isolation. These are deterministic fixture-provider checks, not inference from a live model.

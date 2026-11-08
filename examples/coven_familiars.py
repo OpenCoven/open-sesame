@@ -16,10 +16,9 @@ def main():
     parser.add_argument('--list', action='store_true', help='Discover the installed Coven roster')
     parser.add_argument('--familiar', help='An exact id returned by --list')
     parser.add_argument('--message', help='Explicitly send this text; otherwise no provider is invoked')
-    parser.add_argument('--new-chat', action='store_true', help='Start fresh while preserving this example’s prior chat')
     parser.add_argument('--harness', choices=['coven-code', 'codex', 'claude'])
     args = parser.parse_args()
-    if (args.message is not None or args.new_chat) and not args.familiar: parser.error('--message requires --familiar')
+    if args.message is not None and not args.familiar: parser.error('--message requires --familiar')
     runtime = CovenRuntime(lambda event: print(json.dumps(event, ensure_ascii=False), flush=True), directory=state_directory().parent / 'familiars-example')
     try:
         status = runtime.status()
@@ -28,10 +27,8 @@ def main():
         roster = runtime.familiars()
         if args.list or not args.familiar:
             print(json.dumps({'familiars': roster}, ensure_ascii=False))
-        if args.message is not None or args.new_chat:
+        if args.message is not None:
             conversation = runtime.open(args.familiar)
-            if args.new_chat:
-                conversation = runtime.open(args.familiar, new=True, expected=conversation['conversationId'])
         if args.message is not None:
             result = runtime.send({'runId': uuid.uuid4().hex, 'familiarId': args.familiar,
                                    'conversationId': conversation['conversationId'], 'revision': conversation['revision'],

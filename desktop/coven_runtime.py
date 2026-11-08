@@ -6,6 +6,7 @@ directories, permission flags, or arbitrary CLI arguments. Coven owns execution.
 from contextlib import contextmanager
 from collections import OrderedDict
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -297,11 +298,30 @@ class CovenRuntime:
     def _save(self, value):
         path = self._path(value['familiarId'])
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        archived = []
         while len(value['messages']) > 120 or sum(len(m['text'].encode()) for m in value['messages']) > 512 * 1024:
-            del value['messages'][:2]; value['historyTruncated'] = True
+            archived.extend(value['messages'][:2]); del value['messages'][:2]; value['historyTruncated'] = True
+        if archived:
+            # Keep older turns in the same application session, outside the
+            # bounded live context. Deterministic names make retry idempotent.
+            offset = value.get('historyOffset', 0)
+            if type(offset) is not int or not 0 <= offset < 2**63: raise ValueError('This session’s history position is invalid.')
+            history = json.dumps({'conversationId': value['conversationId'], 'familiarId': value['familiarId'], 'offset': offset, 'messages': archived}, ensure_ascii=False).encode()
+            folder = path.parent / 'history'; folder.mkdir(exist_ok=True, mode=0o700)
+            segment = folder / (value['conversationId'] + '-' + str(offset) + '-' + hashlib.sha256(history).hexdigest()[:20] + '.json')
+            if segment.exists():
+                if segment.read_bytes() != history: raise ValueError('This session’s saved history could not be verified.')
+            else:
+                temporary = folder / ('pending-' + uuid.uuid4().hex + '.tmp')
+                try:
+                    with temporary.open('xb') as handle:
+                        os.chmod(temporary, 0o600); handle.write(history); handle.flush(); os.fsync(handle.fileno())
+                    temporary.replace(segment)
+                finally: temporary.unlink(missing_ok=True)
+            value['historyOffset'] = offset + len(archived)
         payload = json.dumps(value, ensure_ascii=False).encode()
         if len(payload) > 1024 * 1024:
-            raise ValueError('This conversation is full. Start a new chat to continue.')
+            raise ValueError('This session exceeds its saved-state limit. Its existing history is preserved.')
         temporary = path.with_name('head-' + uuid.uuid4().hex + '.tmp')
         try:
             with temporary.open('xb') as handle:
@@ -310,26 +330,50 @@ class CovenRuntime:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def open(self, fid, *, new=False, expected=None):
+    def open(self, fid):
         familiar = self._familiar(fid)
         current = self._load(fid)
-        if current and not new:
+        if current:
             return current
         with self._exclusive(fid):
             current = self._load(fid)
-            if current and not new:
+            if current:
                 return current
-            if new and current:
-                if current['conversationId'] != expected:
-                    raise ValueError('This chat changed. Reopen the familiar before starting a new conversation.')
-                archive = self._path(fid).parent / (current['conversationId'] + '.json')
-                if archive.exists():
-                    archive = archive.with_name(current['conversationId'] + '-' + uuid.uuid4().hex + '.json')
-                shutil.copyfile(self._path(fid), archive); os.chmod(archive, 0o600)
             value = {'schema': 1, 'conversationId': uuid.uuid4().hex, 'familiarId': fid, 'workspace': self._workspace(familiar),
-                     'harness': 'coven-code', 'sessionId': None, 'revision': 0, 'messages': [], 'status': 'ready'}
+                     'harness': 'coven-code', 'sessionId': None, 'revision': 0, 'messages': [], 'status': 'ready', 'application': 'Open Sesame'}
             self._save(value)
             return value
+
+    def command(self, params):
+        if not isinstance(params, dict) or set(params) != {'name', 'familiarId'} or params.get('name') not in ('status', 'sessions', 'familiars', 'skills'):
+            raise ValueError('Choose a supported Coven command from /help.')
+        name, fid = params['name'], identifier(params['familiarId'])
+        folder = self._workspace(self._familiar(fid))
+        binary = self.resolver()
+        if name == 'status':
+            value = read_json(binary, ['status', '--json'], cancel=self.shutdown, cwd=folder)
+            if not isinstance(value, dict): raise ValueError('Coven returned an invalid status.')
+            health, overview = value.get('health') or {}, value.get('overview') or {}
+            if not isinstance(health, dict) or not isinstance(overview, dict): raise ValueError('Coven returned an invalid status.')
+            rows = [['Daemon', 'Ready' if health.get('ok') is True else 'Unavailable']]
+            for key, label in [('open_sessions', 'Open sessions'), ('total_familiars', 'Familiars'), ('skills_count', 'Skills')]:
+                count = overview.get(key)
+                if type(count) is int and count >= 0: rows.append([label, str(count)])
+            columns = ['Coven', 'Status']
+        elif name == 'familiars':
+            columns = ['Familiar', 'ID']
+            rows = [[f['displayName'], f['id']] for f in self.familiars(include_avatars=False)]
+        else:
+            value = read_json(binary, [name, '--json'], cancel=self.shutdown, cwd=folder)
+            if name == 'sessions' and isinstance(value, dict): value = value.get('sessions')
+            if not isinstance(value, list): raise ValueError('Coven returned an invalid command response.')
+            if name == 'sessions':
+                columns = ['Session', 'Harness', 'Status']
+                rows = [[s.get('title') or s.get('id'), s.get('harness'), s.get('status')] for s in value if isinstance(s, dict) and s.get('familiar_id') == fid and s.get('project_root') == folder]
+            else:
+                columns = ['Skill', 'Version']
+                rows = [[s.get('name') or s.get('id'), s.get('version')] for s in value if isinstance(s, dict)]
+        return {'familiarId': fid, 'name': name, 'columns': columns, 'rows': [[clip(str(cell) if type(cell) in (str, int) else '—', 160) for cell in row] for row in rows[:50]], 'truncated': len(rows) > 50}
 
     def send(self, params):
         allowed = {'runId', 'prompt', 'familiarId', 'sessionId', 'harness', 'conversationId', 'revision'}
@@ -352,26 +396,28 @@ class CovenRuntime:
                 if not value or params.get('conversationId') != value['conversationId'] or type(params.get('revision')) is not int or params.get('revision') != value['revision'] or params.get('sessionId') != value['sessionId']:
                     raise ValueError('This conversation changed. Reopen the familiar before sending.')
                 if folder != value['workspace']:
-                    raise ValueError('This familiar’s workspace changed. Start a new chat to use its current workspace.')
+                    raise ValueError('This familiar’s workspace changed. Restore its saved workspace before continuing this persistent session.')
                 if value['status'] == 'responding':
-                    raise ValueError('The previous reply did not finalize. Start a new chat before sending again.')
+                    raise ValueError('The previous reply did not finalize. Check its Coven session before continuing; this conversation is preserved.')
                 harness = params.get('harness', value['harness'])
                 if harness not in HARNESSES or value['sessionId'] and harness != value['harness']:
-                    raise ValueError('Continue with this chat’s original harness, or start a new chat.')
+                    raise ValueError('Continue with this persistent chat’s original harness.')
                 binary = self.resolver()
                 if value['sessionId']:
                     saved = read_json(binary, ['sessions', 'show', identifier(value['sessionId']), '--json'], cancel=cancel)
                     if not isinstance(saved, dict) or saved.get('id') != value['sessionId'] or saved.get('familiar_id') != fid or saved.get('harness') != harness or saved.get('project_root') != folder:
-                        raise ValueError('Coven session identity no longer matches this familiar and workspace. Start a new chat.')
+                        raise ValueError('Coven session identity no longer matches this familiar and workspace. Restore the matching Coven session to continue.')
                 sent_prompt, truncated = replay(value['messages'], prompt) if harness == 'coven-code' else (prompt, False)
-                args = ['run', harness, '--stream-json', '--permission', 'read-only', '--cwd', folder, '--familiar', fid]
+                context = {'application': 'Open Sesame', 'surface': 'desktop familiar chat', 'conversationId': value['conversationId'], 'familiarId': fid}
+                sent_prompt = 'Open Sesame application session\n' + json.dumps(context, separators=(',', ':')) + '\nThis is the same persistent application conversation. Reply to the user through Open Sesame.\n\n' + sent_prompt
+                args = ['run', harness, '--stream-json', '--permission', 'read-only', '--cwd', folder, '--familiar', fid, '--title', 'Open Sesame · ' + fid, '--labels', 'open-sesame']
                 if value['sessionId']:
                     args += ['--continue', value['sessionId']]
                 args += ['--', sent_prompt]
                 answer = {'role': 'assistant', 'text': ''}
                 value.pop('error', None)
                 value['messages'] += [{'role': 'user', 'text': prompt}, answer]
-                value.update(harness=harness, status='responding', revision=value['revision'] + 1)
+                value.update(harness=harness, status='responding', revision=value['revision'] + 1, application='Open Sesame')
                 self._save(value)
                 events, initialized, completed, failure, last_save = [], False, False, '', time.monotonic()
                 delta_start, boundary = None, False
@@ -422,6 +468,11 @@ class CovenRuntime:
                                 raise ValueError('This reply exceeded 64 KiB. Captured text is preserved; ask for a shorter reply.')
                             publish({'type': 'assistant', 'session_id': value['sessionId'], 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': answer['text']}]}})
                     elif kind == 'result':
+                        # The legacy Coven Code print stream has a usage-only
+                        # inner result. It is not Coven's authoritative result:
+                        # keep draining until the policy-bound outer completion.
+                        if initialized and harness == 'coven-code' and 'is_error' not in event and isinstance(event.get('usage'), dict):
+                            return
                         if not initialized or event.get('session_id') != value['sessionId'] or not isinstance(event.get('is_error'), bool):
                             raise ValueError('Coven returned an invalid completion identity.')
                         completed = True

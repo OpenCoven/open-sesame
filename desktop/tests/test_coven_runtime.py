@@ -39,6 +39,10 @@ class CovenRuntimeTests(unittest.TestCase):
         path = self.root / 'calls.jsonl'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def fresh_fixture_runtime(self, name):
+        self.runtime = CovenRuntime(self.events.append, self.root / ('isolated-' + name), lambda: str(FIXTURE))
+        self.addCleanup(self.runtime.close)
+
     def test_discovery_and_open_never_run_a_message(self):
         self.assertTrue(self.runtime.status()['available'])
         self.assertEqual([f['id'] for f in self.runtime.familiars()], ['nova', 'sage'])
@@ -66,7 +70,8 @@ class CovenRuntimeTests(unittest.TestCase):
         prompt = '--permission full; $(touch /tmp/never-created-by-coven-fixture)'
         self.runtime.send(self.input(prompt=prompt, harness='codex'))
         argv = self.calls()[0]['argv']
-        self.assertEqual(argv[-2:], ['--', prompt])
+        self.assertEqual(argv[-2], '--'); self.assertTrue(argv[-1].endswith(prompt))
+        self.assertTrue(argv[-1].startswith('Open Sesame application session\n'))
         self.assertEqual(argv[argv.index('--permission') + 1], 'read-only')
         for extra in [{'cwd': '/'}, {'permission': 'full'}, {'args': ['--anything']}, {'familiarId': '../outside'}]:
             with self.assertRaises(ValueError): self.runtime.send(self.input(**extra))
@@ -75,7 +80,8 @@ class CovenRuntimeTests(unittest.TestCase):
     def test_native_harness_continuation_does_not_replay(self):
         self.runtime.send(self.input(harness='codex'))
         self.runtime.send(self.input(prompt='literal next turn'))
-        self.assertEqual(self.calls()[-1]['argv'][-1], 'literal next turn')
+        self.assertTrue(self.calls()[-1]['argv'][-1].endswith('literal next turn'))
+        self.assertNotIn('Previous conversation messages', self.calls()[-1]['argv'][-1])
         self.assertIn('--continue', self.calls()[-1]['argv'])
         with self.assertRaisesRegex(ValueError, 'original harness'):
             self.runtime.send(self.input(harness='claude'))
@@ -107,8 +113,7 @@ class CovenRuntimeTests(unittest.TestCase):
 
     def test_malformed_truncated_missing_result_and_oversized_output(self):
         for prompt, message in [('bad-json', 'invalid stream JSON'), ('incomplete', 'incomplete stream'), ('no-result', 'before completing'), ('too-much', 'oversized stream')]:
-            state = self.runtime.open('nova')
-            if state['messages']: self.runtime.open('nova', new=True, expected=state['conversationId'])
+            self.fresh_fixture_runtime(prompt)
             with self.assertRaisesRegex(ValueError, message): self.runtime.send(self.input(prompt=prompt))
             self.assertEqual(self.runtime.open('nova')['status'], 'error')
 
@@ -144,13 +149,12 @@ class CovenRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'before it started'): self.runtime.send(params)
         self.assertEqual(self.calls(), [])
 
-    def test_new_chat_preserves_archive_and_rejects_stale_reset(self):
+    def test_reopen_keeps_persistent_identity_and_reset_is_unavailable(self):
         self.runtime.send(self.input()); previous = self.runtime.open('nova')
-        fresh = self.runtime.open('nova', new=True, expected=previous['conversationId'])
-        self.assertIsNone(fresh['sessionId']); self.assertNotEqual(fresh['conversationId'], previous['conversationId'])
-        self.assertTrue((self.root / 'state/nova' / (previous['conversationId'] + '.json')).is_file())
-        with self.assertRaisesRegex(ValueError, 'chat changed'):
+        for _ in range(3): self.assertEqual(self.runtime.open('nova'), previous)
+        with self.assertRaises(TypeError):
             self.runtime.open('nova', new=True, expected=previous['conversationId'])
+        self.assertEqual(self.runtime.open('nova'), previous)
 
     def test_setup_and_roster_failures(self):
         (self.root / 'engine-missing').touch()
@@ -172,8 +176,7 @@ class CovenRuntimeTests(unittest.TestCase):
         state = self.runtime.open('nova'); state['status'] = 'responding'; self.runtime._save(state)
         with self.assertRaisesRegex(ValueError, 'did not finalize'): self.runtime.send(self.input())
         self.assertEqual(self.calls(), [])
-        fresh = self.runtime.open('nova', new=True, expected=state['conversationId'])
-        self.assertEqual(fresh['messages'], [])
+        self.assertEqual(self.runtime.open('nova')['conversationId'], state['conversationId'])
 
     def test_timeout_preserves_partial_reply_and_reaps(self):
         clock = [0]
@@ -187,11 +190,37 @@ class CovenRuntimeTests(unittest.TestCase):
 
     def test_real_delta_and_full_message_shapes_preserve_prose(self):
         for prompt, text in [('delta-final', 'Hello from nova'), ('multiple-messages', 'Hello\n\nHello again'), ('tools-between', 'First thought\n\nSecond thought')]:
-            state = self.runtime.open('nova')
-            if state['messages']: self.runtime.open('nova', new=True, expected=state['conversationId'])
+            self.fresh_fixture_runtime(prompt)
             self.runtime.send(self.input(prompt=prompt))
             self.assertEqual(self.runtime.open('nova')['messages'][-1]['text'], text)
         self.assertNotIn('fixture-sensitive-tool-argument', json.dumps(self.events))
+
+    def test_application_context_survives_continuation_without_polluting_saved_messages(self):
+        before = self.runtime.open('nova'); self.runtime.send(self.input(prompt='first', harness='codex')); self.runtime.send(self.input(prompt='second'))
+        after = self.runtime.open('nova'); self.assertEqual(after['conversationId'], before['conversationId']); self.assertEqual(after['application'], 'Open Sesame')
+        for call in self.calls():
+            self.assertIn('"application":"Open Sesame"', call['argv'][-1]); self.assertIn(before['conversationId'], call['argv'][-1]); self.assertEqual(call['argv'][call['argv'].index('--labels')+1], 'open-sesame')
+        self.assertEqual([m['text'] for m in after['messages'] if m['role']=='user'], ['first','second'])
+
+    def test_legacy_inner_result_waits_for_authoritative_completion(self):
+        self.runtime.send(self.input(prompt='legacy-result')); self.assertEqual(self.runtime.open('nova')['status'], 'ready')
+        self.assertEqual(len([e for e in self.events if e['payload']['type']=='result']), 1)
+        for prompt, error in [('legacy-no-outer','before completing'),('foreign-legacy','another session'),('bad-result-bool','invalid completion')]:
+            self.fresh_fixture_runtime(prompt)
+            with self.assertRaisesRegex(ValueError,error): self.runtime.send(self.input(prompt=prompt))
+
+    def test_coven_commands_project_safe_metadata_without_sending_or_changing_chat(self):
+        before=self.runtime.open('nova'); disk=self.runtime._path('nova').read_bytes()
+        for name in ['status','sessions','familiars','skills']:
+            result=self.runtime.command({'name':name,'familiarId':'nova'}); self.assertEqual(result['familiarId'],'nova');self.assertNotIn('fixture-private-token',json.dumps(result))
+        self.assertEqual(self.calls(),[]);self.assertEqual(self.runtime.open('nova'),before);self.assertEqual(self.runtime._path('nova').read_bytes(),disk)
+        for params in [{'name':'status; rm','familiarId':'nova'},{'name':'status','familiarId':'../escape'},{'name':'status','familiarId':'nova','args':['--anything']}]:
+            with self.assertRaises(ValueError):self.runtime.command(params)
+
+    def test_persistent_history_is_preserved_outside_bounded_context(self):
+        value=self.runtime.open('nova');identity=value['conversationId'];messages=[{'role':'user' if i%2==0 else 'assistant','text':str(i)} for i in range(130)];value['messages']=messages.copy();self.runtime._save(value)
+        saved=self.runtime.open('nova');self.assertEqual(saved['conversationId'],identity);self.assertEqual(len(saved['messages']),120)
+        segments=list((self.runtime._path('nova').parent/'history').glob('*.json'));self.assertEqual(len(segments),1);old=json.loads(segments[0].read_text());self.assertEqual(old['messages']+saved['messages'],messages);self.assertEqual(segments[0].stat().st_mode&0o777,0o600)
 
     def test_gui_resolution_finds_current_nvm_install_before_stale_fallback(self):
         home = self.root / 'home'
