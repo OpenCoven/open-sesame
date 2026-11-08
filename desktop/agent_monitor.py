@@ -1,4 +1,4 @@
-"""Read-only discovery of recognized local agent CLIs, scoped to this user.
+"""Discovery and explicit process controls for recognized agent CLIs owned by this user.
 
 OS scheduling states are not agent task/approval states. Arguments are used only
 for executable identification and are never returned to the interface.
@@ -108,6 +108,75 @@ def snapshot():
             env={**os.environ, 'LC_ALL': 'C'})
     except (OSError, subprocess.SubprocessError):
         raise ValueError('Local process discovery is unavailable. Try refreshing in the desktop companion.') from None
-    return {'agents': parse_processes(result.stdout, os.getuid()),
+    return {'agents': authorize_controls(parse_processes(result.stdout, os.getuid())),
             'machine': socket.gethostname(), 'scope': 'current-user',
             'updatedAt': int(time.time() * 1000), 'providers': list(PROVIDERS.values())}
+
+# Short-lived capabilities bind dashboard actions to the exact discovered process.
+# Commands are kept only in memory for identity checks and never leave this module.
+import secrets
+import signal
+import threading
+
+_control_lock = threading.Lock()
+_controls = {}
+
+
+def process_identities(pid=None):
+    args = ['ps', '-ww', '-p', str(pid)] if pid is not None else ['ps', '-ww', '-u', str(os.getuid())]
+    try:
+        result = subprocess.run(args + ['-o', 'pid=,ppid=,uid=,lstart=,args='], capture_output=True, text=True, timeout=4, check=True, env={**os.environ, 'LC_ALL': 'C'})
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError('Process changed or exited. Refresh before trying again.') from None
+    identities = {}
+    for line in result.stdout.splitlines():
+        fields = line.strip().split(None, 8)
+        if len(fields) != 9:
+            continue
+        try:
+            number, parent, owner = map(int, fields[:3])
+        except ValueError:
+            continue
+        if owner != os.getuid() or number <= 1 or not provider(fields[8]):
+            continue
+        identities[number] = (parent, owner, ' '.join(fields[3:8]), fields[8])
+    return identities
+
+
+def authorize_controls(agents):
+    identities = process_identities() if agents else {}
+    now = time.monotonic()
+    with _control_lock:
+        for token in list(_controls):
+            if _controls[token]['expires'] < now:
+                del _controls[token]
+        for agent in agents:
+            identity = identities.get(agent['pid'])
+            if identity and provider(identity[3]) == agent['provider'] and len(_controls) < 1024:
+                token = next((key for key, value in _controls.items() if value['pid'] == agent['pid'] and value['identity'] == identity), None) or secrets.token_urlsafe(32)
+                _controls.setdefault(token, {'pid': agent['pid'], 'identity': identity, 'expires': now + 120})
+                agent['controlToken'] = token
+    return agents
+
+
+def control_process(params):
+    pid, token, action = params.get('pid'), params.get('token'), params.get('action')
+    if type(pid) is not int or pid <= 1 or not isinstance(token, str) or len(token) > 128:
+        raise ValueError('Refresh and select a current agent process.')
+    signals = {'pause': signal.SIGSTOP, 'resume': signal.SIGCONT, 'stop': signal.SIGTERM}
+    if action not in signals:
+        raise ValueError('Choose Pause, Resume or Stop.')
+    with _control_lock:
+        entry = _controls.get(token)
+        if not entry or entry['pid'] != pid or entry['expires'] < time.monotonic():
+            raise ValueError('This process snapshot expired. Refresh before trying again.')
+        current = process_identities(pid).get(pid)
+        if current != entry['identity']:
+            _controls.pop(token, None)
+            raise ValueError('Process changed or exited. Refresh before trying again.')
+        try:
+            os.kill(pid, signals[action])
+        except (ProcessLookupError, PermissionError, OSError):
+            raise ValueError('The process could not be changed. Refresh to check its state.') from None
+        _controls.pop(token, None)
+    return {'pid': pid, 'action': action, 'signalSent': True}

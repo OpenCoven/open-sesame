@@ -11,10 +11,11 @@ class Node {
   querySelector(selector){return this.children.find(n=>'.'+n.className===selector)||null}
   focus(){document.activeElement=this}select(){this.selectionStart=0;this.selectionEnd=this.value.length}setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b}
 }
-const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,new Node());return elements.get(id)},document=new Node(),window=new Node();document.body=new Node();document.activeElement=null;document.createElement=()=>new Node();document.getElementById=el;document.querySelector=()=>el('footer');
+const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,new Node());return elements.get(id)},document=new Node(),window=new Node();document.body=new Node();document.activeElement=null;document.createElement=()=>new Node();document.getElementById=el;document.querySelector=selector=>el(selector==='.capture-input-wrap'?'capture-input-wrap':'footer');
 let renders=0;
 const ctx={window,document,state:{expanded:false,size:'medium'},frameScreen:()=>[1512,982],ResizeObserver:class{observe(){}},MutationObserver:class{observe(){}},render(){renders++},renderDraft(){},fit(){},syncNativeWindow(){}};
 vm.runInNewContext(fs.readFileSync('dist/capture-launcher.js','utf8'),ctx);
+el('capture-input-wrap').scrollHeight=56;el('capture-commands').hidden=true;assert.equal(window.OpenSesameLauncher.nativeFrame().height,74,'The search row fits with its full native inset');el('capture-commands').hidden=false;el('capture-commands').scrollHeight=800;assert.equal(window.OpenSesameLauncher.nativeFrame().height,514,'Measure command content even while its viewport is clipped');el('capture-input-wrap').scrollHeight=120;assert.equal(window.OpenSesameLauncher.nativeFrame().height,578,'Multiline input expands the native launcher');
 const key=()=>document.emit('keydown',{code:'Space',altKey:true});
 key();assert.equal(window.OpenSesameLauncher.active,true);assert.equal(ctx.state.expanded,true);key();assert.equal(window.OpenSesameLauncher.active,false);
 window.__OPEN_SESAME_GLOBAL_SHORTCUT__=true;const before=renders;assert.equal(key().prevented,true);assert.equal(renders,before,'Native shortcut ownership must prevent a second DOM toggle');

@@ -38,7 +38,7 @@
   }
   function paint(){
     frame=0;const f=familiar(),record=current(),job=jobs.get(selected),available=!!openSesameBridge.available;
-    el('familiar-connect').disabled=connecting||!available;el('familiar-connect').textContent=connecting?'Connecting…':connected?'Refresh':'Connect Coven';
+    el('familiar-connect').disabled=connecting||!available;el('familiar-connect').innerHTML=connecting?'Connecting…':connected?icon('reset'):'Connect Coven';el('familiar-connect').setAttribute('aria-label',connected?'Refresh familiars':'Connect Coven');el('familiar-connect').title=connected?'Refresh familiars':'Connect Coven';
     el('familiar-connection-status').textContent=connecting?'Checking Coven and your familiars…':error||(!available?'Open the Mac app or local dev preview to connect.':connected?'Connected to Coven · '+roster.length+' familiar'+(roster.length===1?'':'s'):'Connect Coven to find your familiars.');
     el('familiar-setup-guide').hidden=connected&&roster.length>0&&!error;el('familiar-welcome').hidden=!!record?.conversationId;el('familiar-welcome').querySelector('strong').textContent=loading?'Opening conversation…':f?'Let’s reconnect this conversation':connected?'Choose your familiar':'A familiar place to begin';
     el('familiar-welcome-copy').textContent=incoming?'Your message is ready. Choose a familiar to review and send it.':f?'Try opening this conversation again. Your saved messages and draft are kept.':connected?'Select a familiar on the left. Each brings its own identity, workspace and conversation.':'Connect Coven to bring your familiars here, then choose one and send your first message.';
