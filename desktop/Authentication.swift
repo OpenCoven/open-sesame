@@ -21,6 +21,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
     private var user: User?
     private var saved: SavedSession?
     private(set) var busy = false
+    private var restoring = false
     private(set) var message = "Sign in to use Open Sesame."
     weak var window: NSWindow?
     var changed: (() -> Void)?
@@ -75,6 +76,8 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
     }
 
     func signIn() {
+        // An external HTTPS handoff takes precedence over a background session restore.
+        if restoring { cancel() }
         guard !busy else { return }
         epoch += 1; let ticket = epoch
         do {
@@ -84,7 +87,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
                 Task { @MainActor in
                     guard let self, ticket == self.epoch else { return }
                     self.browser = nil
-                    guard let callback else { self.busy = false; self.message = "Sign-in was cancelled. You can try again."; self.changed?(); return }
+                    guard let callback else { self.busy = false; self.message = "Sign-in window closed. If you requested access, return after approval."; self.changed?(); return }
                     do {
                         let code = try Self.authorizationCode(callback, state: authorization.state)
                         self.task = Task { @MainActor in
@@ -111,7 +114,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
         let value = SavedSession(refreshToken: response.refreshToken, sealedSession: sealed, password: password)
         try writeSession(value)
         UserDefaults.standard.set(false, forKey: "openSesame.auth.signedOut")
-        saved = value; user = response.user; expires = deadline; busy = false; message = "Signed in."
+        saved = value; user = response.user; expires = deadline; busy = false; restoring = false; message = "Signed in."
         refreshTimer?.invalidate(); expiryTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: max(1, deadline.timeIntervalSinceNow - 60), repeats: false) { [weak self] _ in Task { @MainActor in self?.refresh() } }
         expiryTimer = Timer.scheduledTimer(withTimeInterval: max(1, deadline.timeIntervalSinceNow), repeats: false) { [weak self] _ in Task { @MainActor in self?.message = "Your session expired. Sign in to continue."; self?.changed?() } }
@@ -120,7 +123,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
 
     private func refresh() {
         guard !busy, let saved else { return }
-        let ticket = epoch; busy = true; message = authenticated ? "Refreshing sign-in…" : "Restoring your sign-in…"; changed?()
+        let ticket = epoch; busy = true; restoring = true; message = authenticated ? "Refreshing sign-in…" : "Restoring your sign-in…"; changed?()
         task = Task { @MainActor in
             do { let response = try await publicClient.authenticateWithRefreshToken(refreshToken: saved.refreshToken, requestOptions: RequestOptions(timeout: 20)); try await accept(response, ticket: ticket) }
             catch { failed(error, ticket: ticket) }
@@ -129,7 +132,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
 
     private func failed(_ error: Error, ticket: Int) {
         guard ticket == epoch, !Task.isCancelled else { return }
-        busy = false
+        busy = false; restoring = false
         var terminal = false
         if let issue = error as? WorkOSError {
             switch issue {
@@ -154,7 +157,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
     func signOut(endRemoteSession: Bool = true) {
         let previous = saved
         epoch += 1; task?.cancel(); browser?.cancel(); browser = nil
-        refreshTimer?.invalidate(); expiryTimer?.invalidate(); busy = false
+        refreshTimer?.invalidate(); expiryTimer?.invalidate(); busy = false; restoring = false
         UserDefaults.standard.set(true, forKey: "openSesame.auth.signedOut")
         saved = nil; user = nil; expires = .distantPast; message = "Signed out on this Mac."
         do { try deleteSession() } catch { message = "Signed out. The saved credential could not be removed; sign in again to replace it." }
@@ -171,7 +174,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
 
     func shutdown() { epoch += 1; task?.cancel(); browser?.cancel(); refreshTimer?.invalidate(); expiryTimer?.invalidate() }
 
-    func cancel() { epoch += 1; task?.cancel(); browser?.cancel(); browser = nil; busy = false; message = "Sign in to continue."; changed?() }
+    func cancel() { epoch += 1; task?.cancel(); browser?.cancel(); browser = nil; busy = false; restoring = false; message = "Sign in to continue."; changed?() }
 
     private var keychainQuery: [String: Any] { [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.keychainService, kSecAttrAccount as String: Self.clientID] }
     private func readSession() throws -> SavedSession? {

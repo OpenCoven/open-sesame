@@ -3,6 +3,7 @@ import pathlib
 import sys
 import threading
 import unittest
+import subprocess
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from dev_server import Handler, Server
@@ -11,6 +12,7 @@ from dev_server import Handler, Server
 class LoginPreviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        subprocess.run(['node', str(pathlib.Path(__file__).resolve().parents[2] / 'scripts/build-auth-entrypoint.mjs')], check=True, stdout=subprocess.DEVNULL)
         cls.server = Server(('127.0.0.1', 0), Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -41,6 +43,19 @@ class LoginPreviewTests(unittest.TestCase):
         self.assertEqual(response.status, 401)
         response.read()
         connection.close()
+
+    def test_https_entry_can_be_previewed_without_exposing_credentials(self):
+        for path in ('/auth/login?code=synthetic-private-value', '/auth/desktop-login.js', '/auth/desktop-login.css'):
+            with self.subTest(path=path):
+                connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=3)
+                connection.request('GET', path)
+                response = connection.getresponse()
+                content = response.read().decode()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.getheader('Referrer-Policy'), 'no-referrer')
+                self.assertEqual(response.getheader('Cache-Control'), 'no-store')
+                self.assertNotIn('synthetic-private-value', content)
+                connection.close()
 
 
 if __name__ == '__main__':
