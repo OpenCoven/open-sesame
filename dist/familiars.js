@@ -26,11 +26,11 @@
   commandClose.addEventListener('click',()=>{commandTicket++;commandResult.hidden=true;el('familiar-message').focus({preventScroll:true})});
   el('familiar-commands-toggle').addEventListener('click',()=>{if(!commandMenu.hidden){commandDismissed=true;closeCommands()}else{commandDismissed=false;commandForced=true;commandIndex=0;paintCommands();el('familiar-message').focus({preventScroll:true})}});
   document.addEventListener('pointerdown',event=>{if(!commandMenu.hidden&&!el('familiar-compose').contains(event.target)){commandDismissed=true;closeCommands()}});
-  function clearCommandDraft(){if(draft().trimStart().startsWith('/')){drafts.set(selected,'');el('familiar-message').value='';saveDraft()}}
+  function clearCommandDraft(replace){if(replace&&draft().trimStart().startsWith('/')&&!draft().trimStart().startsWith('//')){drafts.set(selected,'');el('familiar-message').value='';saveDraft()}}
   async function invokeCommand(command){
-    if(!connected||loading||!current()?.conversationId)return;closeCommands();commandDismissed=true;
+    if(!connected||loading||!current()?.conversationId)return;const replaceDraft=!commandForced;closeCommands();commandDismissed=true;
     if(command.name==='unknown'){showCommand('Unknown command','Type **/help** to see available commands. Start with **//** to send a literal leading slash.');return}
-    clearCommandDraft();
+    clearCommandDraft(replaceDraft);
     if(command.name==='/refresh'){connect();return}
     if(command.name==='/find'){search(command.args);return}
     if(command.name==='/stop'){el('familiar-stop').click();return}
