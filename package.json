@@ -3,6 +3,12 @@
   "private": true,
   "scripts": {
     "check": "node scripts/check.mjs",
+    "verify": "python3 -B scripts/verify.py",
+    "project:inventory": "python3 -B scripts/project.py inventory",
+    "project:check": "python3 -B scripts/project.py check",
+    "project:refresh": "python3 -B scripts/project.py refresh",
+    "project:task": "python3 -B scripts/project.py task",
+    "project:prune": "python3 -B scripts/project.py prune",
     "build:desktop-source": "python3 scripts/build-desktop-source.py",
     "predev": "python3 scripts/build-desktop-source.py",
     "dev": "python3 desktop/dev_server.py",
