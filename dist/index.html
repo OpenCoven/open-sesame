@@ -13,7 +13,6 @@
   <link rel="stylesheet" href="frame.css?v=9fc63d1240">
   <link rel="stylesheet" href="bookmarks.css?v=b9a99901db">
   <link rel="stylesheet" href="controller.css?v=50145187d8">
-  <link rel="stylesheet" href="glass.css?v=85a21cf4c8">
   <link rel="stylesheet" href="agents-chat.css?v=7ad3d5890b">
   <link rel="stylesheet" href="focus-calendar.css?v=1a3801c535">
   <link rel="stylesheet" href="composer.css?v=8bb3dddf52">
@@ -23,7 +22,7 @@
   <link rel="stylesheet" href="media-gallery.css?v=402c371f4c">
   <link rel="stylesheet" href="rail-surfaces.css?v=a73653f3a4">
   <link rel="stylesheet" href="window.css?v=0068e84b75">
-  <link rel="stylesheet" href="refinement.css?v=2b30361102">
+  <link rel="stylesheet" href="refinement.css?v=51742d6840">
   <link rel="stylesheet" href="studio-controls.css?v=ee9c3474b7">
   <link rel="stylesheet" href="focus-overview.css?v=75b3b1e4dc">
   <script src="storage-migration.js?v=3ac2f2e93e" defer></script>
@@ -43,11 +42,9 @@
   <script src="bookmark-model.js?v=6a111c3f2b" defer></script>
   <script src="focus-calendar-model.js?v=0a25c0d1a8" defer></script>
   <script src="native-surfaces.js?v=515cb24a11" defer></script>
-  <script src="app.js?v=cc37a01e91" defer></script>
+  <script src="app.js?v=09c9d263da" defer></script>
   <script src="bookmarks.js?v=e69a15e3d5" defer></script>
   <script src="frame.js?v=56010083f1" defer></script>
-  <script src="glass-model.js?v=10ef6433cd" defer></script>
-  <script src="glass.js?v=c7f6a4a0fb" defer></script>
   <script src="focus-calendar.js?v=e4af8cf754" defer></script>
   <script src="pagination.js?v=41ba7e7faf" defer></script>
   <script src="items-views.js?v=fd05bb1fba" defer></script>
@@ -106,9 +103,9 @@
   <link rel="stylesheet" href="console-polish.css?v=fcb2dc727b">
 <link rel="stylesheet" href="layout-fit.css?v=75b7a1e253">
 <script src="layout-fit.js?v=6aa63b8bdc" defer></script>
-  <link rel="stylesheet" href="ember-agents.css?v=fb7947a2f1">
+  <link rel="stylesheet" href="ember-agents.css?v=8cbaef1e76">
   <script src="agent-monitor.js?v=f33306b97e" defer></script>
-  <script src="ember.js?v=cbf5cf65fd" defer></script>
+  <script src="ember.js?v=356f30b483" defer></script>
   <link rel="stylesheet" href="session-polish.css?v=ac4d93353e">
   <script src="focus-controls.js?v=8db5ac906a" defer></script>
   <script src="widget-options.js?v=d92bcef5b0" defer></script>
@@ -122,6 +119,7 @@
   <script src="familiars.js?v=662987338d" defer></script>
   <link rel="stylesheet" href="familiars.css?v=c6b099f596">
   <link rel="stylesheet" href="activity-rail.css?v=edcc45286c">
+  <link rel="stylesheet" href="flat-theme.css?v=10502c7041">
 </head>
 <body>
   <svg class="svg-defs" aria-hidden="true"><defs><symbol id="open-sesame-mark" viewBox="0 0 36 24"><path d="M3 5c5 0 9 2 13 8C9 18 4 15 3 5Z" fill="currentColor"/><path d="M33 5c-5 0-9 2-13 8 7 5 12 2 13-8Z" fill="currentColor"/></symbol></defs></svg>
@@ -160,8 +158,8 @@
         <section class="control-section studio-behavior" aria-labelledby="behavior-heading">
           <div class="section-heading"><h3 id="behavior-heading">Behavior</h3></div>
           <div class="switch-row"><label for="speak-notifications"><span>Spoken notifications</span><small>Read new notifications aloud</small></label><input class="switch" id="speak-notifications" type="checkbox" role="switch"></div>
-          <div class="switch-row"><label for="ember-enabled"><span>Ember glow</span><small>A quiet light for your current state</small></label><input class="switch" id="ember-enabled" type="checkbox" role="switch" checked></div>
-          <label class="ember-preview-control" for="ember-preview"><span>Preview glow</span><select id="ember-preview" aria-label="Preview glow"><option value="auto">Live state</option><option value="focus">Focus · amber</option><option value="working">Active agent · warm</option><option value="listening">Listening · rose</option><option value="attention">Attention · coral</option></select></label>
+          <div class="switch-row"><label for="ember-enabled"><span>Activity indicators</span><small>Static status dots in the navigation rail</small></label><input class="switch" id="ember-enabled" type="checkbox" role="switch" checked></div>
+          <label class="ember-preview-control" for="ember-preview"><span>Preview status</span><select id="ember-preview" aria-label="Preview activity status"><option value="auto">Live state</option><option value="focus">Focus timer</option><option value="working">Active process</option><option value="listening">Listening</option><option value="attention">Attention</option></select></label>
           <div class="switch-row"><label for="hover"><span>Expand on hover</span><small>Open when your pointer rests here</small></label><input class="switch" id="hover" type="checkbox" role="switch"></div>
           <button class="notification-test" id="notify"><i data-icon="bell"></i><span>Test notification</span><i data-icon="play"></i></button>
         </section>

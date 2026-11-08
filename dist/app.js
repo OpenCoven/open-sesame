@@ -122,7 +122,7 @@ function render(){
   $('width').value=state.width;$('ratio').value=state.ratio;$('hover').checked=state.hover;$('speak-notifications').checked=state.speakNotifications;document.querySelectorAll('[data-widget-size]').forEach(b=>{const active=b.dataset.widgetSize===state.size;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',active)});$('playful-shape').checked=state.playful;$('desktop-size').value=state.resolution;
   $('width-value').innerHTML=`${state.width} <span>px</span>`;$('ratio-value').textContent=state.ratio.toFixed(1)+' : 1';$('dimension-note').textContent=`Compact footprint · ${state.width} × ${height} px`;
   $('footprint').textContent=state.expanded?`${panelWidth} × ${panelHeight} px`:state.layout==='notch'?`${state.width} × ${height} px`:'30 × 27 px';
-  $('preview-hint').textContent=state.expanded?'Hold the widget to speak. Alt-hold to adjust glass. Drag an edge to resize.':state.layout==='notch'?'Click the notch to open your widget.':'Click the eyes in the menu bar to open your widget.';
+  $('preview-hint').textContent=state.expanded?'Hold the widget to speak. Drag an edge to resize; shrink past Small to collapse.':state.layout==='notch'?'Click the notch to open your widget.':'Click the eyes in the menu bar to open your widget.';
   document.querySelectorAll('input[type=range]').forEach(fillRange);renderItems();renderCompact();fit();persist();detailEditor.layout();transcriptEditor.layout();syncNativeWindow();window.openSesameReading?.refreshView();window.OpenSesameFrame?.sync();window.OpenSesameWindow?.sync();window.dispatchEvent(new Event('open-sesame-layout'));renderDraft();
 }
 function compactFrame(){return window.OpenSesameCompact?.geometry?.()||{width:state.width,height:Math.round(state.width/state.ratio)}}
