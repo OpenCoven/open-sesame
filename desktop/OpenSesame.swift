@@ -96,8 +96,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         authentication.window = panel
         authentication.changed = { [weak self] in self?.authenticationChanged() }
         showSignIn()
-        authentication.restore()
         let pendingURLs = pendingAuthenticationURLs; pendingAuthenticationURLs.removeAll()
+        if !pendingURLs.contains(where: { $0.path == "/login" }) { authentication.restore() }
         if !pendingURLs.isEmpty { application(NSApp, open: pendingURLs) }
         positionPanel()
         panel.orderFrontRegardless()
@@ -134,7 +134,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "opensesame" && url.host == "auth" {
             guard authentication != nil else { pendingAuthenticationURLs = [url]; return }
-            if url.path == "/login" { showPanel(); if !authentication.authenticated { authentication.signIn() } }
+            if url.path == "/login" { showPanel(); authentication.signIn() }
             else if url.path == "/signed-out" { authentication.signOut(endRemoteSession: false); showPanel() }
         }
     }

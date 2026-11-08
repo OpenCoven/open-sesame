@@ -1,0 +1,13 @@
+# HTTPS login entry
+
+The WorkOS Initiate login URI is `https://opensesame.computer/auth/login`. It must resolve to this HTTP(S) application route. The custom URI `opensesame://auth/login` is the native app handoff target and cannot be entered in that WorkOS field.
+
+This page automatically opens the native handoff, which starts the official WorkOS SDK's PKCE transaction in the app. An explicit **Open Open Sesame** link remains available when a browser blocks automatic external-app navigation. The app owns the verifier, callback, code exchange and Keychain session. The web handler never exchanges a code, accepts a return URL, or forwards URL query/fragment values into the custom scheme. No WorkOS secret or user token is needed on this host. The app continues to enforce login on every local tool request.
+
+The dependency-free Worker entry is `worker.mjs`; its `fetch` handler serves only the login page and its two assets. `node scripts/build-auth-entrypoint.mjs` also produces a static deployment in `web/auth-entrypoint/dist`. A static host should internally rewrite `/auth/login` to `/auth/login/index.html` and serve the `/auth/desktop-login.js` and `/auth/desktop-login.css` assets. Keep the app's private downloads, local bridge and desktop source outside this public deployment.
+
+The Vercel project root is `web/auth-entrypoint`. `vercel.json` builds with `node build.mjs`, serves only the four generated public assets in `dist`, rewrites the exact `/auth/login` path, and sends no-store, no-referrer and restrictive CSP headers. The build clears the generated output before writing those assets. Deployment needs no environment variables, dependency installation or WorkOS API key. Link this directory to the Vercel project that owns `opensesame.computer`; inspect that domain's existing assignment before changing it.
+
+Run `node scripts/check-auth-entrypoint.mjs` and `node scripts/build-auth-entrypoint.mjs` from the repository root. Once Vercel account access is available, deploy this subdirectory with `vercel --cwd web/auth-entrypoint --prod`; choose the intended Vercel project when linking. Verify the exact production URL and its assets anonymously, then save `https://opensesame.computer/auth/login` in the WorkOS Initiate login field. If Vercel Deployment Protection covers the production route, the logged-out auth entry needs its own public project or an explicitly approved access configuration.
+
+The code and local route can be checked before deployment. The public hostname, TLS, WorkOS setting and native/browser handoff need live verification on the chosen host. No deployment or saved WorkOS Initiate login URI should be inferred from the presence of these source files.

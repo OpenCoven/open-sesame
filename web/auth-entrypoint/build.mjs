@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {page,script,style} from './worker.mjs';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'dist');
+fs.rmSync(root,{recursive:true,force:true});
+fs.mkdirSync(path.join(root,'auth/login'),{recursive:true});
+fs.writeFileSync(path.join(root,'index.html'),page);
+fs.writeFileSync(path.join(root,'auth/login/index.html'),page);
+fs.writeFileSync(path.join(root,'auth/desktop-login.js'),script);
+fs.writeFileSync(path.join(root,'auth/desktop-login.css'),style);
+console.log('Built public login handoff assets for https://opensesame.computer/auth/login.');
