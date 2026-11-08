@@ -14,6 +14,7 @@ import os
 import pathlib
 import pty
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -33,6 +34,7 @@ class Session:
         self.emit = emit
         self.closed = False
         self.lock = threading.Lock()
+        self.close_lock = threading.Lock()
         mode = params.get('mode', 'local')
         launcher = params.get('launcher', 'shell')
         if launcher not in ('shell', 'coven', 'bash'):
@@ -91,7 +93,12 @@ class Session:
                 os.write(2, b'Open Sesame could not start the shell.\r\n')
                 os._exit(127)
         self.pid, self.master = pid, master
-        self.resize(params.get('cols', 80), params.get('rows', 24))
+        try:
+            os.set_blocking(self.master, False)
+            self.resize(params.get('cols', 80), params.get('rows', 24))
+        except Exception:
+            self.close()
+            raise
         self.reader = threading.Thread(target=self._read, daemon=True)
 
     def start(self):
@@ -100,7 +107,15 @@ class Session:
     def _read(self):
         try:
             while not self.closed:
-                data = os.read(self.master, 16384)
+                if not select.select([self.master], [], [], .1)[0]:
+                    continue
+                with self.lock:
+                    if self.closed:
+                        break
+                    try:
+                        data = os.read(self.master, 16384)
+                    except BlockingIOError:
+                        continue
                 if not data:
                     break
                 self.emit({'event': 'terminal.data', 'id': self.id, 'data': base64.b64encode(data).decode('ascii')})
@@ -117,30 +132,67 @@ class Session:
         if not isinstance(data, str) or len(data) > 131072:
             raise ValueError('Terminal input is too large.')
         encoded = base64.b64decode(data, validate=True) if binary else data.encode('utf8')
-        with self.lock:
-            offset = 0
+        offset = 0
+        try:
             while offset < len(encoded):
-                offset += os.write(self.master, encoded[offset:])
+                with self.lock:
+                    if self.closed:
+                        raise ValueError('This shell has ended. Reopen the pane to reconnect.')
+                    try:
+                        written = os.write(self.master, encoded[offset:])
+                    except BlockingIOError:
+                        written = 0
+                offset += written
+                if not written:
+                    select.select([], [self.master], [], .1)
+        except OSError:
+            if self.closed:
+                raise ValueError('This shell has ended. Reopen the pane to reconnect.') from None
+            raise
 
     def resize(self, cols, rows):
-        if self.closed:
-            return
-        cols, rows = max(10, min(400, int(cols))), max(3, min(200, int(rows)))
-        fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
+        with self.lock:
+            if self.closed:
+                return
+            cols, rows = max(10, min(400, int(cols))), max(3, min(200, int(rows)))
+            fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
 
     def close(self):
+        # Every caller waits for cleanup, including a concurrent reader exit.
+        with self.close_lock:
+            self._close()
+
+    def _close(self):
         if self.closed:
             return
         self.closed = True
-        try:
-            os.close(self.master)
-        except OSError:
-            pass
+        # Blocking reads can deadlock close(master) on macOS; reads/writes are
+        # nonblocking and serialized with descriptor closure. Close the master
+        # before waiting: a killed child can remain in tty exit until this close.
+        with self.lock:
+            try:
+                os.close(self.master)
+            except OSError:
+                pass
         for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGKILL):
+            # A fast command may already have exited (killpg on its empty
+            # group can return EPERM on macOS). Reap before signalling.
+            try:
+                pid, _ = os.waitpid(self.pid, os.WNOHANG)
+                if pid:
+                    return
+            except ChildProcessError:
+                return
             try:
                 os.killpg(self.pid, sig)
-            except ProcessLookupError:
-                pass
+            except (ProcessLookupError, PermissionError):
+                # forkpty's parent can return before the child creates its
+                # group; an exiting macOS group can also reject killpg.
+                # Our unreaped direct child is safe to signal in both cases.
+                try:
+                    os.kill(self.pid, sig)
+                except ProcessLookupError:
+                    pass
             for _ in range(8):
                 try:
                     pid, _ = os.waitpid(self.pid, os.WNOHANG)
@@ -149,6 +201,7 @@ class Session:
                 except ChildProcessError:
                     return
                 time.sleep(.015)
+        raise RuntimeError('The terminal child did not exit after termination.')
 
 
 class Bridge:

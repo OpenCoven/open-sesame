@@ -20,8 +20,8 @@ class RealTerminalTests(unittest.TestCase):
         threading.Thread(target=self.read, daemon=True).start()
         self.responses, self.output, self.counter = {}, {}, 0
         self.temp = tempfile.TemporaryDirectory(prefix='open-sesame-project-')
-        self.one = pathlib.Path(self.temp.name)/'project one'; self.one.mkdir()
-        self.two = pathlib.Path(self.temp.name)/'project two'; self.two.mkdir()
+        self.one = pathlib.Path(self.temp.name).resolve()/'project one'; self.one.mkdir()
+        self.two = pathlib.Path(self.temp.name).resolve()/'project two'; self.two.mkdir()
     def read(self):
         for line in self.process.stdout:
             self.messages.put(json.loads(line))
@@ -93,7 +93,10 @@ class DevelopmentOriginTests(unittest.TestCase):
             port=int(process.stdout.readline().strip().rsplit(':',1)[1])
             connection=http.client.HTTPConnection('127.0.0.1',port,timeout=3)
             connection.request('GET','/__openSesame/bridge',headers={'Origin':'https://foreign.example','Upgrade':'websocket','Connection':'Upgrade','Sec-WebSocket-Version':'13','Sec-WebSocket-Key':base64.b64encode(os.urandom(16)).decode()})
-            self.assertEqual(connection.getresponse().status,403)
+            response=connection.getresponse()
+            self.assertEqual(response.status,401)
+            self.assertIsNone(response.getheader('Upgrade'))
+            self.assertIn(b'Sign in through Open Sesame Desktop',response.read())
             connection.close()
         finally:
             process.terminate();process.wait(timeout=5);process.stdout.close()

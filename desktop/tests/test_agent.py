@@ -18,7 +18,7 @@ class CovenLauncherTests(unittest.TestCase):
     def test_agent_uses_login_shell_project_tty_and_live_input(self):
         events = queue.Queue()
         with tempfile.TemporaryDirectory(prefix='open-sesame-agent-') as tmp:
-            folder = pathlib.Path(tmp)/'project with spaces'; folder.mkdir()
+            folder = pathlib.Path(tmp).resolve()/'project with spaces'; folder.mkdir()
             binary = pathlib.Path(tmp)/'bin'; binary.mkdir()
             cli = binary/'coven'
             cli.write_text('#!'+sys.executable+'\nimport os,sys\nprint("__COVEN_FIXTURE__"+os.getcwd()+"|"+str(os.isatty(0)),flush=True)\nprint("__INPUT__"+input(),flush=True)\n')

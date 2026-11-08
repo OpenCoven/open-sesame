@@ -24,7 +24,7 @@ class ReadingAndBashTests(unittest.TestCase):
                     try:e=events.get(timeout=.1)
                     except queue.Empty:continue
                     if e.get('event')=='terminal.data':output+=base64.b64decode(e['data']).decode()
-                self.assertIn('__BASH__'+folder+'|TTY',output)
+                self.assertIn('__BASH__'+str(pathlib.Path(folder).resolve())+'|TTY',output)
             finally:session.close();session.reader.join(timeout=5)
         with mock.patch('bridge.pty.fork') as fork:
             with self.assertRaises(ValueError):Session('empty',{'launcher':'bash','prompt':''},events.put)
