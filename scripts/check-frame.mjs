@@ -66,3 +66,9 @@ Object.assign(runtime,{focusPerPage:5,focusPage:1,focusRunning:false,getComputed
 vm.runInContext(source.slice(source.indexOf('function fitFocusTopics(){'),source.indexOf('new ResizeObserver(fitFocusTopics)')),runtime);const stableWidth=width();runtime.fitFocusTopics();assert.equal(runtime.focusPerPage,1);assert.equal(runtime.focusPage,5);assert.equal(width(),stableWidth);pane.clientHeight=450;runtime.focusRunning=true;runtime.fitFocusTopics();assert.equal(runtime.focusPerPage,5);assert.equal(runtime.focusPage,1,'The running topic must remain on its new page');
 let topicBlurred=0;doc.activeElement={closest:()=>true,blur(){topicBlurred++;doc.activeElement=null}};reset();h=drag('right',100,0);h.emit('pointerup');assert.equal(topicBlurred,1,'Commit a topic draft before resize pagination replaces its input');
 console.log('Shipped drag controller: scaled pointer motion, center/right anchoring, commit-only-on-release, no pane remount, cancellation, desktop changes, native updates, keyboard sizes, and announcements passed using simulated DOM events. Browser visual QA is separate.');
+
+// A pane-specific exception must not strand the native window at its old compact size.
+runtime.state.expanded=true;runtime.state.size='small';runtime.state.scenario='focus';win.__OPEN_SESAME_NATIVE__=true;
+const beforeFailedPane=nativeCalls;runtime.renderItems=()=>{throw Error('Synthetic pane failure')};
+assert.throws(()=>runtime.render(),/Synthetic pane failure/);assert.ok(nativeCalls>beforeFailedPane,'Native frame sizing must happen before pane content can throw');
+console.log('Native geometry is committed before pane-specific rendering failures.');

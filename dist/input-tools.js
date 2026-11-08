@@ -32,7 +32,7 @@
   }
   function refresh(){
     cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{
-      const raw=input.value;calculation=el('capture-type').value==='auto'?OpenSesameCalculator.calculate(raw):null;
+      const intent=window.openSesameCapture?.interpret(input.value,el('capture-type').value,state.scenario);calculation=intent?.kind==='calculation'?intent.calculation:null;
       result.hidden=!calculation;result.classList.toggle('has-error',!!calculation?.error);
       if(calculation){output.textContent=calculation.error||calculation.result;expression.textContent=calculation.error?'Calculation':calculation.expression;copy.title=calculation.note||'Enter or click to copy';copy.disabled=!!calculation.error}
       surfaces.forEach(paint);

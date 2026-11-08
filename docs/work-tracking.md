@@ -1,5 +1,11 @@
 # Development work and handoff
 
+## Widget and launcher fit, November 8
+
+`widget-launcher-fit-20261108` owns `codex/widget-launcher-fit` in the separate `open-sesame-widget-fit` worktree, based on signed PR #19 main. It repairs the clipped Focus/native frame and launcher row alignment shown in the user’s screenshots. Regression checks reproduced the GitHub preview/monitor API collision, slash-as-calculation footer state and native sizing after a pane exception before the repairs. The original logs are preserved under the task’s common-Git receipts.
+
+The monitor now has a distinct API and control namespace, all authored control IDs are unique, native sizing precedes pane content, and the launcher uses shared intent with one results scroller and explicitly fitted row text. The installed app was independently observed as v0.0.16 after the previous handoff, without this agent replacing its bundle. Native inspection returned an empty window and then timed out; the browser host was unavailable. Full Mac/hosted verification, private v0.0.17 packaging and installed rendering remain separate until recorded in the task receipt. See `widget-launcher-fit.md` and its isolated visual fixture for the exact contract.
+
 ## GitHub monitoring widget, November 8
 
 `github-monitor-widget-20261108` owns `codex/github-monitor-widget` in the separate `open-sesame-github-monitor` worktree, dependent on the verified Familiar permissions/layout candidate. It adds a GET-only GitHub CLI transport, private local repository selection and a responsive Widgets dashboard for recent PRs, issues and workflow runs. It preserves the earlier v0.0.15 audio, display, shared Spotify and launcher update, plus the Familiar confirmation and collapsible-rail changes.

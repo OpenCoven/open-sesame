@@ -42,7 +42,7 @@
   <script src="bookmark-model.js?v=6a111c3f2b" defer></script>
   <script src="focus-calendar-model.js?v=0a25c0d1a8" defer></script>
   <script src="native-surfaces.js?v=c0d86cd56f" defer></script>
-  <script src="app.js?v=47e258f028" defer></script>
+  <script src="app.js?v=54f60499c4" defer></script>
   <script src="bookmarks.js?v=e69a15e3d5" defer></script>
   <script src="frame.js?v=77800e9253" defer></script>
   <script src="focus-calendar.js?v=e4af8cf754" defer></script>
@@ -91,12 +91,12 @@
   <script src="screen-notes.js?v=8c8c060d36" defer></script>
   <script src="notes.js?v=5c98607c8a" defer></script>
   <script src="window.js?v=46e3578406" defer></script>
-  <script src="capture-launcher.js?v=0328883eae" defer></script>
+  <script src="capture-launcher.js?v=8802e58bfa" defer></script>
   <link rel="stylesheet" href="projects-overview.css?v=3a4c0c9c24">
   <script src="projects-overview.js?v=f7f88ebc62" defer></script>
   <script src="media-import.js?v=311d39621c" defer></script>
   <link rel="stylesheet" href="input-tools.css?v=d77eafdd83">
-  <script src="input-tools.js?v=f7144eda86" defer></script>
+  <script src="input-tools.js?v=e645c80c53" defer></script>
   <link rel="stylesheet" href="voice-command.css?v=7d49d3bc8f">
   <script src="voice-command.js?v=1e5ddde409" defer></script>
   <link rel="stylesheet" href="console-polish.css?v=c4d2dbc393">
@@ -112,8 +112,8 @@
   <script src="live-settings.js?v=6ab0ee5b2e" defer></script>
   <link rel="stylesheet" href="plugins.css?v=156f04ab5c">
   <script src="plugins-model.js?v=d5b87ab76e" defer></script>
-  <script src="github-monitor.js?v=d81be7d254" defer></script>
-  <script src="plugins.js?v=601b6a8efd" defer></script>
+  <script src="github-monitor.js?v=15a440d952" defer></script>
+  <script src="plugins.js?v=65b009474a" defer></script>
   <script src="audio-source-menu.js?v=5c2fb844b4" defer></script>
   <link rel="stylesheet" href="live-capture.css?v=9657414468">
   <script src="familiar-commands.js?v=32293b4a38" defer></script>
@@ -129,9 +129,9 @@
 <link rel="stylesheet" href="responsive-playlists.css?v=4360042eca">
 <script src="media-drop.js?v=27c5896353" defer></script>
 <link rel="stylesheet" href="familiar-chat-polish.css?v=26fe1bc232">
-  <link rel="stylesheet" href="github-monitor.css?v=393e0e6a05">
+  <link rel="stylesheet" href="github-monitor.css?v=71d51bfb11">
   <link rel="stylesheet" href="familiar-conversation.css?v=b6a79dfd5c">
-  <link rel="stylesheet" href="launcher-palette.css?v=595a419f81">
+  <link rel="stylesheet" href="launcher-palette.css?v=04d3ba1cc6">
 </head>
 <body>
   <svg class="svg-defs" aria-hidden="true"><defs><symbol id="open-sesame-mark" viewBox="0 0 36 24"><path d="M3 5c5 0 9 2 13 8C9 18 4 15 3 5Z" fill="currentColor"/><path d="M33 5c-5 0-9 2-13 8 7 5 12 2 13-8Z" fill="currentColor"/></symbol></defs></svg>
@@ -306,12 +306,12 @@
 <div class="plugins-desktop"><span class="plugin-logo"><img src="assets/plugins/apple.svg" alt="" width="22" height="22"></span><div><strong id="plugins-desktop-state">Bring your Mac along</strong><small id="plugins-desktop-copy">Use local agents with the macOS companion.</small></div><button id="plugins-desktop-action" type="button">Get companion</button><a id="plugins-desktop-download" href="downloads/open-sesame-desktop-source.zip" download hidden>Download companion source</a></div><p id="plugins-status" role="status" hidden></p>
 <section id="plugin-detail" class="plugin-detail" role="dialog" aria-labelledby="plugin-detail-title" hidden><header><div id="plugin-detail-logo"></div><h3 id="plugin-detail-title"></h3><button id="plugin-detail-close" type="button" aria-label="Close widget details"><i data-icon="close"></i></button></header><span id="plugin-detail-state" class="plugin-state"></span><p id="plugin-detail-copy"></p><div class="plugin-access"><strong>What it can access</strong><p id="plugin-detail-access"></p></div><p id="plugin-detail-note"></p><div class="plugin-setup"><strong>Set up this widget</strong><ol id="plugin-detail-steps"></ol><details><summary>If it does not connect</summary><p id="plugin-detail-repair"></p></details></div><button id="plugin-detail-main" class="plugin-primary" type="button"></button><button id="plugin-detail-open" class="plugin-secondary" type="button"></button><a id="plugin-detail-download" href="downloads/open-sesame-desktop-source.zip" download>Get macOS companion source <i data-icon="download"></i></a><a id="plugin-detail-docs" target="_blank" rel="noopener noreferrer">Setup guide <i data-icon="open-view"></i></a></section>
 <section id="github-monitor" aria-label="GitHub project monitor" hidden>
-<header class="github-heading"><button id="github-back" type="button" aria-label="Back to Widgets">‹</button><div><strong>GitHub</strong><small id="github-account">Read-only project monitor</small></div><button id="github-refresh" type="button" aria-label="Refresh GitHub">Refresh</button></header>
-<section id="github-setup"><strong>Connect your projects</strong><p id="github-setup-copy"></p><code id="github-login-command"></code><div><button id="github-copy-login" type="button">Copy sign-in command</button><a href="https://cli.github.com/" target="_blank" rel="noopener noreferrer">Get GitHub CLI ↗</a><button id="github-connect" type="button">Connect</button></div><p>Run the command in Terminal and complete GitHub’s browser sign-in. Keep tokens in GitHub CLI. Return here and choose Connect.</p></section>
-<div class="github-repositories"><label class="sr-only" for="github-repository">Monitored repository</label><select id="github-repository"></select><button id="github-remove" type="button" title="Remove from this local monitor; no changes on GitHub">Remove</button></div>
-<form id="github-add-form"><label class="sr-only" for="github-repository-input">Repository URL or owner/repository</label><input id="github-repository-input" type="text" placeholder="owner/repository or GitHub URL" maxlength="240" autocomplete="off" spellcheck="false"><button id="github-add" type="submit">Add repository</button></form>
-<p id="github-error" role="status" hidden></p><div id="github-empty"><strong>Keep your projects close.</strong><p>Add a repository to see recent pull requests, open issues and workflow runs. All GitHub access is read-only.</p></div>
-<header id="github-project" hidden><div><strong id="github-project-name"></strong><p id="github-project-copy"></p></div><a id="github-project-open" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></header><div id="github-cards" hidden></div><p id="github-updated" role="status"></p>
+<header class="github-heading"><button id="github-monitor-back" type="button" aria-label="Back to Widgets">‹</button><div><strong>GitHub</strong><small id="github-monitor-account">Read-only project monitor</small></div><button id="github-monitor-refresh" type="button" aria-label="Refresh GitHub">Refresh</button></header>
+<section id="github-monitor-setup"><strong>Connect your projects</strong><p id="github-monitor-setup-copy"></p><code id="github-monitor-login-command"></code><div><button id="github-monitor-copy-login" type="button">Copy sign-in command</button><a href="https://cli.github.com/" target="_blank" rel="noopener noreferrer">Get GitHub CLI ↗</a><button id="github-monitor-connect" type="button">Connect</button></div><p>Run the command in Terminal and complete GitHub’s browser sign-in. Keep tokens in GitHub CLI. Return here and choose Connect.</p></section>
+<div class="github-repositories"><label class="sr-only" for="github-monitor-repository">Monitored repository</label><select id="github-monitor-repository"></select><button id="github-monitor-remove" type="button" title="Remove from this local monitor; no changes on GitHub">Remove</button></div>
+<form id="github-monitor-add-form"><label class="sr-only" for="github-monitor-repository-input">Repository URL or owner/repository</label><input id="github-monitor-repository-input" type="text" placeholder="owner/repository or GitHub URL" maxlength="240" autocomplete="off" spellcheck="false"><button id="github-monitor-add" type="submit">Add repository</button></form>
+<p id="github-monitor-error" role="status" hidden></p><div id="github-monitor-empty"><strong>Keep your projects close.</strong><p>Add a repository to see recent pull requests, open issues and workflow runs. All GitHub access is read-only.</p></div>
+<header id="github-monitor-project" hidden><div><strong id="github-monitor-project-name"></strong><p id="github-monitor-project-copy"></p></div><a id="github-monitor-project-open" target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></header><div id="github-monitor-cards" hidden></div><p id="github-monitor-updated" role="status"></p>
 </section>
 </section>
                   <section id="pane-audio" role="tabpanel" aria-labelledby="tab-audio" class="widget-pane audio-pane" hidden>
