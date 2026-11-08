@@ -1,3 +1,5 @@
 # Repository summary
 
-Import tool.json through Plugins → Tools. Preview uses fixtures; live access requires an explicit action. Exported definitions exclude configuration.
+Requires the Mac host and a repository already connected and saved in Plugins → GitHub. Set repository to owner/name. Fixture preview shows two synthetic entries; Load live data explicitly reads recent pull requests, issues and workflow runs. The metric counts the returned recent open pull requests, not every open PR in a large repository. Nothing polls in the background.
+
+Import tool.json through Plugins → Tools. Author: Open Sesame. License: MIT. Defaults and fixtures are public, synthetic package content. Keep private configuration in the installed instance. See [the authoring guide](../../../docs/tools.md) for validation, creation and submission requirements.

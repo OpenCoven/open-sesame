@@ -4,7 +4,7 @@ Tools are versioned JSON definitions rendered by Open Sesame. Open Plugins → T
 
 ## Create and generate
 
-Run `npm run tools -- create /path/to/new-package`, edit tool.json, then run `npm run tools -- validate /path/to/new-package` and `npm run tools -- preview /path/to/new-package`. CLI preview prints fixture content; use the app for rendered previews. The three starter packages under dist/tools are executable examples of the format. Add a README with purpose, setup, author, license, expected fixture output and connection requirements.
+Run `npm run tools -- create /path/to/new-package`, edit tool.json, then run `npm run tools -- validate /path/to/new-package` and `npm run tools -- preview /path/to/new-package`. The create command uses the new directory name as the package ID and writes tool.json plus a README. Replace the author and confirm the license before sharing. CLI preview prints fixture content; use the app for rendered previews. The three starter packages under dist/tools are executable examples of the format. Add a README with purpose, setup, author, license, expected fixture output and connection requirements.
 
 Generation prompt: “Produce an Open Sesame schemaVersion 1 tool.json using the meeting-notes, repository-summary or feed-headlines example as the contract. Use only text, metric, list and input components. Declare every operation in capabilities. Use source null or github.summary or feeds.headlines. Actions may use navigate, link.open or note.save. Include sample title, count and entries in fixtures. Do not include code, HTML, credentials, real user data or new fields. Return JSON only.” Validate the generated file before importing it.
 
@@ -29,7 +29,7 @@ Custom code, new providers, general workflows, a public catalog, automatic updat
 | Concern | Source of truth |
 | --- | --- |
 | Package shape and semantic validation | dist/tools-model.js and dist/tools-schema.json |
-| Built-in examples and package discovery | dist/tools/<slug>/tool.json and scripts/check-tools.mjs |
+| Built-in examples and package discovery | `dist/tools/<slug>/tool.json` and scripts/check-tools.mjs |
 | Host renderer, operations, storage and lifecycle | dist/tools.js |
 | Launcher dispatch and workspace handoffs | dist/capture.js and dist/window.js |
 | Generation/validation CLI | scripts/tools.mjs |
