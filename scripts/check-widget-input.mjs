@@ -37,7 +37,7 @@ rename.beginRename(pane);input=row.querySelector('.terminal-pane-rename');input.
 const swift=fs.readFileSync('desktop/OpenSesame.swift','utf8'),hotkey=fs.readFileSync('desktop/GlobalShortcut.swift','utf8');
 assert.ok(hotkey.includes('RegisterEventHotKey')&&hotkey.includes('UnregisterEventHotKey'));
 assert.ok(swift.includes('panel.becomesKeyOnlyIfNeeded = false')&&!swift.includes('.nonactivatingPanel'));
-assert.ok(swift.includes('let screenFrame = placementScreen()?.frame'));
+assert.ok(swift.includes('OpenSesameScreenPlacement.screenIndex(pointer: pointer')&&swift.includes('requestedSize = NSSize(width: requestedWidth, height: requestedHeight); fillsDisplay = full'));
 assert.ok(terminal.includes("request('window.focus')"));
 let pointer,activate,focused=0;const focusRecord={},focusCalls=[];
 const focusContext={viewport:{addEventListener:(name,callback)=>pointer=callback},window:{__OPEN_SESAME_NATIVE__:true},openSesameBridge:{request:(method)=>{focusCalls.push(method);return new Promise(resolve=>activate=resolve)}},record:focusRecord,p:{id:'one'},mounted:new Map([['one',focusRecord]]),term:{focus:()=>focused++},toast(){}};

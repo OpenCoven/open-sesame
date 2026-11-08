@@ -83,7 +83,7 @@ const mark='<svg viewBox="0 0 36 24" aria-hidden="true"><use href="#open-sesame-
 const time=value=>{const n=Math.max(0,Math.ceil(value));return `${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`};
 function fillRange(el){const value=100*(Number(el.value)-Number(el.min))/(Number(el.max)-Number(el.min));el.style.setProperty('--fill',value+'%')}
 function toast(message){$('app-toast').textContent=message;$('app-toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('app-toast').hidden=true,2800)}
-function frameScreen(){return window.__OPEN_SESAME_NATIVE__?[window.screen.width||1512,window.screen.height||982]:state.resolution.split(',').map(Number)}
+function frameScreen(){if(!window.__OPEN_SESAME_NATIVE__)return state.resolution.split(',').map(Number);const native=window.__OPEN_SESAME_SCREEN__;return Number.isFinite(native?.width)&&native.width>0&&Number.isFinite(native?.height)&&native.height>0?[native.width,native.height]:[window.screen.width||1512,window.screen.height||982]}
 function expandedFrame(){if(window.OpenSesameWindow?.detached||(!window.__OPEN_SESAME_NATIVE__&&state.size==='full'))return {key:'full',name:'Full',width:window.innerWidth,height:window.innerHeight};return OpenSesameFrameModel.presets(...frameScreen()).find(size=>size.key===state.size)}
 function renderCompact(){
   const width=state.width;
@@ -502,3 +502,4 @@ setInterval(()=>{if(focusRunning){focusRemaining=Math.max(0,Math.ceil((focusEnd-
 if(itemsNeedMigration)saveItems();renderAgendaList();renderMusic();renderFocus();renderItems();renderDraft();render();
 
 openSesameBridge.ready.then(()=>{if(window.__OPEN_SESAME_NATIVE__)syncNativeWindow()});
+window.addEventListener('open-sesame-display-changed',()=>{if(window.__OPEN_SESAME_NATIVE__)render()});
