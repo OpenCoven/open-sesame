@@ -2,7 +2,7 @@
 (()=>{
   const el=id=>document.getElementById(id),dialog=el('screen-notes-dialog'),sheet=el('screen-notes-sheet'),note=el('screen-notes-body'),status=el('screen-notes-status'),save=el('screen-notes-save');
   const native=()=>window.__OPEN_SESAME_NATIVE__===true;
-  let generation=0,busy=false,projectId='',returnFocus=null,objectURL='',source='',requestContext='',dirty=false,pendingKind='';
+  let generation=0,busy=false,projectId='',returnFocus=null,source='',requestContext='',dirty=false,pendingKind='';
   function error(message=''){el('screen-notes-error').textContent=message;el('screen-notes-error').hidden=!message}
   function controls(){save.disabled=busy||!note.value.trim();el('screen-notes-capture').disabled=busy||!native();el('screen-notes-import').disabled=busy;note.disabled=busy;el('screen-notes-title').disabled=busy}
   function close(){
@@ -39,8 +39,18 @@
   el('screen-notes-file').addEventListener('change',async event=>{
     const file=event.target.files?.[0];event.target.value='';if(!file)return;
     if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>20000000){error('Choose a PNG, JPEG or WebP image under 20 MB.');return}
-    if(objectURL)URL.revokeObjectURL(objectURL);objectURL=URL.createObjectURL(file);source='Imported image';el('screen-notes-image').src=objectURL;el('screen-notes-preview').hidden=false;el('screen-notes-image-label').textContent=source;
-    status.textContent='Image opened locally. Add your notes; automatic text recognition needs the Mac app.';controls();
+    const ticket=++generation;busy=true;controls();error();status.textContent='Reading image…';let bitmap;
+    try{
+      bitmap=await createImageBitmap(file);if(ticket!==generation)return;
+      if(!bitmap.width||!bitmap.height||bitmap.width>16000||bitmap.height>16000||bitmap.width*bitmap.height>40000000)throw Error('Choose an image under 40 megapixels.');
+      const canvas=document.createElement('canvas'),scale=Math.min(1,1280/Math.max(bitmap.width,bitmap.height));canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+      const context=canvas.getContext('2d');if(!context)throw Error('Image preview is unavailable.');context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      // Re-encode decoded pixels; never mount an arbitrary selected file as an active URL.
+      el('screen-notes-image').src=canvas.toDataURL('image/jpeg',0.75);source='Imported image';el('screen-notes-preview').hidden=false;el('screen-notes-image-label').textContent=source;
+      status.textContent='Image opened locally. Add your notes; automatic text recognition needs the Mac app.';
+    }catch(e){if(ticket===generation)error(e.message||'Choose a readable image.');}
+    finally{bitmap?.close();if(ticket===generation){busy=false;controls()}}
+
   });
   save.addEventListener('click',()=>{
     const body=note.value.trim();if(!body||busy)return;
@@ -48,7 +58,7 @@
     if(projectId&&!projects.some(p=>p.id===projectId)){error('This project is unavailable. Your draft is kept.');return}
     const title=el('screen-notes-title').value.trim()||'Screen notes',item={id:newId(),kind:'note',title,text:title,body,url:'',projectId,done:false,createdAt:Date.now()};
     items.push(item);if(!saveItems()){const index=items.indexOf(item);if(index>=0)items.splice(index,1);error('Could not save. Your draft is kept.');return}
-    close();note.value='';source='';requestContext='';dirty=false;el('screen-notes-title').value='Screen notes';el('screen-notes-preview').hidden=true;el('screen-notes-image').removeAttribute('src');if(objectURL)URL.revokeObjectURL(objectURL);objectURL='';
+    close();note.value='';source='';requestContext='';dirty=false;el('screen-notes-title').value='Screen notes';el('screen-notes-preview').hidden=true;el('screen-notes-image').removeAttribute('src');
     switchProject(projectId||'inbox');categoryFilter='note';expandedCategories.clear();expandedCategories.add('note');changeScenario('items');openItem(item.id);toast('Screen notes saved.');
   });
   el('screen-notes-capture').addEventListener('click',()=>acquire('capture'));el('screen-notes-import').addEventListener('click',()=>acquire('import'));
@@ -56,6 +66,6 @@
   el('screen-notes-replace').addEventListener('click',()=>{if(pendingKind)acquire(pendingKind,true)});el('screen-notes-keep').addEventListener('click',()=>{pendingKind='';el('screen-notes-replace-prompt').hidden=true});
   dialog.addEventListener('cancel',event=>{event.preventDefault();close()});
   window.addEventListener('open-sesame-layout',()=>{if(!state.expanded&&dialog.open)close()});
-  window.addEventListener('pagehide',()=>{close();if(objectURL)URL.revokeObjectURL(objectURL)});
+  window.addEventListener('pagehide',close);
   window.OpenSesameScreenNotes={open,close};
 })();
