@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "feed-headlines",
+  "version": "1.0.0",
+  "name": "Feed headlines",
+  "description": "A reusable feed headlines tool.",
+  "author": "Open Sesame",
+  "license": "MIT",
+  "config": {
+    "feed": {
+      "label": "Saved feed URL or ID",
+      "default": ""
+    }
+  },
+  "capabilities": [
+    "feeds.headlines",
+    "navigate"
+  ],
+  "source": {
+    "operation": "feeds.headlines"
+  },
+  "components": [
+    {
+      "type": "text",
+      "label": "Feed",
+      "field": "title"
+    },
+    {
+      "type": "list",
+      "label": "Headlines"
+    }
+  ],
+  "actions": [
+    {
+      "label": "Open Reader",
+      "operation": "navigate",
+      "value": "reading"
+    }
+  ],
+  "presentations": [
+    "launcher",
+    "card",
+    "panel"
+  ],
+  "fixtures": {
+    "title": "Example data",
+    "count": 2,
+    "entries": [
+      "Sample item one",
+      "Sample item two"
+    ]
+  }
+}

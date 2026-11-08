@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "repository-summary",
+  "version": "1.0.0",
+  "name": "Repository summary",
+  "description": "A reusable repository summary tool.",
+  "author": "Open Sesame",
+  "license": "MIT",
+  "config": {
+    "repository": {
+      "label": "Connected repository (owner/name)",
+      "default": ""
+    }
+  },
+  "capabilities": [
+    "github.summary"
+  ],
+  "source": {
+    "operation": "github.summary"
+  },
+  "components": [
+    {
+      "type": "metric",
+      "label": "Recent open pull requests",
+      "field": "count"
+    },
+    {
+      "type": "list",
+      "label": "Recent activity"
+    }
+  ],
+  "actions": [],
+  "presentations": [
+    "launcher",
+    "card",
+    "panel"
+  ],
+  "fixtures": {
+    "title": "Example data",
+    "count": 2,
+    "entries": [
+      "Sample item one",
+      "Sample item two"
+    ]
+  }
+}

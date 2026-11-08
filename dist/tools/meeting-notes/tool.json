@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "meeting-notes",
+  "version": "1.0.0",
+  "name": "Meeting notes",
+  "description": "A reusable meeting notes tool.",
+  "author": "Open Sesame",
+  "license": "MIT",
+  "config": {
+    "notes": {
+      "label": "Meeting notes",
+      "default": "Meeting\n\nDiscussion\n\nDecisions\n\nAction items"
+    }
+  },
+  "capabilities": [
+    "note.save"
+  ],
+  "source": null,
+  "components": [
+    {
+      "type": "input",
+      "label": "Notes",
+      "field": "notes"
+    }
+  ],
+  "actions": [
+    {
+      "label": "Save note",
+      "operation": "note.save",
+      "value": "notes"
+    }
+  ],
+  "presentations": [
+    "launcher",
+    "card",
+    "panel"
+  ],
+  "fixtures": {
+    "title": "Example data",
+    "count": 2,
+    "entries": [
+      "Sample item one",
+      "Sample item two"
+    ]
+  }
+}

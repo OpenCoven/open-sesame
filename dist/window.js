@@ -9,6 +9,7 @@
   function snapshot(){
     document.activeElement?.blur();if(window.OpenSesameNotes?.finish(false)===false)throw Error('Save the current note before moving it.');
     return {
+      tools:window.OpenSesameTools?.handoff(),
       state:{...state},items:clone(items),projects:clone(projects),
       view:{libraryOpen,detailFullWidth,selectedItemId,projectFilter,categoryFilter,itemsArchive,itemsView,itemsPage,libraryQuery,categories:[...expandedCategories]},
       draft:{text:el('capture-input').value,type:el('capture-type').value,project:el('capture-project').value,attachedUrl,ignoredInlineUrl},
@@ -19,6 +20,7 @@
   }
   function accept(data){
     if(!data)return;
+    window.OpenSesameTools?.handoff(data.tools);
     const size=state.size,layout=state.layout;Object.assign(state,data.state,{size,layout,expanded:true});
     items=clone(data.items);projects=clone(data.projects);
     ({libraryOpen,detailFullWidth,selectedItemId,projectFilter,categoryFilter,itemsArchive,itemsView,itemsPage,libraryQuery}=data.view);

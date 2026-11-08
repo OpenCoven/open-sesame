@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import {webcrypto} from 'node:crypto';
+class Node extends EventTarget{
+ constructor(tag){super();this.tag=tag;this.children=[];this.dataset={};this.open=false;this.value=''}
+ append(...n){this.children.push(...n)}prepend(...n){this.children.unshift(...n)}replaceChildren(...n){this.children=n}setAttribute(){}showModal(){this.open=true}close(){this.open=false;this.dispatchEvent(new Event('close'))}click(){return this.onclick?.()}scrollIntoView(){}querySelectorAll(tag){return this.children.flatMap(x=>[...(x.tag===tag?[x]:[]),...x.querySelectorAll(tag)])}
+}
+const nodes=new Map(),el=id=>{if(!nodes.has(id))nodes.set(id,new Node('div'));return nodes.get(id)};const store=new Map();let effects=0;
+const ctx=vm.createContext({TextEncoder,URL,crypto:webcrypto,Event,window:null,document:{createElement:t=>new Node(t),getElementById:el},localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)},confirm:()=>true,state:{scenario:'plugins'},changeScenario(){},fetch(){effects++;throw Error('Unexpected fetch')},openSesameBridge:{request(){effects++;throw Error()}},items:[],activeItems:()=>[],newId:()=> 'note',saveItems:()=>true,renderItems(){},setTimeout,Blob});ctx.window=ctx;ctx.addEventListener=()=>{};ctx.dispatchEvent=()=>{};
+vm.runInContext(fs.readFileSync('dist/tools-model.js','utf8'),ctx);ctx.OpenSesameCaptureCatalog={roots:[]};vm.runInContext(fs.readFileSync('dist/tools.js','utf8'),ctx);
+ctx.OpenSesameTools.open();const dialog=el('widget-panel').children[0],file=dialog.children[1].children[0];file.files=[{size:1000,text:async()=>fs.readFileSync('dist/tools/meeting-notes/tool.json','utf8')}];await file.onchange();assert.equal(effects,0,'Import/preview is isolated');const stage=dialog.children[4];const preview=stage.children[1];assert(preview.querySelectorAll('button').every(b=>b.disabled));await stage.children.find(x=>x.textContent==='Install as a new instance').click();assert.equal(JSON.parse(store.values().next().value).length,1);
+ctx.OpenSesameTools.open();const collection=dialog.children[5],detail=collection.children[1];detail.open=true;detail.ontoggle();const view=detail.children[1],input=view.querySelectorAll('textarea')[0];input.value='Private notes';input.oninput();await view.children.find(x=>x.textContent==='Save configuration').click();assert.equal(JSON.parse(store.values().next().value)[0].config.notes,'Private notes');await view.children.find(x=>x.textContent==='Save note').click();assert.equal(ctx.items[0].text,'Private notes');assert.equal(effects,0);
+console.log('Fixture isolation, disabled preview actions, install, configuration and explicit note save pass.');
+
+const findButton=(root,label)=>root.querySelectorAll('button').find(b=>b.textContent===label);
+const importDefinition=async d=>{ctx.OpenSesameTools.open();file.files=[{size:1000,text:async()=>JSON.stringify(d)}];await file.onchange()};
+const readInstalled=()=>JSON.parse(store.get('open-sesame-tools-v1'));
+const entry=id=>collection.children.find(n=>n.dataset?.instance===id);
+const expand=id=>{const n=entry(id);n.open=true;n.ontoggle();return n.children[1]};
+const savedId=readInstalled()[0].id;
+input.value='Unsaved old draft';input.oninput();
+const updated=JSON.parse(fs.readFileSync('dist/tools/meeting-notes/tool.json','utf8'));updated.version='1.0.1';updated.config.topic={label:'Topic',default:'New default'};
+await importDefinition(updated);await findButton(stage,'Replace Meeting notes').click();
+let updatedView=expand(savedId);assert.equal(updatedView.querySelectorAll('textarea')[0].value,'Private notes','Replace drops old drafts and retains saved values');assert.equal(updatedView.querySelectorAll('input')[0].value,'New default','New configuration uses its default');
+await findButton(entry(savedId),'Roll back definition').click();assert.equal(readInstalled()[0].definition.version,'1.0.0');
+// Declining replacement preserves the installed definition and draft.
+ctx.confirm=()=>false;await importDefinition(updated);await findButton(stage,'Replace Meeting notes').click();assert.equal(readInstalled()[0].definition.version,'1.0.0');ctx.confirm=()=>true;
+// Simulate a failed save without destroying the input or an existing item.
+const failedView=expand(savedId),failedInput=failedView.querySelectorAll('textarea')[0];failedInput.value='Retain after failure';failedInput.oninput();ctx.saveItems=()=>false;const count=ctx.items.length;await findButton(failedView,'Save note').click();assert.equal(ctx.items.length,count);assert.equal(failedInput.value,'Retain after failure');ctx.saveItems=()=>true;
+// Round trip private drafts in memory without adding them to exported definitions.
+const memory=ctx.OpenSesameTools.handoff();ctx.OpenSesameTools.handoff(memory);assert.equal(expand(savedId).querySelectorAll('textarea')[0].value,'Retain after failure');
+const blobs=[];class ExportURL extends URL{static createObjectURL(blob){blobs.push(blob);return 'blob:fixture'}static revokeObjectURL(){}}
+ctx.URL=ExportURL;await findButton(entry(savedId),'Export definition').click();assert(!((await blobs[0].text()).includes('Private notes')));assert(!((await blobs[0].text()).includes('Retain after failure')));
+// Source reads are bound to the clicked configuration and retired on edits/close.
+const github=JSON.parse(fs.readFileSync('dist/tools/repository-summary/tool.json','utf8'));github.config.repository.default='OpenCoven/example';await importDefinition(github);await findButton(stage,'Install as a new instance').click();const githubId=readInstalled().find(x=>x.definition.id===github.id).id;
+let statusResolve,snapshotResolve;const calls=[];ctx.openSesameBridge.request=(method,params)=>{calls.push([method,params]);return new Promise(resolve=>{if(method==='github.status')statusResolve=resolve;else snapshotResolve=resolve})};
+let githubView=expand(githubId),load=findButton(githubView,'Load live data');let loading=load.click();const repo=githubView.querySelectorAll('input')[0];repo.value='OpenCoven/changed';repo.oninput();statusResolve({authenticated:true,repositories:['OpenCoven/example']});await loading;assert.equal(calls.length,1,'Editing before status completes prevents a snapshot request');
+repo.value='OpenCoven/example';repo.oninput();loading=load.click();statusResolve({authenticated:true,repositories:['OpenCoven/example']});await new Promise(setImmediate);assert.deepEqual(calls.at(-1)[1].repository,'OpenCoven/example');dialog.close();const before=githubView.children;snapshotResolve({repository:'OpenCoven/example',sections:{pulls:{entries:[{title:'Late result'}]}}});await loading;assert.equal(githubView.children,before,'Closing retires late results');
+ctx.OpenSesameTools.open();githubView=expand(githubId);loading=findButton(githubView,'Load live data').click();statusResolve({authenticated:true,repositories:['OpenCoven/example']});await new Promise(setImmediate);snapshotResolve({repository:'OpenCoven/example',sections:{pulls:{entries:[{title:'Current result'}]}}});await loading;assert(githubView.querySelectorAll('p').some(p=>p.textContent==='GitHub data · refresh is manual.'));assert(githubView.querySelectorAll('li').some(p=>p.textContent==='Current result'));
+const feed=JSON.parse(fs.readFileSync('dist/tools/feed-headlines/tool.json','utf8'));feed.config.feed.default='feed-1';await importDefinition(feed);await findButton(stage,'Install as a new instance').click();const feedId=readInstalled().find(x=>x.definition.id===feed.id).id;ctx.openSesameReading={handoff:()=>({feeds:[{id:'feed-1',title:'Saved feed'}],entries:[{feedId:'feed-1',title:'Saved headline'}]})};const feedView=expand(feedId);const requestCount=calls.length;await findButton(feedView,'Load saved headlines').click();assert.equal(calls.length,requestCount);assert(feedView.querySelectorAll('li').some(n=>n.textContent==='Saved headline'));
+console.log('Replacement/defaults, rollback/cancel, draft handoff, save failure, private export, stale reads and cached feed behavior pass.');
+// Global shortcuts must respect the top-layer dialog even when redraw detaches focus.
+let globalKey;const appKeys=fs.readFileSync('dist/app.js','utf8').split('\n').find(line=>line.startsWith("document.addEventListener('keydown',e=>"));
+vm.runInNewContext(appKeys,{document:{addEventListener:(_,fn)=>globalKey=fn},window:{OpenSesameTools:{active:true}}});
+assert.doesNotThrow(()=>globalKey({key:'Escape'}),'An active tool dialog must own Escape before any workspace handler runs');

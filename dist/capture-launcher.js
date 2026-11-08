@@ -39,6 +39,7 @@
   el('launcher-primary').addEventListener('click',()=>{if(!el('capture-commands').hidden&&window.openSesameCapture?.choose?.())return;el('capture-form').requestSubmit()});
   el('capture-input').addEventListener('input',()=>{if(active)requestAnimationFrame(actions)});
   document.addEventListener('keydown',event=>{
+    if(window.OpenSesameTools?.active)return;
     if(event.code==='Space'&&event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.repeat){event.preventDefault();event.stopImmediatePropagation();if(!window.__OPEN_SESAME_GLOBAL_SHORTCUT__)toggle();return}
     if(active&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();if(!window.openSesameCapture?.back?.())close()}
   },true);
