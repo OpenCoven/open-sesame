@@ -17,6 +17,12 @@ elif args == ['engine', 'status', '--json']:
     emit({'installed': not (root / 'engine-missing').exists()})
 elif args == ['familiars', '--json']:
     print((root / 'roster.json').read_text())
+elif args == ['status', '--json']:
+    emit({'health': {'ok': True, 'private_token': 'fixture-private-token'}, 'overview': {'open_sessions': 2, 'total_familiars': 2, 'skills_count': 1}, 'raw_config': 'fixture-private-token'})
+elif args == ['sessions', '--json']:
+    emit({'sessions': [json.loads(p.read_text()) for p in (root / 'sessions').glob('*.json')]})
+elif args == ['skills', '--json']:
+    emit([{'id': 'review', 'name': 'Review', 'version': '1', 'configuration': 'fixture-private-token'}])
 elif args[:2] == ['sessions', 'show']:
     print((root / 'sessions' / (args[2] + '.json')).read_text())
 elif args and args[0] == 'run':
@@ -24,10 +30,13 @@ elif args and args[0] == 'run':
     parser.add_argument('command'); parser.add_argument('harness')
     parser.add_argument('--stream-json', action='store_true'); parser.add_argument('--permission')
     parser.add_argument('--cwd'); parser.add_argument('--familiar'); parser.add_argument('--continue', dest='previous')
+    parser.add_argument('--title'); parser.add_argument('--labels')
     parser.add_argument('prompt', nargs='*')
     p = parser.parse_args(); prompt = ' '.join(p.prompt)
     with (root / 'calls.jsonl').open('a') as log:
         log.write(json.dumps({'argv': args, 'pid': os.getpid()}) + '\n')
+    if prompt.startswith('Open Sesame application session\n'): prompt = prompt.split('\n\n', 1)[1]
+    if 'Current user message:\n' in prompt: prompt = prompt.rsplit('Current user message:\n', 1)[1]
     sid = 'session-' + uuid.uuid4().hex
     (root / 'sessions').mkdir(exist_ok=True)
     (root / 'sessions' / (sid + '.json')).write_text(json.dumps({'id': sid, 'harness': p.harness, 'familiar_id': p.familiar, 'project_root': p.cwd}))
@@ -69,6 +78,10 @@ elif args and args[0] == 'run':
         emit({'type': 'assistant', 'session_id': sid, 'message': {'content': [{'type': 'text', 'text': text}]}})
     if prompt == 'nested-protocol':
         emit({'type': 'result', 'session_id': sid, 'is_error': False, 'harness_session_id': 'native-thread'})
+    if prompt in ('legacy-result', 'legacy-no-outer', 'foreign-legacy'):
+        emit({'type': 'result', 'usage': {'input_tokens': 10}, 'cost_usd': 0, **({'session_id': 'foreign'} if prompt == 'foreign-legacy' else {})})
+        if prompt == 'legacy-no-outer': sys.exit(0)
+    if prompt == 'bad-result-bool': emit({'type': 'result', 'session_id': sid, 'is_error': 'false'})
     emit({'type': 'result', 'session_id': sid, 'is_error': prompt == 'result-error'})
 else:
     raise SystemExit('Unsupported fixture command')

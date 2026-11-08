@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="studio-controls.css?v=ee9c3474b7">
   <link rel="stylesheet" href="focus-overview.css?v=19682a753f">
   <script src="storage-migration.js?v=3ac2f2e93e" defer></script>
-  <script src="bridge.js?v=0cfbd123d2" defer></script>
+  <script src="bridge.js?v=8da86bfff6" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f" defer></script>
   <script src="vendor/purify.min.js?v=4936212d73" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e" defer></script>
@@ -57,7 +57,7 @@
   <script src="recognition.js?v=67184f2927" defer></script>
   <script src="voice.js?v=0c825cf8aa" defer></script>
   <script src="agents-layout.js?v=96fb8f98e4" defer></script>
-  <script src="coven-chat.js?v=fba6a9b895" defer></script>
+  <script src="coven-chat.js?v=1c0c707b42" defer></script>
   <script src="terminal.js?v=f1838cb04f" defer></script>
   <script src="github-viewer.js?v=6bc0d7da9c" defer></script>
   <script src="exports.js?v=2e6981ef77" defer></script>
@@ -113,7 +113,8 @@
   <script src="plugins.js?v=9709a17ba6" defer></script>
   <script src="audio-source-menu.js?v=806f2f38d5" defer></script>
   <link rel="stylesheet" href="live-capture.css?v=9657414468">
-  <script src="familiars.js?v=f2f8357cb7" defer></script>
+  <script src="familiar-commands.js?v=32293b4a38" defer></script>
+<script src="familiars.js?v=ab60288da2" defer></script>
   <link rel="stylesheet" href="familiars.css?v=1ba772bab4">
   <link rel="stylesheet" href="workspace-rail.css?v=1c3aa15ae1">
   <link rel="stylesheet" href="activity-rail.css?v=edcc45286c">
@@ -123,6 +124,7 @@
 <script src="app-version.js" defer></script><link rel="stylesheet" href="app-version.css">
 <link rel="stylesheet" href="responsive-playlists.css">
 <script src="media-drop.js" defer></script>
+<link rel="stylesheet" href="familiar-chat-polish.css?v=26fe1bc232">
 </head>
 <body>
   <svg class="svg-defs" aria-hidden="true"><defs><symbol id="open-sesame-mark" viewBox="0 0 36 24"><path d="M3 5c5 0 9 2 13 8C9 18 4 15 3 5Z" fill="currentColor"/><path d="M33 5c-5 0-9 2-13 8 7 5 12 2 13-8Z" fill="currentColor"/></symbol></defs></svg>
@@ -338,13 +340,13 @@
                   <section id="agents-workspace" class="agents-workspace" role="tabpanel" aria-labelledby="tab-agents" hidden>
                   <div id="agents-toolbar" class="agents-toolbar console-toolbar" aria-label="Console controls"><div id="agents-context" class="agents-context"><button id="agents-rail-toggle" class="workspace-rail-toggle" type="button" aria-label="Hide pane list" aria-expanded="true" aria-controls="terminal-rail" title="Hide pane list"><i data-icon="rail-left"></i></button><div class="agents-mode-tabs console-mode-tabs" role="tablist" aria-label="Console views"><button id="agents-familiars" type="button" role="tab" data-agents="familiars" aria-controls="pane-familiars" aria-selected="false" tabindex="-1"><i data-icon="chat"></i><span>Familiars</span></button><button id="agents-monitor" type="button" role="tab" data-agents="agent-monitor" aria-controls="pane-agent-monitor" aria-selected="false" tabindex="-1"><i data-icon="agents"></i><span>Processes</span></button><button id="agents-shells" type="button" role="tab" data-agents="terminal" aria-controls="pane-terminal" aria-selected="true"><i data-icon="terminal"></i><span>Shells</span></button><button id="agents-desktops" type="button" role="tab" data-agents="remote" aria-controls="pane-remote" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Desktops</span></button></div></div><button id="terminal-more" aria-label="Shell preferences" aria-expanded="false" aria-controls="terminal-options" title="Shell preferences"><i data-icon="sliders"></i></button><button id="remote-settings" aria-label="Desktop preferences" title="Desktop preferences" hidden><i data-icon="sliders"></i></button></div>
                   <section id="pane-familiars" class="widget-pane familiars-pane" role="tabpanel" aria-labelledby="agents-familiars" hidden>
-                    <header class="familiar-connection"><div><strong>Coven Familiars</strong><span id="familiar-connection-status" role="status">Connect Coven to find your familiars.</span></div><button id="familiar-connect" type="button">Connect Coven</button><a href="https://github.com/OpenCoven/coven" target="_blank" rel="noopener noreferrer" id="familiar-setup-guide">Setup guide</a></header>
-                    <div class="familiars-workspace"><aside id="familiar-rail" class="familiars-rail workspace-list-rail" aria-label="Your familiars"><header class="workspace-rail-heading"><span>Familiars</span><small id="familiar-roster-count" class="workspace-rail-count">0</small></header><label class="sr-only" for="familiar-search">Find a familiar</label><input id="familiar-search" type="search" placeholder="Find a familiar…" autocomplete="off"><div id="familiar-list" class="workspace-rail-list" role="tablist" aria-label="Familiar conversations" aria-orientation="vertical"></div><p id="familiar-roster-empty">Your Coven roster appears here.</p></aside>
+                    <header id="familiar-connection" class="familiar-connection"><div><strong>Coven Familiars</strong><span id="familiar-connection-status" role="status">Connect Coven to find your familiars.</span></div><a href="https://github.com/OpenCoven/coven" target="_blank" rel="noopener noreferrer" id="familiar-setup-guide">Setup guide</a></header>
+                    <div class="familiars-workspace"><aside id="familiar-rail" class="familiars-rail workspace-list-rail" aria-label="Your familiars"><header class="workspace-rail-heading"><span>Familiars</span><small id="familiar-roster-count" class="workspace-rail-count">0</small><button id="familiar-connect" type="button" aria-label="Connect Coven" title="Connect Coven"><i data-icon="reset"></i></button></header><label class="sr-only" for="familiar-search">Find a familiar</label><input id="familiar-search" type="search" placeholder="Find a familiar…" autocomplete="off"><div id="familiar-list" class="workspace-rail-list" role="tablist" aria-label="Familiar conversations" aria-orientation="vertical"></div><p id="familiar-roster-empty">Your Coven roster appears here.</p></aside>
                     <section id="familiar-thread" class="familiar-thread" role="tabpanel" aria-label="Familiar conversation"><div id="familiar-welcome"><i data-icon="chat"></i><strong>Talk with your familiars.</strong><p id="familiar-welcome-copy">Connect Coven to bring your familiars here.</p><button id="familiar-welcome-action" type="button">Connect Coven</button></div>
-                      <header id="familiar-thread-header" hidden><div><strong id="familiar-name"></strong><small id="familiar-workspace">Read-only workspace</small></div><label id="familiar-harness-row" hidden>Run with<select id="familiar-harness"><option value="coven-code">Coven Code</option><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label><button id="familiar-search-open" type="button" aria-label="Search this conversation" title="Search conversation"><i data-icon="search"></i></button><button id="familiar-new" type="button">New chat</button></header>
+                      <header id="familiar-thread-header" hidden><div><strong id="familiar-name"></strong><small id="familiar-workspace">Read-only workspace</small></div><label id="familiar-harness-row" hidden>Run with<select id="familiar-harness"><option value="coven-code">Coven Code</option><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label><button id="familiar-search-open" type="button" aria-label="Search this conversation" title="Search conversation"><i data-icon="search"></i></button></header>
                       <label class="sr-only" for="familiar-history-search">Search this conversation</label><input id="familiar-history-search" type="search" placeholder="Search conversation…" hidden>
                       <p id="familiar-chat-error" role="alert" hidden></p><p id="familiar-history-notice" hidden></p><div id="familiar-chat-empty" class="familiar-chat-empty" hidden><i data-icon="chat"></i><strong>Ready for your familiar</strong><p>Send a message below to begin.</p></div><div id="familiar-messages" role="log" aria-live="off" aria-label="Conversation messages"></div>
-                      <form id="familiar-compose" hidden><label class="sr-only" for="familiar-message">Message your familiar</label><textarea id="familiar-message" rows="2" maxlength="20000" placeholder="Choose a familiar to begin…"></textarea><div><button type="button" id="familiar-dictate" aria-label="Dictate a message" title="Dictate, then review before sending"><i data-icon="mic"></i></button><small id="familiar-chat-status" role="status">Send when you’re ready.</small><button type="button" id="familiar-stop" hidden>Stop</button><button type="submit" id="familiar-send">Send<i data-icon="arrow-up"></i></button></div></form>
+                      <form id="familiar-compose" hidden><label class="sr-only" for="familiar-message">Message your familiar</label><textarea id="familiar-message" rows="1" maxlength="20000" placeholder="Choose a familiar to begin…"></textarea><div><button type="button" id="familiar-commands-toggle" aria-label="Chat commands" aria-expanded="false" aria-controls="familiar-command-menu" title="Chat commands · /">/</button><button type="button" id="familiar-dictate" aria-label="Dictate a message" title="Dictate, then review before sending"><i data-icon="mic"></i></button><small id="familiar-chat-status" role="status">Send when you’re ready.</small><button type="button" id="familiar-stop" hidden>Stop</button><button type="submit" id="familiar-send">Send<i data-icon="arrow-up"></i></button></div></form>
                     </section></div>
                   </section>
                   <section id="pane-agent-monitor" class="agent-monitor" role="tabpanel" aria-labelledby="agents-monitor" hidden>

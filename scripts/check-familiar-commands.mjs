@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const window={};vm.runInNewContext(fs.readFileSync('dist/familiar-commands.js','utf8'),{window});const model=window.OpenSesameFamiliarCommands;
+assert.equal(model.parse('hello'),null);assert.equal(model.parse('//coven status'),null);assert.equal(model.parse('/coven').name,'/coven help');assert.equal(model.parse('/find older reply').args,'older reply');
+for(const value of ['/new','/clear','/coven run arbitrary','/coven status --anything'])assert.equal(model.parse(value).name,'unknown');
+assert.deepEqual(Array.from(model.suggest('/coven s'),c=>c.name),['/coven status','/coven sessions','/coven skills']);assert.equal(model.suggest('/find phrase').length,0);assert.equal(model.suggest('//literal').length,0);
+const text=model.markdown({columns:['Name'],rows:[['![image](https://fixture.invalid/) | <script>']]});assert.ok(text.includes('\\!\\[image\\]'));assert.ok(text.includes('\\|'));assert.ok(text.includes('\\<script\\>'));assert.throws(()=>model.markdown({columns:['Name'],rows:[[1,2]]}));
+assert.ok(model.help('Coven').includes('/coven sessions'));assert.ok(!model.help().includes('/new'));
+console.log('Familiar commands: supported Coven discovery, literal slash escape, removed/unknown command refusal and escaped local result rendering passed.');

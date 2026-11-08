@@ -220,7 +220,7 @@ class Bridge:
 
     def handle(self, message):
         request_id = message.get('requestId')
-        if message.get('method') in ('coven.status', 'coven.familiars', 'coven.avatar.set', 'coven.open', 'coven.new', 'coven.send', 'coven.cancel'):
+        if message.get('method') in ('coven.status', 'coven.familiars', 'coven.avatar.set', 'coven.command', 'coven.open', 'coven.send', 'coven.cancel'):
             method, params = message['method'], message.get('params') or {}
             if not isinstance(params, dict):
                 self.emit({'requestId': request_id, 'error': 'Invalid Coven request.'}); return
@@ -234,9 +234,9 @@ class Bridge:
                 try:
                     if method == 'coven.status': result = self.coven.status()
                     elif method == 'coven.familiars': result = self.coven.familiars()
+                    elif method == 'coven.command': result = self.coven.command(params)
                     elif method == 'coven.avatar.set': result = self.coven.set_avatar(params.get('familiarId'), params.get('png'))
                     elif method == 'coven.open': result = self.coven.open(params.get('familiarId'))
-                    elif method == 'coven.new': result = self.coven.open(params.get('familiarId'), new=True, expected=params.get('conversationId'))
                     else: result = self.coven.send(params)
                     self.emit({'requestId': request_id, 'result': result})
                 except Exception as error:
