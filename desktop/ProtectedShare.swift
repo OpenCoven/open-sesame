@@ -115,9 +115,12 @@ final class OpenSesameProtectedShare: NSObject, SCStreamDelegate, NSWindowDelega
     }
 
     func start(displayID: CGDirectDisplayID, completion: @escaping (String?) -> Void) {
-        guard NSScreen.screens.contains(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID }) else { completion("Choose an available display."); return }
+        guard let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID }), screen.frame.width > 0, screen.frame.height > 0 else { completion("Choose an available display."); return }
         guard let ticket = state.begin() else { completion("A share window is already running or preparing."); return }
         message = ""; self.displayID = displayID; changed?()
+        // A normal black window makes our accessory app discoverable for process exclusion.
+        // No screen pixels reach it until the exclusion filter has been verified below.
+        openWindow(ratio: screen.frame.width / screen.frame.height, displayID: displayID)
         Task { @MainActor [self] in
             do {
                 // The system requests permission only after the user's explicit Start action.
@@ -138,7 +141,6 @@ final class OpenSesameProtectedShare: NSObject, SCStreamDelegate, NSWindowDelega
                 let output = ProtectedShareOutput { [weak self] sample in self?.receive(sample, ticket: ticket) }
                 try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: self.queue)
                 self.stream = stream; self.output = output
-                self.openWindow(ratio: CGFloat(display.width) / CGFloat(display.height), displayID: displayID)
                 try await stream.startCapture()
                 guard self.state.accepts(ticket) else { try? await stream.stopCapture(); completion("Share preparation cancelled."); return }
                 completion(nil)
