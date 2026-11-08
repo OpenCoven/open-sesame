@@ -4,6 +4,7 @@ from controller import Controller
 from computer_controls import control as computer_control
 from live_agents import LiveAgents, agent_status
 from agent_monitor import snapshot as agent_snapshot, control_process as agent_control
+from github_monitor import GitHubMonitor
 from coven_runtime import CovenRuntime
 import argparse
 import base64
@@ -205,8 +206,9 @@ class Session:
 
 
 class Bridge:
-    def __init__(self, emit):
+    def __init__(self, emit, *, native_permissions=False):
         self.emit = emit
+        self.native_permissions = native_permissions
         self.sessions = {}
         self.feed_slots = threading.BoundedSemaphore(3)
         self.controller = None
@@ -217,10 +219,37 @@ class Bridge:
         self.coven_slots = threading.BoundedSemaphore(6)
         self.coven_threads = set()
         self.coven_threads_lock = threading.Lock()
+        self.github = GitHubMonitor()
+        self.github_slot = threading.BoundedSemaphore(1)
 
     def handle(self, message):
         request_id = message.get('requestId')
-        if message.get('method') in ('coven.status', 'coven.familiars', 'coven.avatar.set', 'coven.command', 'coven.open', 'coven.send', 'coven.cancel'):
+        if message.get('method') in ('github.status', 'github.add', 'github.remove', 'github.snapshot'):
+            method, params = message['method'], message.get('params') or {}
+            allowed = {'force'} if method == 'github.status' else {'repository', 'force'} if method == 'github.snapshot' else {'repository'}
+            if not isinstance(params, dict) or set(params) - allowed or 'force' in params and type(params['force']) is not bool:
+                self.emit({'requestId': request_id, 'error': 'Unsupported GitHub monitor parameters.'}); return
+            if not self.github_slot.acquire(blocking=False):
+                self.emit({'requestId': request_id, 'error': 'GitHub is already refreshing. Wait a moment.'}); return
+            def github_request():
+                try:
+                    if method == 'github.status': result = self.github.status(params.get('force', False))
+                    elif method == 'github.add': result = self.github.add(params.get('repository'))
+                    elif method == 'github.remove': result = self.github.remove(params.get('repository'))
+                    else: result = self.github.snapshot(params.get('repository'), params.get('force', False))
+                    self.emit({'requestId': request_id, 'result': result})
+                except (ValueError, OSError) as error:
+                    self.emit({'requestId': request_id, 'error': str(error)[:300] if isinstance(error, ValueError) else 'Local GitHub settings are unavailable. Check their permissions.'})
+                except Exception:
+                    self.emit({'requestId': request_id, 'error': 'GitHub monitoring could not refresh. Try again.'})
+                finally:
+                    self.github_slot.release()
+                    with self.coven_threads_lock: self.coven_threads.discard(threading.current_thread())
+            thread = threading.Thread(target=github_request, daemon=True)
+            with self.coven_threads_lock: self.coven_threads.add(thread)
+            thread.start(); return
+        native_method = self.native_permissions and message.get('method') in ('native.coven.prepare', 'native.coven.finish')
+        if native_method or message.get('method') in ('coven.status', 'coven.familiars', 'coven.command', 'coven.open', 'coven.send', 'coven.cancel'):
             method, params = message['method'], message.get('params') or {}
             if not isinstance(params, dict):
                 self.emit({'requestId': request_id, 'error': 'Invalid Coven request.'}); return
@@ -232,10 +261,11 @@ class Bridge:
                 self.emit({'requestId': request_id, 'error': 'Coven is busy. Try again shortly.'}); return
             def coven_request():
                 try:
-                    if method == 'coven.status': result = self.coven.status()
+                    if method == 'native.coven.prepare': result = self.coven.prepare_permission(params.get('operation'), params.get('input'))
+                    elif method == 'native.coven.finish': result = self.coven.finish_permission(params.get('token'), params.get('approved'))
+                    elif method == 'coven.status': result = self.coven.status()
                     elif method == 'coven.familiars': result = self.coven.familiars()
                     elif method == 'coven.command': result = self.coven.command(params)
-                    elif method == 'coven.avatar.set': result = self.coven.set_avatar(params.get('familiarId'), params.get('png'))
                     elif method == 'coven.open': result = self.coven.open(params.get('familiarId'))
                     else: result = self.coven.send(params)
                     self.emit({'requestId': request_id, 'result': result})
@@ -354,6 +384,7 @@ class Bridge:
         return True
 
     def close(self):
+        self.github.close()
         self.coven.close()
         with self.coven_threads_lock: threads = list(self.coven_threads)
         deadline = time.monotonic() + 6
@@ -368,13 +399,13 @@ class Bridge:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stdio', action='store_true')
-    parser.parse_args()
+    options = parser.parse_args()
     lock = threading.Lock()
     def emit(message):
         with lock:
             sys.stdout.write(json.dumps(message, separators=(',', ':')) + '\n')
             sys.stdout.flush()
-    bridge = Bridge(emit)
+    bridge = Bridge(emit, native_permissions=options.stdio)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     signal.signal(signal.SIGHUP, lambda *_: sys.exit(0))
     try:

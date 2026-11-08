@@ -30,7 +30,7 @@ The loopback preview (`npm run dev`) serves sign-in and downloads; it does not e
 
 ## Coven Familiars
 
-Open Console → Familiars and choose Connect Coven to discover the installed roster. Select a familiar, review its draft and Run with choice, then explicitly Send to start a provider turn. Discovery, selecting a familiar, and reopening saved history do not send messages. Stop preserves captured text; New chat preserves previous local history. Existing saved Coven panes redirect to the familiar picker.
+Open Console → Familiars and choose Connect Coven to discover the installed roster. Select a familiar, review its draft and Run with choice, then explicitly Send to start a provider turn. Discovery, selecting a familiar, and reopening saved history do not send messages. Stop preserves captured text. Each familiar keeps one persistent conversation; there is no New chat or reset action. Existing saved Coven panes redirect to the familiar picker.
 
 See the [integration happy path](../docs/coven-familiars-integration.md) and [consumer example](../examples/coven_familiars.py) for setup and fixture verification. Provider sign-in stays in Coven. The reliability qualification uses isolated CLI fixtures and does not send to real familiars or qualify provider responses.
 
@@ -53,3 +53,5 @@ The pop-out button detaches the existing Mac panel into a movable floating windo
 Clicking outside the Mac widget collapses it back to the compact notch or menu position. A floating widget docks and collapses without taking focus back from the application you clicked. Its title-bar close button also returns it to the compact position. Pin open keeps automatic outside dismissal disabled; an explicit collapse gesture still works. Drag a docked resize edge inward well past Small, wait for Release to collapse, then release. Drag back or press Escape to cancel. Reopening restores the preferred expanded size, with drafts and running sessions retained. Native menus, file pickers, and dialogs are excluded from outside dismissal. These native mouse/focus paths compile but still need device acceptance.
 
 Earlier detailed feature descriptions and environment-specific results are preserved in the [desktop README archive](../docs/archive/2026-11-06-desktop-readme.md).
+
+The [Familiar access controls](../docs/familiar-permissions-and-layout.md) keep read-only defaults and require native confirmation for each full-access reply or workspace avatar replacement. The roster uses the same remembered collapse control as Shells and Desktops. [GitHub monitoring](../docs/github-monitor-widget.md) is available from Widgets and reads recent repository activity through the existing local GitHub CLI account; it performs no GitHub writes and embeds no credentials.

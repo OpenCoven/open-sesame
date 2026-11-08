@@ -40,7 +40,7 @@ elif args and args[0] == 'run':
     sid = 'session-' + uuid.uuid4().hex
     (root / 'sessions').mkdir(exist_ok=True)
     (root / 'sessions' / (sid + '.json')).write_text(json.dumps({'id': sid, 'harness': p.harness, 'familiar_id': p.familiar, 'project_root': p.cwd}))
-    emit({'type': 'system', 'subtype': 'init', 'session_id': sid, 'cwd': p.cwd, 'permission': 'full' if prompt == 'wrong-policy' else p.permission})
+    emit({'type': 'system', 'subtype': 'init', 'session_id': sid, 'cwd': p.cwd, 'permission': 'full' if prompt == 'wrong-policy' else 'read-only' if prompt == 'wrong-readonly' else p.permission})
     if prompt in ('nested-protocol', 'foreign-init'):
         emit({'type': 'system', 'subtype': 'init', 'session_id': sid if prompt == 'nested-protocol' else 'another-ledger', 'harness_session_id': 'native-thread'})
     if prompt == 'bad-json':

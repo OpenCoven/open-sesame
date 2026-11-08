@@ -51,6 +51,84 @@ class CovenRuntimeTests(unittest.TestCase):
         self.assertEqual(self.calls(), [])
         self.assertNotIn('emoji', self.runtime.familiars()[0])
 
+    def proposal(self, **changes):
+        return self.runtime.prepare_permission('send', self.input(permission='full', **changes))
+
+    def test_permission_cancel_expiry_restart_and_replay_never_launch(self):
+        proposal = self.proposal()
+        with self.assertRaisesRegex(ValueError, 'cancelled'): self.runtime.finish_permission(proposal['token'], False)
+        with self.assertRaisesRegex(ValueError, 'already used'): self.runtime.finish_permission(proposal['token'], True)
+        proposal = self.proposal()
+        self.runtime.permission_proposals[proposal['token']]['expires'] = 0
+        with self.assertRaisesRegex(ValueError, 'expired'): self.runtime.finish_permission(proposal['token'], True)
+        proposal = self.proposal()
+        other = CovenRuntime(directory=self.root / 'state', resolver=lambda: str(FIXTURE))
+        self.addCleanup(other.close)
+        with self.assertRaisesRegex(ValueError, 'already used'): other.finish_permission(proposal['token'], True)
+        self.runtime.close()
+        with self.assertRaisesRegex(ValueError, 'already used'): self.runtime.finish_permission(proposal['token'], True)
+        self.assertEqual(self.calls(), [])
+
+    def test_approved_reply_is_single_use_and_next_reply_is_read_only(self):
+        proposal = self.proposal(harness='codex')
+        self.assertEqual(proposal['familiar'], 'Nova')
+        self.assertEqual(proposal['harness'], 'codex')
+        self.runtime.finish_permission(proposal['token'], True)
+        with self.assertRaisesRegex(ValueError, 'already used'): self.runtime.finish_permission(proposal['token'], True)
+        self.runtime.send(self.input(prompt='ordinary continuation'))
+        policies = [c['argv'][c['argv'].index('--permission') + 1] for c in self.calls()]
+        self.assertEqual(policies, ['full', 'read-only'])
+
+    def test_approval_binds_conversation_roster_workspace_and_original_message(self):
+        for change in ('revision', 'workspace', 'name', 'inode'):
+            self.fresh_fixture_runtime(change)
+            self.roster[0]['workspace'] = str(self.root / 'workspace with spaces nova'); self.roster[0]['display_name'] = 'Nova'; self.write_roster()
+            request = self.input(permission='full')
+            proposal = self.runtime.prepare_permission('send', request)
+            request['prompt'] = 'changed after request'  # the proposal owns a deep copy
+            if change == 'revision':
+                state = self.runtime.open('nova'); state['revision'] += 1; self.runtime._save(state)
+            elif change == 'workspace':
+                self.roster[0]['workspace'] = self.roster[1]['workspace']; self.write_roster()
+            elif change == 'name':
+                self.roster[0]['display_name'] = 'Changed familiar'; self.write_roster()
+            else:
+                folder = Path(self.roster[0]['workspace']); folder.rename(folder.with_name('retained-original-workspace')); folder.mkdir()
+            with self.assertRaises(ValueError): self.runtime.finish_permission(proposal['token'], True)
+            if change == 'inode':
+                folder.rmdir(); folder.with_name('retained-original-workspace').rename(folder)
+        self.assertEqual(self.calls(), [])
+
+    def test_duplicate_approval_consumption_and_overlapping_prompt_fail_closed(self):
+        proposal = self.proposal()
+        with self.assertRaisesRegex(ValueError, 'current permission'): self.proposal()
+        barrier = threading.Barrier(3); outcomes = []
+        def consume():
+            barrier.wait()
+            try: self.runtime.finish_permission(proposal['token'], True); outcomes.append('grant')
+            except ValueError: outcomes.append('refused')
+        threads = [threading.Thread(target=consume) for _ in range(2)]
+        for thread in threads: thread.start()
+        barrier.wait()
+        for thread in threads: thread.join(10); self.assertFalse(thread.is_alive())
+        self.assertCountEqual(outcomes, ['grant', 'refused']); self.assertEqual(len(self.calls()), 1)
+
+    def test_approved_policy_still_requires_matching_outer_attestation(self):
+        proposal = self.proposal(prompt='wrong-readonly')
+        with self.assertRaisesRegex(ValueError, 'full policy'): self.runtime.finish_permission(proposal['token'], True)
+        self.assertEqual(self.runtime.open('nova')['status'], 'error')
+
+    def test_avatar_requires_separate_specific_native_confirmation(self):
+        png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP43+DwHwAHAAK/K9fH4gAAAABJRU5ErkJggg=='
+        proposal = self.runtime.prepare_permission('avatar', {'familiarId': 'nova', 'png': png})
+        destination = Path(self.roster[0]['workspace']) / 'avatars/nova.png'
+        self.assertFalse(destination.exists())
+        with self.assertRaisesRegex(ValueError, 'cancelled'): self.runtime.finish_permission(proposal['token'], False)
+        self.assertFalse(destination.exists())
+        proposal = self.runtime.prepare_permission('avatar', {'familiarId': 'nova', 'png': png})
+        self.assertEqual(self.runtime.finish_permission(proposal['token'], True)['location'], 'avatars/nova.png')
+        self.assertTrue(destination.exists()); self.assertEqual(self.calls(), [])
+
     def test_send_stream_resume_and_durable_identity(self):
         result = self.runtime.send(self.input())
         state = self.runtime.open('nova')

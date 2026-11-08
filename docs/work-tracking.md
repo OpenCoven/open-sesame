@@ -1,5 +1,17 @@
 # Development work and handoff
 
+## GitHub monitoring widget, November 8
+
+`github-monitor-widget-20261108` owns `codex/github-monitor-widget` in the separate `open-sesame-github-monitor` worktree, dependent on the verified Familiar permissions/layout candidate. It adds a GET-only GitHub CLI transport, private local repository selection and a responsive Widgets dashboard for recent PRs, issues and workflow runs. It preserves the earlier v0.0.15 audio, display, shared Spotify and launcher update, plus the Familiar confirmation and collapsible-rail changes.
+
+Nine focused backend tests and the synthetic dashboard lifecycle checks passed, and a real read-only local CLI check retrieved this repository’s metadata and six workflow runs. No GitHub write, credential transfer, Familiar prompt or capture was performed. Full combined Mac verification, hosted checks, source merge, private v0.0.16 packaging and installed UI acceptance remain separate until their exact identities and receipts are recorded in common Git storage. Setup, storage, bounded lists and provider limitations are documented in `github-monitor-widget.md`.
+
+## Familiar permissions and layout, November 8
+
+`familiar-permissions-layout-20261108` owns `codex/familiar-permissions-layout` in the separate `open-sesame-familiar-permissions` worktree, based on delivered PR #18. Its scope is request-specific native confirmations for full-access Familiar replies and canonical avatar replacement, a remembered shared Familiar rail toggle, and a responsive, quieter conversation layout. Read-only remains the default and every full-access attempt resets the UI choice; the inspected Coven CLI supports full/read-only rather than a workspace-write run flag.
+
+Focused verification passed 30 Coven runtime cases, the real JS-to-Python fixture transport, persistent chat/command races, the shared rail collapse model and an arm64 v0.0.16 compilation. Native approval routing retains WorkOS gating and hides prepare/finish proposals from renderer responses. Full bounded Mac verification, hosted checks, installed rendering and user-operated provider permission acceptance are separate gates. No test sends a real Familiar message. Exact source/report identities, earlier failures and next actions belong to the common-Git task receipt; see `familiar-permissions-and-layout.md` for the capability and cancellation contract.
+
 ## Current task: reliable-development
 
 - Owner/session: `codex:01a1b24d-21e5-7f51-a48f-e3885980f516`.

@@ -1,0 +1,51 @@
+#widget-anchor #widget-panel #pane-plugins.github-monitor-open>:not(#github-monitor){display:none!important}
+#widget-anchor #widget-panel #github-monitor{display:flex;flex:1;min-height:0;min-width:0;flex-direction:column;gap:12px;overflow:auto;padding:2px;overscroll-behavior:contain;scrollbar-width:thin}
+#widget-anchor #widget-panel #github-monitor[hidden]{display:none!important}
+#widget-anchor #widget-panel #github-monitor [hidden]{display:none!important}
+#widget-anchor #widget-panel .github-heading{display:flex;align-items:center;gap:10px;flex:none;min-height:32px}
+#widget-anchor #widget-panel .github-heading>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+#widget-anchor #widget-panel .github-heading strong{font-size:14px;font-weight:500}
+#widget-anchor #widget-panel .github-heading small{font-size:10px;color:var(--ink-muted)}
+#widget-anchor #widget-panel #github-monitor :is(button,input,select){font:inherit;font-size:11px;min-height:31px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised);color:var(--ink-secondary);padding:6px 9px;box-sizing:border-box}
+#widget-anchor #widget-panel #github-monitor button:hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-anchor #widget-panel #github-monitor button:disabled{color:var(--ink-muted)}
+#widget-anchor #widget-panel #github-back{border-color:transparent;background:transparent;padding:5px;width:28px;font-size:18px}
+#widget-anchor #widget-panel #github-monitor svg{width:14px;height:14px}
+#widget-anchor #widget-panel .github-repositories,#widget-anchor #widget-panel #github-add-form{display:flex;align-items:center;gap:7px;flex:none;min-width:0}
+#widget-anchor #widget-panel #github-repository,#widget-anchor #widget-panel #github-repository-input{flex:1;min-width:0;width:0}
+#widget-anchor #widget-panel #github-remove{background:transparent;border-color:transparent;font-size:10px;color:var(--ink-muted)}
+#widget-anchor #widget-panel #github-setup{padding:14px;display:flex;flex-direction:column;gap:10px;flex:none;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised)}
+#widget-anchor #widget-panel #github-setup strong{font-size:13px;font-weight:500}
+#widget-anchor #widget-panel #github-setup p{margin:0;font-size:11px;line-height:1.6;color:var(--ink-secondary)}
+#widget-anchor #widget-panel #github-login-command{display:block;font-size:11px;line-height:1.6;overflow-wrap:anywhere;user-select:text;color:var(--ink-primary)}
+#widget-anchor #widget-panel #github-setup>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#widget-anchor #widget-panel #github-monitor a{color:var(--ink-secondary);font-size:11px;text-decoration:none}
+#widget-anchor #widget-panel #github-monitor a:hover{color:var(--ink-primary)}
+#widget-anchor #widget-panel #github-empty{padding:28px 18px;text-align:center;flex:1;display:grid;place-content:center;gap:8px;min-height:100px}
+#widget-anchor #widget-panel #github-empty strong{font-size:17px;font-weight:450}
+#widget-anchor #widget-panel #github-empty p{font-size:12px;line-height:1.6;color:var(--ink-muted);max-width:340px;margin:0}
+#widget-anchor #widget-panel #github-project{display:flex;align-items:center;gap:12px;flex:none;padding:5px 0 2px}
+#widget-anchor #widget-panel #github-project>div{flex:1;min-width:0}
+#widget-anchor #widget-panel #github-project-name{font-size:16px;font-weight:500;overflow-wrap:anywhere}
+#widget-anchor #widget-panel #github-project-copy{margin:5px 0 0;font-size:11px;line-height:1.5;color:var(--ink-muted);overflow-wrap:anywhere}
+#widget-anchor #widget-panel #github-project-open{flex:none;padding:6px 0}
+#widget-anchor #widget-panel #github-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start;min-width:0}
+#widget-anchor #widget-panel .github-section{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised);overflow:hidden}
+#widget-anchor #widget-panel .github-section>header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;border-bottom:1px solid var(--line)}
+#widget-anchor #widget-panel .github-section h3{font-size:12px;font-weight:500;margin:0}
+#widget-anchor #widget-panel .github-section header small{font-size:9px;color:var(--ink-muted)}
+#widget-anchor #widget-panel .github-entry{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-bottom:1px solid var(--line)}
+#widget-anchor #widget-panel .github-entry:last-child{border-bottom:0}
+#widget-anchor #widget-panel .github-entry:hover{background:var(--surface-hover)}
+#widget-anchor #widget-panel .github-entry-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+#widget-anchor #widget-panel .github-entry strong{font-size:11px;font-weight:450;line-height:1.5;overflow-wrap:anywhere}
+#widget-anchor #widget-panel .github-entry small{font-size:9px;color:var(--ink-muted);overflow-wrap:anywhere}
+#widget-anchor #widget-panel .github-run-state{flex:none;max-width:85px;white-space:normal;font-size:9px;line-height:1.5;color:var(--ink-muted);text-align:right}
+#widget-anchor #widget-panel .github-run-state[data-state=success]{color:#a3b9a9}
+#widget-anchor #widget-panel .github-run-state:is([data-state=failure],[data-state=timed_out]){color:#c8aaa5}
+#widget-anchor #widget-panel .github-run-state:is([data-state=in_progress],[data-state=queued]){color:#c7baa2}
+#widget-anchor #widget-panel .github-section-note{padding:12px;margin:0;font-size:11px;line-height:1.6;color:var(--ink-muted)}
+#widget-anchor #widget-panel #github-error{flex:none;margin:0;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.6;color:var(--ink-secondary);background:var(--surface-inset)}
+#widget-anchor #widget-panel #github-updated{flex:none;margin:0;font-size:9px;line-height:1.6;color:var(--ink-muted)}
+@container open-sesame-widget (max-width:900px){#widget-anchor #widget-panel #github-cards{grid-template-columns:minmax(0,1fr)}#widget-anchor #widget-panel .github-entries{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}#widget-anchor #widget-panel .github-entry:nth-child(odd){border-right:1px solid var(--line)}}
+@container open-sesame-widget (max-width:540px){#widget-anchor #widget-panel .github-entries{grid-template-columns:minmax(0,1fr)}#widget-anchor #widget-panel #github-project{align-items:flex-start}#widget-anchor #widget-panel #github-project-open{font-size:9px}#widget-anchor #widget-panel .github-heading{gap:6px}}
