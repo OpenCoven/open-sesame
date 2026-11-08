@@ -3,7 +3,7 @@
 from controller import Controller
 from computer_controls import control as computer_control
 from live_agents import LiveAgents, agent_status
-from agent_monitor import snapshot as agent_snapshot
+from agent_monitor import snapshot as agent_snapshot, control_process as agent_control
 from coven_runtime import CovenRuntime
 import argparse
 import base64
@@ -246,13 +246,13 @@ class Bridge:
             thread = threading.Thread(target=coven_request, daemon=True)
             with self.coven_threads_lock: self.coven_threads.add(thread)
             thread.start(); return
-        if message.get('method') == 'agents.snapshot':
+        if message.get('method') in ('agents.snapshot', 'agents.control'):
             if not self.agent_scan_slot.acquire(blocking=False):
                 self.emit({'requestId': request_id, 'error': 'An agent scan is already running.'})
                 return
             def scan_agents():
                 try:
-                    self.emit({'requestId': request_id, 'result': agent_snapshot()})
+                    self.emit({'requestId': request_id, 'result': agent_snapshot() if message['method'] == 'agents.snapshot' else agent_control(message.get('params') or {})})
                 except Exception as error:
                     self.emit({'requestId': request_id, 'error': str(error)[:300]})
                 finally:
@@ -318,6 +318,8 @@ class Bridge:
             return agent_status()
         if method == 'agents.snapshot':
             return agent_snapshot()
+        if method == 'agents.control':
+            return agent_control(params)
         if method == 'system.info':
             return {'available': True, 'platform': sys.platform, 'machine': socket.gethostname(), 'home': str(pathlib.Path.home()), 'shell': os.environ.get('SHELL') or '/bin/sh'}
         if method == 'project.chooseFolder':

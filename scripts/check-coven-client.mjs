@@ -60,6 +60,6 @@ try{
   console.log('Real JS client → Python bridge → Coven CLI fixture: connect, full roster, no automatic send, streaming, durable per-familiar history, parallel familiar isolation, cancellation, and stale-view rejection passed. No live familiar was messaged.');
 }finally{
   client.close();window.OpenSesameCovenClient.close();child.stdin.end();
-  const exit=await new Promise(resolve=>{const timer=setTimeout(()=>child.kill('SIGKILL'),7000);child.on('exit',code=>{clearTimeout(timer);resolve(code)})});
+  const exit=child.exitCode!==null?child.exitCode:await new Promise(resolve=>{const timer=setTimeout(()=>child.kill('SIGKILL'),7000);child.once('exit',code=>{clearTimeout(timer);resolve(code)})});
   lines.close();for(const task of pending.values())clearTimeout(task.timer);fs.rmSync(root,{recursive:true,force:true});assert.equal(exit,0,stderr);
 }

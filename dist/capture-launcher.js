@@ -2,7 +2,7 @@
 (()=>{
   const el=id=>document.getElementById(id),footer=document.querySelector('.widget-capture-footer');
   let active=false,previous=null,lastGeometry='';
-  function nativeFrame(){const menu=el('capture-commands');return {width:Math.min(720,frameScreen()[0]-32),height:Math.min(frameScreen()[1]-80,Math.ceil(footer.offsetHeight)+16)}}
+  function nativeFrame(){const menu=el('capture-commands'),input=document.querySelector('.capture-input-wrap'),content=Math.max(56,input?.scrollHeight||56)+(menu.hidden?0:Math.min(440,menu.scrollHeight||0));return {width:Math.min(720,frameScreen()[0]-32),height:Math.min(frameScreen()[1]-80,Math.ceil(content)+18)}}
   function sync(){
     if(!active)return;
     if(!state.expanded){close(false);return}

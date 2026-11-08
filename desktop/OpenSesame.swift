@@ -36,6 +36,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var embeddedPages: [String: EmbeddedWebSurface] = [:]
     var outsideClickMonitors: [Any] = []
     var authentication: OpenSesameAuthentication!
+    var spotify: OpenSesameSpotify!
     var appUnlocked = false
     var pendingAuthenticationURLs: [URL] = []
 
@@ -66,7 +67,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
             self?.web.evaluateJavaScript("window.__openSesameReceive(\(json))", completionHandler: nil)
         }
-        web.underPageBackgroundColor = .clear
+        web.underPageBackgroundColor = NSColor(srgbRed: 16.0/255, green: 17.0/255, blue: 19.0/255, alpha: 1)
         panel = NotchPanel(contentRect: NSRect(origin: .zero, size: currentSize), styleMask: [.borderless], backing: .buffered, defer: false)
         panel.becomesKeyOnlyIfNeeded = false
         panel.appearance = NSAppearance(named: .darkAqua)
@@ -92,6 +93,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         shortcut = GlobalShortcut { [weak self] in self?.openLauncher() }
         web.configuration.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_GLOBAL_SHORTCUT__=\(shortcut?.available == true ? "true" : "false");", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         status.button?.toolTip = shortcut?.available == true ? "Open Sesame · Option–Space" : "Open Sesame · Option–Space unavailable"
+        spotify = OpenSesameSpotify()
+        spotify.window = panel
+        spotify.changed = { [weak self] in
+            guard let self, let data = try? JSONSerialization.data(withJSONObject: ["event": "music.spotify.changed", "status": self.spotify.status]), let json = String(data: data, encoding: .utf8) else { return }
+            self.web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
+        }
         authentication = OpenSesameAuthentication()
         authentication.window = panel
         authentication.changed = { [weak self] in self?.authenticationChanged() }
@@ -117,6 +124,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
             }
         } else if appUnlocked {
+            spotify.disconnect()
             appUnlocked = false; pendingLauncher = false
             voice.cancel(); audioRecorder.clear()
             for window in NSApp.windows { if let picker = window as? NSSavePanel, picker.isVisible { picker.cancel(nil) } }
@@ -208,7 +216,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func outsideClick(_ event: NSEvent) {
-        if authentication?.busy == true { return }
+        if authentication?.busy == true || spotify?.busy == true { return }
         let point = NSEvent.mouseLocation
         guard panel.isVisible, !panel.frame.contains(point), NSApp.modalWindow == nil, panel.attachedSheet == nil else { return }
         // App-owned menus and pickers are part of the current interaction.
@@ -372,6 +380,19 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "window.focus" {
             NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(web)
             respond(requestId, result: true); return
+        }
+        if method.hasPrefix("music.spotify.") {
+            do {
+                switch method {
+                case "music.spotify.status": break
+                case "music.spotify.configure": try spotify.configure(params["clientId"] as? String ?? "")
+                case "music.spotify.signIn": try spotify.signIn()
+                case "music.spotify.disconnect", "music.spotify.cancel": spotify.disconnect()
+                default: respond(requestId, error: "Unsupported Spotify action."); return
+                }
+                respond(requestId, result: spotify.status)
+            } catch { respond(requestId, error: "Check your Spotify public client ID and registered redirect URI.") }
+            return
         }
         if method.hasPrefix("webview.") {
             guard let id = params["id"] as? String, ["bookmark", "reading-bookmark", "youtube"].contains(id) else { respond(requestId, error: "Unsupported embedded page."); return }

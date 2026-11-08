@@ -1,0 +1,60 @@
+/* Projects shares the compact segmented navigation used by Focus and Console. */
+#widget-anchor #widget-panel .projects-mode-tabs>button[aria-selected=true]{background:var(--surface-selected);color:var(--ink-primary);border-color:#453b50;box-shadow:none}
+#widget-anchor #widget-panel .projects-mode-tabs>button svg{width:13px;height:13px;flex:none}
+#widget-anchor #widget-panel .projects-tabbed :is(#category-filter,#rail-all,#library-toggle){display:none!important}
+#widget-anchor #widget-panel .projects-tabbed #project-rail:has(#project-form[hidden]){display:none}
+#widget-anchor #widget-panel .projects-tabbed .capture-list-heading{min-height:30px;gap:8px;padding:0;margin:0}
+#widget-anchor #widget-panel .projects-tabbed .library-tools{gap:4px}
+#widget-anchor #widget-panel .projects-tabbed .library-tools>button{width:28px;height:28px;min-height:28px;padding:6px;border:1px solid transparent;background:transparent;border-radius:7px}
+#widget-anchor #widget-panel .projects-tabbed .library-tools>button:hover{background:var(--surface-hover);border-color:var(--line)}
+#widget-anchor #widget-panel .projects-tabbed .items-workspace{flex:1;min-height:0}
+/* One uninterrupted music field, with fitted service and action controls. */
+#widget-anchor #widget-panel .music-source-form{display:flex;align-items:center;gap:6px;min-height:38px;padding:4px 6px;background:var(--surface-raised);border:1px solid var(--line);border-radius:9px;min-width:0}
+#widget-anchor #widget-panel .music-service-picker{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:0 8px 0 4px;border-right:1px solid var(--line);min-width:0}
+#widget-anchor #widget-panel #music-service-select{background-color:transparent;border:0;box-shadow:none;height:28px;min-height:28px;font-size:11px;max-width:135px;padding-block:0}
+#widget-anchor #widget-panel #music-url{flex:1;width:0;min-width:0;height:28px;min-height:28px;margin:0;padding:0 6px;background:transparent;border:0;border-radius:0;font-size:12px;line-height:20px}
+#widget-anchor #widget-panel .music-source-form>button{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;min-height:28px;padding:6px;background:transparent;border:1px solid transparent;border-radius:7px;color:var(--ink-secondary)}
+#widget-anchor #widget-panel .music-source-form>button:hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-anchor #widget-panel .music-source-form>button svg{display:block;width:15px;height:15px}
+/* Keep editors quiet on focus, retaining keyboard focus rings on navigation. */
+#widget-anchor #widget-panel :is(input:not([type=checkbox]):not([type=range]),textarea):is(:focus,:focus-visible){outline:none;outline-offset:0;box-shadow:none;border-color:#39363f}
+#widget-anchor #widget-panel :is(.topic-form,.lockin-source-form,.music-source-form,#capture-form,#familiar-compose):focus-within{border-color:var(--line);box-shadow:none}
+#widget-anchor #widget-panel #familiar-message{border:0;outline:none;resize:none;padding:8px 10px;line-height:1.55;background:transparent}
+/* Quiet Console headers leave the conversation in focus. */
+#widget-anchor #widget-panel .console-toolbar{height:32px;min-height:32px;padding:0;margin:0 0 6px}
+#widget-anchor #widget-panel .console-toolbar .console-mode-tabs{height:30px;min-height:30px;padding:2px;border-color:#292a30;border-radius:8px;gap:2px}
+#widget-anchor #widget-panel .console-toolbar .console-mode-tabs>button{height:24px!important;padding:0 9px!important;font-size:11px!important;gap:6px;border-radius:6px;letter-spacing:.05px}
+#widget-anchor #widget-panel .familiar-connection{display:flex;align-items:center;gap:10px;min-height:26px;margin:0;padding:0 1px 5px;border:0}
+#widget-anchor #widget-panel .familiar-connection>div{display:flex;align-items:center;flex-direction:row;gap:8px;min-width:0;flex:1}
+#widget-anchor #widget-panel .familiar-connection>div>strong{display:none}
+#widget-anchor #widget-panel #familiar-connection-status{font-size:10px;line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-muted)}
+#widget-anchor #widget-panel .familiar-connection :is(button,a){height:26px;min-height:26px;padding:4px 8px;background:transparent;border:1px solid transparent;border-radius:6px;font-size:10px;color:var(--ink-secondary)}
+#widget-anchor #widget-panel .familiar-connection :is(button,a):hover{background:var(--surface-hover);border-color:var(--line)}
+#widget-anchor #widget-panel #familiar-thread-header{min-height:30px;gap:6px;align-items:center;padding:0 0 6px}
+#widget-anchor #widget-panel #familiar-thread-header>div{gap:2px;flex-basis:auto}
+#widget-anchor #widget-panel #familiar-name{font-size:13px;font-weight:500;line-height:18px}
+#widget-anchor #widget-panel #familiar-workspace{font-size:9px;line-height:13px;color:var(--ink-muted)}
+#widget-anchor #widget-panel #familiar-thread-header>button,#widget-anchor #widget-panel #familiar-harness{height:27px;min-height:27px;padding:4px 8px;font-size:10px;background:var(--surface-raised);border:1px solid var(--line);border-radius:7px}
+#widget-anchor #widget-panel #familiar-harness-row{font-size:0;gap:0;max-width:135px}
+#widget-anchor #widget-panel #familiar-harness{font-size:10px;max-width:135px}
+#widget-anchor #widget-panel .terminal-pane-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#widget-anchor #widget-panel .terminal-pane-project{display:block;max-width:42%;min-width:0;flex:0 1 auto;font-size:9px;line-height:14px;color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Fill the native launcher panel independently of the full widget geometry. */
+html.native-desktop body.capture-launcher-open #widget-anchor.expanded{inset:8px!important;width:calc(100% - 16px)!important;height:auto!important;max-height:calc(100% - 16px)!important;min-height:0!important;transform:none!important;margin:0!important;border-radius:12px!important}
+html.native-desktop body.capture-launcher-open #widget-anchor.expanded #widget-panel{position:relative;inset:auto!important;width:100%!important;height:auto!important;min-height:0!important;max-height:100%!important;padding:0!important;margin:0!important;transform:none!important;border-radius:12px!important;box-shadow:none!important;background:#17181c!important}
+html.native-desktop body.capture-launcher-open #widget-panel .widget-capture-footer{min-height:0;max-height:100%;margin:0;padding:0;display:flex;flex-direction:column;overflow:hidden}
+html.native-desktop body.capture-launcher-open #widget-panel #capture-form{min-height:0;max-height:calc(100vh - 16px);overflow:hidden;border-radius:12px}
+html.native-desktop body.capture-launcher-open #widget-panel .capture-input-wrap{height:auto;min-height:56px;flex:none;align-items:center;padding:10px 12px}
+html.native-desktop body.capture-launcher-open #widget-panel #capture-input{min-height:24px;max-height:120px;line-height:24px;align-self:center}
+html.native-desktop body.capture-launcher-open #widget-panel #capture-commands{min-height:0;max-height:min(440px,calc(100vh - 92px));overflow-y:auto;flex:0 1 auto}
+@container open-sesame-widget (max-width:580px){#widget-anchor #widget-panel #familiar-thread-header{flex-wrap:nowrap}#widget-anchor #widget-panel #familiar-thread-header>div{flex:1;min-width:0}#widget-anchor #widget-panel #familiar-workspace{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+@media(forced-colors:active){#widget-anchor #widget-panel :is(input,textarea):focus-visible{outline:1px solid Highlight;outline-offset:-1px}}
+#widget-anchor #widget-panel .agent-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);flex-wrap:wrap}
+#widget-anchor #widget-panel .agent-actions>button,#widget-anchor #widget-panel .agent-open-familiars{height:27px;padding:4px 8px;background:var(--surface-raised);border:1px solid var(--line);border-radius:7px;color:var(--ink-secondary);font-size:10px}
+#widget-anchor #widget-panel .agent-actions>button:hover:not(:disabled){background:var(--surface-hover);color:var(--ink-primary)}
+#widget-anchor #widget-panel .agent-actions>small{flex:1;font-size:10px;color:var(--ink-secondary);line-height:1.5}
+#widget-anchor #widget-panel .agent-actions>.agent-stop-confirm{color:var(--ink-primary);border-color:#716079}
+#widget-anchor #widget-panel .agent-action-status{flex:none;min-height:0;margin:0;font-size:10px;line-height:1.5;color:var(--ink-secondary)}
+#widget-anchor #widget-panel .agent-action-status:empty{display:none}
+#widget-anchor #widget-panel #familiar-connect[aria-label="Refresh familiars"]{display:grid;place-items:center;width:26px;padding:6px}
+#widget-anchor #widget-panel #familiar-connect svg{display:block;width:13px;height:13px}
