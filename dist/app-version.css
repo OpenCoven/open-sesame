@@ -1,0 +1,7 @@
+#widget-panel>.panel-top>.app-version-badge{display:block;flex:none;align-self:center;max-width:48px;padding:2px 0;font:500 9px/14px -apple-system,BlinkMacSystemFont,sans-serif;color:#b8b4bf;letter-spacing:.1px;white-space:nowrap;text-align:center;cursor:default;user-select:text}
+#widget-panel #widget-options>.app-version-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:5px 5px 10px;margin:0 0 5px;border-bottom:1px solid #34343d;font-size:12px;color:#e8e6ec}
+#widget-panel .app-version-heading>strong{font-size:12px;font-weight:500}#widget-panel .app-version-value{font-size:11px;font-variant-numeric:tabular-nums;color:#b8b4bf}
+.app-version-signin{display:block;margin-top:18px;font:12px/18px -apple-system,BlinkMacSystemFont,sans-serif;color:#b8b4bf;text-align:center;font-variant-numeric:tabular-nums}
+#widget-anchor #widget-panel .familiar-avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+#widget-anchor #widget-panel #familiar-avatar-edit{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;min-height:28px;padding:0;overflow:hidden;background:#202026;border:1px solid var(--line);border-radius:7px;font-size:18px;cursor:pointer}
+#widget-anchor #widget-panel #familiar-avatar-edit:hover{border-color:#716579}

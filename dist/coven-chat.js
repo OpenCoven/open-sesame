@@ -18,6 +18,7 @@
     return {
       status:()=>bridge.available?runtime.status():Promise.resolve({available:false,error:'Open Open Sesame Desktop, or its local development preview, to connect to your Coven familiars.'}),
       listFamiliars:()=>runtime.listFamiliars(),
+      setAvatar:(familiarId,png)=>request('coven.avatar.set',{familiarId,png}),
       openConversation:familiarId=>request('coven.open',{familiarId}),
       newConversation:(familiarId,conversationId)=>request('coven.new',{familiarId,conversationId}),
       sendMessage:(input,onEvent)=>runtime.send(input,onEvent),cancel:runId=>runtime.cancel(runId),

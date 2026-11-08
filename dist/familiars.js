@@ -2,6 +2,7 @@
 (()=>{
   const el=id=>document.getElementById(id),client=window.OpenSesameCovenClient,records=new Map(),jobs=new Map(),drafts=new Map(),harnessChoices=new Map(),messageNodes=new WeakMap();
   let rosterVersion=0,lastRosterKey='',connection=0;
+  let avatarBusy=false,avatarTarget='';
   let roster=[],connected=false,connecting=false,selected='',generation=0,loading=false,error='',incoming='',frame=0;
   try{incoming=(localStorage.getItem('open-sesame-familiar-queued-draft-v1')||'').slice(0,20000)}catch{}
   try{const saved=JSON.parse(localStorage.getItem('open-sesame-familiar-drafts-v1')||'{}');for(const [id,text]of Object.entries(saved))if(typeof text==='string'&&text.length<=20000)drafts.set(id,text)}catch{}
@@ -10,11 +11,36 @@
   const familiar=()=>roster.find(f=>f.id===selected),current=()=>records.get(selected),draft=()=>drafts.get(selected)||'';
   function saveDraft(){if(selected)drafts.set(selected,el('familiar-message').value);try{localStorage.setItem('open-sesame-familiar-queued-draft-v1',incoming);localStorage.setItem('open-sesame-familiar-drafts-v1',JSON.stringify(Object.fromEntries([...drafts].slice(-1024))))}catch{}}
   function validConversation(value,fid){if(!value||value.familiarId!==fid||typeof value.conversationId!=='string'||!Number.isInteger(value.revision)||!Array.isArray(value.messages)||value.messages.length>120||!['coven-code','codex','claude'].includes(value.harness)||value.messages.some(m=>!m||!['user','assistant'].includes(m.role)||typeof m.text!=='string'))throw Error('Coven returned an invalid conversation. Reconnect to refresh.');return value}
+  const avatarButton=make('button','familiar-avatar','');avatarButton.id='familiar-avatar-edit';avatarButton.type='button';avatarButton.setAttribute('aria-label','Set familiar avatar');el('familiar-thread-header').prepend(avatarButton);
+  const avatarInput=make('input');avatarInput.type='file';avatarInput.accept='image/png,image/jpeg,image/webp,image/gif,image/avif';avatarInput.hidden=true;avatarInput.setAttribute('aria-label','Choose familiar avatar');el('pane-familiars').append(avatarInput);
+  avatarButton.addEventListener('click',()=>{if(avatarBusy||!connected||!selected)return;avatarTarget=selected;avatarInput.value='';avatarInput.click()});
+  avatarInput.addEventListener('change',async()=>{
+    const file=avatarInput.files?.[0],id=avatarTarget,ticket=connection;if(!file||!id||avatarBusy)return;
+    if(file.size>32*1024*1024){toast('Choose an avatar smaller than 32 MB.');return}
+    avatarBusy=true;avatarButton.disabled=true;avatarButton.setAttribute('aria-busy','true');toast('Saving avatar…');let url='';
+    try{
+      const image=new Image();url=URL.createObjectURL(file);await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('Choose a readable image.'));image.src=url});
+      if(!image.naturalWidth||!image.naturalHeight)throw Error('Choose a readable image.');
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=512;const crop=Math.min(image.naturalWidth,image.naturalHeight);
+      canvas.getContext('2d').drawImage(image,(image.naturalWidth-crop)/2,(image.naturalHeight-crop)/2,crop,crop,0,0,512,512);
+      if(ticket!==connection||!connected)return;
+      const value=await client.setAvatar(id,canvas.toDataURL('image/png'));
+      if(ticket!==connection||!connected)return;
+      if(value?.familiarId!==id||typeof value.avatarUrl!=='string')throw Error('The avatar could not be verified. Refresh and try again.');
+      const record=roster.find(f=>f.id===id);if(record)record.avatarUrl=value.avatarUrl;rosterVersion++;lastRosterKey='';render();toast('Avatar saved to '+value.location+'.');
+    }catch(error){if(ticket===connection)toast(error.message||'Could not save the avatar. Try again.')}finally{if(url)URL.revokeObjectURL(url);avatarBusy=false;avatarButton.setAttribute('aria-busy','false');avatarInput.value='';render()}
+  });
   function announceConnection(){window.dispatchEvent(new CustomEvent('open-sesame-familiars-changed',{detail:{connected,count:roster.length,error}}))}
+  function paintAvatar(mark,f){
+    const emoji=f?.emoji&&!/^[a-z][a-z0-9-]*:/i.test(f.emoji)?f.emoji:'';mark.textContent=emoji;if(!emoji)mark.innerHTML=icon('chat');
+    if(typeof f?.avatarUrl==='string'&&f.avatarUrl.length<=256*1024&&/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(f.avatarUrl)){
+      const image=make('img');image.alt='';image.src=f.avatarUrl;image.addEventListener('error',()=>{mark.textContent=emoji;if(!emoji)mark.innerHTML=icon('chat')},{once:true});mark.replaceChildren(image);
+    }
+  }
   function paintRoster(){
     const focused=document.activeElement?.dataset.familiar;const query=el('familiar-search').value.trim().toLowerCase(),shown=roster.filter(f=>(f.displayName+' '+f.name+' '+f.description).toLowerCase().includes(query)),list=el('familiar-list'),key=JSON.stringify([rosterVersion,selected,query,connected,[...jobs.keys()]]);
     if(key===lastRosterKey)return;lastRosterKey=key;const oldScroll=list.scrollTop;list.replaceChildren();for(const f of shown){const b=make('button','familiar-row');b.type='button';b.id='familiar-tab-'+f.id;b.dataset.familiar=f.id;b.setAttribute('role','tab');b.setAttribute('aria-controls','familiar-thread');b.setAttribute('aria-selected',String(selected===f.id));b.tabIndex=selected===f.id||!shown.some(row=>row.id===selected)&&shown[0]===f?0:-1;b.title=f.description||f.displayName;
-      const emoji=f.emoji&&!/^[a-z][a-z0-9-]*:/i.test(f.emoji)?f.emoji:'',mark=make('span','familiar-avatar',emoji),copy=make('span','familiar-row-copy');if(!emoji)mark.innerHTML=icon('chat');mark.setAttribute('aria-hidden','true');b.dataset.busy=String(jobs.has(f.id));b.title=[f.displayName,f.description,jobs.has(f.id)?'Replying…':f.name].filter(Boolean).join(' · ');copy.append(make('strong','',f.displayName),make('small','',jobs.has(f.id)?'Replying…':f.name));b.append(mark,copy);b.addEventListener('click',()=>choose(f.id));
+      const emoji=f.emoji&&!/^[a-z][a-z0-9-]*:/i.test(f.emoji)?f.emoji:'',mark=make('span','familiar-avatar',emoji),copy=make('span','familiar-row-copy');paintAvatar(mark,f);mark.setAttribute('aria-hidden','true');b.dataset.busy=String(jobs.has(f.id));b.title=[f.displayName,f.description,jobs.has(f.id)?'Replying…':f.name].filter(Boolean).join(' · ');copy.append(make('strong','',f.displayName),make('small','',jobs.has(f.id)?'Replying…':f.name));b.append(mark,copy);b.addEventListener('click',()=>choose(f.id));
       b.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();const i=shown.indexOf(f),next=shown[event.key==='Home'?0:event.key==='End'?shown.length-1:(i+(event.key==='ArrowDown'?1:-1)+shown.length)%shown.length];choose(next.id,false);el('familiar-tab-'+next.id)?.focus({preventScroll:true})});list.append(b)}
     list.scrollTop=oldScroll;if(focused)el('familiar-tab-'+focused)?.focus({preventScroll:true});
     el('familiar-roster-count').textContent=shown.length===roster.length?String(roster.length):shown.length+' / '+roster.length;
@@ -45,6 +71,7 @@
     el('familiar-welcome-action').hidden=loading||connected&&!f&&!roster.length;el('familiar-welcome-action').disabled=connecting||!available;
     el('familiar-welcome-action').textContent=f&&connected?'Try again':connected?'Choose a familiar':'Connect Coven';
     el('familiar-thread-header').hidden=!f;el('familiar-compose').hidden=!f||!record?.conversationId;el('familiar-harness-row').hidden=!f||!record?.conversationId;
+    avatarButton.hidden=!f;avatarButton.disabled=avatarBusy||!connected||connecting;if(f){paintAvatar(avatarButton,f);avatarButton.title='Change avatar · avatars/'+f.id+'.png';avatarButton.setAttribute('aria-label','Set avatar for '+f.displayName)}
     if(f){el('familiar-name').textContent=f.displayName;el('familiar-workspace').title=f.workspace||'';el('familiar-thread').setAttribute('aria-label','Conversation with '+f.displayName);el('familiar-message').placeholder='Message '+f.displayName+'…';el('familiar-message').setAttribute('aria-label','Message '+f.displayName)}else el('familiar-thread').removeAttribute('aria-labelledby');
     el('familiar-new').disabled=!!job||loading||!record?.conversationId;el('familiar-harness').disabled=!!job||loading||!!record?.sessionId;if(record?.harness)el('familiar-harness').value=record.sessionId?record.harness:harnessChoices.get(selected)||record.harness;
     el('familiar-search-open').disabled=loading||!record?.conversationId;

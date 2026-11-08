@@ -8,3 +8,6 @@ xcrun swiftc -o "$open_sesame_check/native-url-tests" "$open_sesame_root/desktop
 
 xcrun swiftc -o "$open_sesame_check/spotify-tests" "$open_sesame_root/desktop/SpotifyAuthentication.swift" "$open_sesame_root/desktop/tests/SpotifyAuthenticationTests.swift" -framework AppKit -framework AuthenticationServices -framework Security
 "$open_sesame_check/spotify-tests"
+
+xcrun swiftc -o "$open_sesame_check/system-audio-tests" "$open_sesame_root/desktop/SystemAudio.swift" "$open_sesame_root/desktop/tests/SystemAudioTests.swift" -framework AppKit -framework AVFoundation -framework ScreenCaptureKit -framework CoreMedia
+"$open_sesame_check/system-audio-tests"

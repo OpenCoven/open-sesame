@@ -5,6 +5,7 @@ const chromiumVersion=Number(navigator.userAgent.match(/(?:Chrome|Chromium|Edg)\
 const trackRecognition=chromiumVersion>=135&&!/Android|Mobile/.test(navigator.userAgent);
 const audioSession={active:false,starting:false,stopping:false,streams:[],context:null,mixed:null,recognizer:null,recorder:null,chunks:[],recordUrl:'',textUrl:'',startedAt:0,timer:null,meterFrame:null,restartTimer:null,final:'',interim:'',speechFailed:false};
 let audioGeneration=0,recordingGeneration=0;
+const nativeSpeechCapture=()=>Boolean(window.__OPEN_SESAME_NATIVE__ && !$('audio-record').checked);
 const nativeSpeechMic=()=>Boolean(window.__OPEN_SESAME_NATIVE__ && $('audio-source').value==='mic' && !$('audio-record').checked);
 let nativeSpeechID='', nativeStopPending=false;
 let nativeRecordingID='';
@@ -14,10 +15,10 @@ function audioCapability(mode=$('audio-record').checked?'record':'transcribe',so
 }
 function audioSourceHelp(){
   const source=$('audio-source').value;
-  $('audio-source-help').textContent=source==='mic'?'Your mic stays off until you start.':(source==='both'?'Capture your mic too. ':'')+'Choose a tab or screen and enable “Share audio” in the picker. If no audio is offered, try a Chrome tab.';
-  $('audio-transcribe').disabled=!nativeSpeechMic()&&(!SpeechEngine||(source!=='mic'&&!trackRecognition));
-  if(!SpeechEngine&&!nativeSpeechMic())$('transcript-status').textContent='Live transcription unavailable in this browser.';
-  else if(source!=='mic'&&!trackRecognition)$('transcript-status').textContent='Shared-audio transcription needs desktop Chrome 135+.';
+  $('audio-source-help').textContent=window.__OPEN_SESAME_NATIVE__&&source!=='mic'?(source==='both'?'Captures your microphone and audio from this Mac.':'Captures audio from this Mac; your microphone stays off.')+' Allow Screen & System Audio Recording in macOS Privacy settings when asked.':source==='mic'?'Your mic stays off until you start.':(source==='both'?'Capture your mic too. ':'')+'Choose a tab or screen and enable “Share audio” in the picker. If no audio is offered, try a Chrome tab.';
+  $('audio-transcribe').disabled=!nativeSpeechCapture()&&(!SpeechEngine||(source!=='mic'&&!trackRecognition));
+  if(!SpeechEngine&&!nativeSpeechCapture())$('transcript-status').textContent='Live transcription unavailable in this browser.';
+  else if(!window.__OPEN_SESAME_NATIVE__&&source!=='mic'&&!trackRecognition)$('transcript-status').textContent='Shared-audio transcription needs desktop Chrome 135+.';
   else if(!audioSession.active)$('transcript-status').textContent='Live transcript';
 }
 $('audio-source').addEventListener('change',audioSourceHelp);
@@ -78,7 +79,7 @@ async function startNativeSegment(generation){
   const id = 'live-'+newId();
   nativeSpeechID = id;
   try {
-    const result=await openSesameBridge.request('speech.start',{id,locale:$('audio-language').value});
+    const result=await openSesameBridge.request('speech.start',{id,locale:$('audio-language').value,source:$('audio-source').value});
     if(generation!==audioGeneration || id!==nativeSpeechID)return;
     audioSession.starting=false; audioSession.active=true;
     audioSession.sourceLabel=result?.sourceLabel||'System microphone';
@@ -105,6 +106,7 @@ window.addEventListener('open-sesame-desktop-event',event=>{
     if(data.event==='record.level'&&audioSession.active){const level=Math.max(0,Math.min(100,Number(data.level)||0));$('audio-meter-fill').style.width=level+'%';$('audio-meter').setAttribute('aria-valuenow',level)}
   }
   if(!nativeSpeechID || data.id!==nativeSpeechID)return;
+  if(data.event==='voice.level'&&audioSession.active){const level=Math.max(0,Math.min(100,Number(data.level)||0));$('audio-meter-fill').style.width=level+'%';$('audio-meter').setAttribute('aria-valuenow',level);return}
   if(data.event==='voice.error'){stopAudio(data.message || 'Transcription stopped.',true);return}
   if(data.event!=='voice.result')return;
   audioSession.interim=String(data.text||'').trim();
@@ -127,18 +129,18 @@ async function startAudio(){
     $('audio-status').textContent='Transcription unavailable for this source. Try the demo or change the source.';
     return;
   }
-  if(nativeSpeechMic() && wantsTranscript){
+  if(nativeSpeechCapture() && wantsTranscript){
     nativeStopPending=false;
     audioSession.starting=true;
     $('audio-elapsed').textContent='0:00';
-    $('audio-status').textContent='Allow microphone access…';
+    $('audio-status').textContent=$('audio-source').value==='mic'?'Allow microphone access…':'Allow system audio recording…';
     setAudioControls(); startNativeSegment(++audioGeneration); return;
   }
-  if(window.__OPEN_SESAME_NATIVE__ && $('audio-source').value==='mic' && $('audio-record').checked){
+  if(window.__OPEN_SESAME_NATIVE__ && $('audio-record').checked){
     const request=++audioGeneration,id='record-'+newId();nativeRecordingID=id;audioSession.starting=true;
-    $('audio-elapsed').textContent='0:00';$('audio-status').textContent='Allow microphone access…';setAudioControls();
+    $('audio-elapsed').textContent='0:00';$('audio-status').textContent=$('audio-source').value==='mic'?'Allow microphone access…':'Allow system audio recording…';setAudioControls();
     try{
-      const result=await openSesameBridge.request('record.start',{id});
+      const result=await openSesameBridge.request('record.start',{id,source:$('audio-source').value});
       if(request!==audioGeneration||nativeRecordingID!==id)return;
       if(audioSession.recordUrl.startsWith('blob:'))URL.revokeObjectURL(audioSession.recordUrl);
       audioSession.recordUrl='';audioSession.nativeRecording='';$('audio-download').hidden=true;
@@ -209,7 +211,7 @@ function stopAudio(message=$('audio-record').checked?'Recording ready · save yo
   if(audioSession.recorder&&audioSession.recorder.state!=='inactive')audioSession.recorder.stop();audioSession.recorder=null;
   if(nativeRecordingID){
     const id=nativeRecordingID;nativeRecordingID='';audioSession.stopping=true;setAudioControls();
-    openSesameBridge.request('record.stop',{id}).then(result=>{if(result?.ready){audioSession.nativeRecording=id;audioSession.recordUrl='native-recording:'+id;$('audio-download').href='#';$('audio-download').hidden=false}}).catch(error=>{audioStopMessage=error.message||'Could not finish recording.'}).finally(finishAudioStop);
+    openSesameBridge.request('record.stop',{id}).then(result=>{if(!result?.ready&&audioStopMessage==='Recording ready · save your audio')audioStopMessage='No audio was captured. Start again and play audio before stopping.';if(result?.ready){audioSession.nativeRecording=id;audioSession.recordUrl='native-recording:'+id;$('audio-download').href='#';$('audio-download').hidden=false}}).catch(error=>{audioStopMessage=error.message||'Could not finish recording.'}).finally(finishAudioStop);
     return;
   }
   if(!immediate&&(nativeSpeechID||audioSession.recognizer)&&!audioSession.speechFailed){

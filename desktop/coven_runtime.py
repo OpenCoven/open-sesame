@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 import uuid
+import familiar_avatars
 
 HARNESSES = ('coven-code', 'codex', 'claude')
 IDENTIFIER = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z')
@@ -204,11 +205,11 @@ class CovenRuntime:
         except (ValueError, OSError) as error:
             return {'available': False, 'error': str(error)}
 
-    def familiars(self, cancel=None):
+    def familiars(self, cancel=None, include_avatars=True):
         rows = read_json(self.resolver(), ['familiars', '--json'], cancel=cancel or self.shutdown)
         if not isinstance(rows, list) or len(rows) > 1024:
             raise ValueError('Coven returned an invalid familiar roster.')
-        result, seen = [], set()
+        result, seen, avatar_budget = [], set(), 1024 * 1024
         for row in rows:
             if not isinstance(row, dict):
                 raise ValueError('Coven returned an invalid familiar.')
@@ -224,12 +225,21 @@ class CovenRuntime:
                 value = row.get(source)
                 if isinstance(value, str):
                     entry[target] = clip(value, limit)
+            if include_avatars and len(result) < 64 and avatar_budget > 0 and entry.get('workspace'):
+                try: image = familiar_avatars.load_avatar(self._workspace(entry), fid)
+                except ValueError: image = ''
+                if image and len(image) <= avatar_budget: entry['avatarUrl'] = image; avatar_budget -= len(image)
             result.append(entry)
         return result
 
     def _familiar(self, fid, cancel=None):
         identifier(fid)
-        return next((f for f in self.familiars(cancel) if f['id'] == fid), None) or self._missing()
+        return next((f for f in self.familiars(cancel, include_avatars=False) if f['id'] == fid), None) or self._missing()
+
+    def set_avatar(self, fid, png):
+        familiar = self._familiar(fid)
+        image = familiar_avatars.write_avatar(self._workspace(familiar), fid, png)
+        return {'familiarId': fid, 'avatarUrl': image, 'location': 'avatars/' + fid + '.png'}
 
     @staticmethod
     def _missing():
