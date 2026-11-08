@@ -1,5 +1,14 @@
 # Development work and handoff
 
+## Screen notes, compact capture and audio repair, November 8
+
+`screen-notes-20261108` owns `codex/screen-notes` in the isolated `open-sesame-screen-notes` worktree, based on delivered v0.0.17 main `8239a5f365e958e5ce42fa33beb858298fa324fe`. The task replaces the existing Screen notes demo with explicit native capture/import, local Vision OCR and review/edit/save, adds compact source/wave/REC/media indicators, removes the desktop companion download in the native app, enlarges the Familiar identity selector with larger avatars and refined interaction states, and repairs native/shared dropdown dismissal and system-audio timing. No real user screen or audio is captured by verification, and nothing is sent to a model automatically.
+
+The user also requested a built-in Coven computer-use agent with end-to-end CUA. That remains the next implementation after this capture update; preserve it through continuation. Inspect the local Coven runtime and supported computer-use transport first, then create a separate owned branch for a first-class Console conversation with real runtime capabilities, streamed progress, cancellation and explicit permission boundaries. Do not claim that launching an external terminal or a fixture provides embedded end-to-end CUA. No real model/device acceptance has been performed for that request.
+
+A synthetic clock probe reproduced 3,102 silent blocks out of 4,000 despite continuous system packets when callbacks arrived at 24 ms rather than 20 ms. The repaired timeline drains by monotonic time with bounded catch-up and a short jitter buffer. Capture must receive real input before a recording can be offered as ready. Shared select menus are explicitly inside widget interactions even when mounted outside the widget container; local native popup/window events are excluded from outside-click dismissal. Exact qualification and open hardware/native gates belong to the common-Git receipt.
+
+
 ## Widget and launcher fit, November 8
 
 `widget-launcher-fit-20261108` owns `codex/widget-launcher-fit` in the separate `open-sesame-widget-fit` worktree, based on signed PR #19 main. It repairs the clipped Focus/native frame and launcher row alignment shown in the user’s screenshots. Regression checks reproduced the GitHub preview/monitor API collision, slash-as-calculation footer state and native sizing after a pane exception before the repairs. The original logs are preserved under the task’s common-Git receipts.

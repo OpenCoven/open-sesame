@@ -125,7 +125,7 @@
   document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&!detached&&state.size==='full')state.size=restoreSize;render()});
   document.addEventListener('pointerdown',event=>{
     if(![0,1,2].includes(event.button))return;
-    if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification'].includes(node.id)))return;
+    if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification','open-sesame-select-menu'].includes(node.id)))return;
     void collapse({outside:true});
   });
   document.addEventListener('keydown',event=>{

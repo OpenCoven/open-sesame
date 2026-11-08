@@ -44,3 +44,4 @@ await e.win.OpenSesameWindow.toggle();assert.equal(e.ctx.state.expanded,true);as
 let returned=false;e.win.OpenSesameLauncher={active:true,close(expand){returned=expand;this.active=false}};
 e.win.OpenSesameWindow.show();assert.equal(returned,true,'Open widget exits the launcher into the full workspace');
 console.log('Native widget entry and toggle restore the workspace, compact geometry and draft without stopping sessions.');
+e=environment();e.events.pointerdown({button:0,composedPath:()=>[e.el('open-sesame-select-option-0'),e.el('open-sesame-select-menu')]});assert.equal(e.ctx.state.expanded,true,'The shared select listbox is app-owned even when mounted outside widget-anchor');e.events.pointerdown({button:0,composedPath:()=>[]});assert.equal(e.ctx.state.expanded,false,'A real outside click still dismisses after selecting');

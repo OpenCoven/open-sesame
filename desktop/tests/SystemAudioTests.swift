@@ -28,6 +28,28 @@ import Foundation
                 precondition(delayed.take(mixed: false).allSatisfy { $0 == 0.5 }, "Slow capture startup must never leave input permanently ahead of the ring")
             }
         }
+        // Real input continues at 20 ms while the dispatch timer arrives late/coalesces.
+        for interval in [0.024, 0.037, 0.2] {
+            var clock = OpenSesameAudioTimeline(); clock.start(at: 0)
+            var packet = 1, emitted = 0, audible = 0
+            for tick in 1...1000 {
+                let now = Double(tick) * interval
+                while Double(packet) * 0.02 <= now {
+                    clock.put(sound, received: Double(packet) * 0.02, mic: false); packet += 1
+                }
+                for block in clock.due(at: now, mixed: false) {
+                    emitted += 1; if block.contains(where: { abs($0) > 0.1 }) { audible += 1 }
+                }
+            }
+            precondition(emitted > 900 && Double(audible) / Double(emitted) > 0.99, "Coalesced timers must not drift away from continuous system audio")
+        }
+        var tail = OpenSesameAudioTimeline(); tail.start(at: 0); tail.put(sound, received: 0.02, mic: false)
+        precondition(tail.due(at: 0.02, mixed: false).isEmpty, "Jitter buffering must delay rather than erase the tail")
+        precondition(tail.due(at: 0.14, mixed: false).flatMap { $0 }.contains(0.5), "Stop-time latency drain releases the retained audio")
+        var interrupted = OpenSesameAudioTimeline(); interrupted.start(at: 0)
+        precondition(interrupted.due(at: 60, mixed: false).count <= 150, "Catch-up stays bounded after a suspended process")
+        interrupted.put(sound, received: 60.02, mic: false)
+        precondition(interrupted.due(at: 60.2, mixed: false).contains(where: { $0.contains(0.5) }), "Audio can recover after a long scheduler gap")
         var system = OpenSesameAudioSignal(), mic = OpenSesameAudioSignal()
         precondition(system.state(at: 10) == "waiting")
         system.receive(level: 0, at: 10); precondition(system.state(at: 10) == "silent")
