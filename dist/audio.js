@@ -84,8 +84,8 @@ async function startNativeSegment(generation){
     audioSession.starting=false; audioSession.active=true;
     audioSession.sourceLabel=result?.sourceLabel||'System microphone';
     if(!audioSession.timer)audioSession.startedAt=Date.now();
-    $('audio-status').textContent='Transcribing';
-    setAudioControls(); $('transcript-status').textContent='Transcribing live';
+    $('audio-status').textContent=$('audio-source').value==='mic'?'Listening to your microphone':window.OpenSesameLiveCaptureModel.inputStatus($('audio-source').value);
+    setAudioControls(); $('transcript-status').textContent='Listening for speech';
     if(!audioSession.timer){
       audioSession.startedAt=Date.now();
       audioSession.timer=setInterval(()=>{
@@ -99,17 +99,25 @@ async function startNativeSegment(generation){
     if(generation===audioGeneration && id===nativeSpeechID)stopAudio(error.message || 'Microphone unavailable.',true);
   }
 }
+function renderNativeInput(activity){
+  if(!audioSession.active||audioSession.stopping||$('audio-source').value==='mic')return;
+  const value=window.OpenSesameLiveCaptureModel.inputStatus($('audio-source').value,activity);
+  if($('audio-status').textContent!==value)$('audio-status').textContent=value;
+}
 window.addEventListener('open-sesame-desktop-event',event=>{
   const data=event.detail;
   if(nativeRecordingID && data.id===nativeRecordingID){
+    if(data.event==='record.input')renderNativeInput(data.activity);
     if(data.event==='record.error'||data.event==='record.ended')stopAudio(data.message||'Recording stopped.');
     if(data.event==='record.level'&&audioSession.active){const level=Math.max(0,Math.min(100,Number(data.level)||0));$('audio-meter-fill').style.width=level+'%';$('audio-meter').setAttribute('aria-valuenow',level)}
   }
   if(!nativeSpeechID || data.id!==nativeSpeechID)return;
+  if(data.event==='voice.input'){renderNativeInput(data.activity);return}
   if(data.event==='voice.level'&&audioSession.active){const level=Math.max(0,Math.min(100,Number(data.level)||0));$('audio-meter-fill').style.width=level+'%';$('audio-meter').setAttribute('aria-valuenow',level);return}
   if(data.event==='voice.error'){stopAudio(data.message || 'Transcription stopped.',true);return}
   if(data.event!=='voice.result')return;
   audioSession.interim=String(data.text||'').trim();
+  if(audioSession.interim)$('transcript-status').textContent='Transcribing live';
   if(data.final){
     if(audioSession.interim)audioSession.final+=(audioSession.final?'\n':'')+audioSession.interim;
     audioSession.interim=''; nativeSpeechID='';

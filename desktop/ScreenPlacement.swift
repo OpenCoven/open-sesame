@@ -1,13 +1,34 @@
 import Foundation
 import CoreGraphics
 
+struct OpenSesameDisplayPreference {
+    let uuid: String?
+    let name: String
+    init(uuid: String? = nil, name: String = "") {
+        let valid = uuid.flatMap { UUID(uuidString: $0)?.uuidString }
+        self.uuid = valid; self.name = valid == nil ? "" : String(name.prefix(120))
+    }
+    static func load(from defaults: UserDefaults = .standard) -> Self {
+        Self(uuid: defaults.string(forKey: "openSesame.display.uuid"), name: defaults.string(forKey: "openSesame.display.name") ?? "Display")
+    }
+    func save(to defaults: UserDefaults = .standard) {
+        if let uuid { defaults.set(uuid, forKey: "openSesame.display.uuid"); defaults.set(name, forKey: "openSesame.display.name") }
+        else { defaults.removeObject(forKey: "openSesame.display.uuid"); defaults.removeObject(forKey: "openSesame.display.name") }
+    }
+    func index(in identifiers: [String?]) -> Int? {
+        guard let uuid else { return nil }
+        return identifiers.firstIndex { $0.flatMap { UUID(uuidString: $0)?.uuidString } == uuid }
+    }
+}
+
 enum OpenSesameScreenPlacement {
     private static func valid(_ frame: CGRect) -> Bool {
         frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite && frame.height.isFinite && frame.maxX.isFinite && frame.maxY.isFinite && frame.width > 0 && frame.height > 0
     }
 
-    static func screenIndex(pointer: CGPoint?, frames: [CGRect], fallback: Int?) -> Int? {
+    static func screenIndex(pointer: CGPoint?, frames: [CGRect], fallback: Int?, pinned: Int? = nil) -> Int? {
         let indices = frames.indices.filter { valid(frames[$0]) }
+        if let pinned, indices.contains(pinned) { return pinned }
         let preferred = fallback.flatMap { indices.contains($0) ? $0 : nil }
         if let point = pointer, point.x.isFinite, point.y.isFinite {
             let containing = indices.filter { index in
@@ -20,8 +41,8 @@ enum OpenSesameScreenPlacement {
         return preferred ?? indices.first
     }
 
-    static func shouldFollow(placement: String, detached: Bool, visible: Bool, interacting: Bool) -> Bool {
-        placement == "notch" && !detached && visible && !interacting
+    static func shouldFollow(placement: String, detached: Bool, visible: Bool, interacting: Bool, reconfigure: Bool = false) -> Bool {
+        (placement == "notch" || reconfigure) && !detached && visible && !interacting
     }
 
     static func panelFrame(requested: CGSize, frame: CGRect, visibleFrame: CGRect, placement: String, full: Bool, menuAnchor: CGRect? = nil) -> CGRect? {

@@ -56,6 +56,8 @@ final class OpenSesameAudioRecorder: NSObject, AVAudioRecorderDelegate {
                 DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "record.level", "id": id, "level": value]) }
             }, failed: { [weak self] message in
                 guard self?.session == id else { return }; self?.emit(["event": "record.error", "id": id, "message": message])
+            }, activity: { [weak self] activity in
+                DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "record.input", "id": id, "activity": activity]) }
             })
             systemAudio = capture
             capture.start(source: source) { [weak self] error in

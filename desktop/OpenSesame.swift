@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import ColorSync
 
 final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -38,6 +39,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var dockedScreenFrame: NSRect?
     var reportedDisplay = ""
     var pointerFollowTimer: Timer?
+    var displayPreference = OpenSesameDisplayPreference.load()
+    var displayMenuOpen = false
+    var needsDisplayReanchor = false
     var embeddedPages: [String: EmbeddedWebSurface] = [:]
     var outsideClickMonitors: [Any] = []
     var authentication: OpenSesameAuthentication!
@@ -65,6 +69,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         let versionJSON = String(data: try! JSONSerialization.data(withJSONObject: [version]), encoding: .utf8)!
         config.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_NATIVE__=true;window.__OPEN_SESAME_VERSION__=\(versionJSON)[0];", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: NSRect(origin: .zero, size: currentSize), configuration: config)
+        web.focusRingType = .none
         web.navigationDelegate = self
         web.uiDelegate = self
         voice = OpenSesameVoiceInput { [weak self] event in
@@ -211,6 +216,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 notice.isEnabled = false
             }
             menu.addItem(.separator())
+            let display = menu.addItem(withTitle: "Widget display", action: nil, keyEquivalent: "")
+            display.submenu = widgetDisplayMenu()
+            menu.addItem(.separator())
             if authentication.authenticated { menu.addItem(withTitle: "Sign out of Open Sesame", action: #selector(signOut), keyEquivalent: "").target = self }
             menu.addItem(withTitle: "Quit Open Sesame", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             for item in menu.items where item.action == #selector(showPanel) { item.target = self }
@@ -260,9 +268,51 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func screenID(_ screen: NSScreen) -> NSNumber? { screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber }
+    func screenUUID(_ screen: NSScreen) -> String? {
+        guard let id = screenID(screen), let uuid = CGDisplayCreateUUIDFromDisplayID(id.uint32Value)?.takeRetainedValue() else { return nil }
+        return CFUUIDCreateString(nil, uuid) as String
+    }
+    var displayPreferenceStatus: [String: Any] {
+        ["pinned": displayPreference.uuid != nil, "name": displayPreference.name,
+         "available": displayPreference.uuid == nil || displayPreference.index(in: NSScreen.screens.map(screenUUID)) != nil,
+         "detached": detached]
+    }
+    func publishDisplayPreference() {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["event": "window.display.changed", "status": displayPreferenceStatus]), let json = String(data: data, encoding: .utf8) else { return }
+        web?.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
+    }
+    func widgetDisplayMenu() -> NSMenu {
+        let menu = NSMenu(title: "Widget display")
+        let follow = menu.addItem(withTitle: "Follow pointer", action: #selector(selectWidgetDisplay), keyEquivalent: "")
+        follow.target = self; follow.representedObject = ""; follow.state = displayPreference.uuid == nil ? .on : .off
+        menu.addItem(.separator())
+        for screen in NSScreen.screens {
+            guard let uuid = screenUUID(screen) else { continue }
+            let item = menu.addItem(withTitle: "Pin to " + screen.localizedName, action: #selector(selectWidgetDisplay), keyEquivalent: "")
+            item.target = self; item.representedObject = ["uuid": uuid, "name": screen.localizedName]
+            item.state = displayPreference.uuid == uuid ? .on : .off
+        }
+        if displayPreference.uuid != nil, displayPreference.index(in: NSScreen.screens.map(screenUUID)) == nil {
+            menu.addItem(.separator())
+            let unavailable = menu.addItem(withTitle: "Pinned display unavailable · following pointer", action: nil, keyEquivalent: ""); unavailable.isEnabled = false
+        }
+        return menu
+    }
+    @objc func selectWidgetDisplay(_ sender: NSMenuItem) {
+        if let choice = sender.representedObject as? [String: String], let uuid = choice["uuid"], NSScreen.screens.contains(where: { screenUUID($0) == uuid }) {
+            displayPreference = OpenSesameDisplayPreference(uuid: uuid, name: choice["name"] ?? "Display")
+        } else if sender.representedObject as? String == "" { displayPreference = OpenSesameDisplayPreference() }
+        else { return }
+        displayPreference.save(); positionPanel(); publishDisplayPreference()
+    }
+    func showWidgetDisplayMenu() {
+        displayMenuOpen = true
+        widgetDisplayMenu().popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        displayMenuOpen = false; followPointerDisplay(force: true)
+    }
 
     var displayInteractionInProgress: Bool {
-        NSEvent.pressedMouseButtons != 0 || panel?.inLiveResize == true || NSApp.modalWindow != nil || panel?.attachedSheet != nil || authentication?.busy == true || spotify?.busy == true || NSApp.windows.contains { ($0 is NSSavePanel) && $0.isVisible }
+        displayMenuOpen || NSEvent.pressedMouseButtons != 0 || panel?.inLiveResize == true || NSApp.modalWindow != nil || panel?.attachedSheet != nil || authentication?.busy == true || spotify?.busy == true || NSApp.windows.contains { ($0 is NSSavePanel) && $0.isVisible }
     }
 
     func placementScreen() -> NSScreen? {
@@ -271,7 +321,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         let preferred = detached ? (panel?.screen ?? saved ?? NSScreen.main) : (saved ?? panel?.screen ?? NSScreen.main)
         let fallback = preferred.flatMap { screens.firstIndex(of: $0) }
         let pointer: NSPoint? = detached || displayInteractionInProgress ? nil : NSEvent.mouseLocation
-        guard let index = OpenSesameScreenPlacement.screenIndex(pointer: pointer, frames: screens.map(\.frame), fallback: fallback) else { return nil }
+        let pinned = detached ? nil : displayPreference.index(in: screens.map(screenUUID))
+        guard let index = OpenSesameScreenPlacement.screenIndex(pointer: pointer, frames: screens.map(\.frame), fallback: fallback, pinned: pinned) else { return nil }
         return screens[index]
     }
 
@@ -281,11 +332,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
-    @objc func screenParametersChanged(_ notification: Notification) { protectedShare?.displayConfigurationChanged(); followPointerDisplay(force: true) }
+    @objc func screenParametersChanged(_ notification: Notification) { needsDisplayReanchor = true; protectedShare?.displayConfigurationChanged(); followPointerDisplay(force: true); publishDisplayPreference() }
 
     func followPointerDisplay(force: Bool = false) {
-        guard OpenSesameScreenPlacement.shouldFollow(placement: placement, detached: detached, visible: panel?.isVisible == true, interacting: displayInteractionInProgress), let screen = placementScreen() else { return }
-        guard force || screenID(screen) != dockedScreenID || screen.frame != dockedScreenFrame else { return }
+        guard OpenSesameScreenPlacement.shouldFollow(placement: placement, detached: detached, visible: panel?.isVisible == true, interacting: displayInteractionInProgress, reconfigure: needsDisplayReanchor), let screen = placementScreen() else { return }
+        guard force || needsDisplayReanchor || screenID(screen) != dockedScreenID || screen.frame != dockedScreenFrame else { return }
         positionPanel()
     }
 
@@ -305,6 +356,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         }
         guard let target = OpenSesameScreenPlacement.panelFrame(requested: requestedSize, frame: screen.frame, visibleFrame: screen.visibleFrame, placement: placement, full: fillsDisplay, menuAnchor: menuAnchor) else { return }
         dockedScreenID = screenID(screen); dockedScreenFrame = screen.frame; currentSize = target.size
+        needsDisplayReanchor = false
         panel.setFrame(target, display: true, animate: false)
         web?.layoutSubtreeIfNeeded()
         publishDisplay(screen)
@@ -420,6 +472,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "window.focus" {
             NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(web)
             respond(requestId, result: true); return
+        }
+        if method == "window.display.status" { respond(requestId, result: displayPreferenceStatus); return }
+        if method == "window.display.choose" {
+            respond(requestId, result: true)
+            DispatchQueue.main.async { [weak self] in self?.showWidgetDisplayMenu() }
+            return
         }
         if method.hasPrefix("privacy.") {
             switch method {

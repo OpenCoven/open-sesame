@@ -11,6 +11,14 @@ struct OpenSesameAudioTimeline {
     private var system = [Float](repeating: 0, count: rate * 3)
     private var microphone = [Float](repeating: 0, count: rate * 3)
     private var cursor = 0
+    private var startedAt: Double?
+    mutating func start(at time: Double) { self = Self(); startedAt = time.isFinite ? time : nil }
+    mutating func put(_ samples: [Float], received: Double, mic: Bool) {
+        guard let startedAt, received.isFinite, received >= startedAt else { return }
+        let elapsed = (received - startedAt) * Double(Self.rate)
+        guard elapsed.isFinite, elapsed < Double(Int.max) else { return }
+        put(samples, at: max(0, Int(elapsed.rounded()) - samples.count), mic: mic)
+    }
     mutating func put(_ samples: [Float], at frame: Int, mic: Bool) {
         for (offset, value) in samples.enumerated() {
             let position = frame + offset
@@ -31,6 +39,21 @@ struct OpenSesameAudioTimeline {
     }
 }
 
+struct OpenSesameAudioSignal {
+    private var packetAt: Double?
+    private var soundAt: Double?
+    mutating func receive(level: Double, at time: Double) {
+        guard time.isFinite, level.isFinite, level >= 0 else { return }
+        packetAt = time
+        if level >= 0.003 { soundAt = time }
+    }
+    func state(at time: Double) -> String {
+        guard let packetAt, time >= packetAt, time - packetAt <= 2 else { return "waiting" }
+        if let soundAt, time - soundAt <= 1.2 { return "detected" }
+        return "silent"
+    }
+}
+
 final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     static let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false)!
     private let queue = DispatchQueue(label: "computer.opensesame.system-audio")
@@ -41,15 +64,17 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
     private var epoch = 0
     private var mixed = false
     private var timeline = OpenSesameAudioTimeline()
-    private var startTime = 0.0
     private var lastLevel = 0.0
+    private var systemSignal = OpenSesameAudioSignal()
+    private var microphoneSignal = OpenSesameAudioSignal()
     private var converters: [String: AVAudioConverter] = [:]
     private var output: ((AVAudioPCMBuffer) -> Void)?
     private let failed: (String) -> Void
     private let level: (Double) -> Void
+    private let activity: (([String: String]) -> Void)?
 
-    init(output: @escaping (AVAudioPCMBuffer) -> Void, level: @escaping (Double) -> Void, failed: @escaping (String) -> Void) {
-        self.output = output; self.failed = failed; self.level = level
+    init(output: @escaping (AVAudioPCMBuffer) -> Void, level: @escaping (Double) -> Void, failed: @escaping (String) -> Void, activity: (([String: String]) -> Void)? = nil) {
+        self.output = output; self.failed = failed; self.level = level; self.activity = activity
     }
     static func pcm(_ sample: CMSampleBuffer) -> AVAudioPCMBuffer? {
         guard CMSampleBufferDataIsReady(sample), let description = CMSampleBufferGetFormatDescription(sample), CMFormatDescriptionGetMediaType(description) == kCMMediaType_Audio else { return nil }
@@ -98,9 +123,14 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
                         }
                         self.microphone = engine; engine.prepare(); try engine.start()
                     }
-                    self.queue.sync { self.timeline = OpenSesameAudioTimeline(); self.converters.removeAll(); self.startTime = ProcessInfo.processInfo.systemUptime; self.active = true }
                     try await stream.startCapture()
                     guard self.epoch == ticket else { await self.stop(); completion("Audio capture cancelled."); return }
+                    // Capture startup may take longer than the ring capacity. Anchor the clock only after it succeeds.
+                    self.queue.sync {
+                        self.timeline.start(at: ProcessInfo.processInfo.systemUptime)
+                        self.converters.removeAll(); self.systemSignal = OpenSesameAudioSignal(); self.microphoneSignal = OpenSesameAudioSignal()
+                        self.lastLevel = 0; self.active = true
+                    }
                     self.queue.async { [self] in
                         guard self.active else { return }
                         let timer = DispatchSource.makeTimerSource(queue: self.queue)
@@ -126,17 +156,25 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
         let converter: AVAudioConverter
         if let saved = converters[key], saved.inputFormat == buffer.format { converter = saved }
         else { guard let value = AVAudioConverter(from: buffer.format, to: Self.format) else { return }; converters[key] = value; converter = value }
-        let frames = AVAudioFrameCount(ceil(Double(buffer.frameLength) * 48000 / buffer.format.sampleRate) + 32)
-        guard frames > 0, frames <= 96000, let converted = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: frames) else { return }
+        guard let converted = Self.convert(buffer, using: converter), let data = converted.floatChannelData?[0] else { return }
+        let samples = Array(UnsafeBufferPointer(start: data, count: Int(converted.frameLength)))
+        timeline.put(samples, received: received, mic: mic)
+        let energy = samples.reduce(0.0) { $0 + Double($1 * $1) } / Double(samples.count)
+        if mic { microphoneSignal.receive(level: sqrt(energy), at: received) }
+        else { systemSignal.receive(level: sqrt(energy), at: received) }
+    }
+    static func convert(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter) -> AVAudioPCMBuffer? {
+        guard buffer.frameLength > 0, buffer.format.sampleRate.isFinite, buffer.format.sampleRate > 0 else { return nil }
+        let capacity = ceil(Double(buffer.frameLength) * 48000 / buffer.format.sampleRate) + 32
+        guard capacity.isFinite, capacity > 0, capacity <= 96000, converter.inputFormat == buffer.format, converter.outputFormat == Self.format,
+              let converted = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(capacity)) else { return nil }
         var supplied = false, error: NSError?
         let result = converter.convert(to: converted, error: &error) { _, status in
             if supplied { status.pointee = .noDataNow; return nil }
             supplied = true; status.pointee = .haveData; return buffer
         }
-        guard result != .error, error == nil, converted.frameLength > 0, let data = converted.floatChannelData?[0] else { return }
-        let samples = Array(UnsafeBufferPointer(start: data, count: Int(converted.frameLength)))
-        let end = max(0, Int((received - startTime) * 48000)), frame = max(0, end - samples.count)
-        timeline.put(samples, at: frame, mic: mic)
+        guard result != .error, error == nil, converted.frameLength > 0 else { return nil }
+        return converted
     }
     private func tick() {
         guard active, let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(OpenSesameAudioTimeline.block)), let data = buffer.floatChannelData?[0] else { return }
@@ -145,15 +183,21 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
         output?(buffer)
         let energy = samples.reduce(0.0) { $0 + Double($1 * $1) } / Double(samples.count)
         let now = ProcessInfo.processInfo.systemUptime
-        if now - lastLevel >= 0.2 { lastLevel = now; level(min(100, sqrt(energy) * 300)) }
+        if now - lastLevel >= 0.2 {
+            lastLevel = now; level(min(100, sqrt(energy) * 300))
+            activity?(["system": systemSignal.state(at: now), "mic": microphoneSignal.state(at: now)])
+        }
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
         guard outputType == .audio, let buffer = Self.pcm(sampleBuffer) else { return }
         ingest(buffer, mic: false, received: ProcessInfo.processInfo.systemUptime)
     }
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        queue.async { self.active = false; self.ticker?.cancel(); self.ticker = nil }
-        DispatchQueue.main.async { self.failed("System audio capture stopped. Check macOS recording permission and try again.") }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.stream === stream else { return }
+            self.queue.async { self.active = false; self.ticker?.cancel(); self.ticker = nil }
+            self.failed("System audio capture stopped. Check macOS recording permission and try again.")
+        }
     }
     func stop(completion: (() -> Void)? = nil) {
         epoch += 1; microphone?.inputNode.removeTap(onBus: 0); microphone?.stop(); microphone = nil

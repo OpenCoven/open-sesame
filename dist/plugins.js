@@ -17,7 +17,7 @@
   function render(){
     const c=context(),shown=M.filter(M.catalog,el('plugins-search').value,el('plugins-category').value,el('plugins-connected').getAttribute('aria-pressed')==='true',c),pages=Math.max(1,Math.ceil(shown.length/capacity));page=Math.min(page,pages-1);
     const focused=document.activeElement?.dataset.plugin,visible=shown.slice(page*capacity,(page+1)*capacity);el('plugins-grid').dataset.count=visible.length;el('plugins-grid').replaceChildren(...visible.map(p=>card(p,c)));if(focused)pane.querySelector('[data-plugin="'+focused+'"]')?.focus({preventScroll:true});
-    el('plugins-empty').hidden=shown.length>0;el('plugins-grid').hidden=!shown.length;el('plugins-count').textContent=shown.length+' plugin'+(shown.length===1?'':'s');el('plugins-page').textContent=(page+1)+' / '+pages;el('plugins-prev').disabled=page===0;el('plugins-next').disabled=page>=pages-1;el('plugins-pages').hidden=pages===1;
+    el('plugins-empty').hidden=shown.length>0;el('plugins-grid').hidden=!shown.length;el('plugins-count').textContent=shown.length+' widget'+(shown.length===1?'':'s');el('plugins-page').textContent=(page+1)+' / '+pages;el('plugins-prev').disabled=page===0;el('plugins-next').disabled=page>=pages-1;el('plugins-pages').hidden=pages===1;
     el('plugins-refresh').disabled=checking;el('plugins-refresh').classList.toggle('is-refreshing',checking);
     el('plugins-desktop-state').textContent=c.desktop?'Desktop connected':'Bring your Mac along';el('plugins-desktop-copy').textContent=c.desktop?'Local agents are available to check.':'Build the macOS companion to use local agents.';el('plugins-desktop-action').textContent=c.desktop?'Agents':'Get Mac source';
     el('plugins-status').textContent=error||'';el('plugins-status').hidden=!error;
