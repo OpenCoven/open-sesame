@@ -25,9 +25,10 @@
     host.setAttribute('aria-busy',String(busy));el('github-refresh').disabled=busy;el('github-add').disabled=busy||!account?.authenticated;el('github-repository-input').disabled=busy||!account?.authenticated;el('github-repository').disabled=busy||!account?.repositories?.length;el('github-remove').disabled=busy||!selected;
     el('github-account').textContent=account?.authenticated?'@'+account.account+' · Read only':'Read-only project monitor';
     el('github-setup').hidden=!!account?.authenticated;el('github-setup-copy').textContent=account?.error||'Use your existing GitHub CLI sign-in. Open Sesame reads repository metadata and never receives your token.';
+    el('github-add-form').hidden=!account?.authenticated;el('github-repository').parentElement.hidden=!account?.repositories?.length;
     el('github-error').hidden=!error;el('github-error').textContent=error;
     const picker=el('github-repository'),signature=JSON.stringify(account?.repositories||[]);if(picker.dataset.repositories!==signature){picker.replaceChildren(...(account?.repositories||[]).map(repo=>{const option=make('option','',repo);option.value=repo;return option}));picker.dataset.repositories=signature}picker.value=selected;
-    el('github-empty').hidden=!!selected||busy;el('github-project').hidden=!snapshot;el('github-cards').hidden=!snapshot;
+    el('github-empty').hidden=!account?.authenticated||!!selected||busy;el('github-project').hidden=!snapshot;el('github-cards').hidden=!snapshot;
     if(snapshot){el('github-project-name').textContent=snapshot.repository;el('github-project-copy').textContent=[snapshot.private?'Private':'Public',snapshot.branch,snapshot.archived?'Archived':'',snapshot.description].filter(Boolean).join(' · ');el('github-project-open').href=snapshot.url;el('github-cards').replaceChildren(section('pulls','Pull requests','No recent open pull requests.'),section('issues','Issues','No recent open issues.'),section('runs','Workflow runs','No workflow runs yet.'));}
     el('github-updated').textContent=busy?'Refreshing GitHub…':snapshot?(snapshot.stale?'Saved snapshot · ':'Updated ')+new Date(snapshot.updatedAt*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'Refreshes every minute while this view is visible.';
   }
@@ -49,7 +50,7 @@
     catch(e){if(ticket===generation)error=e.message||'Could not update your monitored repositories.'}
     finally{if(ticket===generation){busy=false;draw();announce();if(!error)load(false);else later()}}
   }
-  function close(focus=true){generation++;busy=false;clearTimer();host.hidden=true;pane.classList.remove('github-monitor-open');if(focus)lastFocus?.focus?.({preventScroll:true})}
+  function close(focus=true){generation++;busy=false;clearTimer();host.hidden=true;pane.classList.remove('github-monitor-open');if(focus){const target=pane.querySelector?.('[data-plugin="github"]')||lastFocus;(target?.isConnected?target:el('plugins-search')).focus({preventScroll:true})}}
   function open(source){lastFocus=source||document.activeElement;host.hidden=false;pane.classList.add('github-monitor-open');el('github-back').focus({preventScroll:true});draw();if(!window.__OPEN_SESAME_NATIVE__||!bridge?.available){error='Open the Mac app to connect your local GitHub CLI account.';draw();return}load(false)}
   el('github-back').addEventListener('click',()=>close());el('github-refresh').addEventListener('click',()=>load(true));el('github-connect').addEventListener('click',()=>load(true));
   el('github-add-form').addEventListener('submit',event=>{event.preventDefault();const value=el('github-repository-input').value.trim();if(value)mutate('github.add',value)});
