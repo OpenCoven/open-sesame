@@ -10,6 +10,7 @@ class Element extends EventTarget {
   attributes = new Map();
   setAttribute(key,value){this.attributes.set(key,String(value))} getAttribute(key){return this.attributes.get(key)??null} removeAttribute(key){this.attributes.delete(key)} focus(){}
   click(){this.dispatchEvent(new Event('click'))}
+  showModal(){this.open=true} close(){this.open=false}
 }
 const elements=new Map(), get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id)};
 const doc=new Element(), win=new EventTarget();
@@ -31,7 +32,7 @@ const ctx=vm.createContext({window:win,document:doc,navigator:{userAgent:'Mac WK
   newId:()=>String(++next),$:get,localStorage:{getItem:()=>null,setItem(){}},Event,Blob,URL,Date,
   setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,cancelAnimationFrame(){},
   transcriptEditor:{set(text){get('audio-transcript').value=text},layout(){}},renderCompact(){},renderDraft(){},
-  state:{scenario:'audio'},time:n=>String(n),toast(){},console});
+  state:{scenario:'audio',expanded:true},time:n=>String(n),toast(){},console});
 for(const file of ['live-capture-model.js','audio.js','live-questions.js','live.js'])vm.runInContext(fs.readFileSync('dist/'+file,'utf8'),ctx);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const speech=(id,text,final=false)=>win.dispatchEvent(Object.assign(new Event('open-sesame-desktop-event'),{detail:{event:'voice.result',id,text,final}}));
@@ -131,3 +132,22 @@ assert.match(calls.filter(c=>c.method==='live.ask').at(-1).params.question,/Sugg
 reply({agent:'codex',answer:'Which feedback should we prioritize?'});await flush();
 assert.match(get('live-answers').children.at(-1).children.at(-1).textContent,/prioritize/);
 console.log('Question commands, prompt expansion, custom edits, deletion, and incremental catch-up passed.');
+
+get('live-shortcut-editor').hidden=true;
+get('live-customize').click();
+assert.equal(get('live-shortcut-dialog').open,true);
+assert.equal(get('live-shortcut-saved').hidden,true,'A first shortcut needs no redundant saved-shortcut selector');
+assert.equal(get('live-shortcut-save').disabled,true);
+get('live-shortcut-name').value='/Open questions';get('live-shortcut-name').dispatchEvent(new Event('input'));
+get('live-shortcut-prompt').value='Which questions are still unresolved?';get('live-shortcut-prompt').dispatchEvent(new Event('input'));
+assert.equal(get('live-shortcut-preview').textContent,'/open questions');assert.equal(get('live-shortcut-save').disabled,false);
+const requestCount=calls.length;get('live-shortcut-editor').dispatchEvent(new Event('submit',{cancelable:true}));
+assert.equal(get('live-shortcut-dialog').open,false);assert.equal(shortcuts.find('/open questions').prompt,'Which questions are still unresolved?');
+assert.equal(calls.length,requestCount,'Saving a shortcut cannot send it or start audio');
+get('live-customize').click();get('live-shortcut-choice').value='open questions';get('live-shortcut-choice').dispatchEvent(new Event('change'));
+assert.equal(get('live-shortcut-title').textContent,'Edit shortcut');assert.equal(get('live-shortcut-save').textContent,'Save changes');
+get('live-shortcut-prompt').value='Do not save this';get('live-shortcut-cancel').click();
+assert.equal(shortcuts.find('/open questions').prompt,'Which questions are still unresolved?','Cancel preserves the saved question');
+get('live-customize').click();ctx.state.expanded=false;win.dispatchEvent(new Event('open-sesame-layout'));
+assert.equal(get('live-shortcut-dialog').open,false,'Collapsing cannot strand a modal over the compact widget');
+console.log('Shortcut creation/editing: focused modal, normalized preview, empty save guard, local-only save, cancel and collapse cleanup passed.');

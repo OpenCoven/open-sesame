@@ -10,10 +10,11 @@ const get=id=>nodes.find(n=>n.id===id)||Object.assign(new Node(),{id});
 const window={addEventListener(){}},context={window,state:{scenario:'focus'},document:{getElementById:get,createElement:()=>new Node()},icon:()=>'<svg></svg>',requestAnimationFrame:fn=>{frames.set(++sequence,fn);return sequence},cancelAnimationFrame:id=>frames.delete(id),ResizeObserver:class{observe(){}},MutationObserver:class{observe(){}},navigator:{clipboard:{writeText:async value=>copied.push(value)}},toast(){}};
 vm.createContext(context);vm.runInContext(fs.readFileSync('dist/calculator.js','utf8'),context);
 const capture=fs.readFileSync('dist/capture.js','utf8');vm.runInContext(capture.slice(capture.indexOf('  const views='),capture.indexOf('  const el=id=>'))+';this.interpret=interpret;',context);window.openSesameCapture={interpret:context.interpret};
-get('capture-type').value='auto';vm.runInContext(fs.readFileSync('dist/input-tools.js','utf8'),context);
+get('capture-type').value='auto';get('capture-commands').hidden=true;vm.runInContext(fs.readFileSync('dist/input-tools.js','utf8'),context);
 const flush=()=>{const ready=[...frames.values()];frames.clear();for(const fn of ready)fn()};
 const type=value=>{get('capture-input').value=value;window.OpenSesameInputTools.refresh();flush()};
 type('2-2');assert.equal(get('capture-calculation').hidden,false);assert.equal(get('capture-calculation').children[0].children[0].children[1].textContent,'0');await window.OpenSesameInputTools.copyCalculation();assert.deepEqual(copied,['0']);
+get('capture-commands').hidden=false;type('2-2');assert.equal(get('capture-calculation').hidden,true,'Manual commands and calculations occupy one result surface');get('capture-commands').hidden=true;
 for(const value of ['/','/focus','/2+2','!','! 2+2','An ordinary thought']){type(value);assert.equal(get('capture-calculation').hidden,true,`A command or note cannot retain a stale calculation: ${value}`);await window.OpenSesameInputTools.copyCalculation();assert.deepEqual(copied,['0'])}
 type('2/0');assert.equal(get('capture-calculation').hidden,false);assert.equal(get('capture-calculation').children[0].disabled,true);await window.OpenSesameInputTools.copyCalculation();assert.deepEqual(copied,['0']);
 get('capture-type').value='task';type('2+2');assert.equal(get('capture-calculation').hidden,true,'Explicit capture types remain literal');

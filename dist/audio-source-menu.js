@@ -11,7 +11,7 @@
   const mode=el('live-capture-mode'),actions=setup.querySelector('.live-capture-actions'),status=el('live-capture-state');
   actions.prepend(el('live-input-controls'));status.append(pane.querySelector('.live-status'),pane.querySelector('.live-clock'),el('audio-meter'));
   el('live-input-controls').setAttribute('aria-label','Capture controls');
-  actions.append(el('live-settings'));setup.querySelector('.live-capture-summary').append(el('live-sample'));pane.querySelector('.live-bar').hidden=true;
+  actions.append(el('live-settings'));setup.querySelector('.live-capture-summary').append(el('live-customize'),el('live-sample'));pane.querySelector('.live-bar').hidden=true;
   const helpToggle=el('live-capture-help-toggle');helpToggle.innerHTML=icon('info');let detailsOpen=false;
   helpToggle.addEventListener('click',()=>{detailsOpen=!detailsOpen;sync()});
   const result=document.createElement('section');result.id='live-recording-result';result.setAttribute('aria-label','Audio recording');

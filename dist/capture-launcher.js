@@ -5,7 +5,7 @@
   const bar=document.createElement('div');bar.id='launcher-statusbar';bar.hidden=true;bar.innerHTML='<span class="launcher-brand">Open Sesame</span><span class="launcher-keys"><kbd>↑</kbd><kbd>↓</kbd> navigate</span><button id="launcher-primary" type="button">Open <kbd>↵</kbd></button><button id="launcher-return" type="button">Full widget <span aria-hidden="true">↗</span></button>';footer.append(bar);
   function nativeFrame(){const [width,height]=frameScreen();return {width:Math.max(1,Math.min(760,width-24)),height:Math.max(1,Math.min(500,height-64))}}
   function actions(){
-    const field=el('capture-input'),intent=window.openSesameCapture?.interpret?.(field.value,el('capture-type').value),calculation=intent?.kind==='calculation'?intent.calculation:null,selected=field.getAttribute('aria-activedescendant'),option=!el('capture-commands').hidden&&selected?el(selected):null;
+    const field=el('capture-input'),intent=window.openSesameCapture?.interpret?.(field.value,el('capture-type').value),calculation=el('capture-commands').hidden&&intent?.kind==='calculation'?intent.calculation:null,selected=field.getAttribute('aria-activedescendant'),option=!el('capture-commands').hidden&&selected?el(selected):null;
     const label=calculation?(calculation.error?'Finish calculation':'Copy result'):option?(option.dataset.actionLabel||'Open'):intent?.label||(intent?.kind==='error'?'Review command':'Save note');
     el('launcher-primary').textContent=label+' ↵';el('launcher-primary').disabled=!!calculation?.error||!option&&(!!intent?.incomplete||intent?.kind==='error'||!field.value.trim());
   }
@@ -22,7 +22,7 @@
     window.OpenSesameComposer?.fullscreen(false);window.openSesameCapture?.hide();
     active=true;document.body.classList.add('capture-launcher-open');
     state.expanded=true;if(state.size==='full')state.size='medium';el('capture-type').value='auto';
-    bar.hidden=false;el('capture-launcher-exit').hidden=false;render();renderDraft();sync();footer.setAttribute('role','dialog');footer.setAttribute('aria-modal','true');footer.setAttribute('aria-label','Open Sesame command palette');el('capture-input').setAttribute('aria-label','Search Open Sesame commands');window.openSesameCapture?.openMenu();el('capture-input').focus({preventScroll:true});
+    bar.hidden=false;el('capture-launcher-exit').hidden=false;render();renderDraft();sync();footer.setAttribute('role','dialog');footer.setAttribute('aria-modal','true');footer.setAttribute('aria-label','Open Sesame command palette');el('capture-input').setAttribute('aria-label','Search Open Sesame commands');window.openSesameCapture?.refresh();el('capture-input').focus({preventScroll:true});
   }
   function close(expand=previous?.expanded){
     if(!active)return;

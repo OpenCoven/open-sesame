@@ -36,3 +36,11 @@ e=environment({native:true});await e.win.OpenSesameWindow.open();assert.equal(aw
 e=environment({native:true});await e.win.OpenSesameWindow.open();e.ctx.openSesameBridge.request=async()=>{throw Error('Dock failed')};assert.equal(await e.win.OpenSesameWindow.collapse({outside:true}),false);assert.equal(e.win.OpenSesameWindow.detached,true);assert.equal(e.ctx.state.expanded,true,'A failed native dock must preserve the visible window');
 e=environment({native:true});await e.win.OpenSesameWindow.open();let finishDock;e.ctx.openSesameBridge.request=()=>new Promise(resolve=>finishDock=resolve);const pending=e.win.OpenSesameWindow.collapse({outside:true});assert.equal(await e.win.OpenSesameWindow.collapse({outside:true}),false,'Concurrent outside events share one collapse');finishDock(true);assert.equal(await pending,true);assert.equal(e.ctx.state.expanded,false);
 console.log('Outside dismissal: inside/trigger exclusions, pinned/drag/dialog guards, draft and size retention, Full restoration, focus-safe native docking, failure recovery and duplicate suppression passed.');
+
+e=environment({native:true});e.ctx.state.expanded=false;e.el('capture-input').value='Keep me';
+e.win.OpenSesameWindow.show();assert.equal(e.ctx.state.expanded,true);
+await e.win.OpenSesameWindow.toggle();assert.equal(e.ctx.state.expanded,false);
+await e.win.OpenSesameWindow.toggle();assert.equal(e.ctx.state.expanded,true);assert.equal(e.el('capture-input').value,'Keep me');
+let returned=false;e.win.OpenSesameLauncher={active:true,close(expand){returned=expand;this.active=false}};
+e.win.OpenSesameWindow.show();assert.equal(returned,true,'Open widget exits the launcher into the full workspace');
+console.log('Native widget entry and toggle restore the workspace, compact geometry and draft without stopping sessions.');

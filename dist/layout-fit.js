@@ -27,7 +27,7 @@
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(fit)}
   const observer=new ResizeObserver(schedule);[panel,projects].filter(Boolean).forEach(node=>observer.observe(node));
-  new MutationObserver(schedule).observe(projects,{childList:true,subtree:true});
+  if(projects)new MutationObserver(schedule).observe(projects,{childList:true,subtree:true});
   for(const event of ['open-sesame-layout','open-sesame-view-changed'])window.addEventListener(event,schedule);
   fit();
 })();
