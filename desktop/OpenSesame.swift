@@ -42,6 +42,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var outsideClickMonitors: [Any] = []
     var authentication: OpenSesameAuthentication!
     var spotify: OpenSesameSpotify!
+    var protectedShare: OpenSesameProtectedShare!
     var appUnlocked = false
     var pendingAuthenticationURLs: [URL] = []
 
@@ -101,6 +102,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         web.configuration.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_GLOBAL_SHORTCUT__=\(shortcut?.available == true ? "true" : "false");", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         status.button?.toolTip = shortcut?.available == true ? "Open Sesame · Option–Space" : "Open Sesame · Option–Space unavailable"
         spotify = OpenSesameSpotify()
+        protectedShare = OpenSesameProtectedShare()
+        protectedShare.changed = { [weak self] in
+            guard let self, let data = try? JSONSerialization.data(withJSONObject: ["event": "privacy.changed", "status": self.protectedShare.status]), let json = String(data: data, encoding: .utf8) else { return }
+            self.web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
+        }
         spotify.window = panel
         spotify.changed = { [weak self] in
             guard let self, let data = try? JSONSerialization.data(withJSONObject: ["event": "music.spotify.changed", "status": self.spotify.status]), let json = String(data: data, encoding: .utf8) else { return }
@@ -132,6 +138,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
             }
         } else if appUnlocked {
+            protectedShare.stop()
             spotify.disconnect()
             appUnlocked = false; pendingLauncher = false
             voice.cancel(); audioRecorder.clear()
@@ -274,7 +281,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
-    @objc func screenParametersChanged(_ notification: Notification) { followPointerDisplay(force: true) }
+    @objc func screenParametersChanged(_ notification: Notification) { protectedShare?.displayConfigurationChanged(); followPointerDisplay(force: true) }
 
     func followPointerDisplay(force: Bool = false) {
         guard OpenSesameScreenPlacement.shouldFollow(placement: placement, detached: detached, visible: panel?.isVisible == true, interacting: displayInteractionInProgress), let screen = placementScreen() else { return }
@@ -414,6 +421,18 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(web)
             respond(requestId, result: true); return
         }
+        if method.hasPrefix("privacy.") {
+            switch method {
+            case "privacy.status": respond(requestId, result: protectedShare.status)
+            case "privacy.start":
+                guard let id = params["displayID"] as? NSNumber, id.doubleValue.isFinite, id.doubleValue >= 0, id.doubleValue <= Double(UInt32.max), id.doubleValue.rounded() == id.doubleValue else { respond(requestId, error: "Choose an available display."); return }
+                protectedShare.start(displayID: id.uint32Value) { [weak self] error in self?.respond(requestId, result: self?.protectedShare.status, error: error) }
+            case "privacy.stop": protectedShare.stop(); respond(requestId, result: protectedShare.status)
+            case "privacy.show": protectedShare.show(); respond(requestId, result: protectedShare.status)
+            default: respond(requestId, error: "Unsupported screen-share action.")
+            }
+            return
+        }
         if method.hasPrefix("music.spotify.") {
             do {
                 switch method {
@@ -537,7 +556,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

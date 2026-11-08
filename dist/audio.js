@@ -230,10 +230,5 @@ $('transcript-note').addEventListener('click',()=>{
   const note={id:newId(),text:title,title,kind:'note',url:'',done:false,body:audioSession.final.trim().slice(0,12000),projectId:$('capture-project').value==='__new'?'':$('capture-project').value};items.push(note);
   if(!saveItems()){items.pop();return}selectedItemId=note.id;revealItem=true;if(projectFilter!=='all')projectFilter=note.projectId||'inbox';libraryOpen=true;categoryFilter='note';expandedCategories.add('note');changeScenario('items');toast('Transcript saved as a note.');
 });
-const sharePrivacy=$('share-privacy');
-function showSharePrivacy(){if(guide.open)guide.close();if(!sharePrivacy.open)sharePrivacy.showModal()}
-['privacy-hide','panel-privacy'].forEach(id=>$(id).addEventListener('click',showSharePrivacy));
-['share-privacy-close','share-privacy-done'].forEach(id=>$(id).addEventListener('click',()=>sharePrivacy.close()));
-document.addEventListener('keydown',e=>{if(e.altKey&&e.shiftKey&&e.code==='KeyP'){e.preventDefault();sharePrivacy.open?sharePrivacy.close():showSharePrivacy()}});
 window.addEventListener('pagehide',()=>{stopAudio('Stopped.',true);if(audioSession.recordUrl)URL.revokeObjectURL(audioSession.recordUrl);if(audioSession.textUrl)URL.revokeObjectURL(audioSession.textUrl)});
 audioSourceHelp();renderTranscript();

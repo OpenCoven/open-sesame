@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="studio-controls.css?v=ee9c3474b7">
   <link rel="stylesheet" href="focus-overview.css?v=19682a753f">
   <script src="storage-migration.js?v=3ac2f2e93e" defer></script>
-  <script src="bridge.js?v=8da86bfff6" defer></script>
+  <script src="bridge.js?v=7e04ad91ee" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f" defer></script>
   <script src="vendor/purify.min.js?v=4936212d73" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e" defer></script>
@@ -72,7 +72,8 @@
   <script src="composer.js?v=22ec579aac" defer></script>
   <script src="remote.js?v=f167e1fa5d" defer></script>
   <script src="live-capture-model.js?v=4f4af6cc37" defer></script>
-  <script src="audio.js?v=9a8bef529c" defer></script>
+  <script src="audio.js?v=47e46e8697" defer></script>
+  <script src="privacy.js?v=7bcea18b99" defer></script>
   <script src="live-questions.js?v=4f1f253d46" defer></script>
   <script src="live.js?v=fab610de12" defer></script>
   <script src="playlist-model.js?v=78fc2c3d0f" defer></script>
@@ -119,6 +120,7 @@
   <link rel="stylesheet" href="workspace-rail.css?v=1c3aa15ae1">
   <link rel="stylesheet" href="activity-rail.css?v=edcc45286c">
   <link rel="stylesheet" href="flat-theme.css?v=7334fefa57">
+  <link rel="stylesheet" href="privacy.css?v=c5c2660ec0">
   <script src="account.js?v=23230469c5" defer></script>
 <link rel="stylesheet" href="interface-polish.css?v=875e7419a5">
 <script src="app-version.js" defer></script><link rel="stylesheet" href="app-version.css">
@@ -433,7 +435,7 @@
     </main>
   </div>
   <button id="exit-present" class="exit-present" hidden><i data-icon="collapse"></i>Exit presentation<span>Esc</span></button>
-  <dialog id="share-privacy" aria-labelledby="share-privacy-title"><div class="dialog-top"><span class="eyebrow">SCREEN-SHARE PRIVACY</span><button id="share-privacy-close" class="icon-button" aria-label="Close screen-share privacy"><i data-icon="close"></i></button></div><h2 id="share-privacy-title">Visible to you. Private from a share.</h2><div class="share-privacy-status"><i data-icon="info"></i><span>Not available in this browser prototype</span></div><p>Open Sesame stays visible to you. A web page cannot exclude itself from another app’s screen capture.</p><p>For now, share a specific app window or browser tab that does not contain Open Sesame. Sharing your entire display can include this widget.</p><div class="guide-note">Selective capture exclusion needs a native macOS implementation and testing with the app you use to share. This preview does not claim to be hidden from recordings.</div><button id="share-privacy-done" class="present-button">Got it</button></dialog>
+  <dialog id="share-privacy" aria-labelledby="share-privacy-title"><div class="dialog-top"><span class="eyebrow">SCREEN-SHARE PRIVACY</span><button id="share-privacy-close" class="icon-button" aria-label="Close screen-share privacy"><i data-icon="close"></i></button></div><h2 id="share-privacy-title">Keep your space private.</h2><div id="share-privacy-status" class="share-privacy-status" role="status"><i data-icon="eye-off"></i><span id="share-privacy-state">Checking desktop connection…</span></div><section id="share-privacy-native" hidden aria-label="Protected Share"><label for="share-privacy-display">Display to share</label><select id="share-privacy-display"></select><div class="privacy-actions"><button id="share-privacy-start" type="button">Start protected share</button><button id="share-privacy-stop" type="button" hidden>Stop share window</button><button id="share-privacy-show" type="button" hidden>Show share window</button></div><p id="share-privacy-error" role="alert" hidden></p><ol><li>Start a share window. Allow Screen Recording if macOS asks.</li><li>In Google Meet, choose <strong>Present now → A window</strong>, then <strong>Open Sesame — Protected Share</strong>.</li><li>Check Meet’s preview before presenting. Keep the share window open.</li></ol><div class="guide-note">The widget stays visible to you and is excluded from this share window. Sharing your entire screen can still show Open Sesame.</div><p class="privacy-footnote">No recording is saved and no audio is captured. Open Sesame does not send the video; Meet shares the window you select.</p></section><section id="share-privacy-browser"><p>Use the installed Mac app to create a share window that excludes Open Sesame. In this browser, share a separate app window or tab.</p></section><p class="privacy-footnote">Someone physically looking at your monitor can still see the widget.</p><button id="share-privacy-done" type="button">Done</button></dialog>
   <section id="window-away" class="window-away" hidden aria-label="Floating workspace"><div><i data-icon="popout"></i><h2>Open Sesame is floating</h2><p id="window-away-description">Keep this tab open while you work.</p><button id="window-focus">Show window</button><button id="window-return">Bring back here</button></div></section>
   <div class="app-toast" id="app-toast" role="status" hidden></div>
   <dialog id="guide"><div class="dialog-top"><span class="eyebrow">A FEW THINGS TO TRY</span><button id="guide-close" class="icon-button" aria-label="Close guide"><i data-icon="close"></i></button></div><h2>Small widget. Real interactions.</h2><p>Explore the feel of a menu bar companion without leaving your browser.</p><ol><li><strong>Find its shape.</strong> Switch placement, then use width and ratio to tune the compact notch. Expanded panels keep enough room for controls.</li><li><strong>Open it up.</strong> Click the notch or menu bar eyes. Try hover expansion, or use E to toggle and Esc to collapse.</li><li><strong>Choose a tab.</strong> Use the icons on the left of the expanded widget. Hover for a view name, or use Up and Down while the rail is focused. Open Focus for music services, timed focus topics, YouTube, or your own audio/video files; capture an item, or open Reader for RSS and your reading list. Use the folder in the top bar to choose a project. In Projects, open a category and select an item for details. Type /task to add a to-do; pasted links become bookmarks.</li><li><strong>Check the fit.</strong> Change desktop resolution. Inspect zooms the widget to native CSS size; Present gives the desktop more room.</li></ol><div class="guide-note"><i data-icon="info"></i><span>This is a browser simulation. Music playback uses Spotify, Apple Music, or YouTube embeds. YouTube and media playback use real player controls; notifications stay inside the preview. Your notes and settings are stored on this device. Live audio uses browser permissions; transcription may use your browser’s online speech service. Option + Shift + P explains screen-share privacy. This web preview cannot hide itself from a full-screen share.</span></div><button id="guide-done" class="present-button">Got it, let’s play<i data-icon="arrow-up-right"></i></button></dialog>
