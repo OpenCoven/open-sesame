@@ -61,3 +61,9 @@ Before removal, the tool creates an archive ref and bundle, verifies the bundle,
 ## Interruptions and completion
 
 Before stopping, checkpoint exact head/base, dirty source fingerprint, commands and receipts, original failures, current owners, cleanup dispositions, unmet criteria, and one next action. Leave a copyable continuation prompt in `docs/work-tracking.md`. Completion requires evidence for every acceptance criterion; a host blocker must remain explicit. Do not turn unavailable GUI/device/provider/hosted evidence into a successful check.
+
+## Tool contributions and host changes
+
+Use docs/tools.md as the contract and submission guide. Prefer a declarative package under `dist/tools/<slug>/` when the current components and approved operations can express the feature. A new provider, operation or component is a host change: update the shared validator, editor schema, renderer/adapter and focused regressions together. Package definitions cannot introduce native bridge methods, arbitrary requests, code or credentials. Keep actual account setup in the existing provider UI.
+
+Validate every submitted tool.json through npm run tools -- validate and inspect fixture output through npm run tools -- preview. npm run check automatically discovers package definitions and runs model/UI regressions. Review the final definition, requested access, sample content, author/license and README; inspect rendered fixture previews when a GUI is available and record any unavailable rendered gate explicitly. For release/delivery, run the normal unified verifier and require hosted checks on the exact PR head. Run one verifier at a time per worktree: native stages share generated build inputs. Retain the first failure and source fingerprint before fixing or rerunning.

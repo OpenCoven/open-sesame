@@ -18,3 +18,5 @@ This matrix distinguishes implemented surfaces from evidence of operation. Consu
 | Windows / Linux desktop | No qualified packaged host. | Portable tests do not establish desktop support. |
 
 Items/settings are local to the device. Account sync, system reminders and native notifications are not qualified features. Protected Share readiness means filtered video reached its output window; it does not establish that a meeting app is sharing that window or exclude Open Sesame from another app's entire-display capture. Never display a protective or connected state based solely on a preview, executable presence, or successful compilation.
+
+Reusable declarative tools provide local import, fixture preview, expandable/pinned collection cards, launcher navigation and explicit approved actions. GitHub summaries use existing connected repositories; feed headlines use saved Reader data. See [tool creation and submissions](tools.md). Automated contract/UI tests and native compilation do not establish rendered layout or live-provider acceptance.
