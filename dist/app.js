@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);
 const newId=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
 const icon=(name)=>`<svg viewBox="0 0 24 24" data-glyph="${name}" aria-hidden="true">${icons[name]||icons.info}</svg>`;
 document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
-const defaults={layout:'notch',expanded:false,pinned:false,width:280,ratio:8,hover:false,playful:false,scenario:'focus',lockinView:'focus',focusOverview:true,agentsView:'familiars',resolution:'1512,982',volume:65,size:'medium',speakNotifications:true};
+const defaults={layout:'notch',expanded:false,pinned:false,width:280,ratio:8,hover:false,playful:false,scenario:'focus',lockinView:'focus',agentsView:'familiars',resolution:'1512,982',volume:65,size:'medium',speakNotifications:true};
 let saved={};try{saved=JSON.parse(localStorage.getItem('open-sesame-settings-v1')||'{}')}catch{}
 const state={...defaults,...saved};
 state.pinned=state.pinned===true;
@@ -14,7 +14,7 @@ state.lockinView=lockinViews.includes(state.scenario)?state.scenario:lockinViews
 const agentsViews=['terminal','remote','agent-monitor','familiars'];
 state.agentsView=agentsViews.includes(state.scenario)?state.scenario:agentsViews.includes(state.agentsView)?state.agentsView:'terminal';
 const activityFor=scenario=>lockinViews.includes(scenario)?'lockin':agentsViews.includes(scenario)?'agents':scenario;
-state.focusOverview=state.focusOverview!==false;state.playful=state.playful===true;state.size=OpenSesameFrameModel.keys.includes(state.size)?state.size:'medium';state.speakNotifications=state.speakNotifications!==false;
+delete state.focusOverview;state.playful=state.playful===true;state.size=OpenSesameFrameModel.keys.includes(state.size)?state.size:'medium';state.speakNotifications=state.speakNotifications!==false;
 state.width=Math.max(180,Math.min(440,Number(state.width)||280));state.ratio=Math.max(5,Math.min(12,Number(state.ratio)||8));state.volume=Math.max(0,Math.min(100,Number(state.volume)||0));
 state.resolution=['1280,800','1512,982','1728,1117','1920,1080'].includes(state.resolution)?state.resolution:defaults.resolution;
 let inspecting=false,presenting=false,hoverTimer,toastTimer,notificationTimer,focusMinutes=25,focusRemaining=1500,focusRunning=false,focusEnd=0,items=[];
@@ -105,9 +105,7 @@ function render(){
   document.querySelectorAll('[data-state]').forEach(b=>{let yes=(b.dataset.state==='expanded')===state.expanded;b.classList.toggle('selected',yes);b.setAttribute('aria-pressed',yes)});
   document.querySelectorAll('[data-scenario]').forEach(b=>{let yes=b.dataset.scenario===activityFor(state.scenario);b.classList.toggle('selected',yes);b.setAttribute('aria-pressed',yes)});
   document.querySelectorAll('[data-tab]').forEach(b=>{let yes=b.dataset.tab===activityFor(state.scenario);b.setAttribute('aria-selected',yes);b.tabIndex=yes?0:-1});
-  const focusOverview=lockinViews.includes(state.scenario)&&state.focusOverview;
-  ['music','focus','youtube','media','items','audio','terminal','remote','agent-monitor','familiars','reading','plugins'].forEach(name=>$('pane-'+name).hidden=name!==state.scenario||(focusOverview&&lockinViews.includes(name)));
-  $('focus-overview').hidden=!focusOverview;$('lockin-tabs').hidden=focusOverview;
+  ['music','focus','youtube','media','items','audio','terminal','remote','agent-monitor','familiars','reading','plugins'].forEach(name=>$('pane-'+name).hidden=name!==state.scenario);
   $('agents-workspace').hidden=!agentsViews.includes(state.scenario);window.OpenSesameWorkspace?.sync();$('lockin-workspace').hidden=!lockinViews.includes(state.scenario);document.querySelectorAll('[data-lockin]').forEach(b=>{const active=b.dataset.lockin===state.scenario;b.setAttribute('aria-selected',active);b.tabIndex=active?0:-1});
   const wide=libraryOpen&&state.scenario==='items',terminalWide=['music','items','terminal','remote','agent-monitor','familiars','reading','youtube','media'].includes(state.scenario);
   const height=Math.round(state.width/state.ratio);
@@ -128,7 +126,7 @@ function render(){
 function compactFrame(){return window.OpenSesameCompact?.geometry?.()||{width:state.width,height:Math.round(state.width/state.ratio)}}
 function syncNativeWindow(){if(!window.__OPEN_SESAME_NATIVE__||window.OpenSesameWindow?.detached)return;if(window.OpenSesameLauncher?.active){openSesameBridge.request('window.size',{...OpenSesameLauncher.nativeFrame(),expanded:true,layout:'capture',full:false}).catch(()=>{});return}const expanded=state.expanded;openSesameBridge.request('window.size',{width:expanded?parseFloat($('widget-anchor').style.getPropertyValue('--panel-width')):state.layout==='notch'?compactFrame().width:40,height:expanded?parseFloat($('widget-anchor').style.getPropertyValue('--panel-height')):state.layout==='notch'?compactFrame().height:32,expanded,layout:state.layout,full:expanded&&state.size==='full'}).catch(()=>{})}
 function setExpanded(value,{focus=false}={}){clearTimeout(hoverTimer);state.expanded=window.OpenSesameWindow?.detached?true:value;render();if(focus&&value)$('tab-'+activityFor(state.scenario)).focus({preventScroll:true});if(focus&&!value)(state.layout==='notch'?$('compact-widget'):$('menu-trigger')).focus({preventScroll:true})}
-function changeScenario(scenario,expand=true){if(scenario==='lockin')state.focusOverview=true;else if(lockinViews.includes(scenario))state.focusOverview=false;state.scenario=scenario==='lockin'?state.lockinView:scenario==='agents'?state.agentsView:scenario;if(lockinViews.includes(state.scenario))state.lockinView=state.scenario;if(agentsViews.includes(state.scenario))state.agentsView=state.scenario;if(expand)state.expanded=true;render();window.dispatchEvent(new CustomEvent('open-sesame-view-changed'))}
+function changeScenario(scenario,expand=true){state.scenario=scenario==='lockin'?state.lockinView:scenario==='agents'?state.agentsView:scenario;if(lockinViews.includes(state.scenario))state.lockinView=state.scenario;if(agentsViews.includes(state.scenario))state.agentsView=state.scenario;if(expand)state.expanded=true;render();window.dispatchEvent(new CustomEvent('open-sesame-view-changed'))}
 function fit(){
   if(window.__OPEN_SESAME_NATIVE__||window.OpenSesameWindow?.detached||state.size==='full'||window.OpenSesameFrame?.dragging)return;
   const [w,h]=state.resolution.split(',').map(Number),well=$('preview-well'),frame=$('desktop-frame'),viewport=$('desktop-viewport'),desktop=$('desktop');

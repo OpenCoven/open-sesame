@@ -1,5 +1,7 @@
 # Open Sesame desktop companion
 
+WorkOS login is required before the widget or its local host starts. The production OpenSesame project, native PKCE flow, Keychain storage, application URLs and remaining live verification are documented in [WorkOS login](../docs/workos-login.md). The local HTTP preview no longer exposes an unauthenticated WebSocket host. Building from source now also requires Swift 6.2 or newer; the pinned official Swift SDK builds offline from its verified source archive.
+
 This source builds the widget into an AppKit menu-bar/notch app. Local sessions are real PTYs on the machine running Open Sesame. SSH sessions use that machine's OpenSSH client, configuration, keys, and agent. The private hosted Site remains a browser prototype and has no access to your shell.
 
 See the [desktop polish plan](../docs/desktop-polish-plan.md) for the November 6 review, current verification, integration priorities, and cross-platform exploration. From this checkout, `npm run dev:macos` builds and opens the native app; `npm run dev` starts the local browser preview.
@@ -116,6 +118,6 @@ The rebuilt macOS companion supports explicit computer controls: `computer volum
 
 Console → Processes discovers recognized Codex, Claude Code, Coven, Gemini CLI, Aider, and OpenCode processes owned by the companion's current local user. It refreshes every five seconds while the window is visible. CPU (the process's lifetime average reported by `ps`), resident memory, uptime, and OS scheduling state are read-only. Agent task progress and approval state are not inferred from scheduling state: a sleeping process may still be waiting for a model or network response. Remote machines, IDE-integrated agents and unknown executables are not included. Command arguments and prompts are not returned to the page or persisted by discovery. A `ps` failure shows an unavailable state, never an empty successful scan. Scanning runs separately from terminal input handling.
 
-Rebuild the desktop app after this update (`bash desktop/build-macos.sh`); the hosted browser alone cannot inspect your machine. The dashboard's Try demo mode is explicitly simulated and does not drive actual process indicators.
+Rebuild the desktop app after this update (`bash desktop/build-macos.sh`); the hosted browser alone cannot inspect your machine. The dashboard shows only discovered local processes. Search, state filters, Clear filters and Refresh operate on the current snapshot; a disconnected snapshot is clearly marked as stale.
 
 Small, static status dots in the navigation rail reflect focus timers, recognized process state, and microphone use. The existing enabled preference is retained under Behavior → Activity indicators. Preview status demonstrates an explicitly labeled state for 12 seconds, then returns to live state. Indicators do not animate, change surface opacity, or infer an agent's task progress. A screen-reader status describes changes.

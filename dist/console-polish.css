@@ -23,11 +23,11 @@
 #widget-panel .console-rail-heading{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px;height:auto;min-height:0;padding:0 0 8px;margin:0;border-bottom:1px solid #ffffff07;flex:none}
 #widget-panel .console-rail-title{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 3px}
 #widget-panel .console-rail-title strong{font-size:12px;line-height:18px;font-weight:450;letter-spacing:.1px;color:#bfb4ca}
-#widget-panel #agents-toolbar{height:38px;min-height:38px;gap:8px;align-items:center;padding:0 0 6px;margin-bottom:6px}
+#widget-panel .console-toolbar{display:flex;flex:none;height:38px;min-height:38px;gap:8px;align-items:center;padding:0 0 6px;margin-bottom:6px}
 #widget-panel .agents-context{gap:8px;min-width:0}
-#widget-panel .agents-mode-tabs{height:32px;min-height:32px;padding:3px;border-radius:9px;box-sizing:border-box}
-#widget-panel .agents-mode-tabs>button{height:24px!important;padding:0 10px!important;gap:6px;font-size:11px!important}
-#widget-panel .agents-mode-tabs svg{width:13px;height:13px}
+#widget-panel .console-toolbar .console-mode-tabs{display:flex;align-items:center;gap:3px;border:1px solid var(--line);background:var(--surface-base);box-shadow:none;width:fit-content;max-width:100%;flex:none;height:32px;min-height:32px;margin:0!important;padding:3px;border-radius:9px;box-sizing:border-box;overflow-x:auto;scrollbar-width:none}
+#widget-panel .console-toolbar .console-mode-tabs>button{display:flex;align-items:center;flex:none;width:auto!important;height:24px!important;padding:0 10px!important;gap:6px;font-size:11px!important}
+#widget-panel .console-toolbar .console-mode-tabs svg{width:13px;height:13px}
 #widget-panel .pane-create-row{min-height:38px;gap:3px;padding:3px;border-radius:9px;box-sizing:border-box}
 #widget-panel :is(#terminal-rail-add,#remote-rail-add){display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;min-width:30px;min-height:30px;padding:7px;border:1px solid #d2b8e320;border-radius:6px;background:#c3a7dd13;color:#e4d1f2;box-sizing:border-box}
 #widget-panel :is(#terminal-rail-add,#remote-rail-add) svg{width:16px;height:16px}

@@ -1,81 +1,11 @@
-/* A quiet overview of the four Focus tools, backed by their existing players. */
-#widget-panel .focus-overview{flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:9px;padding:3px 0 1px;overflow:auto;scrollbar-width:thin;scrollbar-color:#ffffff15 transparent}
-#widget-panel .focus-tile{container-type:inline-size;display:flex;flex-direction:column;min-width:0;min-height:0;gap:7px;padding:12px;border:1px solid #ffffff10;border-radius:15px;background:radial-gradient(ellipse at 0 0,#c4b2df0b,transparent 70%),linear-gradient(140deg,#ffffff04,#00000013);box-shadow:inset 0 1px #ffffff07,0 3px 10px #00000012;overflow:hidden}
-#widget-panel .focus-tile>header{display:flex;justify-content:space-between;align-items:center;min-height:20px;flex:none;gap:6px}
-#widget-panel .focus-tile>header>span{display:flex;align-items:center;gap:7px;color:#b6a7c9}
-#widget-panel .focus-tile>header strong{font-size:11px;font-weight:500;letter-spacing:.1px;color:#e4ddeb}
-#widget-panel .focus-tile svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;flex:none}
-#widget-panel .focus-tile button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:22px;border:1px solid transparent;border-radius:7px;padding:4px 7px;color:#b9afc5;background:transparent;font:inherit;font-size:9px;line-height:1.2;cursor:pointer}
-#widget-panel .focus-tile button:hover:not(:disabled){color:#f1e9f8;background:#ffffff0c}
-#widget-panel .focus-tile button:disabled{opacity:.35;cursor:default}
-#widget-panel .focus-tile>header>button{width:23px;height:23px;padding:4px;background:#ffffff04;border-color:#ffffff08}
-#widget-panel .bento-options{display:flex;flex:none;align-items:center;gap:2px;width:fit-content;max-width:100%;padding:2px;border:1px solid #ffffff08;border-radius:8px;background:#00000025;box-shadow:inset 0 1px 3px #0002}
-#widget-panel .bento-options button{white-space:nowrap;padding:4px 8px;font-size:9px;min-height:21px}
-#widget-panel .bento-options button[aria-pressed=true]{color:#f0e8f7;background:linear-gradient(#ffffff14,#ffffff08);border-color:#ffffff12;box-shadow:inset 0 1px #ffffff0c,0 1px 3px #0003}
-#widget-panel .bento-player{display:flex;align-items:center;gap:10px;flex:1;min-height:0;min-width:0}
-#widget-panel .bento-copy{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
-#widget-panel .bento-copy strong{font-size:clamp(11px,5cqw,19px);font-weight:450;color:#e3dbe9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#widget-panel .bento-copy small{font-size:clamp(8px,3.7cqw,11px);color:#a79cad;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-#widget-panel .focus-tile .bento-play{width:30px;height:30px;flex:none;padding:7px;background:linear-gradient(145deg,#dcc9ed,#af96c4);color:#28202e;border:1px solid #ecddf543;border-radius:10px;box-shadow:inset 0 1px #ffffff3a,0 3px 10px #0002}
-#widget-panel .focus-tile .bento-play:hover{background:linear-gradient(145deg,#ede0f8,#bea5d3);color:#28202e}
-#widget-panel .bento-record{width:clamp(36px,22cqw,102px);aspect-ratio:1;flex:none;border-radius:50%;display:grid;place-items:center;background:repeating-radial-gradient(circle,#27252c 0 2px,#131217 3px 5px);border:1px solid #ffffff16;box-shadow:0 5px 15px #0003;position:relative}
-#widget-panel .bento-record:after{content:'';position:absolute;inset:0;border-radius:50%;background:conic-gradient(transparent,#ffffff14,transparent 35%,#ffffff07,transparent 80%)}
-#widget-panel .bento-record span{width:35%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#211b29 12%,#b59acb 15%,#8c719e);box-shadow:0 0 0 1px #0004}
-#widget-panel .bento-record.playing{animation:bento-record-spin 8s linear infinite}
-#widget-panel .focus-tile .bento-text-action{justify-content:flex-start;padding:2px 0;min-height:18px;color:#b6a2ca;font-size:9px;align-self:flex-start;flex:none}
-#widget-panel .bento-agenda{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:4px}
-#widget-panel .timer-tile>header{gap:4px}
-#widget-panel .timer-tile>header .bento-options{margin-left:auto;gap:0}
-#widget-panel .timer-tile>header .bento-options button{font-size:8px;padding:3px 5px;min-height:20px}
-#widget-panel .timer-tile>header>button{width:20px;height:20px;min-height:20px;padding:3px}
-#widget-panel .bento-clock{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-height:0}
-#bento-clock{font-variant-numeric:tabular-nums;font-size:clamp(26px,16cqw,90px);line-height:1;letter-spacing:-.055em;font-weight:350;color:#f0e9f6}
-#bento-timer-topic{font-size:9px;color:#b5a9c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}
-#widget-panel .bento-durations{background:none;border:0;padding:0;gap:4px;box-shadow:none;width:100%}
-#widget-panel .bento-durations button{flex:1;background:#ffffff04;border-color:#ffffff08;padding:4px 3px;font-variant-numeric:tabular-nums;font-size:9px}
-#widget-panel .bento-durations button span{font-size:7px;color:#a69aaf}
-#widget-panel .bento-calendar{display:flex;flex-direction:column;gap:6px;flex:1;min-height:0}
-#bento-calendar-day{font-size:clamp(12px,6cqw,24px);font-weight:450;color:#dfd4e9}
-#bento-upcoming{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0;overflow:auto;font-size:9px;color:#a79bab;scrollbar-width:thin}
-#bento-upcoming>div{display:flex;flex-direction:column;gap:3px;border-left:2px solid #b6a0ca55;padding-left:7px}
-#bento-upcoming strong{font-size:10px;font-weight:450;color:#d8cee2}#bento-upcoming small{font-size:8px}
-#widget-panel .bento-video-art{width:clamp(42px,24cqw,130px);aspect-ratio:1.4;display:grid;place-items:center;position:relative;overflow:hidden;flex:none;border:1px solid #e2b0b01a;border-radius:10px;background:radial-gradient(ellipse at 30% 0%,#ba859526,transparent 80%),#241f29;color:#c7a4bb}
-#widget-panel .bento-video-art>svg{width:22px;height:22px}#bento-youtube-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
-#widget-panel .bento-link-form{display:flex;align-items:center;gap:6px;flex:none;min-height:30px;border:1px solid #ffffff14;background:#00000020;border-radius:9px;padding:3px 4px 3px 8px;color:#9d91a9}
-#widget-panel .bento-link-form:focus-within{border-color:#c5afd25c}
-#widget-panel .bento-link-form input{width:0;flex:1;min-width:0;color:#e1d6eb;background:none;border:0;outline:0;font:inherit;font-size:9px}
-#widget-panel .bento-link-form>button{padding:4px;width:23px;min-height:23px;background:#ffffff08}
-#bento-youtube-error{font-size:8px;color:#e3b4c5}
-#widget-panel .bento-media-empty{display:flex;flex:1;min-height:0;flex-direction:column;gap:6px;align-items:center;justify-content:center;color:#b4a7bf;font-size:9px}
-#widget-panel .bento-media-empty .bento-text-action{align-self:center}
-#widget-panel .bento-stack{display:flex;align-items:center;justify-content:center;flex:1;min-height:0;width:100%;padding:4px 0}
-#widget-panel .bento-stack>span{display:grid;place-items:center;width:clamp(36px,25cqw,110px);height:100%;max-height:100px;min-height:25px;border-radius:9px;border:1px solid #c9b2df25;background:linear-gradient(140deg,#c8b1e112,#44405225);color:#c8b0e0;box-shadow:0 6px 15px #0002;transform:rotate(-9deg) translateX(7px)}
-#widget-panel .bento-stack>span:nth-child(2){transform:translateY(-2px);z-index:1;background:linear-gradient(145deg,#49414f,#252330)}
-#widget-panel .bento-stack>span:last-child{transform:rotate(9deg) translateX(-7px)}
-#widget-panel .bento-media-loaded{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;flex:1;min-height:0}
-#widget-panel .bento-carousel{display:flex;justify-content:center;align-items:center;gap:12px;flex:1;min-height:0;width:100%}
-#widget-panel .bento-carousel>button:first-child svg{transform:rotate(180deg)}
-#widget-panel .bento-carousel>button:not(.bento-media-art){width:26px;height:26px;border-color:#ffffff0c;background:#ffffff05;flex:none}
-#widget-panel .bento-carousel .bento-media-art{--cover-hue:250;width:clamp(60px,38cqw,180px);height:100%;min-height:28px;max-height:160px;border-radius:12px;border:1px solid #ffffff18;background:radial-gradient(ellipse at 20% 10%,hsl(var(--cover-hue) 30% 44% / .5),transparent 80%),linear-gradient(140deg,#39313f,#19171e);color:#f2e9fa;box-shadow:-7px 2px 0 -2px #423749,7px 2px 0 -2px #322f40,0 5px 15px #0004}
-#widget-panel .bento-media-art svg{width:24px;height:24px}
-#bento-media-title{font-size:11px;font-weight:450;color:#dfd5e8;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#bento-media-count{font-size:8px;color:#a99bb4;font-variant-numeric:tabular-nums}
-@keyframes bento-record-spin{to{transform:rotate(360deg)}}
-@container open-sesame-widget (min-width:750px){#widget-panel .focus-overview{gap:14px;padding-top:7px}#widget-panel .focus-tile{padding:20px;gap:13px;border-radius:19px}#widget-panel .focus-tile>header strong{font-size:14px}#widget-panel .focus-tile button{font-size:11px}#widget-panel .bento-options button{font-size:11px;min-height:28px;padding:5px 12px}#widget-panel .focus-tile .bento-play{width:39px;height:39px;border-radius:12px}#widget-panel .bento-link-form{min-height:38px}#widget-panel .bento-link-form input{font-size:11px}#bento-timer-topic,#bento-media-title{font-size:12px}#bento-media-count{font-size:10px}#widget-panel .focus-tile .bento-text-action{font-size:11px;min-height:24px}}
-@container open-sesame-widget (max-width:440px){#widget-panel .focus-overview{gap:6px}#widget-panel .focus-tile{padding:9px;gap:5px;border-radius:12px}#widget-panel .bento-options button{padding:4px 5px;font-size:8px}#widget-panel .bento-record{width:31px}#widget-panel .bento-player{gap:6px}#widget-panel .focus-tile .bento-play{width:26px;height:26px;padding:5px}#widget-panel .bento-video-art{display:none}#widget-panel .bento-durations button span{display:none}}
-@media(max-width:380px){#widget-panel .focus-overview{grid-template-columns:1fr;grid-template-rows:repeat(4,minmax(160px,1fr))}}
-@media(prefers-reduced-motion:reduce){#widget-panel .bento-record.playing{animation:none}}
-
 /* One inset segmented control pattern for primary and secondary navigation. */
-#widget-panel :is([role=tablist]:not(#terminal-pane-list):not(#remote-rail-list):not(.reading-add-tabs),.live-switch){display:flex;align-items:center;gap:3px;padding:3px;border:1px solid #ffffff0b;border-radius:10px;background:linear-gradient(#00000025,#00000016);box-shadow:inset 0 1px 4px #0002;width:fit-content;max-width:100%;height:auto;min-height:0}
+#widget-panel :is([role=tablist]:not([aria-orientation=vertical]):not(.reading-add-tabs):not(.console-mode-tabs),.live-switch){display:flex;align-items:center;gap:3px;padding:3px;border:1px solid #ffffff0b;border-radius:10px;background:linear-gradient(#00000025,#00000016);box-shadow:inset 0 1px 4px #0002;width:fit-content;max-width:100%;height:auto;min-height:0}
 #widget-panel #activity-menu{flex:1;width:auto;gap:3px}
 #widget-panel>.panel-top{height:34px;min-height:34px;gap:7px;padding-bottom:5px;margin-bottom:5px}
-#widget-panel :is([role=tablist]:not(#terminal-pane-list):not(#remote-rail-list):not(.reading-add-tabs),.live-switch)>button{height:23px!important;min-height:23px;padding:3px 8px!important;border:1px solid transparent;border-radius:7px;background:transparent;box-shadow:none;color:#a9a2b4;line-height:16px;font-size:9px!important;font-weight:450;white-space:nowrap}
-#widget-panel :is([role=tablist]:not(#terminal-pane-list):not(#remote-rail-list):not(.reading-add-tabs),.live-switch)>button:hover{color:#e6deed;background:#ffffff06}
-#widget-panel :is([role=tablist]:not(#terminal-pane-list):not(#remote-rail-list):not(.reading-add-tabs),.live-switch)>button[aria-selected=true],#widget-panel :is([role=tablist]:not(#terminal-pane-list):not(#remote-rail-list):not(.reading-add-tabs),.live-switch)>button[aria-pressed=true]{color:#ede5f5;background:linear-gradient(#ffffff13,#ffffff07);border-color:#ffffff13;box-shadow:inset 0 1px #ffffff0c,0 2px 5px #0003}
+#widget-panel :is([role=tablist]:not([aria-orientation=vertical]):not(.reading-add-tabs):not(.console-mode-tabs),.live-switch)>button{height:23px!important;min-height:23px;padding:3px 8px!important;border:1px solid transparent;border-radius:7px;background:transparent;box-shadow:none;color:#a9a2b4;line-height:16px;font-size:9px!important;font-weight:450;white-space:nowrap}
+#widget-panel :is([role=tablist]:not([aria-orientation=vertical]):not(.reading-add-tabs):not(.console-mode-tabs),.live-switch)>button:hover{color:#e6deed;background:#ffffff06}
+#widget-panel :is([role=tablist]:not([aria-orientation=vertical]):not(.reading-add-tabs):not(.console-mode-tabs),.live-switch)>button[aria-selected=true],#widget-panel :is([role=tablist]:not([aria-orientation=vertical]):not(.reading-add-tabs):not(.console-mode-tabs),.live-switch)>button[aria-pressed=true]{color:#ede5f5;background:linear-gradient(#ffffff13,#ffffff07);border-color:#ffffff13;box-shadow:inset 0 1px #ffffff0c,0 2px 5px #0003}
 #widget-panel #lockin-tabs{margin-bottom:5px;flex:none;padding:3px}
-#widget-panel #focus-overview-return{width:27px;padding:4px!important;color:#c2b2d2}
-#widget-panel #focus-overview-return svg{width:13px;height:13px}
 #widget-panel #activity-menu>button{flex:1;padding-inline:6px!important}
 
 /* Project selection belongs to the page; the collection heading belongs to its rail. */

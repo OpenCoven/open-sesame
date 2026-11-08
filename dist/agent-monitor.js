@@ -3,8 +3,7 @@
   const el=id=>document.getElementById(id),pane=el('pane-agent-monitor');
   pane.querySelector('.agent-filter-row').append(el('agent-refresh'));
   const labels={running:'Running',sleeping:'Sleeping',stopped:'Stopped',blocked:'Blocked',exited:'Exited',unknown:'Unknown'};
-  const sample=[{pid:4218,provider:'codex',name:'Codex',state:'running',cpuPercent:12.4,memoryMB:186,uptimeSeconds:1320},{pid:4382,provider:'claude',name:'Claude Code',state:'sleeping',cpuPercent:0.2,memoryMB:244,uptimeSeconds:2540},{pid:4516,provider:'coven',name:'Coven',state:'sleeping',cpuPercent:0,memoryMB:112,uptimeSeconds:480}];
-  let data=null,error='',busy=false,demo=false,lastSuccess=0,timer=0,stale=false,filter='all';
+  let data=null,error='',busy=false,lastSuccess=0,timer=0,stale=false,filter='all',connection=0;
   const stateButtons=Object.entries({all:'All',...labels}).map(([value,label])=>{
     const button=element('button','agent-state-filter');button.type='button';button.dataset.state=value;
     button.append(element('span','',label),element('span','agent-filter-count','—'));button.setAttribute('aria-controls','agent-cards');
@@ -26,13 +25,12 @@
     const metrics=element('dl','agent-metrics');for(const [label,value] of [['CPU',agent.cpuPercent+'%'],['Memory',agent.memoryMB+' MB'],['Uptime',duration(agent.uptimeSeconds)]]){const item=element('div');item.append(element('dt','',label),element('dd','',value));metrics.append(item)}
     node.append(head,metrics);return node;
   }
-  function announce(){window.dispatchEvent(new CustomEvent('open-sesame-agents-updated',{detail:{agents:demo?[]:data?.agents||[],fresh:!demo&&!error&&!stale&&!!data}}))}
+  function announce(){window.dispatchEvent(new CustomEvent('open-sesame-agents-updated',{detail:{agents:data?.agents||[],fresh:!error&&!stale&&!!data}}))}
   function render(){
-    const available=!!window.openSesameBridge?.available,agents=demo?sample:data?.agents||[],hasSnapshot=demo||!!data;
-    pane.dataset.demo=String(demo);pane.dataset.stale=String(stale||!!error);
-    el('agent-demo').setAttribute('aria-pressed',demo);el('agent-demo').textContent=demo?'Exit demo':'Try demo';
-    el('agent-refresh').disabled=busy||demo||!available;el('agent-refresh').classList.toggle('is-refreshing',busy);
-    el('agent-connection').textContent=demo?'Demo preview · sample agents, not your machine':error?error:data?'Connected to '+data.machine+' · your local user':available?'Discovering local agents…':'Connect Open Sesame Desktop to discover your agents.';el('agent-connection').title=el('agent-connection').textContent;
+    const available=!!window.openSesameBridge?.available,agents=data?.agents||[],hasSnapshot=!!data;
+    pane.dataset.stale=String(stale||!!error);
+    el('agent-refresh').disabled=busy||!available;el('agent-refresh').classList.toggle('is-refreshing',busy);
+    el('agent-connection').textContent=error|| (data?'Connected to '+data.machine+' · '+agents.length+' process'+(agents.length===1?'':'es'):available?'Discovering local agents…':'Open the desktop app to see local agent processes.');el('agent-connection').title=el('agent-connection').textContent;
     const query=el('agent-search').value.trim().toLowerCase();
     const matching=agents.filter(a=>!query||(a.name+' '+a.pid).toLowerCase().includes(query));
     const processState=agent=>labels[agent.state]?agent.state:'unknown';
@@ -44,26 +42,28 @@
       button.title=hasSnapshot?(query?'Matching agents':'Agents')+' · '+(value==='all'?'all states':labels[value]):'Connect the desktop companion to see counts';
     }
     const shown=matching.filter(a=>filter==='all'||processState(a)===filter);
-    el('agent-cards').replaceChildren(...shown.map(card));el('agent-cards').hidden=!shown.length;el('agent-empty').hidden=!!shown.length;
+    const list=el('agent-cards'),scroll=list.scrollTop;list.replaceChildren(...shown.map(card));list.scrollTop=scroll;list.hidden=!shown.length;el('agent-empty').hidden=!!shown.length;
     const filtered=hasSnapshot&&agents.length>0&&!shown.length;
-    el('agent-empty-title').textContent=filtered?'No matching agents.':error?'Connection needs attention.':hasSnapshot?'No recognized agents running.':'Your agents, in one place.';
-    el('agent-empty-description').textContent=filtered?'Try another name, PID, or process state.':error?'Refresh to reconnect. If your companion is older, rebuild it from the latest desktop source.':hasSnapshot?'Start Codex, Claude Code, Coven, Gemini CLI, Aider or OpenCode locally. Open Sesame will pick it up on the next refresh.':'The browser cannot inspect your computer’s processes. Open the desktop companion, or explore the demo.';
-    el('agent-desktop-download').hidden=filtered||demo||(!error&&hasSnapshot);
-    el('agent-freshness').textContent=demo?'Sample data · refresh paused':busy?'Refreshing…':error&&data?'Last snapshot · '+new Date(lastSuccess).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):data?'Updated '+new Date(lastSuccess).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · every 5s':error?'Discovery unavailable':'No machine connected';
+    el('agent-empty-title').textContent=filtered?'No matching processes':error?'Discovery is unavailable':hasSnapshot?'Ready when your agents are':'Your local agents, at a glance';
+    el('agent-empty-description').textContent=filtered?'Clear the filters or try another name or PID.':error?'Refresh to try again. Your last snapshot stays visible while the connection recovers.':hasSnapshot?'Start an agent in your terminal. Its process will appear here automatically. To talk with a familiar, open Familiars.':'Open Open Sesame Desktop to see CPU, memory and process state for agents running on this Mac.';
+    el('agent-clear-filters').hidden=!query&&filter==='all';
+    el('agent-desktop-download').hidden=available||filtered||hasSnapshot;
+    el('agent-freshness').textContent=busy?'Refreshing…':(error||stale)&&data?'Last snapshot · '+new Date(lastSuccess).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):data?'Updated '+new Date(lastSuccess).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · every 5s':error?'Discovery unavailable':'No machine connected';
   }
   async function refresh(){
-    clearTimeout(timer);if(busy||demo||document.hidden)return;
+    clearTimeout(timer);if(busy||document.hidden)return;
     if(!window.openSesameBridge?.available){if(data){error='Desktop companion disconnected.';stale=true}render();announce();return}
-    busy=true;render();
-    try{const result=await openSesameBridge.request('agents.snapshot');if(!result||!Array.isArray(result.agents))throw new Error('Update your desktop companion to enable agent discovery.');data=result;lastSuccess=Date.now();error='';stale=false}
-    catch(e){error=e.message==='Invalid pane ID.'?'Update your desktop companion to enable agent discovery.':e.message||'Could not refresh agents.';stale=true}
-    finally{busy=false;render();announce();timer=setTimeout(refresh,5000)}
+    const ticket=connection;busy=true;render();
+    try{const result=await openSesameBridge.request('agents.snapshot');if(ticket!==connection||!openSesameBridge.available)return;if(!result||!Array.isArray(result.agents))throw new Error('Update your desktop companion to enable agent discovery.');data=result;lastSuccess=Date.now();error='';stale=false}
+    catch(e){if(ticket===connection){error=e.message==='Invalid pane ID.'?'Update your desktop companion to enable agent discovery.':e.message||'Could not refresh agents.';stale=true}}
+    finally{busy=false;render();announce();if(!document.hidden&&openSesameBridge.available)timer=setTimeout(refresh,5000)}
   }
   el('agent-refresh').addEventListener('click',refresh);el('agent-search').addEventListener('input',render);
-  el('agent-demo').addEventListener('click',()=>{demo=!demo;clearTimeout(timer);el('agent-search').value='';filter='all';render();announce();if(!demo)refresh()});
-  for(const event of ['open-sesame-desktop-ready','open-sesame-desktop-disconnected'])window.addEventListener(event,refresh);
+  el('agent-clear-filters').addEventListener('click',()=>{el('agent-search').value='';filter='all';render();el('agent-search').focus({preventScroll:true})});
+  window.addEventListener('open-sesame-desktop-ready',refresh);
+  window.addEventListener('open-sesame-desktop-disconnected',()=>{connection++;clearTimeout(timer);error='Desktop connection closed. Reopen the app to reconnect.';stale=true;render();announce()});
   window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario==='agent-monitor'){render();if(!data||Date.now()-lastSuccess>5000)refresh()}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(timer);stale=true;announce()}else refresh()});
-  window.OpenSesameAgentMonitor={refresh,summary:()=>demo?'Agents demo':data&&!error?data.agents.length+' agents':'Agents'};
+  window.OpenSesameAgentMonitor={refresh,summary:()=>data&&!error?data.agents.length+' processes':'Processes'};
   render();window.openSesameBridge?.ready.then(refresh);
 })();

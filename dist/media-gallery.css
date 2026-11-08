@@ -17,3 +17,7 @@
 #media-artwork .media-record svg{width:clamp(14px,8cqh,30px);height:clamp(14px,8cqh,30px)}
 
 #media-stage.is-audio #local-media{top:auto;bottom:0;color-scheme:dark}
+
+/* File imports work directly in the Media tab. */
+#widget-panel .media-drop-active{position:relative;outline:2px solid var(--accent);outline-offset:-3px}
+#widget-panel .media-drop-active:after{content:attr(data-drop-label);position:absolute;inset:8px;z-index:10;display:grid;place-items:center;border:1px dashed var(--accent);border-radius:10px;background:var(--surface-raised);color:var(--ink-primary);font-size:14px;pointer-events:none}

@@ -12,8 +12,8 @@
   }
   root.OpenSesameMediaImport={collect};
   if(typeof document==='undefined')return;
-  const card=document.querySelector('#focus-overview .media-tile'),pane=document.getElementById('pane-media'),status=document.getElementById('bento-drop-status');
-  for(const zone of [card,pane]){
+  const pane=document.getElementById('pane-media'),status=document.createElement('span');status.id='media-import-status';status.className='sr-only';status.setAttribute('role','status');pane.append(status);
+  for(const zone of [pane]){
     let depth=0,busy=false;const isFiles=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');
     zone.addEventListener('dragenter',event=>{if(!isFiles(event))return;event.preventDefault();depth++;zone.classList.add('media-drop-active');zone.dataset.dropLabel='Drop to add to your playlist'});
     zone.addEventListener('dragover',event=>{if(!isFiles(event))return;event.preventDefault();event.dataTransfer.dropEffect=busy?'none':'copy'});
