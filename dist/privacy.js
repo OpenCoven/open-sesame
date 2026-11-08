@@ -3,7 +3,7 @@
   const el=id=>document.getElementById(id),dialog=el('share-privacy'),native=window.__OPEN_SESAME_NATIVE__===true;
   let status={available:false,active:false,starting:false,windowOpen:false,displays:[],revision:-1,error:''},action='',serial=0;
   const bridge=()=>window.openSesameBridge;
-  function apply(value){if(!value||!Number.isSafeInteger(value.revision)||value.revision<status.revision)return;status={...value,displays:Array.isArray(value.displays)?value.displays:[]};paint()}
+  function apply(value){if(!value||!Number.isSafeInteger(value.revision)||value.revision<status.revision)return;if(value.revision>status.revision&&!value.active&&!value.starting&&action==='start'){serial++;action=''}status={...value,displays:Array.isArray(value.displays)?value.displays:[]};paint()}
   function paint(){
     const running=status.active||status.starting;
     el('share-privacy-native').hidden=!native;el('share-privacy-browser').hidden=native;

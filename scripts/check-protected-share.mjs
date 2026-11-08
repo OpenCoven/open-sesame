@@ -30,6 +30,11 @@ app.event({...idle,active:true,windowOpen:true,displayID:2,revision:7});assert.e
 app.event({...idle,starting:true,revision:6});assert.equal(app.el('panel-privacy').attrs['aria-pressed'],'true','Stale status cannot replace a newer frame state');
 app.event({...idle,revision:8,error:'Display configuration changed.'});assert.equal(app.el('panel-privacy').attrs['aria-pressed'],'false');assert.equal(app.el('share-privacy-error').textContent,'Display configuration changed.');
 app.events.get('open-sesame-desktop-disconnected')();assert.equal(app.el('share-privacy-start').disabled,true);assert.equal(app.el('panel-privacy').attrs['aria-pressed'],'false');
+const closing=load(true);await flush();let finishClosed;
+closing.setResult(method=>method==='privacy.start'?new Promise(resolve=>finishClosed=resolve):Promise.resolve({...idle,revision:4}));
+const preparation=closing.el('share-privacy-start').emit('click');closing.event({...idle,starting:true,windowOpen:true,revision:2});closing.event({...idle,revision:4});
+assert.equal(closing.el('share-privacy-start').hidden,false);assert.equal(closing.el('share-privacy-start').disabled,false,'Closing the native black window clears pending preparation immediately');
+finishClosed({...idle,active:true,windowOpen:true,revision:3});await preparation;await flush();assert.equal(closing.el('panel-privacy').attrs['aria-pressed'],'false');
 const html=fs.readFileSync('dist/index.html','utf8'),swift=fs.readFileSync('desktop/ProtectedShare.swift','utf8');
 assert.ok(html.includes('Present now → A window')&&html.includes('Sharing your entire screen can still show Open Sesame.')&&html.includes('physically looking at your monitor'));
 assert.ok(swift.includes('excludingApplications: excluded, exceptingWindows: []')&&swift.includes('configuration.capturesAudio = false')&&!swift.includes('sharingType = .none'));
