@@ -227,30 +227,44 @@
     demoTimer = setInterval(tick,1000);
     showView('transcript'); tick();
   }
-  const editor=el('live-shortcut-editor'), choice=el('live-shortcut-choice');
+  const editor=el('live-shortcut-editor'), choice=el('live-shortcut-choice'), shortcutDialog=el('live-shortcut-dialog');
   const nameField=el('live-shortcut-name'), promptField=el('live-shortcut-prompt');
   let confirmDelete=false;
   function closeEditor(focus=false){
     editor.hidden=true;el('live-customize').setAttribute('aria-expanded','false');
+    if(shortcutDialog.open)shortcutDialog.close();
     if(focus)el('live-customize').focus({preventScroll:true});
+  }
+  function shortcutDraft(){
+    const name=nameField.value.trim().replace(/^\//,'').replace(/\s+/g,' ').toLowerCase();
+    el('live-shortcut-preview').textContent='/'+(name||'your shortcut');
+    el('live-shortcut-count').textContent=promptField.value.length.toLocaleString()+' / 2,000';
+    el('live-shortcut-save').disabled=!name||!promptField.value.trim();
+    el('live-shortcut-error').hidden=true;confirmDelete=false;el('live-shortcut-delete').textContent='Delete';
   }
   function editSelected(){
     const current=shortcuts.saved().find(row=>row.name===choice.value);
     nameField.value=current?.name||'';promptField.value=current?.prompt||'';
     confirmDelete=false;el('live-shortcut-delete').hidden=!current;
     el('live-shortcut-delete').textContent='Delete';el('live-shortcut-error').hidden=true;
+    el('live-shortcut-title').textContent=current?'Edit shortcut':'Create a shortcut';
+    el('live-shortcut-save').textContent=current?'Save changes':'Create shortcut';shortcutDraft();
   }
   function openEditor(){
     if(!editor.hidden){closeEditor(true);return}
     settings(false);
-    const options=[['','New shortcut…'],...shortcuts.saved().map(row=>[row.name,'/'+row.name])];
+    const options=[['','Create new…'],...shortcuts.saved().map(row=>[row.name,'/'+row.name])];
     choice.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o}));
     choice.value='';editSelected();
-    editor.hidden=false;el('live-customize').setAttribute('aria-expanded','true');nameField.focus();
+    el('live-shortcut-saved').hidden=!shortcuts.saved().length;
+    editor.hidden=false;shortcutDialog.showModal();el('live-customize').setAttribute('aria-expanded','true');nameField.focus();
   }
   function reportError(error){el('live-shortcut-error').hidden=false;el('live-shortcut-error').textContent=error.message}
   el('live-customize').addEventListener('click',openEditor);
   el('live-shortcut-close').addEventListener('click',()=>closeEditor(true));
+  el('live-shortcut-cancel').addEventListener('click',()=>closeEditor(true));
+  shortcutDialog.addEventListener('cancel',event=>{event.preventDefault();closeEditor(true)});
+  nameField.addEventListener('input',shortcutDraft);promptField.addEventListener('input',shortcutDraft);
   choice.addEventListener('change',editSelected);
   editor.addEventListener('submit',event=>{
     event.preventDefault();
@@ -285,6 +299,7 @@
   });
   window.addEventListener('open-sesame-home',event=>{if(event.detail==='audio')showView('transcript')});
   window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario!=='audio'){settings(false);closeEditor()}else {update();drawEntries()}});
+  window.addEventListener('open-sesame-layout',()=>{if(!state.expanded||window.OpenSesameLauncher?.active)closeEditor()});
   window.addEventListener('open-sesame-desktop-disconnected',()=>{checkNumber++;available={};checking=false;update()});
   window.OpenSesameLive = {handoff(data){if(data){entries=data.entries;sample=data.sample;recapThrough=data.recapThrough;drawEntries();showView(data.view)}return JSON.parse(JSON.stringify({entries,sample,recapThrough,view:conversationView}))},get busy(){return !!pending},get demoRunning(){return demoTimer!==null},ask,update,placeholder,action,inQuestions:()=>state.scenario==='audio'&&!$('audio-record').checked,beforeListen,isDemo:()=>sample,startDemo,endDemo,stopForHide(){endDemo();if(audioSession.active||audioSession.starting)stopAudio()}};
   drawEntries(); update(); openSesameBridge.ready.then(checkProviders);

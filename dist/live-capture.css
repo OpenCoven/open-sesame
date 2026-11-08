@@ -50,3 +50,4 @@
 #widget-panel #pane-audio>.live-bar #live-sample{margin:0 auto 0 0}
 #widget-panel #pane-audio [hidden],#widget-panel #capture-voice[hidden],#widget-panel #widget-voice-open[hidden]{display:none!important}
 @container open-sesame-widget (max-width:570px){#widget-panel #pane-audio{overflow-y:auto}#widget-panel #live-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:none;overflow:visible;flex:none}#widget-panel #live-workspace>.live-main{min-height:185px}#widget-panel #live-capture{padding:7px;gap:5px}#widget-panel #live-active-source{display:none}}
+#widget-panel #live-capture #live-customize{flex:none;min-height:24px;padding:3px 7px;border:1px solid #343239;border-radius:6px;background:#1b1c20;color:#bdb5c7;font-size:10px}

@@ -66,6 +66,7 @@ def main():
             app = str(ROOT / 'build/Open Sesame.app')
             check('signature', ['codesign', '--verify', '--deep', '--strict', '--verbose=2', app])
             check('plist', ['plutil', '-lint', app + '/Contents/Info.plist'])
+            check('app-icon', [sys.executable, '-B', 'scripts/check-app-icon.py', app])
     elif not args.portable:
         results.append({'name': 'native-build', 'passed': False, 'error': native + '; use --portable explicitly'})
     after = subprocess.check_output(['git', 'status', '--porcelain=v1', '-uall'], cwd=ROOT)

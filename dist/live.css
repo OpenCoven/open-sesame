@@ -49,17 +49,31 @@
 .live-question-examples{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
 .live-question-examples button{padding:4px 8px;border:1px solid #c8b7d326;color:#d2c7da;background:#b7aac00a;border-radius:7px;text-align:left;font-size:10px}
 .live-question-examples button:hover,.live-question-head button[aria-expanded=true]{background:#c1b3d316;color:#eee8f2}
-#live-shortcut-editor{position:absolute;top:53px;right:0;z-index:19;display:grid;gap:8px;width:min(300px,100%);max-height:calc(100% - 54px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#a199a44d transparent;padding:11px;border:1px solid #ffffff20;border-radius:10px;background:#252428fa;box-shadow:0 10px 28px #0006}
-#live-shortcut-editor header,#live-shortcut-editor footer{display:flex;align-items:center;justify-content:space-between;gap:6px}
-#live-shortcut-editor header strong{font-size:12px;font-weight:550}
-#live-shortcut-editor label{display:grid;gap:3px;margin:0;color:#b8aebd;font-size:9px}
-#live-shortcut-editor :is(input,textarea,select){min-width:0;width:100%;background-color:#ffffff08;color:#ebe5ed;border:1px solid #ffffff12;border-radius:6px;padding:4px 6px;font:inherit;font-size:11px}
-#live-shortcut-editor textarea{resize:none;line-height:1.5}.live-shortcut-name{display:flex;gap:5px;align-items:center}
-#live-shortcut-editor button{font-size:10px;color:#d5ccda;padding:4px 7px;border-radius:5px;background:#ffffff0b}
-#live-shortcut-editor header button{padding:3px;display:grid;place-items:center;background:transparent}
-#live-shortcut-editor header svg{width:12px;height:12px}
-#live-shortcut-editor footer button[type=submit]{margin-left:auto;background:#c6b8d4;color:#211e25}
-#live-shortcut-editor p{margin:0;color:#e6b5b3;font-size:10px;line-height:1.4}
+#live-shortcut-dialog{width:min(420px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);margin:auto;padding:0;overflow:auto;overscroll-behavior:contain;border:1px solid #343239;border-radius:16px;background:#17181c;color:#e8e5eb;box-shadow:0 20px 70px #0008;color-scheme:dark}
+#live-shortcut-dialog::backdrop{background:#08090bbd}
+#live-shortcut-editor{display:grid;gap:14px;padding:20px;min-width:0}
+#live-shortcut-editor header,#live-shortcut-editor footer{display:flex;align-items:center;gap:8px}
+#live-shortcut-editor header strong{flex:1;font-size:15px;font-weight:550;letter-spacing:-.2px}
+#live-shortcut-editor label{display:grid;gap:7px;margin:0;color:#b5b0bd;font-size:11px}
+#live-shortcut-editor :is(input,textarea,select){box-sizing:border-box;min-width:0;width:100%;background:#101114;color:#e8e5eb;border:1px solid #333138;border-radius:8px;padding:9px 10px;font:inherit;font-size:12px;outline:none;box-shadow:none}
+#live-shortcut-editor textarea{resize:vertical;min-height:76px;max-height:200px;line-height:1.55}
+#live-shortcut-editor .live-shortcut-name{display:flex;align-items:center;border:1px solid #333138;border-radius:8px;background:#101114;overflow:hidden}
+#live-shortcut-editor .live-shortcut-name>span{padding-left:11px;color:#8f859c;font-size:14px}
+#live-shortcut-editor .live-shortcut-name input{border:0;background:transparent;padding-left:7px}
+#live-shortcut-editor button{min-height:32px;padding:7px 11px;border:1px solid #343239;border-radius:8px;background:#202126;color:#c7c1cf;font-size:11px}
+#live-shortcut-editor header button{display:grid;place-items:center;width:28px;min-height:28px;padding:5px;border:0;background:transparent}
+#live-shortcut-editor header svg{width:14px;height:14px}
+#live-shortcut-editor footer{padding-top:4px;flex-wrap:wrap}
+#live-shortcut-cancel{margin-left:auto}
+#live-shortcut-editor footer button[type=submit]{background:#c8bbd7;border-color:transparent;color:#211e27}
+#live-shortcut-editor footer button[type=submit]:disabled{opacity:.4}
+#live-shortcut-editor p{margin:0;color:#a29aa9;font-size:11px;line-height:1.55}
+#live-shortcut-editor #live-shortcut-error{color:#e4b8b5}
+.live-shortcut-detail{display:flex;justify-content:space-between;gap:12px;min-width:0;color:#9991a3;font-size:10px}
+.live-shortcut-detail code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:#bcb0c9}
+.live-shortcut-detail small{flex:none;font-size:10px}
+@media(max-height:390px){#live-shortcut-editor{gap:10px;padding:14px}#live-shortcut-editor textarea{min-height:60px;height:60px}}
+
 .screen-notes-sheet{position:absolute;inset:32px 12px 12px;z-index:90;display:flex;flex-direction:column;gap:7px;padding:12px;background:#242428f7;border:1px solid #ffffff1c;border-radius:12px;box-shadow:0 10px 40px #0007;color:#d4cbdc}
 .screen-notes-sheet header,.screen-notes-sheet footer{display:flex;align-items:center;gap:6px;flex:none}
 .screen-notes-sheet header{justify-content:space-between}.screen-notes-sheet header strong{font-size:13px;font-weight:500}.screen-notes-sheet small{font-size:9px;margin-left:6px;color:#b4a6be}

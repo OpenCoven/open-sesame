@@ -42,7 +42,7 @@
   form.addEventListener('submit',event=>{event.preventDefault();composerSync();if(el('agenda-capture-add').disabled)return;const name=taskName();if(name.startsWith('/')){toast('This input adds agenda tasks. Use /task followed by a title.');return}const count=focusTopics.length;el('topic-name').value=name;el('topic-minutes').value=minutes.value;el('topic-form').requestSubmit();if(focusTopics.length>count){input.value='';composerSync();hint.textContent='Added '+name+' to your agenda.';input.focus({preventScroll:true});requestAnimationFrame(fitFocusTopics)}});
   el('agenda-capture-voice').addEventListener('click',()=>window.OpenSesameVoice?.start({target:input,button:el('agenda-capture-voice'),onCommit:composerSync}));
   function sync(){
-    el('focus-duration-value').textContent=focusMinutes+' min';trigger.setAttribute('aria-label','Adjust focus duration: '+focusMinutes+' minutes, '+focusTopics.length+' topics');trigger.disabled=focusRunning;more.disabled=focusRunning;
+    el('focus-duration-value').textContent=focusMinutes+' min';trigger.setAttribute('aria-label','Adjust focus duration: '+focusMinutes+' minutes, '+focusTopics.length+' topics');trigger.disabled=focusRunning;
     dialog.querySelectorAll('[data-duration]').forEach(button=>{const n=Number(button.dataset.duration);button.setAttribute('aria-pressed',String(n===focusMinutes));button.disabled=focusRunning||focusTopics.length>topicLimit(n);button.title=button.disabled?'This duration supports '+topicLimit(n)+' topics':n+' minute session'});
     if(focusRunning&&!dialog.hidden)close(false);composerSync();
   }

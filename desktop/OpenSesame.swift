@@ -101,8 +101,10 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         surface.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         surface.layer?.masksToBounds = true
         panel.contentView = surface
-        web.autoresizingMask = [.width, .height]
+        surface.autoresizingMask = [.width, .height]
+        web.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(web)
+        NSLayoutConstraint.activate([web.leadingAnchor.constraint(equalTo: surface.leadingAnchor), web.trailingAnchor.constraint(equalTo: surface.trailingAnchor), web.topAnchor.constraint(equalTo: surface.topAnchor), web.bottomAnchor.constraint(equalTo: surface.bottomAnchor)])
         createStatusItem()
         watchOutsideClicks()
         shortcut = GlobalShortcut { [weak self] in self?.openLauncher() }
@@ -195,17 +197,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
 
     func createStatusItem() {
         status = NSStatusBar.system.statusItem(withLength: 30)
-        let image = NSImage(size: NSSize(width: 20, height: 14), flipped: false) { _ in
-            NSColor.labelColor.setFill()
-            for mirrored in [false, true] {
-                let path = NSBezierPath()
-                func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: mirrored ? 20-x : x, y: y) }
-                path.move(to: point(1, 10)); path.curve(to: point(9, 5), controlPoint1: point(5, 10), controlPoint2: point(8, 7)); path.curve(to: point(1, 10), controlPoint1: point(5, 1), controlPoint2: point(2, 4)); path.close(); path.fill()
-            }
-            return true
-        }
-        image.isTemplate = true
-        status.button?.image = image
+        if let url = Bundle.main.url(forResource: "OpenSesame", withExtension: "icns"), let image = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = image
+            let menuImage = image.copy() as! NSImage
+            menuImage.size = NSSize(width: 20, height: 20); menuImage.isTemplate = false
+            status.button?.image = menuImage
+        } else { status.button?.title = "OS" }
         status.button?.target = self
         status.button?.action = #selector(statusPressed)
         status.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -215,7 +212,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     @objc func statusPressed() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
-            menu.addItem(withTitle: "Show Open Sesame", action: #selector(showPanel), keyEquivalent: "")
+            menu.addItem(withTitle: "Open widget", action: #selector(showWidget), keyEquivalent: "")
             let launcher = menu.addItem(withTitle: "Open launcher", action: #selector(openLauncher), keyEquivalent: " ")
             launcher.keyEquivalentModifierMask = [.option]; launcher.target = self
             if shortcut?.available != true {
@@ -228,15 +225,20 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             menu.addItem(.separator())
             if authentication.authenticated { menu.addItem(withTitle: "Sign out of Open Sesame", action: #selector(signOut), keyEquivalent: "").target = self }
             menu.addItem(withTitle: "Quit Open Sesame", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-            for item in menu.items where item.action == #selector(showPanel) { item.target = self }
+            for item in menu.items where item.action == #selector(showWidget) { item.target = self }
             status.menu = menu
             status.button?.performClick(nil)
             status.menu = nil
-        } else if panel.isVisible { web?.evaluateJavaScript("window.OpenSesameLive?.stopForHide()", completionHandler: nil); voice.cancel(); panel.orderOut(nil) } else { showPanel() }
+        } else if panel.isVisible, authentication.authenticated { web.evaluateJavaScript("void window.OpenSesameWindow?.toggle()", completionHandler: nil) } else { showWidget() }
     }
 
     @objc func showPanel() {
         positionPanel(); NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func showWidget() {
+        showPanel()
+        if authentication.authenticated { web.evaluateJavaScript("void window.OpenSesameWindow?.show()", completionHandler: nil) }
     }
 
     func watchOutsideClicks() {

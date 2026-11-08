@@ -134,7 +134,9 @@
   },true);
   window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{sync();window.dispatchEvent(new Event('open-sesame-layout'))})});
   window.addEventListener('pagehide',()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
-  window.OpenSesameWindow={sync,open,dock,collapse,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
+  function show(){if(window.OpenSesameLauncher?.active)window.OpenSesameLauncher.close(true);else setExpanded(true,{focus:true})}
+  function toggle(){if(state.expanded||window.OpenSesameLauncher?.active)return collapse({focus:true});show()}
+  window.OpenSesameWindow={sync,open,dock,collapse,show,toggle,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
   window.addEventListener('beforeunload',()=>{try{if(owner?.OpenSesameWindow?.owns(window))owner.OpenSesameWindow.checkpoint(window,snapshot())}catch{}});
   if(embedded){state.expanded=true;document.title='Open Sesame · Floating workspace';render();if(owner?.OpenSesameWindow)owner.OpenSesameWindow.ready(window)}else sync();
 })();

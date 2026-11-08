@@ -32,7 +32,7 @@
   }
   function refresh(){
     cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{
-      const raw=input.value;calculation=el('capture-type').value==='auto'?OpenSesameCalculator.calculate(raw):null;
+      const intent=window.openSesameCapture?.interpret(input.value,el('capture-type').value,state.scenario);calculation=menu.hidden&&intent?.kind==='calculation'?intent.calculation:null;
       result.hidden=!calculation;result.classList.toggle('has-error',!!calculation?.error);
       if(calculation){output.textContent=calculation.error||calculation.result;expression.textContent=calculation.error?'Calculation':calculation.expression;copy.title=calculation.note||'Enter or click to copy';copy.disabled=!!calculation.error}
       surfaces.forEach(paint);
@@ -41,5 +41,6 @@
   surface(input,false);surface(el('terminal-task'),()=>el('terminal-task').classList.contains('is-command'));
   for(const name of ['open-sesame-layout','open-sesame-view-changed'])window.addEventListener(name,refresh);
   new MutationObserver(refresh).observe(el('terminal-connect-form'),{subtree:true,attributes:true,attributeFilter:['hidden','class']});
+  new MutationObserver(refresh).observe(menu,{attributes:true,attributeFilter:['hidden']});
   window.OpenSesameInputTools={refresh,copyCalculation};refresh();
 })();

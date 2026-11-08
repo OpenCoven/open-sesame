@@ -1,5 +1,11 @@
 # Development work and handoff
 
+## Widget and launcher fit, November 8
+
+`widget-launcher-fit-20261108` owns `codex/widget-launcher-fit` in the separate `open-sesame-widget-fit` worktree, based on signed PR #19 main. It repairs the clipped Focus/native frame and launcher row alignment shown in the user’s screenshots. Regression checks reproduced the GitHub preview/monitor API collision, slash-as-calculation footer state and native sizing after a pane exception before the repairs. The original logs are preserved under the task’s common-Git receipts.
+
+The monitor now has a distinct API and control namespace, all authored control IDs are unique, and native sizing precedes pane content. Follow-up steering adds a centered Live shortcut dialog, predictable widget/launcher entry and collapse, and the exact supplied gold emblem throughout macOS/web branding. Recovered native Safari access exposed and repaired stale Focus/Projects bootstrap references and the native calculation-height override. The WebKit fixture now visibly fits aligned command rows, calculations, full Live, compact collapse and a narrow launcher with errors empty; shortcut modal and Escape were observed without starting capture or sending a question. The installed app was independently observed as v0.0.16 after the earlier handoff. Final full verification, exact-head hosted checks, private v0.0.17 packaging and installed acceptance remain separate until recorded in common-Git receipts. See `widget-launcher-fit.md` for the state contract and continuation.
+
 ## GitHub monitoring widget, November 8
 
 `github-monitor-widget-20261108` owns `codex/github-monitor-widget` in the separate `open-sesame-github-monitor` worktree, dependent on the verified Familiar permissions/layout candidate. It adds a GET-only GitHub CLI transport, private local repository selection and a responsive Widgets dashboard for recent PRs, issues and workflow runs. It preserves the earlier v0.0.15 audio, display, shared Spotify and launcher update, plus the Familiar confirmation and collapsible-rail changes.
