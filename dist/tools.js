@@ -2,6 +2,8 @@
 /* Packages describe content; only this host can execute approved operations. */
 (() => {
   const M = OpenSesameToolsModel, key = 'open-sesame-tools-v1', drafts = new Map();
+  const accessNames = {'github.summary': 'Read connected GitHub repositories', 'feeds.headlines': 'Read saved feed headlines', 'note.save': 'Save notes to Projects', navigate: 'Open workspace views', 'link.open': 'Open web links'};
+  const accessText = definition => definition.capabilities.map(name => accessNames[name]).join(', ') || 'None';
   let installed = [], ticket = 0, storageError = false, importTicket = 0;
   try { installed = M.restore(JSON.parse(localStorage.getItem(key) || '[]')); }
   catch { storageError = true; } // Keep unreadable storage intact for recovery.
@@ -83,7 +85,7 @@
     const fields = drafts.get(instance.id) || M.configuration(d, instance.config);
     drafts.set(instance.id, fields);
     host.append(node('h3', d.name), node('p', d.description));
-    const access = node('small', 'Access: ' + (d.capabilities.join(', ') || 'None'));
+    const access = node('small', 'Access: ' + accessText(d));
     const sourceLabel = node('p', d.source ? origin : live ? 'Local form · actions run only when pressed.' : 'Sample form · actions disabled.');
     host.append(access, sourceLabel);
     const edit = (field, input) => {
@@ -197,7 +199,7 @@
       draw();
     });
     for (const old of installed.filter(x => x.definition.id === d.id)) button(stage, 'Replace ' + old.definition.name, () => {
-      const message = 'Replace this tool definition and retain saved configuration? Access: ' + d.capabilities.join(', ') + '. Unsaved edits for this instance will be discarded.';
+      const message = 'Replace this tool definition and retain saved configuration? Access: ' + accessText(d) + '. Unsaved edits for this instance will be discarded.';
       if (confirm(message)) replaceInstance(old, d);
     });
     button(stage, 'Export definition', () => exportTool(d));
@@ -228,7 +230,7 @@
       };
       button(details, 'Export definition', () => exportTool(x.definition));
       if (x.previous) button(details, 'Roll back definition', () => {
-        if (confirm('Restore the previous definition? Access: ' + x.previous.capabilities.join(', ') + '. Unsaved edits will be discarded.')) replaceInstance(x, x.previous);
+        if (confirm('Restore the previous definition? Access: ' + accessText(x.previous) + '. Unsaved edits will be discarded.')) replaceInstance(x, x.previous);
       });
       button(details, 'Remove instance', () => {
         if (!confirm('Remove this tool instance?')) return;
@@ -268,6 +270,7 @@
   dialog.addEventListener('close', closed);
   dialog.addEventListener('cancel', closed);
   window.addEventListener('open-sesame-view-changed', () => { if (state.scenario !== 'plugins' && dialog.open) dialog.close(); });
+  window.addEventListener('open-sesame-layout', () => { if (!state.expanded && dialog.open) dialog.close(); });
   window.addEventListener('open-sesame-tools-changed', catalog);
   catalog();
   window.OpenSesameTools = {open, get active() { return dialog.open; }, handoff(data) {
