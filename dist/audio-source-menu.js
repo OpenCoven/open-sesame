@@ -34,7 +34,7 @@
     for(const option of source.options)option.disabled=!audioCapability(chosenMode,option.value).available;
     const supported=audioCapability(chosenMode,source.value);
     const output=record?'Save an audio file. No transcript is created.':'Turn speech into text. No audio file is saved.';
-    const help=source.value==='mic'?'Uses your Mac or browser’s selected microphone.':(source.value==='both'?'Includes your microphone. ':'')+'Choose a tab or screen and enable Share audio in the picker.';
+    const help=window.__OPEN_SESAME_NATIVE__&&source.value!=='mic'?(source.value==='both'?'Includes your microphone and audio from this Mac.':'Captures audio from this Mac; microphone stays off.')+' Allow Screen & System Audio Recording in macOS Privacy settings when asked.':source.value==='mic'?'Uses your Mac or browser’s selected microphone.':(source.value==='both'?'Includes your microphone. ':'')+'Choose a tab or screen and enable Share audio in the picker.';
     el('live-capture-help').textContent=!supported.available?supported.reason:output+' '+help;
     el('live-capture-help').hidden=!detailsOpen&&supported.available;
     helpToggle.setAttribute('aria-expanded',String(!el('live-capture-help').hidden));

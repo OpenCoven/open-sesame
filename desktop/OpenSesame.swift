@@ -55,7 +55,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         }
         """
         config.userContentController.addUserScript(WKUserScript(source: bookmarkScrollStyle, injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: .defaultClient))
-        config.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_NATIVE__=true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
+        let versionJSON = String(data: try! JSONSerialization.data(withJSONObject: [version]), encoding: .utf8)!
+        config.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_NATIVE__=true;window.__OPEN_SESAME_VERSION__=\(versionJSON)[0];", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: NSRect(origin: .zero, size: currentSize), configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -416,13 +418,13 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             return
         }
         if method == "speech.start" {
-            voice.start(id: params["id"] as? String ?? "", locale: params["locale"] as? String ?? "en-US") { [weak self] error in self?.respond(requestId, result: ["sourceLabel": self?.voice.inputName ?? "System microphone"], error: error) }
+            voice.start(id: params["id"] as? String ?? "", locale: params["locale"] as? String ?? "en-US", source: params["source"] as? String ?? "mic") { [weak self] error in self?.respond(requestId, result: ["sourceLabel": self?.voice.inputName ?? "System microphone"], error: error) }
             return
         }
         if method.hasPrefix("record.") {
             let id = params["id"] as? String ?? ""
-            if method == "record.start" { voice.cancel(); audioRecorder.start(id: id) { [weak self] result, error in self?.respond(requestId, result: result, error: error) } }
-            else if method == "record.stop" { respond(requestId, result: ["ready": audioRecorder.stop(id: id)]) }
+            if method == "record.start" { voice.cancel(); audioRecorder.start(id: id, source: params["source"] as? String ?? "mic") { [weak self] result, error in self?.respond(requestId, result: result, error: error) } }
+            else if method == "record.stop" { audioRecorder.stopAsync(id: id) { [weak self] ready in self?.respond(requestId, result: ["ready": ready]) } }
             else if method == "record.save" { audioRecorder.save(id: id) { [weak self] saved, error in self?.respond(requestId, result: saved, error: error) } }
             else if method == "record.clear" { audioRecorder.clear(); respond(requestId, result: true) }
             else { respond(requestId, error: "Unsupported recording action.") }
@@ -504,9 +506,10 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if let url = navigationAction.request.url, ["https", "http"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }; return nil
     }
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
-        guard authentication.authenticated, frame.isMainFrame, let url = frame.request.url, url.isFileURL, url.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/") else { completionHandler(nil); return }
-        let picker = NSOpenPanel(); picker.canChooseFiles = !parameters.allowsDirectories; picker.canChooseDirectories = parameters.allowsDirectories; picker.allowsMultipleSelection = parameters.allowsMultipleSelection; picker.prompt = "Open"
-        picker.begin { response in completionHandler(response == .OK ? picker.urls : nil) }
+        guard authentication.authenticated, webView === web, frame.isMainFrame, let url = webView.url, url.isFileURL, url.resolvingSymlinksInPath().path.hasPrefix(assets.resolvingSymlinksInPath().path + "/") else { completionHandler(nil); return }
+        let picker = NSOpenPanel(); picker.canChooseFiles = !parameters.allowsDirectories; picker.canChooseDirectories = parameters.allowsDirectories; picker.allowsMultipleSelection = parameters.allowsMultipleSelection; picker.prompt = "Choose"; picker.level = .statusBar
+        NSApp.activate(ignoringOtherApps: true)
+        picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
     func applicationWillTerminate(_ notification: Notification) { authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }

@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 
 final class OpenSesameAudioRecorder: NSObject, AVAudioRecorderDelegate {
     private var recorder: AVAudioRecorder?
+    private var systemAudio: OpenSesameSystemAudio?
+    private var stoppingSystem = false
+    private var systemFrames: Int64 = 0
     private var session = ""
     private var savedID = ""
     private var savedURL: URL?
@@ -13,9 +16,10 @@ final class OpenSesameAudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     init(emit: @escaping ([String: Any]) -> Void) { self.emit = emit; super.init() }
 
-    func start(id: String, completion: @escaping ([String: Any]?, String?) -> Void) {
-        guard session.isEmpty, !id.isEmpty, id.count <= 80 else { completion(nil, "An audio capture is already starting or running."); return }
+    func start(id: String, source: String = "mic", completion: @escaping ([String: Any]?, String?) -> Void) {
+        guard session.isEmpty, systemAudio == nil, !id.isEmpty, id.count <= 80, ["mic", "system", "both"].contains(source) else { completion(nil, "An audio capture is already starting or running."); return }
         session = id
+        if source != "mic" { startSystem(id: id, source: source, completion: completion); return }
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] allowed in
             DispatchQueue.main.async {
                 guard let self = self, self.session == id else { completion(nil, "Recording cancelled."); return }
@@ -39,6 +43,40 @@ final class OpenSesameAudioRecorder: NSObject, AVAudioRecorderDelegate {
         }
     }
 
+    private func startSystem(id: String, source: String, completion: @escaping ([String: Any]?, String?) -> Void) {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(UUID().uuidString + ".m4a")
+            systemFrames = 0
+            let file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 128000], commonFormat: .pcmFormatFloat32, interleaved: false)
+            let capture = OpenSesameSystemAudio(output: { [weak self] buffer in
+                do { try file.write(from: buffer); self?.systemFrames += Int64(buffer.frameLength) }
+                catch { DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "record.error", "id": id, "message": "Audio could not be written. Stop and save any captured audio."]) } }
+            }, level: { [weak self] value in
+                DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "record.level", "id": id, "level": value]) }
+            }, failed: { [weak self] message in
+                guard self?.session == id else { return }; self?.emit(["event": "record.error", "id": id, "message": message])
+            })
+            systemAudio = capture
+            capture.start(source: source) { [weak self] error in
+                guard let self, self.session == id else { completion(nil, "Recording cancelled."); return }
+                if let error { self.stopAsync(id: id) { _ in try? FileManager.default.removeItem(at: url); completion(nil, error) }; return }
+                self.discardSaved(); self.savedURL = url; self.savedID = id
+                completion(["sourceLabel": source == "both" ? "Microphone + system audio" : "System audio"], nil)
+            }
+        } catch { session = ""; completion(nil, "Could not prepare the system audio recording.") }
+    }
+    func stopAsync(id: String, completion: @escaping (Bool) -> Void) {
+        guard let capture = systemAudio else { completion(stop(id: id)); return }
+        guard session == id, !stoppingSystem else { completion(false); return }
+        session = ""; stoppingSystem = true
+        capture.stop { [weak self] in
+            guard let self else { completion(false); return }
+            self.systemAudio = nil; self.stoppingSystem = false
+            let size = (try? self.savedURL?.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            completion(self.savedID == id && self.systemFrames > 0 && size > 0)
+        }
+    }
     func stop(id: String) -> Bool {
         guard session == id || session.isEmpty && savedID == id else { return false }
         session = ""; timer?.invalidate(); timer = nil
@@ -59,7 +97,7 @@ final class OpenSesameAudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func discardSaved() { if let url = savedURL { try? FileManager.default.removeItem(at: url) }; savedURL = nil; savedID = "" }
-    func clear() { if !session.isEmpty { _ = stop(id: session) }; discardSaved() }
+    func clear() { if systemAudio != nil { let id = session; stopAsync(id: id) { [weak self] _ in self?.discardSaved() }; return }; if !session.isEmpty { _ = stop(id: session) }; discardSaved() }
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         guard recorder === self.recorder else { return }
         let id = session; _ = stop(id: id)

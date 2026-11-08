@@ -9,8 +9,8 @@ function snapshot(){
 function send(type,code){window.webkit.messageHandlers.youtubePlayer.postMessage({generation:source.generation,type,code:code??null,snapshot:snapshot()})}
 window.onYouTubeIframeAPIReady=()=>{
   const vars={playsinline:1,autoplay:0,origin:source.origin,widget_referrer:source.origin};
-  if(source.list)vars.list=source.list;if(source.start)vars.start=source.start;
-  player=new YT.Player('player',{width:'100%',height:'100%',videoId:source.id||undefined,playerVars:vars,events:{onReady(){ready=true;send('ready')},onStateChange(){send('state')},onError(event){send('error',event.data)}}});
+  if(source.list){vars.list=source.list;vars.listType='playlist'}if(source.start)vars.start=source.start;
+  player=new YT.Player('player',{width:'100%',height:'100%',videoId:source.id||undefined,playerVars:vars,events:{onReady(){ready=true;if(source.list&&!source.id)player.cuePlaylist({listType:'playlist',list:source.list,index:0,startSeconds:source.start||0});send('ready')},onStateChange(){send('state')},onError(event){send('error',event.data)}}});
 };
 window.openSesamePlayerCommand=({action,args=[]})=>{
   if(!ready)return;

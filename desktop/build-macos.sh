@@ -11,11 +11,11 @@ open_sesame_python="$(command -v python3 || true)"
 "$open_sesame_python" -B "$open_sesame_root/scripts/build-workos-sdk.py"
 rm -rf "$open_sesame_app"
 mkdir -p "$open_sesame_app/Contents/MacOS" "$open_sesame_app/Contents/Resources/web"
-xcrun swiftc -O -target "$(uname -m)-apple-macosx13.0" -I "$open_sesame_root/build/workos-sdk" -L "$open_sesame_root/build/workos-sdk" -lWorkOS -o "$open_sesame_app/Contents/MacOS/OpenSesame" "$open_sesame_root/desktop/OpenSesame.swift" "$open_sesame_root/desktop/VoiceInput.swift" "$open_sesame_root/desktop/AudioRecorder.swift" "$open_sesame_root/desktop/GlobalShortcut.swift" "$open_sesame_root/desktop/EmbeddedWebSurface.swift" "$open_sesame_root/desktop/Authentication.swift" "$open_sesame_root/desktop/SpotifyAuthentication.swift" -framework Carbon -framework AppKit -framework WebKit -framework Speech -framework AVFoundation -framework AuthenticationServices -framework Security
+xcrun swiftc -O -target "$(uname -m)-apple-macosx13.0" -I "$open_sesame_root/build/workos-sdk" -L "$open_sesame_root/build/workos-sdk" -lWorkOS -o "$open_sesame_app/Contents/MacOS/OpenSesame" "$open_sesame_root/desktop/OpenSesame.swift" "$open_sesame_root/desktop/VoiceInput.swift" "$open_sesame_root/desktop/AudioRecorder.swift" "$open_sesame_root/desktop/SystemAudio.swift" "$open_sesame_root/desktop/GlobalShortcut.swift" "$open_sesame_root/desktop/EmbeddedWebSurface.swift" "$open_sesame_root/desktop/Authentication.swift" "$open_sesame_root/desktop/SpotifyAuthentication.swift" -framework Carbon -framework AppKit -framework WebKit -framework Speech -framework AVFoundation -framework ScreenCaptureKit -framework CoreMedia -framework AuthenticationServices -framework Security
 cp -R "$open_sesame_root/dist/." "$open_sesame_app/Contents/Resources/web/"
 cp "$open_sesame_root/vendor-src/workos-ios/LICENSE" "$open_sesame_app/Contents/Resources/WorkOS-LICENSE"
 rm -rf "$open_sesame_app/Contents/Resources/web/downloads" "$open_sesame_app/Contents/Resources/web/.openai"
-cp "$open_sesame_root/desktop/coven_runtime.py" "$open_sesame_root/desktop/agent_monitor.py" "$open_sesame_root/desktop/live_agents.py" "$open_sesame_root/desktop/bridge.py" "$open_sesame_root/desktop/feeds.py" "$open_sesame_root/desktop/reader.py" "$open_sesame_root/desktop/controller.py" "$open_sesame_root/desktop/computer_controls.py" "$open_sesame_app/Contents/Resources/"
+cp "$open_sesame_root/desktop/coven_runtime.py" "$open_sesame_root/desktop/familiar_avatars.py" "$open_sesame_root/desktop/agent_monitor.py" "$open_sesame_root/desktop/live_agents.py" "$open_sesame_root/desktop/bridge.py" "$open_sesame_root/desktop/feeds.py" "$open_sesame_root/desktop/reader.py" "$open_sesame_root/desktop/controller.py" "$open_sesame_root/desktop/computer_controls.py" "$open_sesame_app/Contents/Resources/"
 printf '%s\n' "$open_sesame_python" > "$open_sesame_app/Contents/Resources/python-path.txt"
 # Keep the installed bundle identity stable so existing website data and permissions survive.
 cat > "$open_sesame_app/Contents/Info.plist" <<'PLIST'
@@ -25,6 +25,7 @@ PLIST
 import pathlib, plistlib, sys
 path = pathlib.Path(sys.argv[1])
 info = plistlib.loads(path.read_bytes())
+info['NSAudioCaptureUsageDescription'] = 'Open Sesame captures other apps’ audio only when you start system audio transcription or recording.'
 info['CFBundleShortVersionString'] = sys.argv[2]
 info['CFBundleVersion'] = sys.argv[2]
 info['CFBundleURLTypes'] = [{'CFBundleURLName': 'Open Sesame Authentication', 'CFBundleURLSchemes': ['opensesame']}, {'CFBundleURLName': 'Open Sesame Spotify', 'CFBundleURLSchemes': ['opensesame-spotify']}]

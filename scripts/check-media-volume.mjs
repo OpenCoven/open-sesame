@@ -24,8 +24,10 @@ console.log('Shared volume: real provider dispatch, mute restoration, dragging, 
 // Exercise the actual YouTube placement function: revisiting a parent must not remount its iframe.
 const source=fs.readFileSync('dist/youtube.js','utf8');const start=source.indexOf('  function place(host)'),end=source.indexOf('\n',start);
 let moves=0;const music={append(node){moves++;node.parentElement=this}},youtube={},workspace={parentElement:music};
-const nodes={'youtube-workspace':workspace,'music-youtube-stage':music,'pane-youtube':youtube,'music-provider-stage':{},'youtube-error':{after(node){moves++;node.parentElement=youtube}}};
+const musicToolbar={append(node){node.parentElement=this}},youtubeToolbar={append(node){node.parentElement=this}},toggle={parentElement:musicToolbar};
+const nodes={'youtube-workspace':workspace,'music-youtube-stage':music,'pane-youtube':youtube,'music-provider-stage':{},'youtube-error':{after(node){moves++;node.parentElement=youtube}},'youtube-queue-toggle':toggle,'music-source-form':musicToolbar,'youtube-form':youtubeToolbar};
 const placement={el:id=>nodes[id]};vm.createContext(placement);vm.runInContext(source.slice(start,end)+';this.place=place',placement);
-placement.place('music');placement.place('music');assert.equal(moves,0);
-placement.place('youtube');assert.equal(moves,1);placement.place('youtube');assert.equal(moves,1);
-console.log('YouTube placement: same-parent revisits preserve the existing iframe.');
+placement.place('music');placement.place('music');assert.equal(moves,0);assert.equal(toggle.parentElement,musicToolbar);
+placement.place('youtube');assert.equal(moves,1);assert.equal(toggle.parentElement,youtubeToolbar);placement.place('youtube');assert.equal(moves,1);
+placement.place('music');assert.equal(moves,2);assert.equal(toggle.parentElement,musicToolbar,'Playlist access stays in the active toolbar outside the native player hit area');
+console.log('YouTube placement: same-parent revisits preserve the iframe and playlist access follows the source toolbar.');
