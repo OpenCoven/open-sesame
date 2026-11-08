@@ -25,6 +25,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var readBuffer = Data()
     var assets: URL!
     var currentSize = NSSize(width: 280, height: 35)
+    var requestedSize = NSSize(width: 280, height: 35)
+    var fillsDisplay = false
     var placement = "notch"
     var detached = false
     var detachedFrame: NSRect?
@@ -33,6 +35,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var shortcut: GlobalShortcut?
     var pendingLauncher = false
     var dockedScreenID: NSNumber?
+    var dockedScreenFrame: NSRect?
+    var reportedDisplay = ""
+    var pointerFollowTimer: Timer?
     var embeddedPages: [String: EmbeddedWebSurface] = [:]
     var outsideClickMonitors: [Any] = []
     var authentication: OpenSesameAuthentication!
@@ -110,10 +115,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if !pendingURLs.isEmpty { application(NSApp, open: pendingURLs) }
         positionPanel()
         panel.orderFrontRegardless()
+        watchPointerDisplay()
     }
 
     func showSignIn() {
-        currentSize = NSSize(width: 680, height: 382)
+        requestedSize = NSSize(width: 680, height: 382); fillsDisplay = false
         positionPanel()
         web.loadFileURL(assets.appendingPathComponent("sign-in.html"), allowingReadAccessTo: assets)
     }
@@ -233,7 +239,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
 
     @objc func openLauncher() {
         guard authentication.authenticated else { showPanel(); return }
-        let toggle = panel.isVisible && panel.isKeyWindow
+        let toggle = panel.isVisible && panel.isKeyWindow && placementScreen() == panel.screen
         showPanel()
         panel.makeFirstResponder(web)
         web.evaluateJavaScript("Boolean(window.OpenSesameLauncher && (window.OpenSesameLauncher.\(toggle ? "toggle" : "open")(), true))") { [weak self] value, _ in
@@ -242,34 +248,59 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === web, let screen = placementScreen() { publishDisplay(screen, force: true) }
         if webView === web, authentication.authenticated, pendingLauncher { pendingLauncher = false; openLauncher() }
     }
 
+    func screenID(_ screen: NSScreen) -> NSNumber? { screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber }
+
+    var displayInteractionInProgress: Bool {
+        NSEvent.pressedMouseButtons != 0 || panel?.inLiveResize == true || NSApp.modalWindow != nil || panel?.attachedSheet != nil || authentication?.busy == true || spotify?.busy == true || NSApp.windows.contains { ($0 is NSSavePanel) && $0.isVisible }
+    }
+
     func placementScreen() -> NSScreen? {
-        if let screen = panel?.screen { return screen }
-        if let id = dockedScreenID, let screen = NSScreen.screens.first(where: { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber == id }) { return screen }
-        return NSScreen.main ?? NSScreen.screens.first
+        let screens = NSScreen.screens
+        let saved = dockedScreenID.flatMap { id in screens.first { screenID($0) == id } }
+        let preferred = detached ? (panel?.screen ?? saved ?? NSScreen.main) : (saved ?? panel?.screen ?? NSScreen.main)
+        let fallback = preferred.flatMap { screens.firstIndex(of: $0) }
+        let pointer: NSPoint? = detached || displayInteractionInProgress ? nil : NSEvent.mouseLocation
+        guard let index = OpenSesameScreenPlacement.screenIndex(pointer: pointer, frames: screens.map(\.frame), fallback: fallback) else { return nil }
+        return screens[index]
+    }
+
+    func watchPointerDisplay() {
+        let timer = Timer(timeInterval: 0.12, repeats: true) { [weak self] _ in self?.followPointerDisplay() }
+        timer.tolerance = 0.04; pointerFollowTimer = timer; RunLoop.main.add(timer, forMode: .common)
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    @objc func screenParametersChanged(_ notification: Notification) { followPointerDisplay(force: true) }
+
+    func followPointerDisplay(force: Bool = false) {
+        guard OpenSesameScreenPlacement.shouldFollow(placement: placement, detached: detached, visible: panel?.isVisible == true, interacting: displayInteractionInProgress), let screen = placementScreen() else { return }
+        guard force || screenID(screen) != dockedScreenID || screen.frame != dockedScreenFrame else { return }
+        positionPanel()
+    }
+
+    func publishDisplay(_ screen: NSScreen, force: Bool = false) {
+        let frame = screen.frame, key = "\(screenID(screen)?.stringValue ?? ""):\(frame.width):\(frame.height)"
+        guard force || reportedDisplay != key else { return }; reportedDisplay = key
+        let source = "window.__OPEN_SESAME_SCREEN__={width:\(Double(frame.width)),height:\(Double(frame.height))};window.dispatchEvent(new Event('open-sesame-display-changed'));"
+        web?.evaluateJavaScript(source, completionHandler: nil)
     }
 
     func positionPanel() {
         if detached { return }
         guard let screen = placementScreen() else { return }
-        dockedScreenID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-        let frame = screen.frame
-        if currentSize.width >= frame.width && currentSize.height >= frame.height {
-            panel.setFrame(frame, display: true); return
-        }
-        var x = frame.midX-currentSize.width/2
-        var top = placement == "menu" ? screen.visibleFrame.maxY - 5 : frame.maxY
+        var menuAnchor: NSRect?
         if placement == "menu", let button = status.button, let window = button.window, window.screen == screen {
-            let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
-            x = rect.maxX-currentSize.width
-            top = rect.minY-5
+            menuAnchor = window.convertToScreen(button.convert(button.bounds, to: nil))
         }
-        if placement == "capture" { top = screen.visibleFrame.midY + currentSize.height / 2 }
-        x = max(frame.minX+4, min(frame.maxX-currentSize.width-4, x))
-        panel.setFrame(NSRect(x: x, y: top-currentSize.height, width: currentSize.width, height: currentSize.height), display: true, animate: false)
+        guard let target = OpenSesameScreenPlacement.panelFrame(requested: requestedSize, frame: screen.frame, visibleFrame: screen.visibleFrame, placement: placement, full: fillsDisplay, menuAnchor: menuAnchor) else { return }
+        dockedScreenID = screenID(screen); dockedScreenFrame = screen.frame; currentSize = target.size
+        panel.setFrame(target, display: true, animate: false)
         web?.layoutSubtreeIfNeeded()
+        publishDisplay(screen)
         web?.evaluateJavaScript("window.dispatchEvent(new Event('open-sesame-layout'))", completionHandler: nil)
     }
 
@@ -449,21 +480,16 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "window.size" {
             if detached { respond(requestId, result: true); return }
 
-            let screenFrame = placementScreen()?.frame ?? NSRect(x: 0, y: 0, width: 1512, height: 982)
             let full = params["full"] as? Bool == true
             let requestedWidth = (params["width"] as? NSNumber)?.doubleValue ?? 280
             let requestedHeight = (params["height"] as? NSNumber)?.doubleValue ?? 35
             guard requestedWidth.isFinite, requestedHeight.isFinite else { respond(requestId, error: "Invalid window dimensions."); return }
-            let width = full ? Double(screenFrame.width) : min(Double(screenFrame.width) - 8, max(180, requestedWidth))
-            let height = full ? Double(screenFrame.height) : min(Double(screenFrame.height) - 50, max(24, requestedHeight))
-            currentSize = NSSize(width: width, height: height)
+            requestedSize = NSSize(width: requestedWidth, height: requestedHeight); fillsDisplay = full
             placement = params["layout"] as? String ?? "notch"
             surface.layer?.cornerRadius = placement == "capture" ? 18 : params["expanded"] as? Bool == true ? (placement == "notch" ? 28 : 22) : 18
             surface.layer?.maskedCorners = placement == "notch" ? [.layerMinXMinYCorner, .layerMaxXMinYCorner] : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-            if full {
-                panel.setFrame(screenFrame, display: true)
-                surface.layer?.cornerRadius = 0
-            } else { positionPanel() }
+            if full { surface.layer?.cornerRadius = 0 }
+            positionPanel()
             respond(requestId, result: true); return
         }
         if method == "project.chooseFolder" {
@@ -511,7 +537,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main
