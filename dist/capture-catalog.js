@@ -19,7 +19,7 @@
     action('agents','/agent ','Agents','Conversations, commands, and computer use','terminal','agents',{children:[action('familiars','/familiars','Coven Familiars','Connect, choose a familiar, and chat','chat','agents'),action('agent','/agent ','Ask Coven','Review an agent request','terminal','agents'),action('computer','/computer ','Computer use','Review a computer task','monitor','agents'),action('bash','!','Bash command','Review before running in a shell','terminal','agents'),action('find','/find ','Search conversation','Find a message in the current chat','search','agents')]}),
     action('record','/record','Recorder','Record microphone audio to a file','mic','write'),
     action('transcribe','/transcribe','Transcriber','Start a live transcript and questions','capture','write'),
-    action('screenshot','/screenshot ','Screen notes','Review a demo screen and placeholder notes','monitor','write'),
+    action('screenshot','/screenshot ','Screen notes','Capture a screen or screenshot, extract text locally, and save notes','monitor','write'),
     action('open','/projects','Go to','Jump to another part of Open Sesame','arrow-up-right','open',{children:[action('projects','/projects','Projects','Notes, bookmarks, and tasks','items','open'),action('reader','/reader','Reader','Articles, papers, and feeds','rss','open'),action('console','/console','Console','Familiars, processes, shells, and desktops','terminal','open'),action('live','/live','Live','Transcribe and ask about a conversation','mic','open'),action('plugins','/widgets','Widgets','Apps, accounts, and local connections','plugins','open')]})
   ];
   const groups=[['all','All'],['write','Capture'],['focus','Focus'],['media','Media'],['agents','Agents'],['open','Go to']];

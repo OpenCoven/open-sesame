@@ -14,6 +14,18 @@
     if(action==='slash'||action==='math'){const input=document.getElementById('capture-input');input.value=action==='slash'?'/':'2-2';input.dispatchEvent(new Event('input',{bubbles:true}));}
     if(action==='focus')openSesameCapture.execute(openSesameCapture.interpret('/focus'));
     if(action==='live'){OpenSesameLauncher.close(true);changeScenario('audio');document.getElementById('live-questions-tab').click()}
+    if(action==='familiars'){
+      const client=window.OpenSesameCovenClient;client.status=async()=>({available:true});client.listFamiliars=async()=>['Nova','Sage','Charm','Echo','Astra','Cody','Kitty','Salem','Thoth','Lucian'].map((name,i)=>({id:name.toLowerCase(),name:name.toLowerCase(),displayName:name,description:'Isolated interface fixture',emoji:['👑','🌿','✨','🔮','⭐','⚡','🐱','◐','◇','◈'][i]}));client.openConversation=async id=>({familiarId:id,conversationId:'fixture-'+id,sessionId:null,revision:0,harness:'coven-code',messages:[],status:'ready',workspace:'/fixture'});
+      state.size='max';changeScenario('familiars');window.OpenSesameFamiliars.connect();
+    }
+    if(action==='screen-notes')OpenSesameScreenNotes.open();
+    if(['transcribe-mic','record-system','record-both','capture-off','media-playing'].includes(action)){
+      audioSession.active=false;audioSession.starting=audioSession.stopping=false;
+      const mode=document.getElementById('live-capture-mode');mode.value=action.startsWith('record')?'record':'transcribe';mode.dispatchEvent(new Event('change',{bubbles:true}));
+      audioSession.active=!['capture-off','media-playing'].includes(action);document.getElementById('audio-record').checked=action.startsWith('record');document.getElementById('audio-source').value=action==='record-both'?'both':action==='record-system'?'system':'mic';document.getElementById('audio-meter').setAttribute('aria-valuenow','65');
+      if(action==='media-playing')window.OpenSesameMusic={snapshot:()=>({loaded:true,playing:true,ready:true,title:'Fixture music'}),summary:()=> 'Fixture music'};
+      state.expanded=false;state.scenario=action==='media-playing'?'music':'audio';render();
+    }
     if(action==='collapse')OpenSesameWindow.collapse();
     if(action==='small'){window.__OPEN_SESAME_SCREEN__={width:390,height:320};window.dispatchEvent(new Event('open-sesame-display-changed'));}
     requestAnimationFrame(()=>requestAnimationFrame(()=>{const rect=id=>{const r=document.getElementById(id).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};const commands=document.getElementById('capture-commands'),list=document.getElementById('capture-command-list');parent.postMessage({kind:'fixture-layout',layout:{anchor:rect('widget-anchor'),panel:rect('widget-panel'),input:rect('capture-input'),menu:rect('capture-commands'),footer:rect('launcher-statusbar'),calculationHidden:document.getElementById('capture-calculation').hidden,menuOverflow:getComputedStyle(commands).overflowY,listOverflow:getComputedStyle(list).overflowY,expanded:state.expanded,launcher:OpenSesameLauncher.active}},'*')}));

@@ -37,6 +37,21 @@ struct OpenSesameAudioTimeline {
         cursor += Self.block
         return result
     }
+    // Dispatch timers coalesce under load. Drain by the monotonic input clock,
+    // with a short jitter buffer, rather than treating every callback as 20 ms.
+    mutating func due(at time: Double, mixed: Bool) -> [[Float]] {
+        guard let startedAt, time.isFinite, time >= startedAt else { return [] }
+        let elapsed = max(0, (time - startedAt - 0.12) * Double(Self.rate))
+        guard elapsed.isFinite, elapsed < Double(Int.max) else { return [] }
+        let target = Int(elapsed)
+        if target - cursor > capacity {
+            cursor = (target - capacity) / Self.block * Self.block
+            system = [Float](repeating: 0, count: capacity); microphone = system
+        }
+        var blocks: [[Float]] = []
+        while cursor + Self.block <= target && blocks.count < capacity / Self.block { blocks.append(take(mixed: mixed)) }
+        return blocks
+    }
 }
 
 struct OpenSesameAudioSignal {
@@ -68,6 +83,9 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
     private var systemSignal = OpenSesameAudioSignal()
     private var microphoneSignal = OpenSesameAudioSignal()
     private var converters: [String: AVAudioConverter] = [:]
+    private var receivedSystem = false
+    private var receivedMicrophone = false
+    var hasCapturedInput: Bool { queue.sync { receivedSystem || mixed && receivedMicrophone } }
     private var output: ((AVAudioPCMBuffer) -> Void)?
     private let failed: (String) -> Void
     private let level: (Double) -> Void
@@ -129,6 +147,7 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
                     self.queue.sync {
                         self.timeline.start(at: ProcessInfo.processInfo.systemUptime)
                         self.converters.removeAll(); self.systemSignal = OpenSesameAudioSignal(); self.microphoneSignal = OpenSesameAudioSignal()
+                        self.receivedSystem = false; self.receivedMicrophone = false
                         self.lastLevel = 0; self.active = true
                     }
                     self.queue.async { [self] in
@@ -158,6 +177,7 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
         else { guard let value = AVAudioConverter(from: buffer.format, to: Self.format) else { return }; converters[key] = value; converter = value }
         guard let converted = Self.convert(buffer, using: converter), let data = converted.floatChannelData?[0] else { return }
         let samples = Array(UnsafeBufferPointer(start: data, count: Int(converted.frameLength)))
+        if mic { receivedMicrophone = true } else { receivedSystem = true }
         timeline.put(samples, received: received, mic: mic)
         let energy = samples.reduce(0.0) { $0 + Double($1 * $1) } / Double(samples.count)
         if mic { microphoneSignal.receive(level: sqrt(energy), at: received) }
@@ -176,13 +196,17 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
         guard result != .error, error == nil, converted.frameLength > 0 else { return nil }
         return converted
     }
-    private func tick() {
-        guard active, let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(OpenSesameAudioTimeline.block)), let data = buffer.floatChannelData?[0] else { return }
-        let samples = timeline.take(mixed: mixed); buffer.frameLength = AVAudioFrameCount(samples.count)
-        for index in samples.indices { data[index] = samples[index] }
-        output?(buffer)
-        let energy = samples.reduce(0.0) { $0 + Double($1 * $1) } / Double(samples.count)
+    private func tick(flush: Bool = false) {
+        guard active else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        var energy = 0.0
+        for samples in timeline.due(at: now + (flush ? 0.12 : 0), mixed: mixed) {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(samples.count)), let data = buffer.floatChannelData?[0] else { continue }
+            buffer.frameLength = AVAudioFrameCount(samples.count)
+            for index in samples.indices { data[index] = samples[index] }
+            if receivedSystem || mixed && receivedMicrophone { output?(buffer) }
+            energy = max(energy, samples.reduce(0.0) { $0 + Double($1 * $1) } / Double(samples.count))
+        }
         if now - lastLevel >= 0.2 {
             lastLevel = now; level(min(100, sqrt(energy) * 300))
             activity?(["system": systemSignal.state(at: now), "mic": microphoneSignal.state(at: now)])
@@ -201,7 +225,7 @@ final class OpenSesameSystemAudio: NSObject, SCStreamOutput, SCStreamDelegate, @
     }
     func stop(completion: (() -> Void)? = nil) {
         epoch += 1; microphone?.inputNode.removeTap(onBus: 0); microphone?.stop(); microphone = nil
-        queue.sync { active = false; ticker?.cancel(); ticker = nil }
+        queue.sync { if active { tick(flush: true) }; active = false; ticker?.cancel(); ticker = nil }
         let current = stream; stream = nil
         Task { @MainActor in
             try? await current?.stopCapture()

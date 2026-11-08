@@ -34,6 +34,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var detachedRatio: CGFloat = 16.0 / 9.0
     var beforeFullscreen: NSRect?
     var shortcut: GlobalShortcut?
+    var screenNotes = OpenSesameScreenNotes()
     var pendingLauncher = false
     var dockedScreenID: NSNumber?
     var dockedScreenFrame: NSRect?
@@ -122,6 +123,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             self.web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
         }
         authentication = OpenSesameAuthentication()
+        screenNotes.window = panel
         familiarPermissions.window = panel
         familiarPermissions.authenticated = { [weak self] in self?.authentication?.authenticated == true }
         familiarPermissions.call = { [weak self] method, params, completion in self?.nativeCall(method, params: params, completion: completion) }
@@ -150,6 +152,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 web.loadFileURL(assets.appendingPathComponent("index.html"), allowingReadAccessTo: assets)
             }
         } else if appUnlocked {
+            screenNotes.cancel()
             familiarPermissions.cancel()
             failNativeCallbacks()
             protectedShare.stop()
@@ -249,10 +252,12 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
 
     func outsideClick(_ event: NSEvent) {
         if authentication?.busy == true || spotify?.busy == true { return }
+        // Local panel and app-owned popup events are inside interactions even if
+        // the pointer/window moved while a native dropdown was tracking.
+        if event.window != nil { return }
         let point = NSEvent.mouseLocation
         guard panel.isVisible, !panel.frame.contains(point), NSApp.modalWindow == nil, panel.attachedSheet == nil else { return }
         // App-owned menus and pickers are part of the current interaction.
-        if let window = event.window, window !== panel { return }
         if NSApp.windows.contains(where: { ($0 is NSSavePanel) && $0.isVisible }) { return }
         if let button = status.button, let window = button.window, window.convertToScreen(button.convert(button.bounds, to: nil)).contains(point) { return }
         if !authentication.authenticated { panel.orderOut(nil); return }
@@ -497,6 +502,13 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "auth.signOut" { respond(requestId, result: true); authentication.signOut(); return }
         if method == "system.info", !authentication.authenticated { respond(requestId, result: ["platform": "darwin", "authenticated": false]); return }
         guard authentication.authenticated || method == "window.focus" else { respond(requestId, error: "Sign in to Open Sesame before using this tool."); return }
+        if method == "screen.notes.cancel" { screenNotes.cancel(); respond(requestId, result: true); return }
+        if method == "screen.notes.capture" || method == "screen.notes.import" {
+            screenNotes.request(importImage: method == "screen.notes.import", preferredDisplay: placementScreen().flatMap(screenID)?.uint32Value) { [weak self] result, error in
+                self?.respond(requestId, result: result, error: error)
+            }
+            return
+        }
         if method == "coven.permissions.cancel" { familiarPermissions.cancel(); respond(requestId, result: true); return }
         if method == "coven.avatar.set" || method == "coven.send" && params["permission"] as? String == "full" {
             familiarPermissions.request(operation: method == "coven.send" ? "send" : "avatar", input: params) { [weak self] response in
@@ -649,7 +661,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

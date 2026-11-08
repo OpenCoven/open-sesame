@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="agents-chat.css?v=7ad3d5890b">
   <link rel="stylesheet" href="focus-calendar.css?v=1a3801c535">
   <link rel="stylesheet" href="composer.css?v=8bb3dddf52">
-  <link rel="stylesheet" href="live.css?v=717759457eec">
+  <link rel="stylesheet" href="live.css?v=c40cf706b6aa">
   <link rel="stylesheet" href="select-menu.css?v=afe741c422">
   <link rel="stylesheet" href="pdf-viewer.css?v=a9e7548765">
   <link rel="stylesheet" href="media-gallery.css?v=8cba29d792">
@@ -26,17 +26,17 @@
   <link rel="stylesheet" href="studio-controls.css?v=ee9c3474b7">
   <link rel="stylesheet" href="focus-overview.css?v=19682a753f">
   <script src="storage-migration.js?v=3ac2f2e93e" defer></script>
-  <script src="bridge.js?v=0e5ca065a9" defer></script>
+  <script src="bridge.js?v=76db16e15b11" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f" defer></script>
   <script src="vendor/purify.min.js?v=4936212d73" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e" defer></script>
   <script src="vendor/create-markdown.js?v=14815efa26" defer></script>
   <script src="fit.js?v=0017ebc64d" defer></script>
-  <script src="capture-catalog.js?v=441926786f" defer></script>
+  <script src="capture-catalog.js?v=ea06909d7cb6" defer></script>
   <script src="calculator.js?v=c064e126d2" defer></script>
   <script src="syntax.js?v=f0c2e3477f" defer></script>
   <script src="computer-controls.js?v=1e537ed2fe" defer></script>
-  <script src="capture.js?v=776917beed" defer></script>
+  <script src="capture.js?v=063dbbef0af1" defer></script>
   <script src="item-workflow.js?v=e0ff202e7b" defer></script>
   <script src="frame-model.js?v=b742fa4184" defer></script>
   <script src="bookmark-model.js?v=6a111c3f2b" defer></script>
@@ -86,11 +86,14 @@
   <script src="media-model.js?v=b364229039" defer></script>
   <script src="media-playlists.js?v=5bafa4ea48" defer></script>
   <script src="media-volume.js?v=b23e5fcff8" defer></script>
-  <script src="compact-media.js?v=e46e518c24" defer></script>
+  <script src="compact-media.js?v=c83a4e230748" defer></script>
+  <link rel="stylesheet" href="compact-indicators.css?v=24ed94f27273">
+  <script src="compact-indicators.js?v=c0bea1b6e4b6" defer></script>
   <script src="lockin.js?v=3914d37a25" defer></script>
-  <script src="screen-notes.js?v=8c8c060d36" defer></script>
+  <link rel="stylesheet" href="screen-notes.css?v=7db8d82e2de7">
+  <script src="screen-notes.js?v=186456b19116" defer></script>
   <script src="notes.js?v=5c98607c8a" defer></script>
-  <script src="window.js?v=f4b54210e400" defer></script>
+  <script src="window.js?v=c391552abbaf" defer></script>
   <script src="capture-launcher.js?v=d51dac9fde65" defer></script>
   <link rel="stylesheet" href="projects-overview.css?v=3a4c0c9c24">
   <script src="projects-overview.js?v=f7f88ebc62" defer></script>
@@ -133,6 +136,7 @@
   <link rel="stylesheet" href="brand.css?v=614fa199aad2">
   <link rel="stylesheet" href="familiar-conversation.css?v=b6a79dfd5c">
   <link rel="stylesheet" href="launcher-palette.css?v=4dfedbb9042d">
+  <link rel="stylesheet" href="familiar-selection.css?v=e06adfd34e32">
 </head>
 <body>
   <svg class="svg-defs" aria-hidden="true"><defs><symbol id="open-sesame-mark" viewBox="0 0 36 24"><path d="M3 5c5 0 9 2 13 8C9 18 4 15 3 5Z" fill="currentColor"/><path d="M33 5c-5 0-9 2-13 8 7 5 12 2 13-8Z" fill="currentColor"/></symbol></defs></svg>
@@ -225,13 +229,16 @@
                     <footer><button id="bookmark-batch-cancel" type="button">Close</button><button id="bookmark-batch-save" type="button">Save bookmarks</button></footer>
                   </section>
                   <header class="panel-top"><div id="activity-menu" class="widget-tabs" role="tablist" aria-label="Widget activity" aria-orientation="vertical"><button id="tab-lockin" aria-label="Focus" title="Focus" role="tab" aria-selected="true" aria-controls="lockin-workspace" data-tab="lockin"><i data-icon="focus"></i><span class="sr-only">Focus</span></button><button id="tab-items" aria-label="Projects" title="Projects" role="tab" aria-selected="false" aria-controls="pane-items" tabindex="-1" data-tab="items"><i data-icon="items"></i><span class="sr-only">Projects</span></button><button id="tab-agents" aria-label="Console" title="Console" role="tab" aria-selected="false" aria-controls="agents-workspace" tabindex="-1" data-tab="agents"><i data-icon="terminal"></i><span class="sr-only">Console</span></button><button id="tab-reading" aria-label="Reader" title="Reader" role="tab" aria-selected="false" aria-controls="pane-reading" tabindex="-1" data-tab="reading"><i data-icon="rss"></i><span class="sr-only">Reader</span></button><button id="tab-audio" aria-label="Live" title="Live" role="tab" aria-selected="false" aria-controls="pane-audio" tabindex="-1" data-tab="audio"><i data-icon="mic"></i><span class="sr-only">Live</span><span class="live-tab-dot" aria-hidden="true"></span></button><button id="tab-plugins" aria-label="Widgets" title="Widgets" role="tab" aria-selected="false" aria-controls="pane-plugins" tabindex="-1" data-tab="plugins"><i data-icon="plugins"></i><span class="sr-only">Widgets</span></button></div><span id="panel-caption" hidden>A MOMENT FOR YOU</span><button id="capture-launcher-open" class="panel-window-button" type="button" aria-label="Open launcher" aria-keyshortcuts="Alt+Space" title="Launcher · Alt+Space"><i data-icon="capture"></i></button><button id="panel-popout" class="panel-window-button" aria-label="Pop out widget" title="Pop out widget"><i data-icon="popout"></i></button><button id="panel-fullscreen" class="panel-window-button" aria-label="Fill screen" title="Fill screen" aria-pressed="false"><i data-icon="expand"></i></button><button id="panel-privacy" class="panel-privacy" aria-label="Screen-share privacy information" title="Screen-share privacy · Option Shift P"><i data-icon="eye-off"></i></button><button class="panel-close" id="panel-close" aria-label="Collapse widget"><i data-icon="collapse"></i></button></header>
-                  <section id="screen-notes-sheet" class="glass-sheet screen-notes-sheet" role="region" aria-label="Screen notes demo" hidden>
-                    <header><strong>Screen notes <small>Demo</small></strong><button id="screen-notes-close" type="button" aria-label="Close screen notes"><i data-icon="close"></i></button></header>
-                    <div class="screen-notes-preview"><img src="assets/screen-notes-demo.svg" alt="Fictional desktop showing a research draft and project checklist"><span>No screen captured</span></div>
-                    <label for="screen-notes-body" class="sr-only">Review screen notes</label><textarea id="screen-notes-body" spellcheck="true" maxlength="12000" placeholder="Preparing sample notes…"></textarea>
+                  <dialog id="screen-notes-dialog" aria-labelledby="screen-notes-heading" aria-describedby="screen-notes-help"><section id="screen-notes-sheet" class="screen-notes-sheet" hidden>
+                    <header><strong id="screen-notes-heading">Screen notes</strong><button id="screen-notes-close" type="button" aria-label="Close screen notes"><i data-icon="close"></i></button></header>
+                    <p id="screen-notes-help">Capture once, extract text on this Mac, then review. Nothing is sent to an agent. Saved notes contain text; the image stays in memory.</p>
+                    <div class="screen-notes-tools"><button id="screen-notes-capture" type="button"><i data-icon="monitor"></i>Capture screen</button><button id="screen-notes-import" type="button"><i data-icon="plus"></i>Choose screenshot</button><input id="screen-notes-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
+                    <label class="sr-only" for="screen-notes-title">Note title</label><input id="screen-notes-title" maxlength="100" value="Screen notes" placeholder="Note title">
+                    <div class="screen-notes-content"><div id="screen-notes-preview" class="screen-notes-preview" hidden><img id="screen-notes-image" alt="Captured image for review"><span id="screen-notes-image-label"></span></div><label class="sr-only" for="screen-notes-body">Review and edit screen notes</label><textarea id="screen-notes-body" spellcheck="true" maxlength="12000" placeholder="Capture a screen, choose a screenshot, or write your notes here…"></textarea></div>
+                    <div id="screen-notes-replace-prompt" role="alert" hidden><span>A new capture replaces this draft. Save it first to keep it.</span><button id="screen-notes-keep" type="button">Keep draft</button><button id="screen-notes-replace" type="button">Replace draft</button></div>
                     <p id="screen-notes-error" role="alert" hidden></p>
-                    <footer><span id="screen-notes-status" role="status"></span><span id="screen-notes-project"></span><button id="screen-notes-cancel" type="button">Cancel</button><button id="screen-notes-save" type="button" disabled>Save note</button></footer>
-                  </section>
+                    <footer><span id="screen-notes-status" role="status"></span><span id="screen-notes-project"></span><button id="screen-notes-cancel" type="button">Close</button><button id="screen-notes-save" type="button" disabled>Save note</button></footer>
+                  </section></dialog>
                   <section id="lockin-workspace" class="lockin-workspace" role="tabpanel" aria-labelledby="tab-lockin">
                     <div class="console-toolbar" aria-label="Focus controls"><div id="lockin-tabs" class="lockin-tabs console-mode-tabs" role="tablist" aria-label="Focus tools"><button id="lockin-music" role="tab" aria-selected="true" aria-controls="pane-music" data-lockin="music"><i data-icon="music"></i>Music</button><button id="lockin-focus" role="tab" aria-selected="false" aria-controls="pane-focus" tabindex="-1" data-lockin="focus"><i data-icon="focus"></i>Timer</button><button id="lockin-youtube" role="tab" aria-selected="false" aria-controls="pane-youtube" tabindex="-1" data-lockin="youtube"><i data-icon="play"></i>YouTube</button><button id="lockin-media" role="tab" aria-selected="false" aria-controls="pane-media" tabindex="-1" data-lockin="media"><i data-icon="monitor"></i>Media</button></div></div>
                   <div id="pane-music" role="tabpanel" aria-labelledby="lockin-music" class="widget-pane music-pane service-music-pane"><div id="music-provider">
@@ -435,7 +442,7 @@
                     <form id="capture-form" novalidate>
                       <label class="sr-only" for="capture-input">Capture an item</label>
                       <div class="capture-input-wrap"><button id="capture-command-toggle" class="capture-command-toggle" type="button" aria-label="Capture commands" aria-expanded="false" aria-controls="capture-commands" title="Capture commands · /"><i data-icon="capture"></i></button><span id="capture-intent" class="capture-intent" hidden>Note</span><textarea id="capture-input" rows="1" aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="capture-command-list" placeholder="Capture a thought, paste a link, or type /…" aria-describedby="capture-hint" maxlength="20000" autocomplete="off" spellcheck="true"></textarea><button id="capture-launcher-exit" type="button" hidden aria-label="Return to full widget" title="Full widget"><i data-icon="arrow-up-right"></i></button><button id="capture-expand" type="button" class="attach-link" aria-label="Expand capture editor" aria-expanded="false" title="Expand capture editor"><i data-icon="expand"></i></button><button id="capture-voice" type="button" class="attach-link" aria-label="Dictate or speak a command" title="Dictate or speak a command" aria-pressed="false"><i data-icon="mic"></i></button><button id="capture-speak" type="button" class="attach-link" aria-label="Read capture aloud" title="Read capture aloud" disabled><i data-icon="volume"></i></button><button id="attach-link" type="button" class="attach-link" aria-label="Attach a page URL" aria-expanded="false" aria-controls="capture-url-row" title="Attach a page URL"><i data-icon="link"></i></button><button type="submit" aria-label="Save item" title="Save item · Enter"><i data-icon="arrow-up"></i></button></div>
-                      <div id="capture-commands" class="capture-commands glass-popover" aria-label="Quick capture commands" hidden><div class="capture-commands-heading"><button id="capture-command-back" type="button" aria-label="Back to command categories" hidden><i data-icon="chevron"></i></button><strong id="capture-command-title">What would you like to do?</strong><span class="capture-command-key">/</span></div><div id="capture-command-groups" role="group" aria-label="Command categories"></div><div id="capture-command-list" role="listbox" aria-label="Capture suggestions"></div><div class="capture-command-pages"><span id="capture-command-help">↑ ↓ browse · Enter choose · Esc close</span><div class="capture-command-pagination"><button id="capture-command-prev" type="button" tabindex="-1" aria-label="Previous command page"><i data-icon="chevron"></i></button><span id="capture-command-page"></span><button id="capture-command-next" type="button" tabindex="-1" aria-label="Next command page"><i data-icon="chevron"></i></button></div></div></div><div id="capture-url-row" class="capture-url-row" hidden><label for="capture-url">Attach a page</label><div><button id="capture-screen-context" type="button" aria-label="Screen notes demo" title="Screen notes · demo"><i data-icon="monitor"></i></button><button id="capture-from-clipboard" type="button" aria-label="Attach copied page link" title="Use copied link"><i data-icon="copy"></i></button><input id="capture-url" type="url" placeholder="example.com" maxlength="2048" autocomplete="url" spellcheck="false" aria-describedby="capture-url-error"><button id="apply-url" type="button">Attach</button></div><p id="capture-url-error" role="alert" hidden>Enter a valid http or https page URL.</p><small>HTTPS is assumed. Use http:// to override. Copy or paste a page address.</small></div>
+                      <div id="capture-commands" class="capture-commands glass-popover" aria-label="Quick capture commands" hidden><div class="capture-commands-heading"><button id="capture-command-back" type="button" aria-label="Back to command categories" hidden><i data-icon="chevron"></i></button><strong id="capture-command-title">What would you like to do?</strong><span class="capture-command-key">/</span></div><div id="capture-command-groups" role="group" aria-label="Command categories"></div><div id="capture-command-list" role="listbox" aria-label="Capture suggestions"></div><div class="capture-command-pages"><span id="capture-command-help">↑ ↓ browse · Enter choose · Esc close</span><div class="capture-command-pagination"><button id="capture-command-prev" type="button" tabindex="-1" aria-label="Previous command page"><i data-icon="chevron"></i></button><span id="capture-command-page"></span><button id="capture-command-next" type="button" tabindex="-1" aria-label="Next command page"><i data-icon="chevron"></i></button></div></div></div><div id="capture-url-row" class="capture-url-row" hidden><label for="capture-url">Attach a page</label><div><button id="capture-screen-context" type="button" aria-label="Screen notes" title="Screen notes"><i data-icon="monitor"></i></button><button id="capture-from-clipboard" type="button" aria-label="Attach copied page link" title="Use copied link"><i data-icon="copy"></i></button><input id="capture-url" type="url" placeholder="example.com" maxlength="2048" autocomplete="url" spellcheck="false" aria-describedby="capture-url-error"><button id="apply-url" type="button">Attach</button></div><p id="capture-url-error" role="alert" hidden>Enter a valid http or https page URL.</p><small>HTTPS is assumed. Use http:// to override. Copy or paste a page address.</small></div>
                     </form>
                     <div class="capture-foot" hidden><span id="capture-hint">Enter to save</span><label class="sr-only" for="capture-type">New item type</label><select id="capture-type"><option value="auto">Auto</option><option value="note">Note</option><option value="task">Task</option><option value="bookmark">Bookmark</option></select><label class="sr-only" for="capture-project">Capture project</label><select id="capture-project" aria-label="Capture project"><option value="">Inbox</option></select><span id="capture-link-preview" class="capture-link-preview" hidden><i data-icon="link"></i><span id="capture-link-domain"></span><button id="remove-url" aria-label="Remove attached page URL" title="Remove attached page URL"><i data-icon="close"></i></button></span><button id="view-thoughts" type="button" aria-label="Open items"><span id="capture-count">0 items</span><i data-icon="chevron"></i></button></div>
                   </footer>

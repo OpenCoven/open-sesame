@@ -61,6 +61,7 @@ def main():
         native = 'macOS compilation failed; see macos-build result'
         check('native-url', ['bash', 'scripts/check-native.sh'])
         check('native-authentication', ['bash', 'scripts/check-authentication.sh'], 180)
+        check('native-screen-notes', ['bash', 'scripts/check-screen-notes.sh'], 120)
         if check('macos-build', ['bash', 'desktop/build-macos.sh'], 180):
             native = 'compiled; GUI acceptance is separate'
             app = str(ROOT / 'build/Open Sesame.app')
