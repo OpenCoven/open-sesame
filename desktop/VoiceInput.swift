@@ -13,6 +13,7 @@ final class OpenSesameVoiceInput {
     private var source = "mic"
     private var text = ""
     private var tapped = false
+    private var lastMicLevel = 0.0
     private var limit: Timer?
     private var finishing: Timer?
     init(emit: @escaping ([String: Any]) -> Void) { self.emit = emit }
@@ -75,7 +76,17 @@ final class OpenSesameVoiceInput {
         }
         let input = engine.inputNode, format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { stop(id: id, cancel: true); completion("No available microphone was found."); return }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }; tapped = true
+        lastMicLevel = 0
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            request.append(buffer)
+            let now = ProcessInfo.processInfo.systemUptime
+            guard let self, now - self.lastMicLevel >= 0.1, buffer.frameLength > 0, let samples = buffer.floatChannelData?[0] else { return }
+            self.lastMicLevel = now
+            var energy = 0.0
+            for index in 0..<Int(buffer.frameLength) { energy += Double(samples[index] * samples[index]) }
+            let level = min(100, sqrt(energy / Double(buffer.frameLength)) * 300)
+            DispatchQueue.main.async { [weak self] in guard self?.session == id else { return }; self?.emit(["event": "voice.level", "id": id, "level": level]) }
+        }; tapped = true
         do { engine.prepare(); try engine.start(); ready(nil) }
         catch { stop(id: id, cancel: true); completion("Could not start the microphone.") }
     }

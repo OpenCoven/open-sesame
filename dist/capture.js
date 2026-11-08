@@ -23,7 +23,7 @@
       if(['record','transcribe'].includes(command))return {kind:'audio-mode',mode:command,label:command==='record'?'Start recorder':'Start transcription',hint:'Microphone · '+(command==='record'?'record audio':'live transcript')};
       const control=command==='computer'?window.OpenSesameComputer?.parse(body):null;if(control)return {kind:'computer',control,label:control.label,hint:window.openSesameBridge?.available?'Run on this Mac':'Desktop companion required'};
       if(command==='outline')return {kind:'item',type:'note',text:window.OpenSesameCaptureCatalog.outlineText(body),hint:body?'Save outline':'Add a topic, then subtopics separated by > or new lines',incomplete:!body};
-      if(command==='screenshot')return {kind:'screen',request:body,hint:'Screen notes · demo',label:'Open demo screen notes'};
+      if(command==='screenshot')return {kind:'screen',request:body,hint:'Capture, extract text and review locally',label:'Open screen notes'};
       if(['find','search'].includes(command))return {kind:'find',query:body,hint:'Search this conversation',label:'Search conversation',incomplete:!body};
       if(['computer','agent'].includes(command))return {kind:'agent',task:body,computer:command==='computer',hint:body?'Review '+(command==='computer'?'computer action':'Coven request'):'Describe the '+(command==='computer'?'computer action':'agent task'),label:'Review in Agents',incomplete:!body};
       if(['note','task','todo','bookmark'].includes(command))return {kind:'item',type:command==='todo'?'task':command,text:body,hint:'Save '+(command==='todo'?'task':command),incomplete:!body};

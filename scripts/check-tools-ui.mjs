@@ -41,3 +41,4 @@ console.log('Replacement/defaults, rollback/cancel, draft handoff, save failure,
 let globalKey;const appKeys=fs.readFileSync('dist/app.js','utf8').split('\n').find(line=>line.startsWith("document.addEventListener('keydown',e=>"));
 vm.runInNewContext(appKeys,{document:{addEventListener:(_,fn)=>globalKey=fn},window:{OpenSesameTools:{active:true}}});
 assert.doesNotThrow(()=>globalKey({key:'Escape'}),'An active tool dialog must own Escape before any workspace handler runs');
+const multilineView=expand(savedId),multilineInput=multilineView.querySelectorAll('textarea')[0];multilineInput.value='Meeting title\n\nDiscussion\n\nDecisions';multilineInput.oninput();await findButton(multilineView,'Save note').click();assert.equal(ctx.items.at(-1).title,'Meeting title');assert.equal(ctx.items.at(-1).body,'Discussion\n\nDecisions','Generated note forms preserve body text in the existing editor model');

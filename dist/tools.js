@@ -168,7 +168,9 @@
       const text = Object.hasOwn(fields, a.value) ? fields[a.value] : a.value;
       if (!text.trim()) fail('Enter some notes before saving.');
       if (items.length >= 300 || activeItems().length >= 30) fail('Projects is full. Archive or remove an item before saving.');
-      const item = {id: newId(), kind: 'note', text, title: '', body: '', url: '', done: false, projectId: ''};
+      const lines = text.split(/\r?\n/), multiline = lines.length > 1;
+      const title = multiline ? lines[0].trim() || 'Untitled note' : '';
+      const item = {id: newId(), kind: 'note', text: multiline ? title : text, title, body: multiline ? lines.slice(1).join('\n').trim() : '', url: '', done: false, projectId: ''};
       items.push(item);
       if (!saveItems()) { items.pop(); fail('Could not save. Your draft is still available.'); }
       renderItems();

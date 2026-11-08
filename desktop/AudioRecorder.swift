@@ -76,7 +76,7 @@ final class OpenSesameAudioRecorder: NSObject, AVAudioRecorderDelegate {
             guard let self else { completion(false); return }
             self.systemAudio = nil; self.stoppingSystem = false
             let size = (try? self.savedURL?.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            completion(self.savedID == id && self.systemFrames > 0 && size > 0)
+            completion(self.savedID == id && capture.hasCapturedInput && self.systemFrames > 0 && size > 0)
         }
     }
     func stop(id: String) -> Bool {
