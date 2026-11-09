@@ -1,5 +1,11 @@
 # Development work and handoff
 
+## Desktop interaction polish, November 8
+
+`shell-composer-20261108` owns `codex/shell-composer` in `open-sesame-shell-composer`, based on delivered signed v0.0.18 main `b9856e85cc9f721f011ac10d41daa4ed3c2b52c9`. It routes the bottom composer to the exact selected shell, standardizes playback rails, separates Focus from a new Media activity, refines wide/small timer layouts, centralizes focused Escape dismissal and adds a narrower, resizable Familiar rail. See `desktop-interaction-polish.md` for contracts and acceptance boundaries. The first widget check exposed the media test harness's missing newly shared layout dependency; the original failure is preserved in `build/first-widget-check.log`, and the harness now loads the shipped component before the media controller.
+
+The independently owned embedded computer-agent worktree retains a compiled pinned Coven provider engine prototype and uncommitted source/provenance. Native action brokering, application controls, provider connection and end-to-end acceptance remain unfinished; do not claim them as part of this UI release. Continue that task after delivering this interaction batch, preserving its task claim and source archive. No actual user screen/audio, model request or existing PTY command is used for this UI verification.
+
 ## Screen notes, compact capture and audio repair, November 8
 
 `screen-notes-20261108` owns `codex/screen-notes` in the isolated `open-sesame-screen-notes` worktree, based on delivered v0.0.17 main `8239a5f365e958e5ce42fa33beb858298fa324fe`. The task replaces the existing Screen notes demo with explicit native capture/import, local Vision OCR and review/edit/save, adds compact source/wave/REC/media indicators, removes the desktop companion download in the native app, enlarges the Familiar identity selector with larger avatars and refined interaction states, and repairs native/shared dropdown dismissal and system-audio timing. No real user screen or audio is captured by verification, and nothing is sent to a model automatically.

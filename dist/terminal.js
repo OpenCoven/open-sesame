@@ -61,8 +61,21 @@
     renderClosePrompt();
     el('terminal-rail-pages').hidden=shown.length<=railCapacity;el('terminal-rail-page').textContent=(railPage+1)+' / '+Math.max(1,Math.ceil(shown.length/railCapacity));el('terminal-rail-prev').disabled=railPage===0;el('terminal-rail-next').disabled=railPage>=Math.ceil(shown.length/railCapacity)-1;
     const multiple=shown.length>1;['terminal-previous','terminal-next','terminal-position'].forEach(id=>el(id).hidden=!multiple);el('terminal-position').textContent=(shown.findIndex(p=>p.id===selected)+1)+' of '+shown.length+' panes';el('terminal-carousel-footer').hidden=!multiple&&!running;
-    el('terminal-server-suggestions').replaceChildren(...[...new Set(panes.map(p=>p.url).filter(Boolean))].map(url=>option(url,url)));save();renderCompact();if(focus)focusPane();
+    el('terminal-server-suggestions').replaceChildren(...[...new Set(panes.map(p=>p.url).filter(Boolean))].map(url=>option(url,url)));save();renderCompact();window.dispatchEvent(new Event('open-sesame-terminal-changed'));if(focus)focusPane();
   }
+  function inputTarget(){
+    const pane=current(),record=mounted.get(selected),ready=!!pane&&!!record?.term&&record.live===true&&!record.connecting&&pane.mode!=='web';
+    return {paneId:pane?.id||'',sessionId:record?.backendId||'',name:pane?.name||'shell',mode:pane?.mode||'',ready,connecting:!!record?.connecting};
+  }
+  async function sendInput(target,text){
+    const next=inputTarget();
+    if(state.scenario!=='terminal'||!next.ready||next.paneId!==target?.paneId||next.sessionId!==target?.sessionId)throw new Error('The selected shell changed or disconnected. Your text has been kept.');
+    if(typeof text!=='string'||!text.trim()||text.length>20000||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text))throw new Error('Enter up to 20,000 characters without control codes.');
+    // This is terminal input, not a new shell process or an agent request. Preserve spaces and shell syntax.
+    const data=text.replace(/\r\n?/g,'\n').replace(/\n/g,'\r')+'\r';
+    await openSesameBridge.request('terminal.input',{id:target.sessionId,data});
+  }
+  window.OpenSesameTerminal={inputTarget,sendInput};
   function isVisible(record){return state.scenario==='terminal'&&state.expanded&&!record.element.hidden&&record.viewport?.getClientRects().length&&record.viewport.clientWidth>=80&&record.viewport.clientHeight>=42}
   function fitRecord(record,force=false){
     if(!record.term||!isVisible(record)||![...mounted.values()].includes(record))return;
@@ -110,6 +123,12 @@
   async function disposeRecord(id){const record=mounted.get(id);if(!record)return;mounted.delete(id);record.dispose?.();record.live=false;record.observer?.disconnect();cancelAnimationFrame(record.layoutFrame);clearTimeout(record.resizeTimer);record.term?.dispose();record.element.remove();if(record.backendId)try{await openSesameBridge.request('terminal.close',{id:record.backendId})}catch{}}
   async function disconnect(id){opening.delete(id);const closing=disposeRecord(id);render();await closing}
   function validate(p){if(!['shell','bash'].includes(p.launcher||'shell'))throw new Error('Choose Shell or Bash command.');if(['coven','bash'].includes(p.launcher)&&p.mode==='web')throw new Error('Coven requires a local or SSH shell.');if(p.launcher==='bash'&&!p.task?.trim())throw new Error('Enter a Bash command.');if(p.mode==='web'&&!remoteUrl(p.url))throw new Error('Enter an HTTPS web terminal URL without embedded credentials.');if(p.mode==='ssh'&&!/^[A-Za-z0-9][A-Za-z0-9.:[\]_-]{0,252}$/.test(p.host))throw new Error('Enter an SSH hostname, tailnet name, or IP address.');if(p.mode==='ssh'&&p.user&&!/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(p.user))throw new Error('Enter a valid SSH user.');if(p.mode==='local'&&p.cwd&&!p.cwd.startsWith('/')&&!p.cwd.startsWith('~/'))throw new Error('Use an absolute working folder or ~/.');}
+  function nextTerminalPaint(){
+    return new Promise(resolve=>{
+      let first=0,second=0;const finish=()=>{clearTimeout(timer);cancelAnimationFrame(first);cancelAnimationFrame(second);resolve()},timer=setTimeout(finish,100);
+      first=requestAnimationFrame(()=>{second=requestAnimationFrame(finish)});
+    });
+  }
   async function connect(p,prompt=''){
     if(p.launcher==='coven'){changeScenario('familiars');window.OpenSesameFamiliars?.prepareDraft(p.task||'');return true}
     validate(p);if(p.mode!=='web'&&!info.available)throw new Error('Run the desktop companion to open a local or SSH shell.');if(opening.has(p.id))return false;
@@ -120,7 +139,7 @@
     const surface=document.createElement('div');surface.id='terminal-frame-'+p.id;surface.className='terminal-native';surface.setAttribute('role','tabpanel');surface.setAttribute('aria-label',p.name+' terminal');el('terminal-frames').append(surface);
     const backendId=newId(),record={mode:p.mode,backendId,element:surface,live:false,connecting:true};mounted.set(p.id,record);
     try{
-      const term=new OpenSesameXterm.Terminal({cursorBlink:true,cursorStyle:'bar',fontFamily:'"SFMono-Regular",Menlo,Consolas,monospace',fontSize:11,lineHeight:1.25,scrollback:2000,allowTransparency:false,theme:{background:'#131315',foreground:'#ddd5e7',cursor:'#d0b9ee',selectionBackground:'#bca2da30',black:'#24212a',red:'#e19eaf',green:'#b2c9a4',yellow:'#d5c4a0',blue:'#a5bce6',magenta:'#c6aadf',cyan:'#a8c8cc',white:'#ddd5e7'}}),fit=new OpenSesameXterm.FitAddon();record.term=term;record.fit=fit;term.loadAddon(fit);const viewport=document.createElement('div');viewport.className='terminal-viewport';surface.append(viewport);record.viewport=viewport;term.open(viewport);viewport.addEventListener('pointerdown',event=>{if(event.button!==0)return;const focus=()=>{if(mounted.get(p.id)===record)term.focus()};if(window.__OPEN_SESAME_NATIVE__)openSesameBridge.request('window.focus').then(focus).catch(error=>toast(error.message));else focus()});render();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));if(opening.get(p.id)!==token)return false;fitRecord(record,true);
+      const term=new OpenSesameXterm.Terminal({cursorBlink:true,cursorStyle:'bar',fontFamily:'"SFMono-Regular",Menlo,Consolas,monospace',fontSize:11,lineHeight:1.25,scrollback:2000,allowTransparency:false,theme:{background:'#131315',foreground:'#ddd5e7',cursor:'#d0b9ee',selectionBackground:'#bca2da30',black:'#24212a',red:'#e19eaf',green:'#b2c9a4',yellow:'#d5c4a0',blue:'#a5bce6',magenta:'#c6aadf',cyan:'#a8c8cc',white:'#ddd5e7'}}),fit=new OpenSesameXterm.FitAddon();record.term=term;record.fit=fit;term.attachCustomKeyEventHandler(event=>!window.OpenSesameEscape?.handle(event));term.loadAddon(fit);const viewport=document.createElement('div');viewport.className='terminal-viewport';surface.append(viewport);record.viewport=viewport;term.open(viewport);viewport.addEventListener('pointerdown',event=>{if(event.button!==0)return;const focus=()=>{if(mounted.get(p.id)===record)term.focus()};if(window.__OPEN_SESAME_NATIVE__)openSesameBridge.request('window.focus').then(focus).catch(error=>toast(error.message));else focus()});render();await nextTerminalPaint();if(opening.get(p.id)!==token)return false;fitRecord(record,true);
       const send=(method,params)=>openSesameBridge.request(method,{id:backendId,...params}).catch(error=>{if(record.live)toast(error.message)});
       term.onData(data=>{if(record.live)send('terminal.input',{data})});term.onBinary(data=>{if(record.live)send('terminal.input',{data:btoa(data),binary:true})});term.onResize(({cols,rows})=>queuePtyResize(record,cols,rows));
       record.observer=new ResizeObserver(()=>{if(selected===p.id&&mounted.get(p.id)===record)requestLayout(record)});record.observer.observe(viewport);
