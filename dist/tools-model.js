@@ -83,9 +83,10 @@
     const seen = new Set();
     return raw.map(x => {
       if (!plain(x) || !text(x.id, 100) || seen.has(x.id) || !plain(x.config)) throw Error('Invalid saved instance');
+      if (x.active !== undefined && typeof x.active !== 'boolean') throw Error('Invalid saved activation');
       seen.add(x.id);
       const definition = parse(JSON.stringify(x.definition)), previous = x.previous ? parse(JSON.stringify(x.previous)) : null;
-      return {id: x.id, definition, previous, config: configuration(definition, x.config), pinned: x.pinned === true};
+      return {id: x.id, definition, previous, config: configuration(definition, x.config), pinned: x.pinned === true, active: x.active !== false};
     });
   }
   function instance(definition) {

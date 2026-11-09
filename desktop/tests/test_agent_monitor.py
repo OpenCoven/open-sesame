@@ -82,5 +82,10 @@ class AgentMonitorTests(unittest.TestCase):
     @patch('bridge.agent_snapshot', return_value={'agents': [], 'scope': 'current-user'})
     def test_bridge_routes_without_a_pane(self, scan):
         bridge = Bridge(lambda value: None)
+        import tempfile
+        from process_workspace import History
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        bridge.process_history = History(pathlib.Path(folder.name)/'history.json')
         try: self.assertEqual(bridge.call('agents.snapshot', {})['agents'], [])
         finally: bridge.close()

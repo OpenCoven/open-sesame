@@ -23,3 +23,7 @@ A copyable continuation can use this template after filling it from current evid
 ## Historical narratives
 
 The [preserved November 8 narrative](archive/2026-11-08-work-tracking-history.md) retains earlier task owners, failures, acceptance limits and continuation text. It includes the reliability, capture, display, audio, Familiars, GitHub monitor and declarative-tool work. It remains evidence of what was observed then; read the current register and remote state before acting on it. Earlier [README snapshots](archive/) retain their own original context.
+
+## Processes workspace delivery, November 8
+
+`process-workspace-20261109` owns `codex/process-workspace` in `/Users/buns/Documents/GitHub/OpenCoven/open-sesame-process-workspace`. Scope: process/session/repository associations, five shared dashboard views, lifecycle evidence and bounded local history. The user authorized signed commit, push, PR, rebase and intelligent conflict resolution, then merge after review and checks. Installation and deployment remain separate. The common-Git task and `receipts/process-workspace-20261109` retain exact candidates, original failures, verification and native acceptance limits. Resume by refreshing REST/main and the task record; preserve the primary checkout and other owners.

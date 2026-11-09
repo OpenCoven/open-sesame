@@ -16,7 +16,7 @@ cp -R "$open_sesame_root/dist/." "$open_sesame_app/Contents/Resources/web/"
 "$open_sesame_python" -B "$open_sesame_root/scripts/build-app-icon.py" "$open_sesame_root/dist/assets/open-sesame-logo.png" "$open_sesame_app/Contents/Resources/OpenSesame.icns"
 cp "$open_sesame_root/vendor-src/workos-ios/LICENSE" "$open_sesame_app/Contents/Resources/WorkOS-LICENSE"
 rm -rf "$open_sesame_app/Contents/Resources/web/downloads" "$open_sesame_app/Contents/Resources/web/.openai"
-cp "$open_sesame_root/desktop/github_monitor.py" "$open_sesame_root/desktop/coven_runtime.py" "$open_sesame_root/desktop/familiar_avatars.py" "$open_sesame_root/desktop/agent_monitor.py" "$open_sesame_root/desktop/live_agents.py" "$open_sesame_root/desktop/bridge.py" "$open_sesame_root/desktop/feeds.py" "$open_sesame_root/desktop/reader.py" "$open_sesame_root/desktop/controller.py" "$open_sesame_root/desktop/computer_controls.py" "$open_sesame_app/Contents/Resources/"
+cp "$open_sesame_root/desktop/github_monitor.py" "$open_sesame_root/desktop/coven_runtime.py" "$open_sesame_root/desktop/familiar_avatars.py" "$open_sesame_root/desktop/agent_monitor.py" "$open_sesame_root/desktop/process_workspace.py" "$open_sesame_root/desktop/agent_activity.py" "$open_sesame_root/desktop/live_agents.py" "$open_sesame_root/desktop/bridge.py" "$open_sesame_root/desktop/feeds.py" "$open_sesame_root/desktop/reader.py" "$open_sesame_root/desktop/controller.py" "$open_sesame_root/desktop/computer_controls.py" "$open_sesame_app/Contents/Resources/"
 printf '%s\n' "$open_sesame_python" > "$open_sesame_app/Contents/Resources/python-path.txt"
 # Keep the installed bundle identity stable so existing website data and permissions survive.
 cat > "$open_sesame_app/Contents/Info.plist" <<'PLIST'
@@ -26,6 +26,7 @@ PLIST
 import pathlib, plistlib, sys
 path = pathlib.Path(sys.argv[1])
 info = plistlib.loads(path.read_bytes())
+info['NSAppleEventsUsageDescription'] = 'Open Sesame focuses an agent’s Terminal or iTerm2 session only when you click Open terminal.'
 info['NSAudioCaptureUsageDescription'] = 'Open Sesame captures other apps’ audio only when you start system audio transcription or recording.'
 info['CFBundleShortVersionString'] = sys.argv[2]
 info['CFBundleIconFile'] = 'OpenSesame.icns'

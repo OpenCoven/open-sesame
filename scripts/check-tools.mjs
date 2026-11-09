@@ -26,3 +26,7 @@ for(const mutate of [x=>delete x.page,x=>x.page='secret',x=>x.page={projects:tru
 const oldInstance=M.instance(legacyDefinition);oldInstance.config.notes='Saved legacy value';const recovered=M.restore([oldInstance]);assert.equal(M.page(recovered[0].definition),'widgets');assert.equal(recovered[0].config.notes,'Saved legacy value');
 const moved=M.replace(oldInstance,d);assert.equal(M.page(moved.definition),'projects');assert.equal(moved.config.notes,'Saved legacy value');assert.equal(M.page(M.rollback(moved).definition),'widgets');
 console.log('Required v2 page, legacy Widgets fallback, saved configuration and cross-page rollback pass.');
+
+assert.equal(M.restore(vm.runInContext('JSON.parse('+JSON.stringify(JSON.stringify([{...first,active:false}]))+')',ctx))[0].active,false,'Inactive installations survive reload');
+assert.equal(M.restore([first])[0].active,true,'Legacy installations stay active');
+assert.throws(()=>M.restore(vm.runInContext('JSON.parse('+JSON.stringify(JSON.stringify([{...first,active:'false'}]))+')',ctx)),'Malformed activation fails closed');
