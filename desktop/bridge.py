@@ -5,7 +5,8 @@
 from controller import Controller
 from computer_controls import control as computer_control
 from live_agents import LiveAgents, agent_status
-from agent_monitor import snapshot as agent_snapshot, control_process as agent_control
+from process_workspace import History
+from agent_monitor import terminal_target, enrich_snapshot, snapshot as agent_snapshot, control_process as agent_control
 from github_monitor import GitHubMonitor
 from coven_runtime import CovenRuntime
 import argparse
@@ -212,6 +213,7 @@ class Bridge:
         self.emit = emit
         self.native_permissions = native_permissions
         self.sessions = {}
+        self.process_history = History()
         self.feed_slots = threading.BoundedSemaphore(3)
         self.controller = None
         self.live = LiveAgents()
@@ -285,7 +287,7 @@ class Bridge:
                 return
             def scan_agents():
                 try:
-                    self.emit({'requestId': request_id, 'result': agent_snapshot() if message['method'] == 'agents.snapshot' else agent_control(message.get('params') or {})})
+                    self.emit({'requestId': request_id, 'result': self.agent_workspace_snapshot(message.get('params') or {}) if message['method'] == 'agents.snapshot' else agent_control(message.get('params') or {})})
                 except Exception as error:
                     self.emit({'requestId': request_id, 'error': str(error)[:300]})
                 finally:
@@ -331,7 +333,16 @@ class Bridge:
         except Exception as error:
             self.emit({'requestId': request_id, 'error': str(error)[:300]})
 
+    def agent_workspace_snapshot(self, params=None):
+        result = enrich_snapshot(agent_snapshot(), self.sessions, (params or {}).get('screens', {}))
+        result['history'] = self.process_history.update(result['agents'])
+        return result
+
     def call(self, method, params):
+        if method == 'agents.terminal': return terminal_target(params)
+        if method == 'agents.history.clear':
+            self.process_history.clear()
+            return True
         if method == 'computer.control':
             return computer_control(params)
         if method.startswith('controller.'):
@@ -350,7 +361,7 @@ class Bridge:
         if method == 'live.agents':
             return agent_status()
         if method == 'agents.snapshot':
-            return agent_snapshot()
+            return self.agent_workspace_snapshot(params)
         if method == 'agents.control':
             return agent_control(params)
         if method == 'system.info':

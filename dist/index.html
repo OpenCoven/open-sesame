@@ -153,6 +153,7 @@
 <script src="page-widgets.js?v=c39995046628" defer></script>
 <link rel="stylesheet" href="application-polish.css?v=217506ea6907">
 <script src="application-chrome.js?v=64294316b799" defer></script>
+<link rel="stylesheet" href="process-workspace.css">
 </head>
 <body>
   <svg class="svg-defs" aria-hidden="true"><defs><symbol id="open-sesame-mark" viewBox="0 0 36 24"><path d="M3 5c5 0 9 2 13 8C9 18 4 15 3 5Z" fill="currentColor"/><path d="M33 5c-5 0-9 2-13 8 7 5 12 2 13-8Z" fill="currentColor"/></symbol></defs></svg>
@@ -397,7 +398,7 @@
                     <div id="agent-state-filters" class="agent-state-filters" role="group" aria-label="Filter agents by process state"></div>
                     <div id="agent-cards" class="agent-cards" role="list" aria-label="Discovered agents"></div>
                     <div id="agent-empty" class="agent-empty"><span class="agent-empty-mark"><i data-icon="agents"></i></span><strong id="agent-empty-title">Your agents, in one place.</strong><p id="agent-empty-description">Open the desktop companion to see recognized agent processes on this machine.</p><a id="agent-desktop-download" href="downloads/open-sesame-desktop-source.zip" download>Get desktop source <i data-icon="arrow-up-right"></i></a></div>
-                    <footer class="agent-monitor-foot"><span id="agent-freshness">No machine connected</span><details><summary>What’s detected?</summary><p>Codex, Claude Code, Coven, Gemini CLI, Aider and OpenCode processes owned by your local user. CPU, memory, uptime and OS process state update every 5 seconds. Sleeping means the process is not using CPU at that instant; it may still be working. Task progress and approval requests are not inferred. Remote machines and unrecognized agents are not scanned. Prompts and command arguments stay off this dashboard.</p></details></footer>
+                    <footer class="agent-monitor-foot"><span id="agent-freshness">No machine connected</span><details><summary>What’s detected?</summary><p>Codex, Claude Code, Coven, Gemini CLI, Aider and OpenCode processes owned by your local user. CPU, memory, uptime and OS process state update every 5 seconds. Sleeping means the process is not using CPU at that instant; it may still be working. Agent activity is separate from OS state; unavailable activity integrations show Unknown. Remote machines and unrecognized agents are not scanned. Prompts and command arguments stay off this dashboard.</p></details></footer>
                   </section>
                   <div id="pane-terminal" role="tabpanel" aria-labelledby="agents-shells" class="widget-pane terminal-pane" hidden>
 
