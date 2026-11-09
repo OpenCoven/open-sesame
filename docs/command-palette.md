@@ -9,3 +9,11 @@ Footer actions reflect the interpreted action. A calculation offers Copy result,
 The integration catalog is now named Widgets throughout visible navigation, catalog controls, search and command labels. `/widgets` opens it, with `/plugins` retained as an accepted alias for existing typed workflows. Provider identities and local configuration remain intact. The [GitHub project monitor](github-monitor-widget.md) is available from Widgets with its own authenticated, read-only connection.
 
 Regression coverage exercises stable result geometry, constrained screens, selected actions without duplicate note submission, calculator zero/error cases, explicit review labels, Escape hierarchy, and restoration of capture state. Native compilation and synthetic tests do not establish rendered fit; review the installed palette with the empty list, a short calculation, a long expression, command search, keyboard selection and the small-screen layout. Do not run an external command or provider prompt merely to test its appearance.
+
+## Local time searches
+
+Type `time in Germany`, `time in Tokyo`, `what is the time in Berlin?`, or `time in Europe/Berlin` to see a clock in the result card. `time now` and `time here` show the device’s local time. The result includes the destination date and time zone, refreshes every second, and offers Copy time through Enter or the result button. No network request or provider prompt is used.
+
+Countries with multiple indexed time zones request a city rather than assuming a capital. Unknown places show a correction hint. The offline English country/city index comes from public-domain IANA tzdb `zone.tab` (macOS snapshot 2026f); offsets and daylight-saving changes come from the device’s `Intl.DateTimeFormat` database. Common city/name aliases supplement the index; arbitrary towns and translated country names are not geocoded. Explicit Note/Task/Bookmark capture types and selected shell input remain literal.
+
+The clock model lives in [world-clock.js](../dist/world-clock.js), with deterministic DST, fractional-offset, date-rollover, ambiguity and input-ownership coverage in [check-world-clock.mjs](../scripts/check-world-clock.mjs). The shared result surface and launcher checks cover card clearing, copy and action labels. Browser fixture and installed native acceptance remain distinct from automated checks.

@@ -14,7 +14,7 @@
   const info=document.createElement('span'),expression=document.createElement('small'),output=document.createElement('output');output.setAttribute('aria-live','polite');info.append(expression,output);
   const copyIcon=document.createElement('span');copyIcon.innerHTML=icon('copy');copy.append(info,copyIcon);result.append(copy);form.querySelector('.capture-input-wrap').after(result);
   let calculation=null;
-  async function copyCalculation(){if(!calculation||calculation.error)return;try{await navigator.clipboard.writeText(calculation.result);toast('Copied '+calculation.result)}catch{toast('Select the result to copy it.')}}
+  async function copyCalculation(){updateResult();if(!calculation||calculation.error)return;try{await navigator.clipboard.writeText(calculation.result);toast('Copied '+calculation.result)}catch{toast('Select the result to copy it.')}}
   copy.addEventListener('click',copyCalculation);
   const surfaces=[];let frame=0;
   function surface(field,code){
@@ -30,11 +30,16 @@
     overlay.style.left=field.offsetLeft+'px';overlay.style.top=field.offsetTop+'px';overlay.style.width=field.clientWidth+'px';overlay.style.height=field.clientHeight+'px';
     field.classList.toggle('syntax-input',!!value);content.style.transform=`translate(${-field.scrollLeft}px,${-field.scrollTop}px)`;
   }
+  function updateResult(){
+    const intent=window.openSesameCapture?.interpret(input.value,el('capture-type').value,state.scenario);
+    calculation=menu.hidden?(intent?.kind==='time'?intent.clock:intent?.kind==='calculation'?intent.calculation:null):null;
+    result.hidden=!calculation;result.classList.toggle('has-error',!!calculation?.error);result.classList.toggle('is-time',intent?.kind==='time');
+    output.setAttribute('aria-live',intent?.kind==='time'?'off':'polite');
+    if(calculation){output.textContent=calculation.error||calculation.result;expression.textContent=calculation.expression||'Calculation';copy.title=calculation.note||'Enter or click to copy';copy.disabled=!!calculation.error;copy.setAttribute('aria-label',intent.kind==='time'?(calculation.error||'Copy local time: '+calculation.result+' · '+calculation.expression):'Copy calculation result')}
+  }
   function refresh(){
     cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{
-      const intent=window.openSesameCapture?.interpret(input.value,el('capture-type').value,state.scenario);calculation=menu.hidden&&intent?.kind==='calculation'?intent.calculation:null;
-      result.hidden=!calculation;result.classList.toggle('has-error',!!calculation?.error);
-      if(calculation){output.textContent=calculation.error||calculation.result;expression.textContent=calculation.error?'Calculation':calculation.expression;copy.title=calculation.note||'Enter or click to copy';copy.disabled=!!calculation.error}
+      updateResult();
       surfaces.forEach(paint);
     });
   }
@@ -42,5 +47,7 @@
   for(const name of ['open-sesame-layout','open-sesame-view-changed'])window.addEventListener(name,refresh);
   new MutationObserver(refresh).observe(el('terminal-connect-form'),{subtree:true,attributes:true,attributeFilter:['hidden','class']});
   new MutationObserver(refresh).observe(menu,{attributes:true,attributeFilter:['hidden']});
+  // Refresh visible clocks without changing drafts, menu selection or input focus.
+  setInterval(()=>{if(!result.hidden&&window.openSesameCapture?.interpret(input.value,el('capture-type').value,state.scenario)?.kind==='time')updateResult()},1000);
   window.OpenSesameInputTools={refresh,copyCalculation};refresh();
 })();

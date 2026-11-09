@@ -5,15 +5,15 @@
   const bar=document.createElement('div');bar.id='launcher-statusbar';bar.hidden=true;bar.innerHTML='<span class="launcher-brand">Open Sesame</span><span class="launcher-keys"><kbd>↑</kbd><kbd>↓</kbd> navigate</span><button id="launcher-primary" type="button">Open <kbd>↵</kbd></button><button id="launcher-return" type="button">Full widget <span aria-hidden="true">↗</span></button>';footer.append(bar);
   function nativeFrame(){const [width,height]=frameScreen();return {width:Math.max(1,Math.min(760,width-24)),height:Math.max(1,Math.min(500,height-64))}}
   function actions(){
-    const field=el('capture-input'),intent=window.openSesameCapture?.interpret?.(field.value,el('capture-type').value),calculation=el('capture-commands').hidden&&intent?.kind==='calculation'?intent.calculation:null,selected=field.getAttribute('aria-activedescendant'),option=!el('capture-commands').hidden&&selected?el(selected):null;
-    const label=calculation?(calculation.error?'Finish calculation':'Copy result'):option?(option.dataset.actionLabel||'Open'):intent?.label||(intent?.kind==='error'?'Review command':'Save note');
+    const field=el('capture-input'),intent=window.openSesameCapture?.interpret?.(field.value,el('capture-type').value),calculation=el('capture-commands').hidden&&['calculation','time'].includes(intent?.kind)?(intent.clock||intent.calculation):null,selected=field.getAttribute('aria-activedescendant'),option=!el('capture-commands').hidden&&selected?el(selected):null;
+    const label=calculation?(calculation.error?(intent.kind==='time'?'Choose a place':'Finish calculation'):(intent.kind==='time'?'Copy time':'Copy result')):option?(option.dataset.actionLabel||'Open'):intent?.label||(intent?.kind==='error'?'Review command':'Save note');
     el('launcher-primary').textContent=label+' ↵';el('launcher-primary').disabled=!!calculation?.error||!option&&(!!intent?.incomplete||intent?.kind==='error'||!field.value.trim());
   }
   function sync(){
     if(!active)return;
     if(!state.expanded){close(false);return}
     el('frame-resize-layer').hidden=true;if(!window.__OPEN_SESAME_NATIVE__)fit();
-    el('capture-input').placeholder='Search commands, calculate, or capture a thought…';actions();
+    el('capture-input').placeholder='Search commands, time in Germany, or calculate…';actions();
     if(window.__OPEN_SESAME_NATIVE__){const size=nativeFrame(),key=size.width+'x'+size.height;if(key!==lastGeometry){lastGeometry=key;syncNativeWindow()}}
   }
   function open(){

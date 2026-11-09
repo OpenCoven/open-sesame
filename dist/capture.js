@@ -9,6 +9,8 @@
     if(window.OpenSesameLauncher?.active)context='';
     const shell=window.OpenSesameShellInput?.interpret(raw,context);if(shell)return shell;
     const text=raw.trim();if(!text)return context==='terminal'&&window.OpenSesameCovenChat?.isActive()?{kind:'chat',task:'',incomplete:true,hint:'Enter to send · Shift Enter for a new line',label:'Send to familiar'}:{kind:'item',hint:'Capture, or type / for commands'};
+    const clock=type==='auto'&&!/^[!\/]/.test(text)?window.OpenSesameWorldClock?.query(text):null;
+    if(clock)return {kind:'time',clock,incomplete:!!clock.error,label:'Copy time',hint:clock.error||'Enter to copy time'};
     const calculation=type==='auto'&&!/^[!\/]/.test(text)?window.OpenSesameCalculator?.calculate(text):null;
     if(calculation)return {kind:'calculation',calculation,incomplete:!!calculation.error,label:'Copy result',hint:calculation.error||'Enter to copy result'};
     if(context==='audio' && window.OpenSesameLive?.inQuestions?.() && text.startsWith('/') && text.length>1){
@@ -129,9 +131,9 @@
     const value=input().value;
     if(value!==dismissedValue)dismissedValue=null;
     const typed=value.trimStart(), live=liveMenu(), partial=live && typed.startsWith('/') && window.OpenSesameQuestionShortcuts.all().some(s=>('/'+s.name).startsWith(typed.trim().replace(/\s+/g,' ').toLowerCase()));
-    if(!menu().hidden&&manualMenu&&value===menuInputValue)show(true);else if(typed.startsWith('/')&&(!window.OpenSesameShellInput?.active||typed==='/'||isReservedCommand(typed.slice(1).split(/\s/)[0]))&&(!/\s/.test(typed)||partial)&&value!==dismissedValue)show();else if(window.OpenSesameLauncher?.active&&!typed.startsWith('/')&&!typed.startsWith('!')&&!window.OpenSesameCalculator?.calculate(value)&&value!==dismissedValue)show();else hide();resize();
+    if(!menu().hidden&&manualMenu&&value===menuInputValue)show(true);else if(typed.startsWith('/')&&(!window.OpenSesameShellInput?.active||typed==='/'||isReservedCommand(typed.slice(1).split(/\s/)[0]))&&(!/\s/.test(typed)||partial)&&value!==dismissedValue)show();else if(window.OpenSesameLauncher?.active&&!typed.startsWith('/')&&!typed.startsWith('!')&&!window.OpenSesameCalculator?.calculate(value)&&!window.OpenSesameWorldClock?.query(value)&&value!==dismissedValue)show();else hide();resize();
     const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={entertainment:'Media',familiars:'Familiars',plugins:'Widgets',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
-    const mode=intent.kind==='shell'?'Shell':intent.kind==='calculation'?'Calculate':intent.kind==='live'?'Live':intent.kind==='find'?'Find':intent.kind==='chat'?'Coven':intent.kind==='bash'?'Bash':intent.kind==='agent'?(intent.computer?'Computer':'Coven'):intent.kind==='view'?labels[intent.view]||'Open':kind==='task'?'Task':kind==='note'?'Note':url||kind==='bookmark'?'Bookmark':'Note';el('capture-intent').textContent=mode;el('capture-intent').hidden=intent.kind!=='shell'&&!value.trim()&&!url;el('capture-intent').dataset.mode=mode.toLowerCase();el('capture-command-toggle').innerHTML=icon(['agent','bash','shell'].includes(intent.kind)?'terminal':intent.kind==='view'&&intent.view==='reading'?'rss':mode==='Task'?'task':mode==='Bookmark'?'bookmark':'capture');
+    const mode=intent.kind==='shell'?'Shell':intent.kind==='time'?'Time':intent.kind==='calculation'?'Calculate':intent.kind==='live'?'Live':intent.kind==='find'?'Find':intent.kind==='chat'?'Coven':intent.kind==='bash'?'Bash':intent.kind==='agent'?(intent.computer?'Computer':'Coven'):intent.kind==='view'?labels[intent.view]||'Open':kind==='task'?'Task':kind==='note'?'Note':url||kind==='bookmark'?'Bookmark':'Note';el('capture-intent').textContent=mode;el('capture-intent').hidden=intent.kind!=='shell'&&!value.trim()&&!url;el('capture-intent').dataset.mode=mode.toLowerCase();el('capture-command-toggle').innerHTML=icon(['agent','bash','shell'].includes(intent.kind)?'terminal':intent.kind==='view'&&intent.view==='reading'?'rss':mode==='Task'?'task':mode==='Bookmark'?'bookmark':'capture');
     clearTimeout(draftTimer);draftTimer=setTimeout(writeDraft,200);
   }
   window.openSesameCapture={openMenu:()=>{dismissedValue=null;group='all';trail=[];show(false)},choose:()=>choose(active,true),back,interpret,isReservedCommand,hide,refresh,resize,execute(intent){
@@ -139,6 +141,7 @@
     if(intent.kind==='tool'){window.OpenSesameTools?.open(intent.id);return true}
     if(intent.kind==='computer'){window.OpenSesameComputer?.run(intent.control);return false}
     if(intent.kind==='audio-mode'){window.OpenSesameVoiceCommand?.startAudio(intent.mode);return true}
+    if(intent.kind==='time'){window.OpenSesameInputTools?.copyCalculation();return false}
     if(intent.kind==='calculation'){window.OpenSesameInputTools?.copyCalculation();return false}
     if(intent.kind==='screen')return window.OpenSesameScreenNotes?.open(intent.request)===true;
     if(intent.kind==='live')return window.OpenSesameLive?.ask(intent.question)===true;
