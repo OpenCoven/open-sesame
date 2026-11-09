@@ -15,6 +15,7 @@ def main():
     if not scanner:
         print('Secret check blocked: install Gitleaks (brew install gitleaks) and retry.', file=sys.stderr)
         return 1
+    changed = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only', '--diff-filter=ACMRT', '-z']).split(b'\0'))
     entries = subprocess.check_output(['git', 'ls-files', '--stage', '-z']).split(b'\0')
     with tempfile.TemporaryDirectory(prefix='open-sesame-index-') as folder:
         root = Path(folder)
@@ -32,6 +33,8 @@ def main():
             if private or mode not in {b'100644', b'100755'} or stage != b'0' or path.is_absolute() or '..' in path.parts:
                 print('Secret check blocked: private path, unresolved entry, or unsupported file type in index: ' + repr(name), file=sys.stderr)
                 return 1
+            if raw_name not in changed:
+                continue
             data = subprocess.check_output(['git', 'cat-file', 'blob', oid.decode()])
             if re.search(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\r\n]+[A-Za-z0-9+/=\r\n]{64,}-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----', data):
                 print('Secret check blocked: private key material in ' + repr(name), file=sys.stderr)

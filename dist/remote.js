@@ -26,10 +26,10 @@
     const m=draft||current();el('remote-connect-title').textContent=draft?'New machine':'Desktop connection';
     el('remote-connect-subtitle').textContent=draft?'A desktop, within reach.':m.name;
     el('remote-connect-submit').innerHTML=(draft?'Add and open desktop':'Open desktop')+icon('arrow-up-right');
-    el('remote-kind').value=m.kind||'viewer';el('remote-host').value=m.host||'';el('remote-port').value=m.port||5900;syncKind();
+    el('remote-kind').value=m.kind||'viewer';el('remote-host').value=m.host||'';el('remote-port').value=m.port||5900;
     el('remote-name').value=m.name;el('remote-network').value=m.network;syncNetwork();el('remote-url').value=m.url;
-    el('remote-connect-error').hidden=true;el('remote-url').removeAttribute('aria-invalid');syncViewerActions();form.hidden=false;
-    (draft&&!m.name?el('remote-name'):el('remote-url')).focus({preventScroll:true});
+    el('remote-connect-error').hidden=true;el('remote-url').removeAttribute('aria-invalid');el('remote-host').removeAttribute('aria-invalid');syncViewerActions();form.hidden=false;
+    (draft&&!m.name?el('remote-name'):el(m.kind==='direct'?'remote-host':'remote-url')).focus({preventScroll:true});
   }
   function close(){draft=null;form.hidden=true;const focus=returnFocus?.isConnected?returnFocus:el('remote-machine-'+selected)||el('remote-rail-add');focus?.focus({preventScroll:true})}
   window.addEventListener('open-sesame-home',e=>{if(e.detail==='remote'){draft=null;pendingRemove=null;form.hidden=true;render()}});
@@ -41,7 +41,7 @@
   function syncNetwork(){
     const network=el('remote-network').value;document.querySelectorAll('[data-remote-network]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.remoteNetwork===network)));
     el('remote-url').placeholder={tailnet:'https://machine.tailnet.ts.net/vnc.html',local:'https://desktop.local/vnc.html',other:'https://your-viewer.example/vnc.html'}[network];
-    el('remote-connection-help').textContent=(network==='local'?'Your browser must be on the same network. ':'Use a web VNC gateway such as noVNC. ')+'Sign in securely in your viewer.';
+    el('remote-connection-help').textContent=(network==='local'?'Your browser must be on the same network. ':'Use a web VNC gateway such as noVNC. ')+'Sign in securely in your viewer.';syncKind();
   }
   document.querySelectorAll('[data-remote-network]').forEach(b=>b.addEventListener('click',()=>{el('remote-network').value=b.dataset.remoteNetwork;syncNetwork()}));
   form.addEventListener('keydown',e=>{
@@ -51,20 +51,20 @@
   function syncKind(){const kind=el('remote-kind').value;el('remote-direct-fields').hidden=kind!=='direct';el('remote-url').closest('.remote-field').hidden=kind==='direct';el('remote-url').type='text';el('remote-url').placeholder=kind==='gateway'?'wss://gateway.example/websockify':'https://viewer.example/vnc.html';el('remote-connection-help').textContent=kind==='direct'?'Connect to a reachable VNC server. Ordinary TCP VNC does not encrypt the desktop stream.':kind==='gateway'?'Enter the secure WebSocket endpoint, not the viewer page.':'Sign in within your HTTPS web viewer.'}
   el('remote-kind').addEventListener('change',syncKind);
   form.addEventListener('submit',async e=>{
-    e.preventDefault();const kind=el('remote-kind').value,host=el('remote-host').value.trim(),port=Number(el('remote-port').value),url=kind==='gateway'?gatewayUrl(el('remote-url').value.trim()):viewerUrl(el('remote-url').value.trim());
+    e.preventDefault();const kind=el('remote-kind').value,host=el('remote-host').value.trim(),port=Number(el('remote-port').value),url=kind==='direct'?'':kind==='gateway'?gatewayUrl(el('remote-url').value.trim()):viewerUrl(el('remote-url').value.trim());
     if(kind==='direct'?(!host||/[\s/]/.test(host)||!Number.isInteger(port)||port<1||port>65535):!url){el('remote-connect-error').textContent='Enter a valid host and port, secure WebSocket endpoint, or HTTPS viewer URL.';el('remote-connect-error').hidden=false;el(kind==='direct'?'remote-host':'remote-url').setAttribute('aria-invalid','true');el(kind==='direct'?'remote-host':'remote-url').focus({preventScroll:true});return}
-    el('remote-url').removeAttribute('aria-invalid');const m=draft||current();
+    el('remote-url').removeAttribute('aria-invalid');el('remote-host').removeAttribute('aria-invalid');const m=draft||current();if(!m)return;
     if(draft){machines.push(draft);selected=draft.id;draft=null;el('remote-new-machine-name').value='';railPage=Math.floor((machines.length-1)/OpenSesameAgentsLayout.capacity(el('remote-rail')))}
     m.name=el('remote-name').value.trim().slice(0,40)||'Machine';m.network=el('remote-network').value;
     if(m.url!==url||m.kind!==kind||m.host!==host||m.port!==port){if(window.__OPEN_SESAME_NATIVE__&&m.kind&&m.kind!=='viewer')try{await openSesameBridge.request('vnc.credential.delete',{id:m.id,endpoint:m.kind==='direct'?m.host.toLowerCase()+':'+m.port:m.url})}catch{toast('Unlock Keychain before changing this connection.');return}OpenSesameVNC.close(m.id);mounted.get(m.id)?.remove();mounted.delete(m.id)}m.url=url;m.kind=kind;m.host=host;m.port=port;
     if(kind!=='viewer'){
-      if(!mounted.has(m.id)){const stage=document.createElement('div');stage.className='remote-viewer vnc-container';el('remote-viewers').append(stage);mounted.set(m.id,stage);try{await OpenSesameVNC.open(m,stage,value=>{stage.dataset.status=value;el('remote-status').textContent=value})}catch(error){stage.remove();mounted.delete(m.id);toast(error.message);render();return}}
+      if(!mounted.has(m.id)){const stage=document.createElement('div');stage.className='remote-viewer vnc-container';el('remote-viewers').append(stage);mounted.set(m.id,stage);try{await OpenSesameVNC.open(m,stage,value=>{stage.dataset.status=value;if(selected===m.id&&mounted.get(m.id)===stage)el('remote-status').textContent=value})}catch(error){stage.remove();mounted.delete(m.id);toast(error.message);render();return}}
       close();render();return;
     }
     if(!mounted.has(m.id)){const frame=document.createElement('iframe');frame.className='remote-viewer';frame.title=m.name+' VNC viewer';frame.referrerPolicy='no-referrer';frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-forms allow-popups');frame.allowFullscreen=true;frame.src=fittedUrl(url);el('remote-viewers').append(frame);mounted.set(m.id,frame)}
     mounted.get(m.id).title=m.name+' VNC viewer';close();render();mounted.get(m.id).focus({preventScroll:true});
   });
-  el('remote-disconnect').addEventListener('click',()=>{OpenSesameVNC.close(selected);mounted.get(selected)?.remove();mounted.delete(selected);render();el('remote-connect-submit').focus({preventScroll:true})});
+  el('remote-disconnect').addEventListener('click',()=>{OpenSesameVNC.close(selected);mounted.get(selected)?.remove();mounted.delete(selected);render();el('remote-connect-open').focus({preventScroll:true})});
   el('remote-fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await el('remote-stage').requestFullscreen()}catch{toast('Fullscreen is unavailable in this browser.')}});
   document.addEventListener('fullscreenchange',()=>{el('remote-fullscreen').setAttribute('aria-label',document.fullscreenElement?'Exit remote desktop fullscreen':'Enter remote desktop fullscreen');el('remote-fullscreen').title=document.fullscreenElement?'Exit fullscreen':'Fullscreen'});
   function selectMachine(id){OpenSesameVNC.blur();draft=null;pendingRemove=null;selected=id;form.hidden=true;render()}
@@ -73,8 +73,8 @@
   async function removeMachine(id){
     const index=machines.findIndex(m=>m.id===id);if(index<0)return;
     OpenSesameVNC.close(id);const removed=machines.find(m=>m.id===id);if(removed&&window.__OPEN_SESAME_NATIVE__)try{await openSesameBridge.request('vnc.credential.delete',{id,endpoint:removed.kind==='direct'?removed.host.toLowerCase()+':'+removed.port:removed.url})}catch{toast('Could not remove saved credential; unlock Keychain.');return}
-    mounted.get(id)?.remove();mounted.delete(id);machines.splice(index,1);pendingRemove=null;
-    if(selected===id)selected=machines[Math.min(index,machines.length-1)]?.id||'';
+    mounted.get(id)?.remove();mounted.delete(id);const liveIndex=machines.findIndex(m=>m.id===id);if(liveIndex<0)return;machines.splice(liveIndex,1);pendingRemove=null;
+    if(selected===id)selected=machines[Math.min(liveIndex,machines.length-1)]?.id||'';
     railPage=Math.max(0,Math.floor(machines.findIndex(m=>m.id===selected)/OpenSesameAgentsLayout.capacity(el('remote-rail'))));
     render();(el('remote-machine-'+selected)||el('remote-rail-add')).focus({preventScroll:true});toast('Machine removed from Open Sesame.');
   }
@@ -85,7 +85,7 @@
       const row=document.createElement('div');row.className='remote-machine-row';row.setAttribute('role','presentation');
       const b=document.createElement('button');b.type='button';b.id='remote-machine-'+machine.id;b.setAttribute('role','tab');b.setAttribute('aria-selected',machine.id===selected);b.tabIndex=machine.id===selected?0:-1;b.innerHTML=icon('monitor');
       const name=document.createElement('span'),dot=document.createElement('i');name.textContent=machine.name;dot.className='machine-dot'+(mounted.has(machine.id)?' open':'');
-      b.title=machine.name+' · '+(mounted.has(machine.id)?'Viewer open':machine.url?'Ready':'Set up connection');b.append(name,dot);b.addEventListener('click',()=>selectMachine(machine.id));
+      b.title=machine.name+' · '+(mounted.has(machine.id)?(mounted.get(machine.id).dataset.status||'Viewer open'):(machine.kind==='direct'?machine.host:machine.url)?'Ready':'Set up connection');b.append(name,dot);b.addEventListener('click',()=>selectMachine(machine.id));
       b.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();const index=machines.indexOf(machine),next=e.key==='Home'?0:e.key==='End'?machines.length-1:(index+(e.key==='ArrowUp'?-1:1)+machines.length)%machines.length;railPage=Math.floor(next/perPage);selectMachine(machines[next].id);el('remote-machine-'+selected)?.focus({preventScroll:true})}});
       const actions=document.createElement('div');actions.className='remote-row-actions';
       const preferences=rowAction('Preferences for '+machine.name,'sliders',()=>{selected=machine.id;draft=null;render();settings()});preferences.id='remote-preferences-'+machine.id;
