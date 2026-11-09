@@ -3,7 +3,7 @@
   const views={widgets:'plugins',plugins:'plugins',console:'agents',familiars:'familiars',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
   function isReservedCommand(name){
     const first=name.trim().toLowerCase().split(/\s+/)[0];
-    return Object.hasOwn(views,first) || ['record','transcribe','agent','computer','note','outline','task','todo','bookmark','search','find','screenshot'].includes(first);
+    return Object.hasOwn(views,first) || ['tools','tool','record','transcribe','agent','computer','note','outline','task','todo','bookmark','search','find','screenshot'].includes(first);
   }
   function interpret(raw,type='auto',context=''){
     if(window.OpenSesameLauncher?.active)context='';
@@ -18,6 +18,8 @@
     const slash=text.match(/^\/(\w+)(?:\s+([\s\S]*))?$/),prefixed=text.match(/^(note|task|todo|bookmark|computer|agent):\s*([\s\S]*)$/i);
     const command=(slash?.[1]||prefixed?.[1]||'').toLowerCase(),body=(slash?.[2]??prefixed?.[2]??'').trim();
     if(command){
+      if(command==='tool')return {kind:'tool',id:body,label:'Open tool',hint:'Open installed tool'};
+      if(command==='tools')return {kind:'tools',label:'Open Tools',hint:'Import, preview and manage tools'};
       if(['record','transcribe'].includes(command))return {kind:'audio-mode',mode:command,label:command==='record'?'Start recorder':'Start transcription',hint:'Microphone · '+(command==='record'?'record audio':'live transcript')};
       const control=command==='computer'?window.OpenSesameComputer?.parse(body):null;if(control)return {kind:'computer',control,label:control.label,hint:window.openSesameBridge?.available?'Run on this Mac':'Desktop companion required'};
       if(command==='outline')return {kind:'item',type:'note',text:window.OpenSesameCaptureCatalog.outlineText(body),hint:body?'Save outline':'Add a topic, then subtopics separated by > or new lines',incomplete:!body};
@@ -132,6 +134,8 @@
     clearTimeout(draftTimer);draftTimer=setTimeout(writeDraft,200);
   }
   window.openSesameCapture={openMenu:()=>{dismissedValue=null;group='all';trail=[];show(false)},choose:()=>choose(active,true),back,interpret,isReservedCommand,hide,refresh,resize,execute(intent){
+    if(intent.kind==='tools'){window.OpenSesameTools?.open();return true}
+    if(intent.kind==='tool'){window.OpenSesameTools?.open(intent.id);return true}
     if(intent.kind==='computer'){window.OpenSesameComputer?.run(intent.control);return false}
     if(intent.kind==='audio-mode'){window.OpenSesameVoiceCommand?.startAudio(intent.mode);return true}
     if(intent.kind==='calculation'){window.OpenSesameInputTools?.copyCalculation();return false}

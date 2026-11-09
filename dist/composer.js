@@ -25,6 +25,7 @@
     if(text.length>650||text.split(/\r?\n/).length>6)setTimeout(()=>{if(input.value.trim())fullscreen(true)},0);
   });
   document.addEventListener('keydown',event=>{
+    if(window.OpenSesameTools?.active)return;
     if(!full||footer.inert||!footer.contains(event.target))return;
     if(event.key==='Escape'&&document.getElementById('capture-commands').hidden&&document.getElementById('capture-url-row').hidden){event.preventDefault();event.stopImmediatePropagation();fullscreen(false)}
     if(event.key==='Tab'&&!event.ctrlKey&&!event.metaKey){const nodes=[...footer.querySelectorAll('button,textarea,input,select')].filter(n=>!n.disabled&&n.getClientRects().length),first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}

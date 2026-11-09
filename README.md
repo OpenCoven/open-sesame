@@ -42,3 +42,5 @@ Verification stores logs and a JSON report under `build/verification/<UTC time>/
 The hosted static widget cannot open a visitor's local shell. The loopback development server serves sign-in and downloads; machine operations require the authenticated native app. Saved items and settings are device-local. Shell transcripts and SSH keys are not stored by Open Sesame. Application session credentials remain in the macOS Keychain as described in the login guide. Existing browser storage and the installed bundle identifier preserve rename compatibility.
 
 See [desktop setup](desktop/README.md), the [priority roadmap](docs/desktop-polish-plan.md), and [historical validation snapshots](docs/archive/2026-11-06-prototype-readme.md).
+
+Reusable tools can be imported and previewed through Plugins → Tools or `/tools`. See [tool creation and submissions](docs/tools.md) and the [agent navigation map](AGENTS.md#repository-navigation-and-reusable-tools) for starter packages, the JSON contract, generation prompt and review workflow.
