@@ -73,3 +73,21 @@
 #widget-panel .tools-dialog button:hover{background:var(--surface-hover);color:var(--ink-primary)}
 
 #widget-panel .tools-dialog::backdrop{background:#08090bbd;backdrop-filter:none;-webkit-backdrop-filter:none}
+
+/* Footer controls retain their shape at both widget and desktop widths. */
+#widget-panel #pane-media .media-now-playing{display:flex;align-items:center;gap:10px;min-height:44px;height:auto;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface-inset)}
+#widget-panel #pane-media #media-title{flex:0 1 28%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-primary);font-size:11px}
+#widget-panel #pane-media #media-seek{appearance:none;-webkit-appearance:none;flex:1;min-width:48px;width:0;height:24px;margin:0;padding:0;border:0;background:transparent;cursor:pointer}
+#widget-panel #media-seek::-webkit-slider-runnable-track{height:4px;border-radius:4px;background:linear-gradient(to right,#c8b6dc var(--seek-progress,0%),#55515e var(--seek-progress,0%))}
+#widget-panel #media-seek::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:12px;margin-top:-4px;border:2px solid #efe7f6;border-radius:50%;background:#c8b6dc}
+#widget-panel #media-seek::-moz-range-track{height:4px;border-radius:4px;background:#55515e}
+#widget-panel #media-seek::-moz-range-progress{height:4px;border-radius:4px;background:#c8b6dc}
+#widget-panel #media-seek::-moz-range-thumb{width:10px;height:10px;border:2px solid #efe7f6;border-radius:50%;background:#c8b6dc}
+#widget-panel #pane-media :is(#media-time,#media-position){flex:none;white-space:nowrap;font-size:11px;font-variant-numeric:tabular-nums;color:var(--ink-secondary)}
+#widget-panel #pane-media #media-position{padding-left:10px;border-left:1px solid var(--line)}
+#widget-panel #pane-media .media-now-playing button{flex:none;width:30px;height:30px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--surface-raised)}
+#widget-panel .agenda-composer-active .agenda-input-wrap{border:1px solid var(--line);background:var(--surface-inset);box-shadow:inset 0 1px #ffffff04}
+#widget-panel .agenda-composer-active .agenda-minutes-field{min-height:28px;padding:3px 8px;border:1px solid var(--line);background:var(--surface-raised);color:var(--ink-secondary)}
+#widget-panel .agenda-composer-active #agenda-capture-add{width:32px;height:30px;background:#bba4d12b;border-color:#bba4d14a}
+#widget-panel .agenda-composer-active #agenda-capture-input:focus-visible{outline:2px solid #c2a3e4;outline-offset:2px;border-radius:3px}
+@container (max-width:520px){#widget-panel #pane-media .media-now-playing{flex-wrap:wrap;gap:6px}#widget-panel #pane-media #media-title{flex:1 1 calc(100% - 48px)}#widget-panel #pane-media #media-seek{flex-basis:80px}#widget-panel #pane-media #media-position{display:none}}
