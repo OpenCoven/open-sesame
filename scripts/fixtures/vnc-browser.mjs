@@ -1,0 +1,26 @@
+import { chromium } from 'playwright';import { WebSocketServer } from 'ws';import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';
+const root=process.cwd(),inputs=[];
+const server=http.createServer((req,res)=>{if(req.url==='/fixture'){res.setHeader('Content-Type','text/html');return res.end(`<div id="screen" style="width:640px;height:480px"></div><script>window.openSesameBridge={request:async()=>{}};window.toast=console.log;</script><script src="/dist/vnc-client.js"></script><script>OpenSesameVNC=window.OpenSesameVNC;</script>`)}const file=path.join(root,req.url);if(!file.startsWith(root+'/dist/')){res.writeHead(404);return res.end()}res.setHeader('Content-Type','text/javascript');try{res.end(fs.readFileSync(file))}catch{res.writeHead(404);res.end()}});
+const ws=new WebSocketServer({server});ws.on('connection',socket=>{let stage=0,buffer=Buffer.alloc(0),sent=false;socket.send(Buffer.from('RFB 003.008\n'));socket.on('message',data=>{buffer=Buffer.concat([buffer,data]);while(buffer.length){if(stage===0){if(buffer.length<12)return;buffer=buffer.subarray(12);socket.send(Buffer.from([1,1]));stage=1}else if(stage===1){buffer=buffer.subarray(1);socket.send(Buffer.alloc(4));stage=2}else if(stage===2){buffer=buffer.subarray(1);const init=Buffer.alloc(24);init.writeUInt16BE(2,0);init.writeUInt16BE(2,2);init[4]=32;init[5]=24;init[7]=1;init.writeUInt16BE(255,8);init.writeUInt16BE(255,10);init.writeUInt16BE(255,12);init[14]=16;init[15]=8;init[16]=0;const name=Buffer.from('Fixture');init.writeUInt32BE(name.length,20);socket.send(Buffer.concat([init,name]));stage=3}else{const type=buffer[0];let size=({0:20,3:10,4:8,5:6})[type];if(type===2){if(buffer.length<4)return;size=4+buffer.readUInt16BE(2)*4}if(type===6){if(buffer.length<8)return;size=8+buffer.readUInt32BE(4)}if(!size)throw Error('Unexpected message '+type);if(buffer.length<size)return;inputs.push(type);buffer=buffer.subarray(size);if(type===3&&!sent){sent=true;const update=Buffer.alloc(32);update.writeUInt16BE(1,2);update.writeUInt16BE(2,8);update.writeUInt16BE(2,10);for(let i=16;i<32;i+=4){update[i]=0;update[i+1]=0;update[i+2]=255;update[i+3]=0}socket.send(update)}}}})});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;
+try{browser=await chromium.launch({headless:true});const page=await browser.newPage();page.on('pageerror',e=>console.error(e));await page.goto(`http://127.0.0.1:${server.address().port}/fixture`);await page.evaluate(async port=>{await OpenSesameVNC.open({id:'fixture',kind:'gateway',url:`ws://127.0.0.1:${port}`},document.getElementById('screen'),s=>window.connectionStatus=s)},server.address().port);await page.waitForFunction(()=>window.connectionStatus==='Connected');await page.waitForFunction(()=>document.querySelector('canvas')?.getContext('2d').getImageData(0,0,1,1).data[2]===255);await page.getByText('Ctrl Alt Del',{exact:true}).click();await page.waitForTimeout(200);assert.ok(inputs.includes(4));await page.screenshot({path:'build/vnc-framebuffer.png'});await page.getByText('Disconnect',{exact:true}).click();await page.waitForFunction(()=>window.connectionStatus==='Disconnected');console.log('PASS actual noVNC RFB handshake, raw framebuffer rendering, keyboard messages and disconnect');
+await page.evaluate(async port=>{
+ document.getElementById('screen').replaceChildren();window.__OPEN_SESAME_NATIVE__=true;
+ let socket;const token='native-fixture-token';
+ const emit=message=>window.dispatchEvent(new CustomEvent('open-sesame-desktop-event',{detail:{...message,id:'native',token}}));
+ window.openSesameBridge.request=async(method,p)=>{
+  if(method==='vnc.open'){
+   socket=new WebSocket(`ws://127.0.0.1:${port}`);socket.binaryType='arraybuffer';
+   socket.onopen=()=>emit({event:'vnc.open'});
+   socket.onmessage=e=>emit({event:'vnc.data',data:btoa(Array.from(new Uint8Array(e.data),b=>String.fromCharCode(b)).join(''))});
+   socket.onclose=()=>emit({event:'vnc.close'});return {token};
+  }
+  if(method==='vnc.write')socket.send(Uint8Array.from(atob(p.data),x=>x.charCodeAt(0)));
+  if(method==='vnc.close')socket.close();return true;
+ };
+ await OpenSesameVNC.open({id:'native',kind:'direct',host:'localhost',port:5900},document.getElementById('screen'),s=>window.connectionStatus=s);
+},server.address().port);
+await page.waitForFunction(()=>window.connectionStatus==='Connected');
+await page.waitForFunction(()=>document.querySelector('canvas')?.getContext('2d').getImageData(0,0,1,1).data[2]===255);
+await page.getByText('Disconnect',{exact:true}).click();await page.waitForFunction(()=>window.connectionStatus==='Disconnected');
+console.log('PASS actual noVNC native channel adapter RFB handshake, byte acknowledgments, framebuffer and disconnect (fixture host bridge)')}finally{await browser?.close();ws.close();server.close();for(const c of ws.clients)c.terminate()}

@@ -23,6 +23,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var voice: OpenSesameVoiceInput!
     var audioRecorder: OpenSesameAudioRecorder!
     var status: NSStatusItem!
+    let vnc = VNCTransport()
     var bridge: Process?
     var input: FileHandle?
     var readBuffer = Data()
@@ -127,6 +128,10 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             guard let self, let data = try? JSONSerialization.data(withJSONObject: ["event": "music.spotify.changed", "status": self.spotify.status]), let json = String(data: data, encoding: .utf8) else { return }
             self.web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
         }
+        vnc.emit = { [weak self] message in
+            guard let self, self.authentication?.authenticated == true, let data = try? JSONSerialization.data(withJSONObject: message), let json = String(data:data, encoding:.utf8) else { return }
+            self.web.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler:nil)
+        }
         authentication = OpenSesameAuthentication()
         screenNotes.window = panel
         familiarPermissions.window = panel
@@ -164,6 +169,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     func authenticationChanged() {
+        if !authentication.authenticated { vnc.closeAll() }
         if authentication.authenticated {
             if !appUnlocked {
                 appUnlocked = true
@@ -294,6 +300,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             self?.pendingLauncher = value as? Bool != true
         }
     }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { if webView === web { vnc.closeAll() } }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if webView === web, let screen = placementScreen() { publishDisplay(screen, force: true) }
@@ -557,6 +565,10 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             }
             return
         }
+        if method.hasPrefix("vnc.") {
+            do { respond(requestId, result:try vnc.call(method, params)) } catch { respond(requestId, error:error.localizedDescription) }
+            return
+        }
         if method.hasPrefix("music.spotify.") {
             do {
                 switch method {
@@ -680,7 +692,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didEndTrackingNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { vnc.closeAll(); screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didEndTrackingNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main
