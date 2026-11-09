@@ -38,7 +38,7 @@
       surfaces.forEach(paint);
     });
   }
-  surface(input,false);surface(el('terminal-task'),()=>el('terminal-task').classList.contains('is-command'));
+  surface(input,()=>window.OpenSesameShellInput?.interpret(input.value,state.scenario)?.kind==='shell');surface(el('terminal-task'),()=>el('terminal-task').classList.contains('is-command'));
   for(const name of ['open-sesame-layout','open-sesame-view-changed'])window.addEventListener(name,refresh);
   new MutationObserver(refresh).observe(el('terminal-connect-form'),{subtree:true,attributes:true,attributeFilter:['hidden','class']});
   new MutationObserver(refresh).observe(menu,{attributes:true,attributeFilter:['hidden']});

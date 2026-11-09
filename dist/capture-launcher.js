@@ -17,6 +17,7 @@
     if(window.__OPEN_SESAME_NATIVE__){const size=nativeFrame(),key=size.width+'x'+size.height;if(key!==lastGeometry){lastGeometry=key;syncNativeWindow()}}
   }
   function open(){
+    window.OpenSesamePlaylistSheet?.closeAll();
     if(active){el('capture-input').focus({preventScroll:true});return;}
     previous={expanded:state.expanded,size:state.size,type:el('capture-type').value,placeholder:el('capture-input').placeholder,label:el('capture-input').getAttribute('aria-label')};
     window.OpenSesameComposer?.fullscreen(false);window.openSesameCapture?.hide();
@@ -41,7 +42,7 @@
   document.addEventListener('keydown',event=>{
     if(window.OpenSesameTools?.active)return;
     if(event.code==='Space'&&event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.repeat){event.preventDefault();event.stopImmediatePropagation();if(!window.__OPEN_SESAME_GLOBAL_SHORTCUT__)toggle();return}
-    if(active&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();if(!window.openSesameCapture?.back?.())close()}
+    if(active&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();if(!window.openSesameCapture?.back?.())close(false)}
   },true);
   window.addEventListener('open-sesame-view-changed',()=>{if(active)close(true)});
   window.addEventListener('open-sesame-layout',sync);

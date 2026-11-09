@@ -1,5 +1,5 @@
 /* A generous identity selector; the shared rail frame and collapse behavior remain. */
-#widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-columns:clamp(210px,27%,310px) minmax(0,1fr);gap:16px}
+#widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-columns:var(--familiar-rail-width,clamp(168px,21.6%,248px)) minmax(0,1fr);gap:16px}
 #widget-anchor #widget-panel #familiar-rail{--rail-item-height:62px;gap:9px;padding-right:13px}
 #widget-anchor #widget-panel #familiar-search{min-height:36px;padding:9px 11px;border-radius:9px;font-size:11px;background:#111215;border-color:#35323b}
 #widget-anchor #widget-panel #familiar-list{gap:7px;padding:3px 3px 8px;scroll-padding-block:5px;scrollbar-gutter:stable}
@@ -16,6 +16,16 @@
 #widget-anchor #widget-panel #familiar-list .familiar-row-copy small{display:none;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:14px;color:#b7a8c3}
 #widget-anchor #widget-panel #familiar-list>.familiar-row[data-busy=true] small{display:block}
 #widget-anchor #widget-panel #familiar-list>.familiar-row[data-busy=true]:after{width:5px;height:5px;box-shadow:0 0 7px #baa5ce50}
-@container open-sesame-widget (max-width:650px){#widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-columns:190px minmax(0,1fr);gap:10px}#widget-anchor #widget-panel #familiar-rail{padding-right:8px}#widget-anchor #widget-panel #familiar-list>.familiar-row{height:54px;min-height:54px;max-height:54px;gap:9px;padding:7px 9px!important}#widget-anchor #widget-panel #familiar-list .familiar-avatar{width:34px;height:34px;min-width:34px;flex-basis:34px;border-radius:9px;font-size:22px}}
-@container open-sesame-widget (max-width:420px){#widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-columns:145px minmax(0,1fr)}#widget-anchor #widget-panel #familiar-list .familiar-row-copy strong{font-size:11px}#widget-anchor #widget-panel #familiar-list>.familiar-row{gap:6px;padding:7px!important}#widget-anchor #widget-panel #familiar-list .familiar-avatar{width:28px;height:28px;min-width:28px;flex-basis:28px}}
+@container open-sesame-widget (max-width:650px){#widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-columns:var(--familiar-rail-width,152px) minmax(0,1fr);gap:10px}#widget-anchor #widget-panel #familiar-rail{padding-right:8px}#widget-anchor #widget-panel #familiar-list>.familiar-row{height:54px;min-height:54px;max-height:54px;gap:9px;padding:7px 9px!important}#widget-anchor #widget-panel #familiar-list .familiar-avatar{width:34px;height:34px;min-width:34px;flex-basis:34px;border-radius:9px;font-size:22px}}
+@container open-sesame-widget (max-width:420px){#widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-columns:var(--familiar-rail-width,132px) minmax(0,1fr)}#widget-anchor #widget-panel #familiar-list .familiar-row-copy strong{font-size:11px}#widget-anchor #widget-panel #familiar-list>.familiar-row{gap:6px;padding:7px!important}#widget-anchor #widget-panel #familiar-list .familiar-avatar{width:28px;height:28px;min-width:28px;flex-basis:28px}}
 @media(prefers-reduced-motion:reduce){#widget-anchor #widget-panel #familiar-list>.familiar-row{transition:none}}
+
+/* A quiet edge is the only new chrome; identity rows keep their larger portraits. */
+#widget-anchor #widget-panel #familiars-workspace{position:relative}
+#widget-anchor #widget-panel #familiar-rail-resize{position:absolute;z-index:5;left:calc(var(--familiar-rail-width,168px) - 4px);top:0;bottom:0;width:9px;cursor:col-resize;touch-action:none;border-radius:4px;outline-offset:-2px}
+#widget-anchor #widget-panel #familiar-rail-resize:after{content:"";position:absolute;left:4px;top:14px;bottom:14px;width:1px;border-radius:1px;background:transparent;transition:background-color .12s}
+#widget-anchor #widget-panel #familiar-rail-resize:hover:after,#widget-anchor #widget-panel #familiar-rail-resize:focus-visible:after,#widget-anchor #widget-panel .rail-resizing #familiar-rail-resize:after{background:#857493}
+#widget-anchor #widget-panel #familiars-workspace.rail-collapsed #familiar-rail-resize{left:0}
+#widget-anchor #widget-panel #familiars-workspace.rail-collapsed #familiar-rail-resize:after{background:var(--line)}
+#widget-anchor #widget-panel #familiars-workspace.rail-collapse-ready #familiar-rail-resize:after{background:var(--accent);width:2px}
+#widget-anchor #widget-panel #familiars-workspace.rail-resizing{user-select:none;cursor:col-resize}

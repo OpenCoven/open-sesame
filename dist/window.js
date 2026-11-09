@@ -130,10 +130,6 @@
     if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification','open-sesame-select-menu'].includes(node.id)))return;
     void collapse({outside:true});
   });
-  document.addEventListener('keydown',event=>{
-    if(event.key!=='Escape'||event.defaultPrevented||document.querySelector('dialog[open]')||event.target.closest('input,textarea,select,[contenteditable],.terminal-native'))return;
-    if(!detached&&state.size==='full'&&!document.fullscreenElement){event.preventDefault();event.stopImmediatePropagation();state.size=restoreSize;render()}
-  },true);
   window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{sync();window.dispatchEvent(new Event('open-sesame-layout'))})});
   window.addEventListener('pagehide',()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
   function show(){if(window.OpenSesameLauncher?.active)window.OpenSesameLauncher.close(true);else setExpanded(true,{focus:true})}
