@@ -57,3 +57,7 @@ Earlier detailed feature descriptions and environment-specific results are prese
 The [Familiar access controls](../docs/familiar-permissions-and-layout.md) keep read-only defaults and require native confirmation for each full-access reply or workspace avatar replacement. The roster uses the same remembered collapse control as Shells and Desktops. [GitHub monitoring](../docs/github-monitor-widget.md) installs from Widgets into a Projects tab and reads recent repository activity through the existing local GitHub CLI account; it performs no GitHub writes and embeds no credentials.
 
 For declarative tools, use Widgets → Tools or `/tools`; see [authoring and page placement](../docs/tools.md). The source label `plugins` remains the internal key for Widgets. The [scoped native instructions](AGENTS.md) describe routing, packaging and fixture-state boundaries.
+
+## Embedded Coven computer tasks
+
+Console → Computer uses the bundled Coven engine and native per-task display approval on macOS 14+. See [setup, supported actions and verification limits](../docs/embedded-computer-agent.md). Build prerequisites now include Rust/Cargo and locked dependency access; account setup and operating-system permissions remain user actions. Native compilation and synthetic provider fixtures do not establish a supervised task on your own applications.

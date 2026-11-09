@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="focus-overview.css?v=19682a753f32">
   <script src="storage-migration.js?v=3ac2f2e93e7d" defer></script>
   <script src="widget-lifecycle.js?v=17a671138c6e" defer></script>
-  <script src="bridge.js?v=675774b83f84" defer></script>
+  <script src="bridge.js?v=5605fe532aa4" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f69" defer></script>
   <script src="vendor/purify.min.js?v=4936212d7362" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e99" defer></script>
@@ -37,21 +37,23 @@
   <script src="world-clock.js?v=a426e7b365cd" defer></script>
   <script src="calculator.js?v=c064e126d2ec" defer></script>
   <script src="syntax.js?v=f0c2e3477f1c" defer></script>
-  <script src="computer-controls.js?v=1e537ed2febb" defer></script>
-  <script src="capture.js?v=61b26ed01d14" defer></script>
+  <script src="computer-agent.js?v=7a74ac331a64" defer></script>
+<link rel="stylesheet" href="computer-agent.css?v=ca4c4c1996cb">
+<script src="computer-controls.js?v=1e537ed2febb" defer></script>
+  <script src="capture.js?v=ea386e4db18e" defer></script>
   <script src="item-workflow.js?v=e0ff202e7b80" defer></script>
   <script src="frame-model.js?v=e45834453a3d" defer></script>
   <script src="bookmark-model.js?v=6a111c3f2b6a" defer></script>
   <script src="focus-calendar-model.js?v=0a25c0d1a82a" defer></script>
   <script src="native-surfaces.js?v=c0d86cd56f0f" defer></script>
-  <script src="app.js?v=73b786d86bd7" defer></script>
+  <script src="app.js?v=e9cf4cb31000" defer></script>
   <script src="bookmarks.js?v=e69a15e3d5e6" defer></script>
   <script src="frame.js?v=77800e925385" defer></script>
   <script src="focus-calendar.js?v=774553116a29" defer></script>
   <script src="pagination.js?v=41ba7e7fafb8" defer></script>
   <script src="items-views.js?v=fd05bb1fba33" defer></script>
   <script src="item-header.js?v=0501decc75f7" defer></script>
-  <script src="workspace.js?v=5175d1cb7569" defer></script>
+  <script src="workspace.js?v=7a805ab8f6bf" defer></script>
   <script src="speech.js?v=893cd06ac2ac" defer></script>
   <script src="content.js?v=5b917b115190" defer></script>
   <script src="vendor/coven-runtime.js?v=e5dd00e623b3" defer></script>
@@ -60,7 +62,7 @@
   <script src="voice.js?v=0c825cf8aae3" defer></script>
   <script src="agents-layout.js?v=96fb8f98e417" defer></script>
   <script src="coven-chat.js?v=b010c4c85601" defer></script>
-  <script src="terminal.js?v=5c336cc27e3a" defer></script>
+  <script src="terminal.js?v=edfd80e02843" defer></script>
   <script src="github-viewer.js?v=6bc0d7da9cbf" defer></script>
   <script src="exports.js?v=2e6981ef7778" defer></script>
   <script src="site-feeds.js?v=92b76944ee52" defer></script>
@@ -107,7 +109,7 @@
   <link rel="stylesheet" href="input-tools.css?v=d77eafdd83de">
   <script src="input-tools.js?v=c9ed5523f47b" defer></script>
   <link rel="stylesheet" href="voice-command.css?v=7d49d3bc8fed">
-  <script src="voice-command.js?v=1e5ddde409b9" defer></script>
+  <script src="voice-command.js?v=68fcb439ea20" defer></script>
   <link rel="stylesheet" href="console-polish.css?v=c4d2dbc3935e">
 <link rel="stylesheet" href="layout-fit.css?v=75b7a1e2537a">
 <script src="layout-fit.js?v=be6c0c451547" defer></script>
@@ -152,9 +154,9 @@
 <script src="escape.js?v=e75a8d9017f1" defer></script>
 <script src="familiar-rail-resize.js?v=07d83b0b3193" defer></script>
 <link rel="stylesheet" href="page-widgets.css?v=4e107e963478">
-<script src="page-widgets.js?v=8ccb8ea1ee6b" defer></script>
+<script src="page-widgets.js?v=ac56b75cb220" defer></script>
 <link rel="stylesheet" href="application-polish.css?v=2000ea8f371e">
-<script src="application-chrome.js?v=64294316b799" defer></script>
+<script src="application-chrome.js?v=151c9be9410e" defer></script>
 <link rel="stylesheet" href="process-workspace.css?v=71fd24fd7f5d">
 </head>
 <body>
@@ -383,7 +385,13 @@
                     </form></dialog>
                   </section>
                   <section id="agents-workspace" class="agents-workspace" role="tabpanel" aria-labelledby="tab-agents" hidden>
-                  <div id="agents-toolbar" class="agents-toolbar console-toolbar" aria-label="Console controls"><div id="agents-context" class="agents-context"><button id="agents-rail-toggle" class="workspace-rail-toggle" type="button" aria-label="Hide pane list" aria-expanded="true" aria-controls="terminal-rail" title="Hide pane list"><i data-icon="rail-left"></i></button><div class="agents-mode-tabs console-mode-tabs" role="tablist" aria-label="Console views"><button id="agents-familiars" type="button" role="tab" data-agents="familiars" aria-controls="pane-familiars" aria-selected="false" tabindex="-1"><i data-icon="chat"></i><span>Familiars</span></button><button id="agents-monitor" type="button" role="tab" data-agents="agent-monitor" aria-controls="pane-agent-monitor" aria-selected="false" tabindex="-1"><i data-icon="agents"></i><span>Processes</span></button><button id="agents-shells" type="button" role="tab" data-agents="terminal" aria-controls="pane-terminal" aria-selected="true"><i data-icon="terminal"></i><span>Shells</span></button><button id="agents-desktops" type="button" role="tab" data-agents="remote" aria-controls="pane-remote" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Desktops</span></button></div></div><button id="terminal-more" aria-label="Shell preferences" aria-expanded="false" aria-controls="terminal-options" title="Shell preferences"><i data-icon="sliders"></i></button><button id="remote-settings" aria-label="Desktop preferences" title="Desktop preferences" hidden><i data-icon="sliders"></i></button></div>
+                  <div id="agents-toolbar" class="agents-toolbar console-toolbar" aria-label="Console controls"><div id="agents-context" class="agents-context"><button id="agents-rail-toggle" class="workspace-rail-toggle" type="button" aria-label="Hide pane list" aria-expanded="true" aria-controls="terminal-rail" title="Hide pane list"><i data-icon="rail-left"></i></button><div class="agents-mode-tabs console-mode-tabs" role="tablist" aria-label="Console views"><button id="agents-familiars" type="button" role="tab" data-agents="familiars" aria-controls="pane-familiars" aria-selected="false" tabindex="-1"><i data-icon="chat"></i><span>Familiars</span></button><button id="agents-monitor" type="button" role="tab" data-agents="agent-monitor" aria-controls="pane-agent-monitor" aria-selected="false" tabindex="-1"><i data-icon="agents"></i><span>Processes</span></button><button id="agents-shells" type="button" role="tab" data-agents="terminal" aria-controls="pane-terminal" aria-selected="true"><i data-icon="terminal"></i><span>Shells</span></button><button id="agents-computer" type="button" role="tab" data-agents="computer-agent" aria-controls="pane-computer-agent" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Computer</span></button><button id="agents-desktops" type="button" role="tab" data-agents="remote" aria-controls="pane-remote" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Desktops</span></button></div></div><button id="terminal-more" aria-label="Shell preferences" aria-expanded="false" aria-controls="terminal-options" title="Shell preferences"><i data-icon="sliders"></i></button><button id="remote-settings" aria-label="Desktop preferences" title="Desktop preferences" hidden><i data-icon="sliders"></i></button></div>
+                  <section id="pane-computer-agent" class="widget-pane" role="tabpanel" aria-labelledby="agents-computer" hidden>
+                    <header class="computer-heading"><div><h2>Coven Computer</h2><p id="computer-connection">Sign in through your CLI account.</p></div><div class="computer-account-controls"><label class="sr-only" for="computer-provider">Computer driver</label><select id="computer-provider"><option value="codex">Codex · ChatGPT</option><option value="claude">Claude Code</option><option value="familiar">Coven Familiar</option></select><label class="sr-only" for="computer-familiar">Familiar driver</label><select id="computer-familiar" hidden><option value="">Choose familiar…</option></select><label class="sr-only" for="computer-driver">Familiar account</label><select id="computer-driver" hidden><option value="codex">via Codex · ChatGPT</option><option value="claude">via Claude Code</option></select><button id="computer-account" type="button">Sign in with ChatGPT</button><button id="computer-refresh" type="button" title="Refresh account and permissions" aria-label="Refresh account and permissions"><i data-icon="reset"></i></button></div></header>
+                    <div id="computer-setup" class="computer-setup"><p>Enable access in macOS, then refresh. Each task asks you to approve its display and provider. Screenshots are shared only during an approved task.</p><div><button id="computer-permission-screen" type="button">Screen Recording · Enable</button><button id="computer-permission-accessibility" type="button">Accessibility · Enable</button></div></div>
+                    <div class="computer-conversation"><div id="computer-empty" class="computer-empty"><i data-icon="monitor"></i><strong>Your Mac, with a helping hand.</strong><p>Describe a task and review access before it starts. Use your mouse or keyboard to pause; Stop is also available in the menu bar.</p></div><div id="computer-messages" role="log" aria-label="Computer task progress" aria-live="polite" aria-relevant="additions"></div></div>
+                    <form id="computer-task-form"><label class="sr-only" for="computer-task">Describe a computer task</label><textarea id="computer-task" rows="2" maxlength="32768" placeholder="What would you like to do on your Mac?"></textarea><div class="computer-task-actions"><span id="computer-task-status" role="status">Ready</span><div><button id="computer-stop" type="button" hidden>Stop task</button><button id="computer-start" type="submit" disabled>Review &amp; start <span aria-hidden="true">↗</span></button></div></div></form>
+                  </section>
                   <section id="pane-familiars" class="widget-pane familiars-pane" role="tabpanel" aria-labelledby="agents-familiars" hidden>
                     <header id="familiar-connection" class="familiar-connection"><div><strong>Coven Familiars</strong><span id="familiar-connection-status" role="status">Connect Coven to find your familiars.</span></div><a href="https://github.com/OpenCoven/coven" target="_blank" rel="noopener noreferrer" id="familiar-setup-guide">Setup guide</a></header>
                     <div id="familiars-workspace" class="familiars-workspace"><aside id="familiar-rail" class="familiars-rail workspace-list-rail" aria-label="Your familiars"><header class="workspace-rail-heading"><span id="familiar-rail-title" class="console-rail-title"><span>Familiars</span></span><small id="familiar-roster-count" class="workspace-rail-count">0</small><button id="familiar-connect" type="button" aria-label="Connect Coven" title="Connect Coven"><i data-icon="reset"></i></button></header><label class="sr-only" for="familiar-search">Find a familiar</label><input id="familiar-search" type="search" placeholder="Find a familiar…" autocomplete="off"><div id="familiar-list" class="workspace-rail-list" role="tablist" aria-label="Familiar conversations" aria-orientation="vertical"></div><p id="familiar-roster-empty">Your Coven roster appears here.</p></aside>
@@ -473,7 +481,7 @@
           </div>
         </div>
       </div>
-      <div class="preview-footer"><div class="preview-hint"><i data-icon="cursor"></i><span id="preview-hint">Click the notch to open your widget.</span></div><div class="canvas-metrics"><span id="scale-label">Fit</span><span class="metric-dot">·</span><span id="footprint">280 × 35 px</span></div></div>
+      <div class="preview-footer"><div class="preview-hint"><i data-icon="monitor"></i><span id="preview-hint">Click the notch to open your widget.</span></div><div class="canvas-metrics"><span id="scale-label">Fit</span><span class="metric-dot">·</span><span id="footprint">280 × 35 px</span></div></div>
       <div class="bottom-bar"><span><kbd>esc</kbd> Collapse <span class="key-spacer"></span><kbd>M</kbd> Switch placement <span class="key-spacer"></span><kbd>E</kbd> Expand</span><button id="guide-bottom" class="text-button">A few things to try<i data-icon="arrow-up-right"></i></button></div>
     </main>
   </div>

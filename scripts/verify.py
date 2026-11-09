@@ -61,6 +61,8 @@ def main():
     native = 'explicitly omitted (--portable)' if args.portable else 'unavailable on ' + sys.platform
     if sys.platform == 'darwin' and not args.portable:
         native = 'macOS compilation failed; see macos-build result'
+        check('embedded-engine-build', [sys.executable, '-B', 'scripts/build-coven-engine.py'], 600)
+        check('embedded-engine-tests', ['cargo', 'test', '--release', '--locked', '--target-dir', str(ROOT / 'build/coven-engine-target'), '--manifest-path', 'desktop/engine/Cargo.toml'], 120)
         check('native-url', ['bash', 'scripts/check-native.sh'])
         check('native-authentication', ['bash', 'scripts/check-authentication.sh'], 180)
         check('native-screen-notes', ['bash', 'scripts/check-screen-notes.sh'], 120)
