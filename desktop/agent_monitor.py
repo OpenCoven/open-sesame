@@ -3,6 +3,7 @@
 OS scheduling states are not agent task/approval states. Arguments are used only
 for executable identification and are never returned to the interface.
 """
+import hashlib
 import math
 import os
 import pathlib
@@ -143,6 +144,10 @@ def process_identities(pid=None):
     return identities
 
 
+def agent_identity(pid, identity):
+    return hashlib.sha256((socket.gethostname() + str(pid) + str(identity[1:3])).encode()).hexdigest()[:24]
+
+
 def authorize_controls(agents):
     identities = process_identities() if agents else {}
     now = time.monotonic()
@@ -156,6 +161,7 @@ def authorize_controls(agents):
                 token = next((key for key, value in _controls.items() if value['pid'] == agent['pid'] and value['identity'] == identity), None) or secrets.token_urlsafe(32)
                 _controls.setdefault(token, {'pid': agent['pid'], 'identity': identity, 'expires': now + 120})
                 agent['controlToken'] = token
+                agent['id'] = agent_identity(agent['pid'], identity)
     return agents
 
 
@@ -180,3 +186,165 @@ def control_process(params):
             raise ValueError('The process could not be changed. Refresh to check its state.') from None
         _controls.pop(token, None)
     return {'pid': pid, 'action': action, 'signalSent': True}
+
+
+def process_context(pid):
+    """Read cwd without exposing arguments or inspecting arbitrary file contents."""
+    try:
+        if sys.platform == 'linux':
+            return os.readlink('/proc/%s/cwd' % pid)
+        result = subprocess.run(['lsof', '-a', '-p', str(pid), '-d', 'cwd', '-Fn'],
+                                capture_output=True, text=True, timeout=.5)
+        return next((line[1:] for line in result.stdout.splitlines() if line.startswith('n/')), '')
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def process_directories(pids):
+    if sys.platform == 'linux': return {pid: process_context(pid) for pid in pids}
+    try:
+        result = subprocess.run(['lsof', '-a', '-p', ','.join(map(str, pids)), '-d', 'cwd', '-Fpn'], capture_output=True, text=True, timeout=1)
+        current, paths = None, {}
+        for line in result.stdout.splitlines():
+            if line.startswith('p') and line[1:].isdigit(): current = int(line[1:])
+            elif line.startswith('n/') and current in pids: paths[current] = line[1:]
+        return paths
+    except (OSError, subprocess.SubprocessError): return {}
+
+
+def repository_context(cwd):
+    if not cwd:
+        return {}
+    try:
+        result = subprocess.run(['git', '-C', cwd, 'rev-parse', '--show-toplevel',
+                                 '--git-common-dir'],
+                                capture_output=True, text=True, timeout=.5,
+                                env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'})
+        values = result.stdout.splitlines()
+        if result.returncode or len(values) != 2:
+            return {}
+        root, common = values
+        branch_result = subprocess.run(['git', '-C', cwd, 'symbolic-ref', '--quiet', '--short', 'HEAD'], capture_output=True, text=True, timeout=.5)
+        branch = branch_result.stdout.strip() if branch_result.returncode == 0 else 'Detached HEAD'
+        return {'root': root, 'name': pathlib.Path(root).name, 'branch': branch,
+                'commonDirectory': str((pathlib.Path(cwd) / common).resolve())}
+    except (OSError, subprocess.SubprocessError):
+        return {}
+
+
+def enrich_snapshot(result, sessions, screens=None, *, lookup_only=False):
+    # One bounded ancestry query per scan, never return command arguments.
+    try:
+        rows = subprocess.run(['ps', '-u', str(os.getuid()), '-o', 'pid=,ppid='],
+                              capture_output=True, text=True, timeout=1, check=True)
+        parents = dict(tuple(map(int, line.split())) for line in rows.stdout.splitlines() if len(line.split()) == 2)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        parents = {}
+    if not isinstance(screens, dict): screens = {}
+    from process_workspace import tmux_panes, classify, foreground
+    panes = tmux_panes()
+    deadline = time.monotonic() + 3
+    directories = process_directories([a['pid'] for a in result['agents']]) if result['agents'] and not lookup_only else {}
+    repos = {}
+    for agent in result['agents']:
+        agent['activity'] = {'state': 'unknown', 'source': 'none', 'reason': 'No activity integration'}
+        agent['terminal'] = {'kind': 'unavailable', 'reason': 'No verified terminal association'}
+        pid, visited = agent['pid'], set()
+        while pid and pid not in visited:
+            visited.add(pid)
+            match = next((s for s in list(sessions.values()) if not s.closed and s.pid == pid), None)
+            if match:
+                agent['terminal'] = {'kind': 'owned', 'id': match.id}
+                break
+            pid = parents.get(pid)
+        if agent['terminal']['kind'] == 'unavailable':
+            pid, visited = agent['pid'], set()
+            while pid and pid not in visited:
+                visited.add(pid)
+                pane = next((p for p in panes if p['pid'] == str(pid)), None)
+                if pane:
+                    agent['terminal'] = {'kind': 'tmux', **pane}
+                    try:
+                        if lookup_only or time.monotonic() >= deadline: break
+                        screen = subprocess.run(['tmux', '-S', pane['socket'], 'capture-pane', '-p', '-t', pane['pane']], capture_output=True, text=True, timeout=.5, check=True).stdout
+                        if foreground(agent['pid'], agent['terminal'], sessions):
+                            agent['activity'] = classify(agent['provider'], screen)
+                    except (OSError, subprocess.SubprocessError): pass
+                    break
+                pid = parents.get(pid)
+        if lookup_only: continue
+        if agent['terminal']['kind'] == 'owned':
+            screen = (screens or {}).get(agent['terminal']['id'], '')
+            if time.monotonic() < deadline and isinstance(screen, str) and len(screen) <= 8192 and foreground(agent['pid'], agent['terminal'], sessions):
+                agent['activity'] = classify(agent['provider'], screen)
+        from agent_activity import activity
+        event = activity(agent.get('id'))
+        if event: agent['activity'] = event
+        cwd = directories.get(agent['pid'], '')
+        agent['cwd'] = cwd
+        if cwd and time.monotonic() < deadline:
+            if cwd not in repos:
+                repos[cwd] = repository_context(cwd)
+            agent['repository'] = repos[cwd]
+    return result
+
+
+def terminal_target(params):
+    import shlex
+    with _control_lock:
+        entry = _controls.get(params.get('token'))
+        if not entry or entry['pid'] != params.get('pid') or entry['expires'] < time.monotonic() or process_identities(entry['pid']).get(entry['pid']) != entry['identity']:
+            raise ValueError('Session changed. Refresh before opening.')
+    agent = {'pid': entry['pid'], 'provider': provider(entry['identity'][3])}
+    target = enrich_snapshot({'agents':[agent]}, {}, lookup_only=True)['agents'][0]['terminal']
+    if target['kind'] == 'tmux':
+        return {'kind':'tmux', 'command':shlex.join(['tmux','-S',target['socket'],'attach-session','-t',target['session'],';','select-window','-t',target['window'],';','select-pane','-t',target['pane']])}
+    return focus_native_terminal(entry['pid'])
+
+
+def focus_native_terminal(pid):
+    tty = subprocess.run(['ps', '-p', str(pid), '-o', 'tty='], capture_output=True, text=True, timeout=1, check=True).stdout.strip()
+    if not re.fullmatch(r'ttys[0-9]+', tty):
+        raise ValueError('This process has no supported native terminal.')
+    script = '''on run argv
+set targetTTY to "/dev/" & item 1 of argv
+if application "Terminal" is running then
+ tell application "Terminal"
+  repeat with w in windows
+   repeat with t in tabs of w
+    if tty of t is targetTTY then
+     set selected tab of w to t
+     set index of w to 1
+     activate
+     return "focused"
+    end if
+   end repeat
+  end repeat
+ end tell
+end if
+if application "iTerm2" is running then
+ tell application "iTerm2"
+  repeat with w in windows
+   repeat with t in tabs of w
+    repeat with s in sessions of t
+     if tty of s is targetTTY then
+      select s
+      select t
+      select w
+      activate
+      return "focused"
+     end if
+    end repeat
+   end repeat
+  end repeat
+ end tell
+end if
+error "No matching Terminal or iTerm2 session."
+end run'''
+    if not any(p.exists() for base in (pathlib.Path('/Applications'), pathlib.Path.home()/'Applications') for p in (base/'iTerm.app', base/'iTerm2.app')):
+        script = script[:script.index('if application \"iTerm2\"')] + 'error \"No matching Terminal session.\"\nend run'
+    try:
+        subprocess.run(['osascript', '-e', script, tty], capture_output=True, text=True, timeout=6, check=True)
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError('Terminal unavailable. Enable Automation access for Terminal/iTerm2 and verify the session is still open.') from None
+    return {'kind':'native', 'focused':True}
