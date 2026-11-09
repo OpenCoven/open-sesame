@@ -10,6 +10,7 @@ assert.equal(links('```md\n[example](missing.md)\n```\n[real](README.md)').lengt
 assert.equal(links('`[literal](missing.md)`').length, 0);
 assert.deepEqual(links('[guide][map]\n\n[map]: <docs/repository-map.md>')[0], {target: 'docs/repository-map.md', reference: 'map', line: 1});
 assert.deepEqual([...anchors('# A `code` heading\n## Repeat\n## Repeat\n## Inspect → claim → plan')], ['a-code-heading', 'repeat', 'repeat-1', 'inspect--claim--plan']);
+assert.deepEqual([...anchors('# <em>Visible</em> heading\n## <script')], ['visible-heading', 'script'], 'HTML-like headings are identifiers only, including incomplete markup');
 assert.equal(withoutFences('~~~js\n# fake\n~~~\n# real').includes('fake'), false);
 
 const temporary = fs.mkdtempSync(path.join(tmpdir(), 'sesame-doc-navigation-'));

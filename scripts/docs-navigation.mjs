@@ -36,10 +36,22 @@ export function links(source) {
   });
   return found;
 }
+// Only derive visible heading text for anchor comparison; this is not HTML sanitization.
+function headingText(source) {
+  let result = '';
+  for (let index = 0; index < source.length; ++index) {
+    if (source[index] === '<') {
+      const end = source.indexOf('>', index + 1);
+      if (end !== -1) { index = end; continue; }
+    }
+    result += source[index];
+  }
+  return result;
+}
 export function anchors(source) {
   const ids = new Set(), lines = withoutFences(source).split('\n');
   const add = title => {
-    const base = title.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/<[^>]*>/g, '').toLowerCase().replace(/[^\p{L}\p{N}\p{M}_\- ]/gu, '').trim().replace(/ /g, '-');
+    const base = headingText(title.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')).toLowerCase().replace(/[^\p{L}\p{N}\p{M}_\- ]/gu, '').trim().replace(/ /g, '-');
     let name = base, count = 0;
     while (ids.has(name)) name = base + '-' + (++count);
     ids.add(name);
