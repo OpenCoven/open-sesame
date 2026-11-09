@@ -10,6 +10,7 @@ document.body=new Node();document.getElementById=el;document.querySelector=()=>e
 let submits=0,choices=0,back=false,screen=[1512,982];el('capture-form').requestSubmit=()=>submits++;el('capture-commands').hidden=true;
 const context={document,window,state:{expanded:false,size:'medium'},frameScreen:()=>screen,render(){},renderDraft(){},fit(){},syncNativeWindow(){},ResizeObserver:class{observe(){}},MutationObserver:class{observe(){}},requestAnimationFrame:fn=>fn()};vm.createContext(context);
 vm.runInContext(fs.readFileSync('dist/calculator.js','utf8'),context);
+vm.runInContext(fs.readFileSync('dist/world-clock.js','utf8'),context);
 const capture=fs.readFileSync('dist/capture.js','utf8');vm.runInContext(capture.slice(capture.indexOf('  const views='),capture.indexOf('  const el=id=>'))+';this.intent=interpret',context);
 assert.equal(context.intent('/widgets').view,'plugins');assert.equal(context.intent('/plugins').view,'plugins','Existing commands still reach the renamed catalog');
 window.openSesameCapture={hide(){el('capture-commands').hidden=true;el('capture-input').removeAttribute('aria-activedescendant')},openMenu(){el('capture-commands').hidden=false;el('capture-input').setAttribute('aria-activedescendant','selected');el('selected').dataset.actionLabel='Open'},choose(){choices++;return true},back(){const value=back;back=false;return value},interpret:context.intent,refresh(){context.intent(el('capture-input').value,'auto').kind==='calculation'?this.hide():this.openMenu()}};
@@ -18,6 +19,7 @@ assert.equal(el('footer').attrs['aria-modal'],'true');assert.match(el('capture-i
 el('capture-input').value='/';palette.sync();assert.equal(el('launcher-primary').textContent,'Open ↵','Slash opens commands rather than an incomplete calculator');assert.equal(el('launcher-primary').disabled,false);
 el('launcher-primary').handlers.click();assert.equal(choices,1);assert.equal(submits,0,'Opening a selection cannot also submit a note');
 window.openSesameCapture.hide();el('capture-input').value='2-2';palette.sync();assert.equal(window.OpenSesameCalculator.calculate('2-2').result,'0');assert.equal(el('launcher-primary').textContent,'Copy result ↵');assert.equal(el('launcher-primary').disabled,false);assert.equal(palette.nativeFrame().height,500,'A calculation retains a full results area');el('launcher-primary').handlers.click();assert.equal(submits,1);
+el('capture-input').value='time in Germany';palette.sync();assert.equal(el('launcher-primary').textContent,'Copy time ↵');assert.equal(el('launcher-primary').disabled,false);el('capture-input').value='time in USA';palette.sync();assert.equal(el('launcher-primary').disabled,true);
 el('capture-input').value='2/0';palette.sync();assert.equal(el('launcher-primary').disabled,true);
 el('capture-input').value='open Safari';palette.sync();assert.equal(el('launcher-primary').textContent,'Review in Agents ↵','External actions keep their explicit review label');
 el('capture-input').value='/unknown';palette.sync();assert.equal(el('launcher-primary').disabled,true);
