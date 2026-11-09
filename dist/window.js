@@ -3,7 +3,7 @@
 (()=>{
   const el=id=>document.getElementById(id),root=document.documentElement,popout=el('panel-popout'),full=el('panel-fullscreen');
   const embedded=new URL(location.href).searchParams.get('open-sesame-window')==='1';
-  let detached=embedded,nativeDetached=false,nativeMaximized=false,active=null,opening=false,collapsing=false,resizeFrame=0,owner=null,restoreSize='medium',lastFull=false,preferPopup=false;
+  let detached=embedded,nativeDetached=false,nativeMaximized=false,active=null,opening=false,collapsing=false,owner=null,restoreSize='medium',lastFull=false,preferPopup=false;
   try{if(embedded)owner=window.parent.__openSesameOwner||null}catch{}
   const clone=data=>JSON.parse(JSON.stringify(data));
   function snapshot(){
@@ -45,7 +45,7 @@
     const edge=detached||state.expanded&&state.size==='full';root.classList.toggle('open-sesame-edge-to-edge',edge);root.classList.toggle('open-sesame-detached',detached);
     if(edge){
       const rect=expandedFrame();el('widget-anchor').style.setProperty('--panel-width',rect.width+'px');el('widget-anchor').style.setProperty('--panel-height',rect.height+'px');
-      el('widget-anchor').style.setProperty('--expanded-scale',window.innerWidth<560?'1':'1.2');
+      el('widget-anchor').style.setProperty('--expanded-scale','1');
     }
     el('frame-resize-layer').hidden=detached||!state.expanded;el('panel-close').title=el('panel-close').ariaLabel=detached?'Dock widget':'Collapse widget';
     full.setAttribute('aria-pressed',String(nativeMaximized||!!document.fullscreenElement||!detached&&state.size==='full'));
@@ -76,7 +76,7 @@
     if(embedded){const url=new URL(location.href);url.searchParams.delete('open-sesame-window');location.replace(url.href)}
   }
   async function collapse({outside=false,focus=false}={}){
-    if(collapsing||active||embedded||outside&&(state.pinned||window.OpenSesameFrame?.dragging||document.querySelector('dialog[open]')))return false;
+    if(collapsing||active||embedded||outside&&(detached||state.pinned||window.OpenSesameFrame?.dragging||document.querySelector('dialog[open]')))return false;
     if(!state.expanded&&!detached&&!window.OpenSesameLauncher?.active)return false;
     collapsing=true;
     try{
@@ -97,12 +97,12 @@
     if(detached){dock();return}if(active){active.host.focus();return}if(opening)return;
     if(window.__OPEN_SESAME_NATIVE__){
       restoreSize=state.size==='full'?'medium':state.size;
-      try{await openSesameBridge.request('window.detach',{detached:true,aspectRatio:window.OpenSesameFrameModel.ratio});nativeDetached=detached=true;state.expanded=true;render()}catch(error){toast(error.message)}return;
+      try{await openSesameBridge.request('window.detach',{detached:true,pinned:state.pinned===true,aspectRatio:window.OpenSesameFrameModel.ratio});nativeDetached=detached=true;state.expanded=true;render()}catch(error){toast(error.message)}return;
     }
     if(busy()){toast('Stop recording or finish the current answer before popping out.');return}
-    let initial;try{initial=snapshot()}catch{toast('Could not move this workspace. Your current window is unchanged.');return}let width=el('widget-anchor').getBoundingClientRect().width;
-    try{const saved=JSON.parse(localStorage.getItem('open-sesame-floating-size')||'null');if(Number.isFinite(saved?.width)&&saved.width>=360)width=saved.width}catch{}
-    const size=window.OpenSesameFrameModel.floating(width,screen.availWidth,screen.availHeight);
+    let initial;try{initial=snapshot()}catch{toast('Could not move this workspace. Your current window is unchanged.');return}let width=el('widget-anchor').getBoundingClientRect().width,savedHeight=null;
+    try{const saved=JSON.parse(localStorage.getItem('open-sesame-floating-size')||'null');if(Number.isFinite(saved?.width)&&saved.width>=360){width=saved.width;if(Number.isFinite(saved.height)&&saved.height>=300)savedHeight=saved.height}}catch{}
+    const size=window.OpenSesameFrameModel.floating(width,screen.availWidth,screen.availHeight,savedHeight);
     opening=true;let host,kind='window';
     try{
       if(!preferPopup&&window.documentPictureInPicture&&window===window.top){host=await window.documentPictureInPicture.requestWindow(size);kind='pip'}
@@ -130,11 +130,11 @@
     if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification','open-sesame-select-menu'].includes(node.id)))return;
     void collapse({outside:true});
   });
-  window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{sync();window.dispatchEvent(new Event('open-sesame-layout'))})});
+  window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;sync();window.dispatchEvent(new Event('open-sesame-layout'))});
   window.addEventListener('pagehide',()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
   function show(){if(window.OpenSesameLauncher?.active)window.OpenSesameLauncher.close(true);else setExpanded(true,{focus:true})}
   function toggle(){if(state.expanded||window.OpenSesameLauncher?.active)return collapse({focus:true});show()}
-  window.OpenSesameWindow={sync,open,dock,collapse,show,toggle,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
+  window.OpenSesameWindow={sync,keepOpen(pinned){if(window.__OPEN_SESAME_NATIVE__)openSesameBridge.request('window.keepOpen',{pinned:pinned===true}).catch(()=>toast('Could not update the window pin.'))},open,dock,collapse,show,toggle,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
   window.addEventListener('beforeunload',()=>{try{if(owner?.OpenSesameWindow?.owns(window))owner.OpenSesameWindow.checkpoint(window,snapshot())}catch{}});
   if(embedded){state.expanded=true;document.title='Open Sesame · Floating workspace';render();if(owner?.OpenSesameWindow)owner.OpenSesameWindow.ready(window)}else sync();
 })();

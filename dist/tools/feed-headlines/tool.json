@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "feed-headlines",
   "version": "1.0.0",
   "name": "Feed headlines",
@@ -49,5 +49,6 @@
       "Sample item one",
       "Sample item two"
     ]
-  }
+  },
+  "page": "reader"
 }

@@ -1,5 +1,11 @@
 # Development work and handoff
 
+## Widget pages, GitHub and application window, November 8
+
+`widget-pages-github-20261108` owns `codex/widget-pages-github` in `open-sesame-widget-pages`, started from signed v0.0.19 main `659735507d572f5ea9e4ad74f5730e4913334524` and rebased onto independently delivered VNC/secret-check main `bc69e160ad6023ece1407fb48f64a4fb3b8a0cda`. The task adds a required page to new widget packages, compatible page tabs for installed tools, a more scannable GitHub dashboard and a freely resizable application pop-out with visible keep-open and display controls. Existing v1 definitions remain under Widgets with configuration and drafts preserved. Installation never contacts a provider or executes an action.
+
+Implement the versioned contract and page adapters first, then GitHub filtering/sorting/status and application controls; run focused lifecycle checks, the full Mac verifier and exact-head hosted checks, and inspect rendered wide/narrow layouts with synthetic data. Native display movement, user capture, provider writes and real model requests are separate acceptance gates. The embedded computer-agent prototype remains independently owned and unfinished; continue its broker/controller work after this UI batch.
+
 ## Desktop interaction polish, November 8
 
 `shell-composer-20261108` owns `codex/shell-composer` in `open-sesame-shell-composer`, based on delivered signed v0.0.18 main `b9856e85cc9f721f011ac10d41daa4ed3c2b52c9`. It routes the bottom composer to the exact selected shell, standardizes playback rails, separates Focus from a new Media activity, refines wide/small timer layouts, centralizes focused Escape dismissal and adds a narrower, resizable Familiar rail. See `desktop-interaction-polish.md` for contracts and acceptance boundaries. The first widget check exposed the media test harness's missing newly shared layout dependency; the original failure is preserved in `build/first-widget-check.log`, and the harness now loads the shipped component before the media controller.

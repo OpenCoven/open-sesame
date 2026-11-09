@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "meeting-notes",
   "version": "1.0.0",
   "name": "Meeting notes",
@@ -42,5 +42,6 @@
       "Sample item one",
       "Sample item two"
     ]
-  }
+  },
+  "page": "projects"
 }

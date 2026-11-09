@@ -3,7 +3,7 @@
   const el=id=>document.getElementById(id),input=el('capture-input'),storageKey='open-sesame-shell-drafts-v1';
   const drafts=new Map();let context=null,generic=null,busy=false,ready=false,syncing=false;
   try{const saved=JSON.parse(localStorage.getItem(storageKey)||'{}');for(const [id,value] of Object.entries(saved).slice(0,60))if(/^[A-Za-z0-9_-]{1,80}$/.test(id)&&typeof value==='string')drafts.set(id,value.slice(0,20000))}catch{}
-  function active(){return state.scenario==='terminal'&&!window.OpenSesameLauncher?.active}
+  function active(){return state.scenario==='terminal'&&!window.OpenSesameLauncher?.active&&!window.OpenSesamePageWidgets?.active}
   function persist(){try{localStorage.setItem(storageKey,JSON.stringify(Object.fromEntries([...drafts].filter(([,value])=>value).slice(-60))))}catch{}}
   function saveDraft(){if(!context)return;drafts.set(context,input.value);persist()}
   function sync(){
