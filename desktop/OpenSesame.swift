@@ -3,9 +3,11 @@ import WebKit
 import ColorSync
 
 final class NotchPanel: NSPanel {
+    var onEscape: (() -> Bool)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53, event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty, onEscape?() == true { return }
         if event.type == .leftMouseDown {
             NSApp.activate(ignoringOtherApps: true)
             makeKey()
@@ -36,6 +38,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var beforeFullscreen: NSRect?
     var shortcut: GlobalShortcut?
     var screenNotes = OpenSesameScreenNotes()
+    var trackingNativeMenus = Set<ObjectIdentifier>()
     var pendingLauncher = false
     var dockedScreenID: NSNumber?
     var dockedScreenFrame: NSRect?
@@ -108,6 +111,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         surface.addSubview(web)
         NSLayoutConstraint.activate([web.leadingAnchor.constraint(equalTo: surface.leadingAnchor), web.trailingAnchor.constraint(equalTo: surface.trailingAnchor), web.topAnchor.constraint(equalTo: surface.topAnchor), web.bottomAnchor.constraint(equalTo: surface.bottomAnchor)])
         createStatusItem()
+        NotificationCenter.default.addObserver(self, selector: #selector(nativeMenuBegan(_:)), name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(nativeMenuEnded(_:)), name: NSMenu.didEndTrackingNotification, object: nil)
         watchOutsideClicks()
         shortcut = GlobalShortcut { [weak self] in self?.openLauncher() }
         web.configuration.userContentController.addUserScript(WKUserScript(source: "window.__OPEN_SESAME_GLOBAL_SHORTCUT__=\(shortcut?.available == true ? "true" : "false");", injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -133,6 +138,13 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         familiarPermissions.authenticated = { [weak self] in self?.authentication?.authenticated == true }
         familiarPermissions.call = { [weak self] method, params, completion in self?.nativeCall(method, params: params, completion: completion) }
         authentication.window = panel
+        panel.onEscape = { [weak self] in
+            guard let self, self.panel.isKeyWindow, self.panel.isVisible, NSApp.modalWindow == nil, self.panel.attachedSheet == nil, !self.displayMenuOpen, self.trackingNativeMenus.isEmpty, !self.authentication.busy, !self.spotify.busy else { return false }
+            if !self.authentication.authenticated { self.panel.orderOut(nil); return true }
+            // Forward child WKWebView Escape into the trusted app's dismissal stack. Never navigate or close a provider page.
+            self.web.evaluateJavaScript("window.OpenSesameEscape?.native()", completionHandler: nil)
+            return true
+        }
         authentication.changed = { [weak self] in self?.authenticationChanged() }
         showSignIn()
         let pendingURLs = pendingAuthenticationURLs; pendingAuthenticationURLs.removeAll()
@@ -141,6 +153,13 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         positionPanel()
         panel.orderFrontRegardless()
         watchPointerDisplay()
+    }
+
+    @objc func nativeMenuBegan(_ notification: Notification) {
+        if let menu = notification.object as? NSMenu { trackingNativeMenus.insert(ObjectIdentifier(menu)) }
+    }
+    @objc func nativeMenuEnded(_ notification: Notification) {
+        if let menu = notification.object as? NSMenu { trackingNativeMenus.remove(ObjectIdentifier(menu)) }
     }
 
     func showSignIn() {
@@ -262,7 +281,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         // the pointer/window moved while a native dropdown was tracking.
         if event.window != nil { return }
         let point = NSEvent.mouseLocation
-        guard panel.isVisible, !panel.frame.contains(point), NSApp.modalWindow == nil, panel.attachedSheet == nil else { return }
+        guard panel.isVisible, !panel.frame.contains(point), trackingNativeMenus.isEmpty, NSApp.modalWindow == nil, panel.attachedSheet == nil else { return }
         // App-owned menus and pickers are part of the current interaction.
         if NSApp.windows.contains(where: { ($0 is NSSavePanel) && $0.isVisible }) { return }
         if let button = status.button, let window = button.window, window.convertToScreen(button.convert(button.bounds, to: nil)).contains(point) { return }
@@ -334,7 +353,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     }
 
     var displayInteractionInProgress: Bool {
-        displayMenuOpen || NSEvent.pressedMouseButtons != 0 || panel?.inLiveResize == true || NSApp.modalWindow != nil || panel?.attachedSheet != nil || authentication?.busy == true || spotify?.busy == true || NSApp.windows.contains { ($0 is NSSavePanel) && $0.isVisible }
+        !trackingNativeMenus.isEmpty || displayMenuOpen || NSEvent.pressedMouseButtons != 0 || panel?.inLiveResize == true || NSApp.modalWindow != nil || panel?.attachedSheet != nil || authentication?.busy == true || spotify?.busy == true || NSApp.windows.contains { ($0 is NSSavePanel) && $0.isVisible }
     }
 
     func placementScreen() -> NSScreen? {
@@ -673,7 +692,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { vnc.closeAll(); screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { vnc.closeAll(); screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didEndTrackingNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

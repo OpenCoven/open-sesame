@@ -1,0 +1,64 @@
+/* One playlist component for YouTube, YouTube Music, and local Media. */
+#widget-anchor #widget-panel .playlist-rail{--playlist-row-height:58px;--playlist-pager-height:32px;box-sizing:border-box;gap:8px;padding-top:0;color:var(--ink-primary);border-left-color:var(--line)}
+#widget-anchor #widget-panel .playlist-rail-heading{position:relative;display:flex;align-items:center;gap:6px;flex:none;height:32px;min-height:32px;margin:0;padding:0;font-size:12px;color:var(--ink-primary)}
+#widget-anchor #widget-panel .playlist-rail-title{display:flex;align-items:center;gap:7px;flex:1;min-width:0}
+#widget-anchor #widget-panel .playlist-rail-title strong{font-size:12px;font-weight:500;letter-spacing:.01em;color:var(--ink-primary)}
+#widget-anchor #widget-panel .playlist-rail-heading>span{flex:1;min-width:0}
+#widget-anchor #widget-panel .playlist-rail #youtube-queue-count{flex:none;min-width:0;padding:0 5px;line-height:18px;border:0;border-radius:5px;background:var(--surface-raised);color:var(--ink-muted);font-size:10px;font-variant-numeric:tabular-nums}
+#widget-anchor #widget-panel .playlist-rail-heading :is(#youtube-queue-reset,#media-repeat){display:grid;place-items:center;flex:none;width:28px;height:28px;min-height:28px;margin:0;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface-base);color:var(--ink-secondary)}
+#widget-anchor #widget-panel .playlist-rail-heading :is(#youtube-queue-reset,#media-repeat) svg{width:14px;height:14px}
+#widget-anchor #widget-panel .playlist-rail #youtube-sort-toggle{display:flex;align-items:center;gap:5px;flex:none;width:auto;max-width:none;height:28px;min-height:28px;margin-left:auto;padding:0 7px;border:1px solid var(--line);border-radius:7px;background:var(--surface-base);color:var(--ink-secondary);font-size:10px;line-height:16px}
+#widget-anchor #widget-panel .playlist-rail #youtube-sort-toggle svg{width:9px;height:9px;transform:rotate(90deg)}
+#widget-anchor #widget-panel .playlist-rail .youtube-queue-tools{display:flex;flex:none;height:34px;min-height:34px;margin:0;gap:0}
+#widget-anchor #widget-panel .playlist-rail-search{box-sizing:border-box;display:flex;align-items:center;flex:none;width:100%;height:34px;min-height:34px;padding:0 9px;gap:7px;border:1px solid var(--line);border-radius:8px;background:var(--surface-inset);color:var(--ink-muted)}
+#widget-anchor #widget-panel .playlist-rail .youtube-queue-tools>.playlist-rail-search{flex:1}
+#widget-anchor #widget-panel .playlist-rail-search:focus-within{border-color:#51465f;background:var(--surface-inset)}
+#widget-anchor #widget-panel .playlist-rail-search>i{display:grid;place-items:center;flex:none}
+#widget-anchor #widget-panel .playlist-rail-search svg{width:13px;height:13px}
+#widget-anchor #widget-panel .playlist-rail-search input{width:100%;min-width:0;height:30px;margin:0;padding:0;background:none!important;border:0!important;outline:0!important;box-shadow:none!important;font:inherit;font-size:11px;line-height:18px;color:var(--ink-primary)}
+#widget-anchor #widget-panel .playlist-rail-search>button{display:grid;place-items:center;flex:none;width:24px;height:24px;margin-right:-5px;padding:5px;border-radius:5px;background:none;color:var(--ink-secondary)}
+#widget-anchor #widget-panel .playlist-rail #youtube-queue-status{flex:none;min-height:14px;height:14px;margin:0;font-size:9px;line-height:14px;color:var(--ink-muted)}
+#widget-anchor #widget-panel .playlist-rail .playlist-rail-list{display:flex;flex-direction:column;flex:1;min-height:0;margin:0;padding:0;gap:4px;list-style:none;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-row,.media-track){box-sizing:border-box;flex:none;height:var(--playlist-row-height);min-height:var(--playlist-row-height);margin:0;padding:0 4px;border:1px solid transparent;border-radius:8px;background:var(--surface-base);color:var(--ink-primary);box-shadow:none}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-row,.media-track):hover{background:var(--surface-hover)}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-row,.media-track).current{border-color:#453b50;background:var(--surface-selected);box-shadow:inset 2px 0 var(--accent)}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-track,.media-track>button){display:flex;align-items:center;gap:7px;flex:1;min-width:0;height:100%;margin:0;padding:5px 2px;text-align:left;border:0;background:none;color:var(--ink-primary)}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-track,.media-track>button)>span{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-track strong,.media-track strong){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;max-height:30px;overflow:hidden;text-overflow:ellipsis;white-space:normal;color:var(--ink-primary);font-size:11px;line-height:15px;font-weight:450}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-track small,.media-track small,.youtube-track-date){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-muted);font-size:9px;line-height:12px;font-variant-numeric:tabular-nums}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-track-number,.media-track-number){flex:none;min-width:18px;text-align:center;font-size:9px}
+#widget-anchor #widget-panel .playlist-rail .youtube-track-meta{gap:8px}
+#widget-anchor #widget-panel .playlist-rail .youtube-drag-handle{flex:none;width:16px;height:34px;margin:0;padding:2px;color:var(--ink-muted)}
+#widget-anchor #widget-panel .playlist-rail .youtube-move-controls{width:18px}
+#widget-anchor #widget-panel .playlist-rail .youtube-move-controls button{width:18px;height:20px;padding:3px;color:var(--ink-secondary)}
+#widget-anchor #widget-panel .playlist-rail .youtube-sort-menu{top:calc(100% + 5px);right:0;width:min(180px,100%);padding:5px;border-radius:9px;z-index:8}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-pages,.workspace-pagination){box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;flex:none;height:var(--playlist-pager-height);min-height:var(--playlist-pager-height);margin:0;padding:0 2px;border:1px solid var(--line);border-radius:8px;background:var(--surface-raised);font-size:10px;color:var(--ink-secondary);font-variant-numeric:tabular-nums}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-pages,.workspace-pagination)>button{display:grid;place-items:center;width:28px;height:28px;margin:0;padding:7px;border:0;border-radius:6px;background:none;color:var(--ink-secondary)}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-pages,.workspace-pagination)>span{min-width:0;padding:0 6px;white-space:nowrap}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-pages,.workspace-pagination) svg{width:12px;height:12px}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-pages,.workspace-pagination)>button:first-child svg{transform:rotate(180deg)}
+#widget-anchor #widget-panel .playlist-rail :is(button:focus-visible,.youtube-queue-row:focus-within){outline-offset:-2px}
+#widget-anchor #widget-panel .playlist-rail :is(.youtube-queue-row.drop-before,.youtube-queue-row.drop-after){border-color:var(--accent)}
+#widget-anchor #widget-panel .playlist-rail :is(#youtube-queue-empty,#media-queue-empty){max-width:none;margin:10px 2px;font-size:11px;line-height:1.6;color:var(--ink-secondary)}
+
+#widget-anchor #widget-panel .youtube-workspace.playlist-overlay .youtube-queue-heading{padding-right:0}
+
+/* On small screens the playlist owns the whole widget, including space normally used by toolbars and capture. */
+#widget-anchor #widget-panel .playlist-sheet-close{display:none}
+#widget-anchor #widget-panel .playlist-rail.playlist-sheet{position:absolute;inset:6px;z-index:150;display:flex;flex-direction:column;box-sizing:border-box;width:auto;max-width:none;height:auto;min-height:0;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--surface-base);box-shadow:none;overflow:auto;overscroll-behavior:contain}
+#widget-anchor #widget-panel .playlist-sheet .playlist-sheet-close{display:grid;place-items:center;flex:none;width:28px;height:28px;margin:0;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised);color:var(--ink-secondary)}
+#widget-anchor #widget-panel .playlist-sheet .playlist-sheet-close svg{width:14px;height:14px}
+#widget-anchor #widget-panel .playlist-sheet .playlist-rail-list{min-height:var(--playlist-row-height)}
+ #widget-anchor #widget-panel .playlist-rail.playlist-sheet[data-short=true]{--playlist-row-height:40px;--playlist-pager-height:24px;inset:3px;padding:6px;gap:4px;border-radius:8px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] .playlist-rail-heading{height:26px;min-height:26px;gap:4px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] :is(.playlist-rail-heading>button,#youtube-sort-toggle,#youtube-queue-reset){height:24px;min-height:24px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] .playlist-rail-title{gap:4px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] .playlist-rail-title strong{font-size:11px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] :is(.playlist-rail-search,.youtube-queue-tools){height:26px;min-height:26px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] .playlist-rail-search input{height:24px;font-size:10px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true]:has(.youtube-track:not(:disabled)) #youtube-queue-status{display:none}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] :is(.youtube-track strong,.media-track strong){font-size:10px;line-height:12px;max-height:12px;-webkit-line-clamp:1}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] :is(.youtube-track small,.media-track small,.youtube-track-date){font-size:8px;line-height:10px}
+ #widget-anchor #widget-panel .playlist-sheet[data-short=true] :is(.youtube-queue-pages,.workspace-pagination)>button{height:22px;width:24px;padding:5px}
+
+#widget-anchor #widget-panel .playlist-sheet :is(#youtube-queue-list,#media-queue-list){min-height:var(--playlist-row-height)}

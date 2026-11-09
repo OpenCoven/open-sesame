@@ -1,12 +1,13 @@
 'use strict';
 (()=>{
-  const views={widgets:'plugins',plugins:'plugins',console:'agents',familiars:'familiars',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
+  const views={widgets:'plugins',plugins:'plugins',console:'agents',familiars:'familiars',projects:'items',library:'items',reader:'reading',live:'audio',agents:'agents',desktops:'remote',lockin:'lockin',entertainment:'entertainment',music:'music',focus:'focus',youtube:'youtube',media:'media',terminal:'terminal',shells:'terminal',items:'items',reading:'reading',vnc:'remote'};
   function isReservedCommand(name){
     const first=name.trim().toLowerCase().split(/\s+/)[0];
     return Object.hasOwn(views,first) || ['tools','tool','record','transcribe','agent','computer','note','outline','task','todo','bookmark','search','find','screenshot'].includes(first);
   }
   function interpret(raw,type='auto',context=''){
     if(window.OpenSesameLauncher?.active)context='';
+    const shell=window.OpenSesameShellInput?.interpret(raw,context);if(shell)return shell;
     const text=raw.trim();if(!text)return context==='terminal'&&window.OpenSesameCovenChat?.isActive()?{kind:'chat',task:'',incomplete:true,hint:'Enter to send · Shift Enter for a new line',label:'Send to familiar'}:{kind:'item',hint:'Capture, or type / for commands'};
     const calculation=type==='auto'&&!/^[!\/]/.test(text)?window.OpenSesameCalculator?.calculate(text):null;
     if(calculation)return {kind:'calculation',calculation,incomplete:!!calculation.error,label:'Copy result',hint:calculation.error||'Enter to copy result'};
@@ -97,7 +98,7 @@
     const term=manual?'':input().value.trim().replace(/\s+/g,' ').toLowerCase(),live=liveMenu(),query=(live?'live:':'global:')+term;
     if(query!==lastQuery&&!manual){menuPage=active=0;trail=[];group='all'}lastQuery=query;manualMenu=manual;menuInputValue=input().value;
     const questions=live?window.OpenSesameQuestionShortcuts.all().map(s=>({id:s.name,value:'/'+s.name,label:s.name,description:s.prompt,kind:'question',icon:'chat',group:'questions'})):[];
-    const destinations=[['focus','Focus','Music, timer, YouTube, and media','focus'],['projects','Projects','Notes, bookmarks, tasks, and recent items','items'],['console','Console','Shells, agents, and desktops','terminal'],['reader','Reader','Articles, papers, and saved reading','rss'],['live','Live','Transcribe and ask about a conversation','mic'],['widgets','Widgets','Apps, accounts, and local connections','plugins']].map(([id,label,description,icon])=>({id:'launch-'+id,value:'/'+id,label,description,icon,group:'open',kind:'destination'}));
+    const destinations=[['focus','Focus','Timer, agenda, and calendar','focus'],['entertainment','Media','Music, YouTube, and local files','music'],['projects','Projects','Notes, bookmarks, tasks, and recent items','items'],['console','Console','Shells, agents, and desktops','terminal'],['reader','Reader','Articles, papers, and saved reading','rss'],['live','Live','Transcribe and ask about a conversation','mic'],['widgets','Widgets','Apps, accounts, and local connections','plugins']].map(([id,label,description,icon])=>({id:'launch-'+id,value:'/'+id,label,description,icon,group:'open',kind:'destination'}));
     const entries=window.OpenSesameLauncher?.active?[...destinations,...catalog.roots.filter(row=>!['open','focus'].includes(row.id))]:[...questions,...catalog.roots],branch=trail.at(-1);
     matches=branch?branch.children:catalog.search(term,entries).filter(row=>group==='all'||row.group===group);
     measureMenu();menuPage=Math.min(menuPage,Math.max(0,Math.ceil(matches.length/pageSize)-1));
@@ -123,14 +124,14 @@
     const wanted=Math.min(cap,Math.max(22,field.scrollHeight));field.style.height=wanted+'px';field.style.overflowY=field.scrollHeight>cap?'auto':'hidden';
     field.closest('.widget-capture-footer').classList.toggle('capture-multiline',wanted>34);if(!menu().hidden){const previous=pageSize;measureMenu();if(previous!==pageSize){menuPage=active=0;renderMenu()}}
   })}
-  function writeDraft(){if(!ready)return;try{const value=input().value;if(!value&&!attachedUrl){localStorage.removeItem(DRAFT);return}localStorage.setItem(DRAFT,JSON.stringify({value,type:el('capture-type').value,projectId:el('capture-project').value,url:attachedUrl,ignored:ignoredInlineUrl}))}catch{}}
+  function writeDraft(){if(!ready)return;if(window.OpenSesameShellInput?.active){window.OpenSesameShellInput.saveDraft();return}try{const value=input().value;if(!value&&!attachedUrl){localStorage.removeItem(DRAFT);return}localStorage.setItem(DRAFT,JSON.stringify({value,type:el('capture-type').value,projectId:el('capture-project').value,url:attachedUrl,ignored:ignoredInlineUrl}))}catch{}}
   function refresh(){
     const value=input().value;
     if(value!==dismissedValue)dismissedValue=null;
     const typed=value.trimStart(), live=liveMenu(), partial=live && typed.startsWith('/') && window.OpenSesameQuestionShortcuts.all().some(s=>('/'+s.name).startsWith(typed.trim().replace(/\s+/g,' ').toLowerCase()));
-    if(!menu().hidden&&manualMenu&&value===menuInputValue)show(true);else if(typed.startsWith('/')&&(!/\s/.test(typed)||partial)&&value!==dismissedValue)show();else if(window.OpenSesameLauncher?.active&&!typed.startsWith('/')&&!typed.startsWith('!')&&!window.OpenSesameCalculator?.calculate(value)&&value!==dismissedValue)show();else hide();resize();
-    const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={familiars:'Familiars',plugins:'Widgets',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
-    const mode=intent.kind==='calculation'?'Calculate':intent.kind==='live'?'Live':intent.kind==='find'?'Find':intent.kind==='chat'?'Coven':intent.kind==='bash'?'Bash':intent.kind==='agent'?(intent.computer?'Computer':'Coven'):intent.kind==='view'?labels[intent.view]||'Open':kind==='task'?'Task':kind==='note'?'Note':url||kind==='bookmark'?'Bookmark':'Note';el('capture-intent').textContent=mode;el('capture-intent').hidden=!value.trim()&&!url;el('capture-intent').dataset.mode=mode.toLowerCase();el('capture-command-toggle').innerHTML=icon(intent.kind==='agent'||intent.kind==='bash'?'terminal':intent.kind==='view'&&intent.view==='reading'?'rss':mode==='Task'?'task':mode==='Bookmark'?'bookmark':'capture');
+    if(!menu().hidden&&manualMenu&&value===menuInputValue)show(true);else if(typed.startsWith('/')&&(!window.OpenSesameShellInput?.active||typed==='/'||isReservedCommand(typed.slice(1).split(/\s/)[0]))&&(!/\s/.test(typed)||partial)&&value!==dismissedValue)show();else if(window.OpenSesameLauncher?.active&&!typed.startsWith('/')&&!typed.startsWith('!')&&!window.OpenSesameCalculator?.calculate(value)&&value!==dismissedValue)show();else hide();resize();
+    const type=el('capture-type').value,intent=interpret(value,type,state.scenario),url=draftUrl(),kind=intent.type||type,labels={entertainment:'Media',familiars:'Familiars',plugins:'Widgets',music:'Music',focus:'Focus',youtube:'YouTube',media:'Media',agents:'Agents',terminal:'Shells',items:'Items',reading:'Reading',remote:'Desktops'};
+    const mode=intent.kind==='shell'?'Shell':intent.kind==='calculation'?'Calculate':intent.kind==='live'?'Live':intent.kind==='find'?'Find':intent.kind==='chat'?'Coven':intent.kind==='bash'?'Bash':intent.kind==='agent'?(intent.computer?'Computer':'Coven'):intent.kind==='view'?labels[intent.view]||'Open':kind==='task'?'Task':kind==='note'?'Note':url||kind==='bookmark'?'Bookmark':'Note';el('capture-intent').textContent=mode;el('capture-intent').hidden=intent.kind!=='shell'&&!value.trim()&&!url;el('capture-intent').dataset.mode=mode.toLowerCase();el('capture-command-toggle').innerHTML=icon(['agent','bash','shell'].includes(intent.kind)?'terminal':intent.kind==='view'&&intent.view==='reading'?'rss':mode==='Task'?'task':mode==='Bookmark'?'bookmark':'capture');
     clearTimeout(draftTimer);draftTimer=setTimeout(writeDraft,200);
   }
   window.openSesameCapture={openMenu:()=>{dismissedValue=null;group='all';trail=[];show(false)},choose:()=>choose(active,true),back,interpret,isReservedCommand,hide,refresh,resize,execute(intent){
@@ -173,7 +174,7 @@
         return;
       }
     }
-    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(!menu().hidden&&back())return;dismissedValue=input().value;if(!menu().hidden)hide();else input().blur();return}
+    if(event.key==='Escape'){if(menu().hidden)return;event.preventDefault();event.stopPropagation();if(back())return;dismissedValue=input().value;hide();return}
     if(!menu().hidden&&!event.shiftKey){
       if(['Home','End'].includes(event.key)&&!event.ctrlKey&&!event.metaKey){event.preventDefault();event.stopPropagation();menuPage=event.key==='Home'?0:Math.max(0,Math.ceil(matches.length/pageSize)-1);active=event.key==='Home'?0:Math.max(0,(matches.length-1)%pageSize);renderMenu();return}
       if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();event.stopPropagation();if(matches.length)moveAcrossPages(event.key==='ArrowUp'?-1:1);return}
