@@ -26,3 +26,5 @@ Console → Desktops supports direct VNC host/port connections in the authentica
 Connect explicitly, enter credentials when requested, and optionally remember them in macOS Keychain. Browser credentials stay in memory. Sessions offer fit/actual size, view-only, fullscreen, Ctrl-Alt-Del, manual text clipboard transfer, disconnect and reconnect. Up to four built-in connections can remain open while switching tools. Logout, reload and exit close them. Existing HTTPS viewer pages retain their separate authentication and cannot report an RFB handshake to Open Sesame.
 
 Real installed-app, macOS Screen Sharing, standard VNC server and secure gateway acceptance remains pending; local transport and controller tests alone do not establish interoperability.
+
+Reusable declarative tools provide local import, fixture preview, expandable/pinned collection cards, launcher navigation and explicit approved actions. GitHub summaries use existing connected repositories; feed headlines use saved Reader data. See [tool creation and submissions](tools.md). Automated contract/UI tests and native compilation do not establish rendered layout or live-provider acceptance.

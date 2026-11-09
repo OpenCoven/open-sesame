@@ -9,6 +9,7 @@
   function snapshot(){
     document.activeElement?.blur();if(window.OpenSesameNotes?.finish(false)===false)throw Error('Save the current note before moving it.');
     return {
+      tools:window.OpenSesameTools?.handoff(),
       state:{...state},items:clone(items),projects:clone(projects),
       view:{libraryOpen,detailFullWidth,selectedItemId,projectFilter,categoryFilter,itemsArchive,itemsView,itemsPage,libraryQuery,categories:[...expandedCategories]},
       draft:{text:el('capture-input').value,type:el('capture-type').value,project:el('capture-project').value,attachedUrl,ignoredInlineUrl},
@@ -19,6 +20,7 @@
   }
   function accept(data){
     if(!data)return;
+    window.OpenSesameTools?.handoff(data.tools);
     const size=state.size,layout=state.layout;Object.assign(state,data.state,{size,layout,expanded:true});
     items=clone(data.items);projects=clone(data.projects);
     ({libraryOpen,detailFullWidth,selectedItemId,projectFilter,categoryFilter,itemsArchive,itemsView,itemsPage,libraryQuery}=data.view);
@@ -128,10 +130,6 @@
     if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification','open-sesame-select-menu'].includes(node.id)))return;
     void collapse({outside:true});
   });
-  document.addEventListener('keydown',event=>{
-    if(event.key!=='Escape'||event.defaultPrevented||document.querySelector('dialog[open]')||event.target.closest('input,textarea,select,[contenteditable],.terminal-native'))return;
-    if(!detached&&state.size==='full'&&!document.fullscreenElement){event.preventDefault();event.stopImmediatePropagation();state.size=restoreSize;render()}
-  },true);
   window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{sync();window.dispatchEvent(new Event('open-sesame-layout'))})});
   window.addEventListener('pagehide',()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
   function show(){if(window.OpenSesameLauncher?.active)window.OpenSesameLauncher.close(true);else setExpanded(true,{focus:true})}

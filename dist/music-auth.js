@@ -90,7 +90,7 @@
     let record=null;try{record=JSON.parse(sessionStorage.getItem(PENDING)||'null')}catch{}
     sessionStorage.removeItem(PENDING);
     if(!supports(service)||!record||!state){setError('spotify','This sign-in return could not be verified. Please reconnect.');return}
-    service='spotify';window.OpenSesameMusic.choose('spotify');document.getElementById('tab-lockin')?.click();document.getElementById('lockin-music')?.click();open();
+    service='spotify';window.OpenSesameMusic.choose('spotify');document.getElementById('tab-entertainment')?.click();document.getElementById('lockin-music')?.click();open();
     const s=states.spotify;
     if(!m.validReturn(record,state,redirectURI)){setError('spotify','This sign-in return could not be verified. Please reconnect.');return}
     if(error){setError('spotify',error==='access_denied'?'Sign-in cancelled.':'Spotify could not authorize this app. Check app setup.');return}

@@ -1,0 +1,47 @@
+/* Focus owns the timer and calendar. Playback lives in the independent Media activity. */
+#widget-anchor #widget-panel #pane-focus{--focus-topic-height:36px;--focus-wide-layout:0;gap:10px;padding:0}
+#widget-anchor #widget-panel #pane-focus>.focus-top{height:34px;min-height:34px;margin:0;gap:10px;align-items:center}
+#widget-anchor #widget-panel #pane-focus .focus-view-tabs{display:flex;align-items:center;gap:3px;height:32px;min-height:32px;margin:0;padding:3px;border:1px solid var(--line);border-radius:9px;background:var(--surface-base);box-shadow:none}
+#widget-anchor #widget-panel #pane-focus .focus-view-tabs>button{height:24px!important;min-height:24px;padding:0 10px!important;border:1px solid transparent;border-radius:6px;background:none;color:var(--ink-secondary);font-size:11px;line-height:22px;box-shadow:none}
+#widget-anchor #widget-panel #pane-focus .focus-view-tabs>button[aria-selected=true]{background:var(--surface-selected);border-color:#453b50;color:var(--ink-primary)}
+#widget-anchor #widget-panel #pane-focus .focus-view-tabs>button:after{display:none}
+#widget-anchor #widget-panel #pane-focus #focus-duration-open{height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-raised);font-size:11px;color:var(--ink-secondary);box-shadow:none}
+#widget-anchor #widget-panel #pane-focus .focus-clock-row{grid-template-columns:minmax(0,1.7fr) minmax(150px,1fr);align-items:stretch;gap:20px;min-height:0;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--surface-inset);box-shadow:none}
+#widget-anchor #widget-panel #pane-focus .focus-clock-face{display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+#widget-anchor #widget-panel #pane-focus .timer-value{font-size:min(85cqh,calc(94cqw / var(--timer-em-width,2.86)),260px);line-height:1;letter-spacing:-.055em;color:var(--ink-primary);font-weight:350}
+#widget-anchor #widget-panel #pane-focus .focus-current{align-self:center;gap:6px;min-width:0;padding-left:20px;border-left:1px solid var(--line)}
+#widget-anchor #widget-panel #pane-focus .focus-current>span{font-size:9px;color:var(--ink-muted);letter-spacing:.1em}
+#widget-anchor #widget-panel #pane-focus .focus-current>strong{font-size:clamp(16px,1.7cqw,24px);line-height:1.3;color:var(--ink-primary)}
+#widget-anchor #widget-panel #pane-focus .focus-current>small{font-size:11px;color:var(--ink-secondary)}
+#widget-anchor #widget-panel #pane-focus .focus-current .focus-bottom{margin-top:12px}
+#widget-anchor #widget-panel #pane-focus .focus-current .focus-bottom>div{grid-template-columns:minmax(0,1fr) 32px 32px;max-width:270px;gap:6px}
+#widget-anchor #widget-panel #pane-focus .focus-current .focus-bottom button{height:34px;width:32px;border:1px solid var(--line);border-radius:8px;background:var(--surface-raised);color:var(--ink-secondary);box-shadow:none}
+#widget-anchor #widget-panel #pane-focus .focus-current #focus-start{width:100%;height:34px;padding:0 10px;background:var(--accent);border-color:var(--accent);color:var(--surface-inset)}
+#widget-anchor #widget-panel #pane-focus .focus-current #focus-start span{display:inline}
+#widget-anchor #widget-panel #pane-focus .focus-agenda-caption{display:none;font-size:11px;font-weight:500;color:var(--ink-secondary);align-self:end}
+#widget-anchor #widget-panel #pane-focus #focus-topic-list{flex:none;min-height:0;max-height:none;overflow:auto;scrollbar-width:thin}
+#widget-anchor #widget-panel #pane-focus .focus-topic{height:var(--focus-topic-height);min-height:var(--focus-topic-height);max-height:var(--focus-topic-height);padding:5px 9px;border:1px solid transparent;border-bottom-color:var(--line);border-radius:7px;gap:8px}
+#widget-anchor #widget-panel #pane-focus .focus-topic input{font-size:11px;line-height:20px;padding:0;background:none}
+#widget-anchor #widget-panel #pane-focus .focus-topic :is(small,.topic-index){font-size:9px;color:var(--ink-muted)}
+#widget-anchor #widget-panel #pane-focus .focus-topic input[type=number]{width:38px;font-size:10px}
+#widget-anchor #widget-panel #pane-focus .focus-topic button{display:grid;place-items:center;width:24px;height:24px;padding:6px;border-radius:5px;color:var(--ink-muted)}
+#widget-anchor #widget-panel #pane-focus .agenda-time-labels{font-size:9px;line-height:14px;color:var(--ink-muted)}
+@container open-sesame-widget (min-width:1050px){
+ #widget-anchor #widget-panel #pane-focus:not([data-focus-view=calendar]){--focus-wide-layout:1;display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr);grid-template-rows:34px 26px minmax(0,1fr) 5px 20px;gap:12px 24px}
+ #widget-anchor #widget-panel #pane-focus>.focus-top{grid-column:1/-1;grid-row:1}
+ #widget-anchor #widget-panel #pane-focus .focus-clock-row{grid-column:1;grid-row:2/4;margin:0}
+ #widget-anchor #widget-panel #pane-focus .focus-agenda-caption{display:block;grid-column:2;grid-row:2}
+ #widget-anchor #widget-panel #pane-focus #focus-topic-list{grid-column:2;grid-row:3;height:auto!important;align-self:stretch}
+ #widget-anchor #widget-panel #pane-focus .agenda-timeline{grid-column:1;grid-row:4}
+ #widget-anchor #widget-panel #pane-focus .agenda-time-labels{grid-column:1;grid-row:5}
+ #widget-anchor #widget-panel #pane-focus .focus-pagination{grid-column:2;grid-row:4/6;align-self:end;margin:0}
+}
+@container open-sesame-widget (max-width:520px){
+ #widget-anchor #widget-panel #pane-focus{gap:7px;--focus-topic-height:32px}
+ #widget-anchor #widget-panel #pane-focus .focus-clock-row{grid-template-columns:minmax(0,1fr) minmax(116px,1fr);padding:12px;gap:12px;border-radius:12px}
+ #widget-anchor #widget-panel #pane-focus .focus-current{padding-left:12px;gap:4px}
+ #widget-anchor #widget-panel #pane-focus .focus-current>strong{font-size:14px}
+ #widget-anchor #widget-panel #pane-focus .focus-current .focus-bottom>div{grid-template-columns:minmax(0,1fr) 26px 26px;gap:4px}
+ #widget-anchor #widget-panel #pane-focus .focus-current #focus-start span{display:none}
+ #widget-anchor #widget-panel #pane-focus .focus-current .focus-bottom button{height:30px;width:26px;padding:5px}
+}

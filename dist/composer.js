@@ -15,7 +15,7 @@
     if(full&&hadText&&!hasText){hadText=false;fullscreen(false)}hadText=hasText;
     const next=full||footer.contains(document.activeElement)||!!window.OpenSesameVoice?.active||!document.getElementById('capture-url-row').hidden||!document.getElementById('capture-commands').hidden;
     footer.classList.toggle('capture-has-draft',hasText);footer.classList.toggle('capture-expanded',next);
-    if(document.getElementById('capture-type').value==='auto'&&!hasText)input.placeholder=window.OpenSesameLauncher?.active?'Search views, type a command, or calculate…':state.scenario==='audio'?(window.OpenSesameLive?.placeholder()||'Ask about the conversation…'):window.OpenSesameCovenChat?.isActive()?'Message Coven, or speak…':({items:'Note, task, or paste a link…',reading:'Paste an article, paper, or type /…',terminal:'Ask an agent, or ! for Bash…',remote:'Capture a note, or / for commands…',focus:'Capture a thought, or /focus…'})[state.scenario]||'Capture, ask, or speak…';
+    if(window.OpenSesameShellInput?.active){const target=window.OpenSesameTerminal?.inputTarget();input.placeholder=target?.mode==='web'?'Type directly in the web terminal…':target?.ready?'Type in '+target.name+'…':target?.connecting?'Opening '+target.name+'…':'Open a shell to send input…'}else if(document.getElementById('capture-type').value==='auto'&&!hasText)input.placeholder=window.OpenSesameLauncher?.active?'Search views, type a command, or calculate…':state.scenario==='audio'?(window.OpenSesameLive?.placeholder()||'Ask about the conversation…'):window.OpenSesameCovenChat?.isActive()?'Message Coven, or speak…':({items:'Note, task, or paste a link…',reading:'Paste an article, paper, or type /…',terminal:'Ask an agent, or ! for Bash…',remote:'Capture a note, or / for commands…',focus:'Capture a thought, or /focus…'})[state.scenario]||'Capture, ask, or speak…';
     if(full){const hint=document.getElementById('capture-hint');hint.textContent=hint.textContent.replace(/(^| · )Enter(?= to)/g,'$1⌘ / Ctrl Enter').replace('Shift Enter for a new line','Enter for a new line')}
     if(next!==expanded){expanded=next;window.openSesameCapture?.resize();window.dispatchEvent(new Event('open-sesame-layout'))}
   }
@@ -25,6 +25,7 @@
     if(text.length>650||text.split(/\r?\n/).length>6)setTimeout(()=>{if(input.value.trim())fullscreen(true)},0);
   });
   document.addEventListener('keydown',event=>{
+    if(window.OpenSesameTools?.active)return;
     if(!full||footer.inert||!footer.contains(event.target))return;
     if(event.key==='Escape'&&document.getElementById('capture-commands').hidden&&document.getElementById('capture-url-row').hidden){event.preventDefault();event.stopImmediatePropagation();fullscreen(false)}
     if(event.key==='Tab'&&!event.ctrlKey&&!event.metaKey){const nodes=[...footer.querySelectorAll('button,textarea,input,select')].filter(n=>!n.disabled&&n.getClientRects().length),first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}
