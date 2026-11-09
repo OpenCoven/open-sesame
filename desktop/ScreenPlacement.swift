@@ -58,4 +58,12 @@ enum OpenSesameScreenPlacement {
         x = max(frame.minX + min(4, (frame.width - width) / 2), min(frame.maxX - width - min(4, (frame.width - width) / 2), x))
         return CGRect(x: x, y: max(frame.minY, min(frame.maxY - height, top - height)), width: width, height: height)
     }
+    static func floatingFrame(current: CGRect, visibleFrame: CGRect, center: Bool = false) -> CGRect? {
+        guard valid(current), valid(visibleFrame) else { return nil }
+        let width = min(current.width, visibleFrame.width), height = min(current.height, visibleFrame.height)
+        let x = max(visibleFrame.minX, min(visibleFrame.maxX - width, center ? visibleFrame.midX - width / 2 : current.minX))
+        let y = max(visibleFrame.minY, min(visibleFrame.maxY - height, center ? visibleFrame.midY - height / 2 : current.minY))
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
 }

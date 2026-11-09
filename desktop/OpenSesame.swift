@@ -5,7 +5,7 @@ import ColorSync
 final class NotchPanel: NSPanel {
     var onEscape: (() -> Bool)?
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeMain: Bool { styleMask.contains(.titled) }
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, event.keyCode == 53, event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty, onEscape?() == true { return }
         if event.type == .leftMouseDown {
@@ -33,6 +33,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var fillsDisplay = false
     var placement = "notch"
     var detached = false
+    var keepOpen = false
     var detachedFrame: NSRect?
     var detachedRatio: CGFloat = 16.0 / 9.0
     var beforeFullscreen: NSRect?
@@ -323,8 +324,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         web?.evaluateJavaScript("window.__openSesameReceive && window.__openSesameReceive(\(json))", completionHandler: nil)
     }
     func widgetDisplayMenu() -> NSMenu {
-        let menu = NSMenu(title: "Widget display")
-        let follow = menu.addItem(withTitle: "Follow pointer", action: #selector(selectWidgetDisplay), keyEquivalent: "")
+        let menu = NSMenu(title: "Pin to display")
+        let follow = menu.addItem(withTitle: detached ? "Move freely · widget follows pointer when docked" : "Follow pointer", action: #selector(selectWidgetDisplay), keyEquivalent: "")
         follow.target = self; follow.representedObject = ""; follow.state = displayPreference.uuid == nil ? .on : .off
         menu.addItem(.separator())
         for screen in NSScreen.screens {
@@ -344,7 +345,10 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             displayPreference = OpenSesameDisplayPreference(uuid: uuid, name: choice["name"] ?? "Display")
         } else if sender.representedObject as? String == "" { displayPreference = OpenSesameDisplayPreference() }
         else { return }
-        displayPreference.save(); positionPanel(); publishDisplayPreference()
+        displayPreference.save()
+        if detached, let index = displayPreference.index(in: NSScreen.screens.map(screenUUID)) { positionDetached(on: NSScreen.screens[index], center: true) }
+        else { positionPanel() }
+        publishDisplayPreference()
     }
     func showWidgetDisplayMenu() {
         displayMenuOpen = true
@@ -376,6 +380,13 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     @objc func screenParametersChanged(_ notification: Notification) { needsDisplayReanchor = true; protectedShare?.displayConfigurationChanged(); followPointerDisplay(force: true); publishDisplayPreference() }
 
     func followPointerDisplay(force: Bool = false) {
+        if detached {
+            guard !displayInteractionInProgress else { return }
+            let pinned = displayPreference.index(in: NSScreen.screens.map(screenUUID)).map { NSScreen.screens[$0] }
+            if let target = pinned ?? (needsDisplayReanchor ? panel.screen ?? NSScreen.main : nil), force || needsDisplayReanchor || target != panel.screen { positionDetached(on: target) }
+            needsDisplayReanchor = false
+            return
+        }
         guard OpenSesameScreenPlacement.shouldFollow(placement: placement, detached: detached, visible: panel?.isVisible == true, interacting: displayInteractionInProgress, reconfigure: needsDisplayReanchor), let screen = placementScreen() else { return }
         guard force || needsDisplayReanchor || screenID(screen) != dockedScreenID || screen.frame != dockedScreenFrame else { return }
         positionPanel()
@@ -408,6 +419,17 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     func rememberDetachedFrame(_ frame: NSRect) {
         detachedFrame = frame
         UserDefaults.standard.set(Double(panel.contentRect(forFrameRect: frame).width), forKey: "openSesame.floatingWidth")
+        UserDefaults.standard.set(Double(panel.contentRect(forFrameRect: frame).height), forKey: "openSesame.floatingHeight")
+    }
+
+    func positionDetached(on screen: NSScreen, center: Bool = false) {
+        let area = screen.visibleFrame
+        guard let frame = OpenSesameScreenPlacement.floatingFrame(current: panel.frame, visibleFrame: area, center: center) else { return }
+        let content = panel.contentRect(forFrameRect: area).size
+        panel.contentMinSize = NSSize(width: min(560, content.width), height: min(360, content.height))
+        panel.setFrame(frame, display: true)
+        rememberDetachedFrame(panel.frame)
+        publishDisplay(screen)
     }
 
     func setDetached(_ value: Bool, aspectRatio: CGFloat, focus: Bool = true) {
@@ -420,18 +442,22 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             panel.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             panel.title = "Open Sesame"
             panel.titleVisibility = .visible
-            panel.level = .floating
+            panel.level = keepOpen ? .floating : .normal
+            NSApp.setActivationPolicy(.regular)
             panel.isMovable = true
-            if let screen = panel.screen ?? placementScreen() {
+            let pinned = displayPreference.index(in: NSScreen.screens.map(screenUUID)).map { NSScreen.screens[$0] }
+            if let screen = pinned ?? panel.screen ?? placementScreen() {
                 let area = screen.visibleFrame
                 let contentArea = panel.contentRect(forFrameRect: area).size
                 let storedWidth = UserDefaults.standard.double(forKey: "openSesame.floatingWidth")
-                let preferredWidth = detachedFrame.map { panel.contentRect(forFrameRect: $0).width } ?? (storedWidth.isFinite && storedWidth > 0 ? CGFloat(storedWidth) : currentSize.width)
-                let limit = max(1, min(contentArea.width, contentArea.height * aspectRatio))
-                let width = min(limit, max(800, preferredWidth))
-                panel.contentMinSize = NSSize(width: min(800, limit), height: min(800, limit) / aspectRatio)
-                panel.contentAspectRatio = NSSize(width: aspectRatio, height: 1)
-                let size = panel.frameRect(forContentRect: NSRect(x: 0, y: 0, width: width, height: width / aspectRatio)).size
+                let preferredWidth = detachedFrame.map { panel.contentRect(forFrameRect: $0).width } ?? (storedWidth.isFinite && storedWidth > 0 ? CGFloat(storedWidth) : max(1000, currentSize.width))
+                let storedHeight = UserDefaults.standard.double(forKey: "openSesame.floatingHeight")
+                let preferredHeight = detachedFrame.map { panel.contentRect(forFrameRect: $0).height } ?? (storedHeight.isFinite && storedHeight > 0 ? CGFloat(storedHeight) : preferredWidth / aspectRatio)
+                let width = min(contentArea.width, max(560, preferredWidth))
+                let height = min(contentArea.height, max(360, preferredHeight))
+                panel.contentMinSize = NSSize(width: min(560, contentArea.width), height: min(360, contentArea.height))
+                panel.contentAspectRatio = .zero
+                let size = panel.frameRect(forContentRect: NSRect(x: 0, y: 0, width: width, height: height)).size
                 let x = max(area.minX, min(area.maxX-size.width, detachedFrame?.minX ?? area.midX-size.width/2))
                 let y = max(area.minY, min(area.maxY-size.height, detachedFrame?.minY ?? area.midY-size.height/2))
                 panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
@@ -443,6 +469,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             panel.styleMask = [.borderless]
             panel.minSize = .zero
             panel.level = .statusBar
+            NSApp.setActivationPolicy(.accessory)
             positionPanel()
         }
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -619,15 +646,21 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "speech.stop" {
             voice.stop(id: params["id"] as? String ?? "", cancel: params["cancel"] as? Bool == true); respond(requestId, result: true); return
         }
+        if method == "window.keepOpen" {
+            keepOpen = params["pinned"] as? Bool == true
+            if detached { panel.level = keepOpen ? .floating : .normal }
+            respond(requestId, result: ["pinned": keepOpen]); return
+        }
         if method == "window.detach" {
+            keepOpen = params["pinned"] as? Bool == true
             let ratio = (params["aspectRatio"] as? NSNumber)?.doubleValue ?? Double(detachedRatio)
             guard ratio.isFinite, ratio >= 1, ratio <= 3 else { respond(requestId, error: "Invalid window ratio."); return }
             setDetached(params["detached"] as? Bool == true, aspectRatio: CGFloat(ratio), focus: params["focus"] as? Bool ?? true)
-            respond(requestId, result: ["detached": detached, "alwaysOnTop": true]); return
+            respond(requestId, result: ["detached": detached, "alwaysOnTop": keepOpen]); return
         }
         if method == "window.fullscreen" {
             if detached, let screen = panel.screen ?? NSScreen.main {
-                if let previous = beforeFullscreen { panel.contentAspectRatio = NSSize(width: detachedRatio, height: 1); panel.setFrame(previous, display: true); beforeFullscreen = nil }
+                if let previous = beforeFullscreen { panel.contentAspectRatio = .zero; panel.setFrame(previous, display: true); beforeFullscreen = nil }
                 else { beforeFullscreen = panel.frame; panel.contentAspectRatio = .zero; panel.setFrame(screen.visibleFrame, display: true) }
             }
             respond(requestId, result: ["fullscreen": beforeFullscreen != nil]); return

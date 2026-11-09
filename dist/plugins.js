@@ -9,7 +9,7 @@
   function card(p,c){
     const s=M.status(p,c),button=make('button','plugin-card');button.type='button';button.dataset.plugin=p.id;button.setAttribute('aria-label',p.name+' · '+s.label+' · '+s.action);
     const copy=make('span','plugin-copy');copy.append(make('strong','',p.name),make('small','',p.description));
-    const destination=make('span','plugin-destination',p.kind==='github'?'Repositories':p.kind==='music'?'Focus':p.kind==='agent'?'Live':p.kind==='familiars'?'Console':'Reader');destination.setAttribute('aria-hidden','true');
+    const destination=make('span','plugin-destination',p.kind==='github'?'Projects':p.kind==='music'?'Media':p.kind==='agent'?'Live':p.kind==='familiars'?'Console':'Reader');destination.setAttribute('aria-hidden','true');
     const overview=make('span','plugin-overview'),tags=make('span','plugin-features');for(const feature of features[p.id]||[])tags.append(make('span','',feature));overview.append(make('span','plugin-description',p.detail),tags);
     const footer=make('span','plugin-card-foot'),status=make('span','plugin-state',s.label);status.dataset.tone=s.tone;footer.append(status,make('span','plugin-action',s.action+' ›'));
     button.append(mark(p),destination,copy,overview,footer);button.addEventListener('click',()=>show(p,button));return button;
@@ -30,9 +30,9 @@
     el('plugin-detail-logo').replaceChildren(mark(p));el('plugin-detail-title').textContent=p.name;el('plugin-detail-state').textContent=s.label;el('plugin-detail-state').dataset.tone=s.tone;
     el('plugin-detail-copy').textContent=p.detail;el('plugin-detail-access').textContent=p.access;el('plugin-detail-note').textContent=setup.note;
     el('plugin-detail-steps').replaceChildren(...setup.steps.map(text=>make('li','',text)));el('plugin-detail-repair').textContent=setup.repair;
-    el('plugin-detail-main').textContent=p.kind==='github'?'Open monitor':p.kind==='familiars'?'Connect Coven':p.kind==='music'?(c.music[p.id]?.supported===false?'View account requirements':s.action+' account'):p.kind==='feeds'?'Add a feed':c.desktop&&agents?.[p.id]?'Use in Live':'Check again';
+    el('plugin-detail-main').textContent=p.kind==='github'?(window.OpenSesamePageWidgets?.list().some(x=>x.id==='builtin-github')?'Open in Projects':'Add to Projects'):p.kind==='familiars'?'Connect Coven':p.kind==='music'?(c.music[p.id]?.supported===false?'View account requirements':s.action+' account'):p.kind==='feeds'?'Add a feed':c.desktop&&agents?.[p.id]?'Use in Live':'Check again';
     el('plugin-detail-main').hidden=['agent','familiars','github'].includes(p.kind)&&!c.desktop;el('plugin-detail-main').disabled=checking;
-    el('plugin-detail-open').hidden=p.kind==='github';el('plugin-detail-open').textContent=p.kind==='github'?'Open monitor':p.kind==='music'?'Open in Focus':p.kind==='feeds'?'Open Reader':p.kind==='familiars'?'Open Familiars':'View agents';
+    el('plugin-detail-open').hidden=p.kind==='github';el('plugin-detail-open').textContent=p.kind==='github'?'Open monitor':p.kind==='music'?'Open in Media':p.kind==='feeds'?'Open Reader':p.kind==='familiars'?'Open Familiars':'View agents';
     el('plugin-detail-docs').hidden=!p.docs;if(p.docs)el('plugin-detail-docs').href=p.docs;el('plugin-detail-download').hidden=!['agent','familiars','github'].includes(p.kind)||c.desktop;
   }
   async function refresh(){if(checking)return;const token=++generation;error='';if(!openSesameBridge.available){agents=null;render();return;}checking=true;render();try{const result=await openSesameBridge.request('live.agents');if(token!==generation)return;if(!result||typeof result.claude!=='boolean'||typeof result.codex!=='boolean')throw Error('Update the desktop companion, then check again.');agents={claude:result.claude,codex:result.codex};}catch(e){if(token===generation){agents=null;error='Could not check local agents. Reopen the desktop companion, then refresh.';}}finally{if(token===generation){checking=false;render();}}}

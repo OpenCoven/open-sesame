@@ -56,6 +56,23 @@ class GitHubMonitorTests(unittest.TestCase):
         self.assertNotIn('total', json.dumps(result)); self.assertNotIn('fixture-private-token', json.dumps(result))
         with self.assertRaisesRegex(ValueError, 'Add this repository'): self.monitor.snapshot('other/repo')
 
+    def test_issue_sampling_skips_pull_requests_and_retains_sort_context(self):
+        original = self.fetch
+        def fixture(binary, endpoint, kind, cancel):
+            if kind == 'issues':
+                return ([{'number': n, 'title': 'PR', 'pull_request': {}} for n in range(1, 9)] +
+                        [{'number': n, 'title': 'Issue', 'updated_at': '2026-11-08T12:00:00Z', 'created_at': '2026-11-07T00:00:00Z'} for n in range(9, 21)])
+            if kind == 'runs':
+                return {'workflow_runs': [{'id': 99, 'name': 'Verify', 'head_branch': 'main', 'event': 'push', 'updated_at': '2026-11-08T12:00:00Z', 'status': 'in_progress'}]}
+            return original(binary, endpoint, kind, cancel)
+        self.monitor.fetch = fixture
+        self.monitor.add('owner/project'); result = self.monitor.snapshot('owner/project')
+        issues = result['sections']['issues']['entries']
+        self.assertEqual([e['id'] for e in issues], list(range(9, 17)))
+        self.assertEqual(issues[0]['createdAt'], '2026-11-07T00:00:00Z')
+        run = result['sections']['runs']['entries'][0]
+        self.assertEqual((run['workflow'], run['event'], run['subtitle'], run['state']), ('Verify', 'push', 'main', 'in_progress'))
+
     def test_cache_refresh_floor_offline_and_rate_limit_backoff(self):
         self.monitor.add('owner/project'); first = self.monitor.snapshot('owner/project'); count = len(self.calls)
         self.monitor.snapshot('owner/project', True); self.assertEqual(len(self.calls), count)

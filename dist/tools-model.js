@@ -1,6 +1,8 @@
 'use strict';
 /* Shared by the browser, CLI and checks. Keep tools-schema.json in sync. */
 (() => {
+  const pages = Object.freeze({focus: 'Focus', media: 'Media', projects: 'Projects', console: 'Console', reader: 'Reader', live: 'Live', widgets: 'Widgets'});
+  const page = definition => definition.schemaVersion === 2 ? definition.page : 'widgets';
   const operations = ['github.summary', 'feeds.headlines', 'note.save', 'navigate', 'link.open'];
   const plain = x => x && typeof x === 'object' && !Array.isArray(x) && Object.getPrototypeOf(x) === Object.prototype;
   const text = (x, n = 2000) => typeof x === 'string' && x.length > 0 && x.length <= n;
@@ -19,8 +21,9 @@
     const op = (value, path) => {
       if (!operations.includes(value) || !(Array.isArray(d.capabilities) && d.capabilities.includes(value))) err(path, 'Declare an approved capability');
     };
-    if (!keys(d, ['schemaVersion', 'id', 'version', 'name', 'description', 'author', 'license', 'config', 'capabilities', 'source', 'components', 'actions', 'presentations', 'fixtures'], 'tool')) return errors;
-    if (d.schemaVersion !== 1) err('schemaVersion', 'Use version 1');
+    if (!keys(d, ['schemaVersion', ...(d.schemaVersion === 2 ? ['page'] : []), 'id', 'version', 'name', 'description', 'author', 'license', 'config', 'capabilities', 'source', 'components', 'actions', 'presentations', 'fixtures'], 'tool')) return errors;
+    if (![1, 2].includes(d.schemaVersion)) err('schemaVersion', 'Use version 1 or 2');
+    if (d.schemaVersion === 2 && !Object.hasOwn(pages, d.page)) err('page', 'Declare focus, media, projects, console, reader, live or widgets');
     if (!id(d.id)) err('id', 'Use a lowercase slug');
     if (typeof d.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(d.version)) err('version', 'Use major.minor.patch');
     for (const k of ['name', 'description', 'author', 'license']) if (!text(d[k], 500)) err(k, 'Required text, at most 500 characters');
@@ -95,5 +98,5 @@
     if (!old.previous) throw Error('No previous definition');
     return replace(old, old.previous);
   }
-  globalThis.OpenSesameToolsModel = Object.freeze({validate, parse, configuration, restore, instance, replace, rollback, safeUrl});
+  globalThis.OpenSesameToolsModel = Object.freeze({validate, parse, configuration, restore, instance, replace, rollback, safeUrl, pages, page});
 })();

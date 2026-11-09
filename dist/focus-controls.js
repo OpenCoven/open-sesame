@@ -29,7 +29,7 @@
   el('topic-form').hidden=true;
   const taskName=()=>input.value.replace(/^\s*\/task(?:\s+|$)/i,'').trim();
   function composerSync(){
-    const active=state.scenario==='focus'&&!state.focusOverview&&pane.dataset.focusView!=='calendar'&&!document.body.classList.contains('capture-launcher-open')&&!footer.classList.contains('capture-full');
+    const active=!window.OpenSesamePageWidgets?.active&&state.scenario==='focus'&&!state.focusOverview&&pane.dataset.focusView!=='calendar'&&!document.body.classList.contains('capture-launcher-open')&&!footer.classList.contains('capture-full');
     form.hidden=!active;footer.classList.toggle('agenda-composer-active',active);
     const capped=focusTopics.length>=topicLimit(),locked=focusRunning||capped;
     input.disabled=locked;minutes.disabled=locked;el('agenda-capture-voice').disabled=locked;

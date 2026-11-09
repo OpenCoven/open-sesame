@@ -43,4 +43,4 @@ The hosted static widget cannot open a visitor's local shell. The loopback devel
 
 See [desktop setup](desktop/README.md), the [priority roadmap](docs/desktop-polish-plan.md), and [historical validation snapshots](docs/archive/2026-11-06-prototype-readme.md).
 
-Reusable tools can be imported and previewed through Plugins → Tools or `/tools`. See [tool creation and submissions](docs/tools.md) and the [agent navigation map](AGENTS.md#repository-navigation-and-reusable-tools) for starter packages, the JSON contract, generation prompt and review workflow.
+Reusable tools can be imported and previewed through Widgets → Tools or `/tools`. See [tool creation and submissions](docs/tools.md) and the [agent navigation map](AGENTS.md#repository-navigation-and-reusable-tools) for starter packages, the JSON contract, generation prompt and review workflow.

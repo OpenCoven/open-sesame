@@ -50,10 +50,11 @@
   document.getElementById('pane-plugins').prepend(launch);
 
   function invalidate() { ++ticket; }
-  function persist(next) {
+  function persist(next, discardDraft) {
     if (storageError) throw Error('Saved tool data needs recovery; it has been preserved.');
     localStorage.setItem(key, JSON.stringify(next));
     installed = next;
+    if (discardDraft) drafts.delete(discardDraft);
     invalidate();
     window.dispatchEvent(new Event('open-sesame-tools-changed'));
   }
@@ -64,11 +65,15 @@
       if (b.disabled) return;
       b.disabled = true;
       try { await fn(); }
-      catch (error) { status.textContent = error.toolMessage || 'Could not complete this action. Check the connection or local storage and try again.'; }
+      catch (error) { report(error.toolMessage || 'Could not complete this action. Check the connection or local storage and try again.'); }
       finally { b.disabled = false; }
     };
     host.append(b);
     return b;
+  }
+  function report(text) {
+    status.textContent = text;
+    window.dispatchEvent(new CustomEvent('open-sesame-tool-status', {detail: text}));
   }
   function fail(message) { throw Object.assign(new Error(message), {toolMessage: message}); }
   function exportTool(d) {
@@ -79,14 +84,15 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function renderTool(host, instance, data, live = false, origin = 'Sample data') {
+  function renderTool(host, instance, data, live = false, origin = 'Sample data', scope = () => dialog.open, inline = false) {
     host.replaceChildren();
     const d = instance.definition;
     const fields = drafts.get(instance.id) || M.configuration(d, instance.config);
     drafts.set(instance.id, fields);
     host.append(node('h3', d.name), node('p', d.description));
-    const access = node('small', 'Access: ' + accessText(d));
+    const access = node('small', (live ? '' : M.pages[M.page(d)] + ' tab · ') + 'Access: ' + accessText(d));
     const sourceLabel = node('p', d.source ? origin : live ? 'Local form · actions run only when pressed.' : 'Sample form · actions disabled.');
+    sourceLabel.hidden = inline && !d.source;
     host.append(access, sourceLabel);
     const edit = (field, input) => {
       fields[field] = input.value;
@@ -120,27 +126,28 @@
       label.append(input);
       host.append(label);
     }
+    const controls = node('div'); controls.className = 'tool-actions'; host.append(controls);
     if (live) {
-      button(host, 'Save configuration', () => {
+      button(controls, 'Save configuration', () => {
         persist(installed.map(x => x.id === instance.id ? {...x, config: {...fields}} : x));
-        status.textContent = 'Configuration saved.';
+        report('Configuration saved.');
       });
-      if (d.source) button(host, d.source.operation === 'feeds.headlines' ? 'Load saved headlines' : 'Load live data', async () => {
+      if (d.source) button(controls, d.source.operation === 'feeds.headlines' ? 'Load saved headlines' : 'Load live data', async () => {
         const current = ++ticket, config = {...fields};
-        const valid = () => current === ticket && dialog.open && installed.some(x => x.id === instance.id && x.definition === d);
-        status.textContent = 'Loading…';
+        const valid = () => current === ticket && scope() && installed.some(x => x.id === instance.id && x.definition === d);
+        report('Loading…');
         try {
           const result = await load(d.source.operation, config, valid);
           if (!valid()) return;
-          renderTool(host, instance, result, true, d.source.operation === 'feeds.headlines' ? 'Saved Reader data · refresh feeds in Reader.' : 'GitHub data · refresh is manual.');
-          status.textContent = 'Loaded. No background refresh.';
+          renderTool(host, instance, result, true, d.source.operation === 'feeds.headlines' ? 'Saved Reader data · refresh feeds in Reader.' : 'GitHub data · refresh is manual.', scope, inline);
+          report('Loaded. No background refresh.');
         } catch (error) {
-          if (valid()) status.textContent = error.toolMessage || 'Could not load data. Check the connection in Plugins or Reader, then retry.';
+          if (valid()) report(error.toolMessage || 'Could not load data. Check the connection in Widgets or Reader, then retry.');
         }
       });
     }
     for (const a of d.actions) {
-      const b = button(host, a.label, () => action(a, fields));
+      const b = button(controls, a.label, () => { if (scope()) action(a, fields); });
       b.disabled = !live;
     }
   }
@@ -176,12 +183,11 @@
       items.push(item);
       if (!saveItems()) { items.pop(); fail('Could not save. Your draft is still available.'); }
       renderItems();
-      status.textContent = 'Note saved.';
+      report('Note saved.');
     } else fail('This action is not supported.');
   }
   function replaceInstance(old, definition) {
-    persist(installed.map(x => x.id === old.id ? M.replace(x, definition) : x));
-    drafts.delete(old.id);
+    persist(installed.map(x => x.id === old.id ? M.replace(x, definition) : x), old.id);
     stage.replaceChildren();
     draw();
   }
@@ -194,9 +200,11 @@
     drafts.delete(temp.id);
     button(stage, 'Install as a new instance', () => {
       if (installed.length >= 100) fail('Remove an instance before installing another tool.');
-      persist([...installed, M.instance(d)]);
+      const instance = M.instance(d);
+      persist([...installed, instance]);
       stage.replaceChildren();
       draw();
+      report('Installed in ' + M.pages[M.page(d)] + ' as a new tab.');
     });
     for (const old of installed.filter(x => x.definition.id === d.id)) button(stage, 'Replace ' + old.definition.name, () => {
       const message = 'Replace this tool definition and retain saved configuration? Access: ' + accessText(d) + '. Unsaved edits for this instance will be discarded.';
@@ -224,6 +232,7 @@
     for (const x of installed) {
       const details = node('details'), summary = node('summary', x.definition.name), view = node('article');
       details.append(summary, view);
+      button(details, 'Open in ' + M.pages[M.page(x.definition)], () => { dialog.close(); window.OpenSesamePageWidgets?.open(x.id); });
       details.ontoggle = () => {
         invalidate();
         if (details.open) renderTool(view, x, x.definition.fixtures, true);
@@ -248,6 +257,7 @@
     }
   }
   function open(id) {
+    if (id && window.OpenSesamePageWidgets) { if (dialog.open) dialog.close(); window.OpenSesamePageWidgets.open(id); return; }
     invalidate();
     changeScenario('plugins');
     if (!dialog.open) dialog.showModal();
@@ -273,7 +283,12 @@
   window.addEventListener('open-sesame-layout', () => { if (!state.expanded && dialog.open) dialog.close(); });
   window.addEventListener('open-sesame-tools-changed', catalog);
   catalog();
-  window.OpenSesameTools = {open, get active() { return dialog.open; }, handoff(data) {
+  window.OpenSesameTools = {open, list: () => installed.map(x => ({id: x.id, name: x.definition.name, page: M.page(x.definition), definition: x.definition})), mount(id, host, scope) {
+    const instance = installed.find(x => x.id === id);
+    if (!instance) return () => {};
+    renderTool(host, instance, {}, true, 'Not loaded · choose Load to read your connected source.', scope, true);
+    return invalidate;
+  }, invalidate, get active() { return dialog.open; }, handoff(data) {
     if (data) {
       invalidate();
       drafts.clear();

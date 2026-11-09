@@ -72,6 +72,11 @@ import CoreGraphics
         precondition(!Placement.shouldFollow(placement: "notch", detached: true, visible: true, interacting: false))
         precondition(!Placement.shouldFollow(placement: "notch", detached: false, visible: false, interacting: false))
         precondition(!Placement.shouldFollow(placement: "notch", detached: false, visible: true, interacting: true))
+        let floating = Placement.floatingFrame(current: CGRect(x: 1400, y: -800, width: 1100, height: 700), visibleFrame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))!
+        precondition(floating == CGRect(x: -1100, y: 0, width: 1100, height: 700))
+        let centered = Placement.floatingFrame(current: CGRect(x: 0, y: 0, width: 700, height: 800), visibleFrame: CGRect(x: 1920, y: 0, width: 1280, height: 720), center: true)!
+        precondition(centered == CGRect(x: 2210, y: 0, width: 700, height: 720))
+        precondition(Placement.floatingFrame(current: CGRect(x: 0, y: 0, width: CGFloat.nan, height: 200), visibleFrame: CGRect(x: 0, y: 0, width: 1280, height: 720)) == nil)
         print("Screen placement: pointer/pin priority, persisted UUID restoration, disconnect/reconnect and corrupt preference fallback, offset/shared/mirrored displays, retained sizes, bounded frames, Full and interaction guards passed. No display or pointer was moved.")
     }
 }
