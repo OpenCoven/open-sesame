@@ -62,16 +62,16 @@ interface TokenizerState {
 
 const PATTERNS = {
     // Headings (ATX style)
-    heading: /^(#{1,6})\s+(.*)$/,
+    heading: /^(#{1,6})\s+/,
 
     // Setext headings
     setextH1: /^=+\s*$/,
     setextH2: /^-+\s*$/,
 
     // Lists
-    bulletList: /^(\s*)([-*+])\s+(.*)$/,
-    numberedList: /^(\s*)(\d+)\.\s+(.*)$/,
-    checkList: /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/,
+    bulletList: /^(\s*)([-*+])\s+/,
+    numberedList: /^(\s*)(\d+)\.\s+/,
+    checkList: /^(\s*)[-*+]\s+\[([ xX])\]\s+/,
 
     // Code blocks
     codeFence: /^(\s*)(`{3,}|~{3,})(\w*)?\s*$/,
@@ -95,6 +95,18 @@ const PATTERNS = {
     // Blank line
     blank: /^\s*$/,
 };
+
+// Consume the prefix once, then match content at a single position. Combining
+// whitespace and `(.*)$` in one expression lets a failed content match retry
+// every whitespace partition (quadratic on tabs followed by an embedded CR/LS/PS).
+// The separate anchored content match preserves the original dot/$ semantics,
+// rejecting embedded line terminators, without backtracking into the prefix.
+function matchContentPrefix(line: string, pattern: RegExp): string[] | null {
+    const prefix = line.match(pattern);
+    if (!prefix) return null;
+    const content = line.slice(prefix[0].length).match(/^(.*)$/);
+    return content ? [...prefix, content[1]] : null;
+}
 
 // ============================================================================
 // Tokenizer
@@ -214,7 +226,7 @@ function tokenizeLine(
     }
 
     // ATX Heading
-    const headingMatch = line.match(PATTERNS.heading);
+    const headingMatch = matchContentPrefix(line, PATTERNS.heading);
     if (headingMatch) {
         return {
             type: 'heading',
@@ -252,7 +264,7 @@ function tokenizeLine(
     }
 
     // Check list item (must come before bullet list)
-    const checkListMatch = line.match(PATTERNS.checkList);
+    const checkListMatch = matchContentPrefix(line, PATTERNS.checkList);
     if (checkListMatch) {
         const checked = checkListMatch[2].toLowerCase() === 'x';
         return {
@@ -266,7 +278,7 @@ function tokenizeLine(
     }
 
     // Bullet list item
-    const bulletMatch = line.match(PATTERNS.bulletList);
+    const bulletMatch = matchContentPrefix(line, PATTERNS.bulletList);
     if (bulletMatch) {
         return {
             type: 'bullet_list_item',
@@ -279,7 +291,7 @@ function tokenizeLine(
     }
 
     // Numbered list item
-    const numberedMatch = line.match(PATTERNS.numberedList);
+    const numberedMatch = matchContentPrefix(line, PATTERNS.numberedList);
     if (numberedMatch) {
         return {
             type: 'numbered_list_item',
