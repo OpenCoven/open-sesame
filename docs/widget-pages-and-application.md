@@ -11,3 +11,5 @@ The pop-out uses its actual window canvas with an application header, labeled ac
 Shared UI polish uses flat dark dialogs, consistent tab bars, inputs, button sizes, quiet borders and keyboard focus states. Reading’s add flow has concise Article/PDF, RSS and Website tabs, one primary action, a consistent URL field and optional Advanced options. The detached canvas no longer depends on stale preset pixel dimensions or a WebKit animation frame to follow a window resize.
 
 Focused synthetic checks, the unified Mac verifier, hosted CI, rendered Safari fixtures, native compilation/signature, live providers and installed acceptance are separate evidence classes. Fixtures use synthetic GitHub metadata and do not send a model prompt, capture real user audio/screens or type a command into an existing shell. Actual display relocation, native Dock behavior and real provider behavior require direct installed acceptance.
+
+See [optional widgets and lifecycle controls](widget-lifecycle.md) for activation, deactivation, uninstall, RSS defaults and saved-data behavior.

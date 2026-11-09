@@ -33,3 +33,7 @@
 #widget-panel .page-widget-actions>small{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
 #widget-panel .page-widget-actions{justify-content:flex-end}
 #widget-panel .installed-widget-content [hidden]{display:none!important}
+
+/* Feed installation controls do not hide saved Reader articles or PDFs. */
+html[data-widget-rss="off"] #reading-feeds-toggle,html[data-widget-rss="off"] #reading-refresh,html[data-widget-rss="off"] #reading-sample,html[data-widget-rss="off"] [data-reading-add="feed"],html[data-widget-rss="off"] [data-reading-add="site"]{display:none!important}
+.plugin-lifecycle{display:flex;flex-wrap:wrap;gap:8px}.plugin-lifecycle p{flex-basis:100%;font-size:12px;opacity:.75}

@@ -29,3 +29,7 @@ P.open('reader');P.github();assert.equal(node('github-monitor').hidden,false);P.
 window.OpenSesameNotes.finish=()=>false;const scenario=state.scenario;P.open('focus');assert.equal(state.scenario,scenario,'Unsaved note veto preserves navigation');
 console.log('All seven page adapters, explicit installation/navigation, native tabs, view retirement, definition moves/removal, retained GitHub host and unsaved note guard pass.');
 assert.match(fs.readFileSync('dist/page-widgets.css','utf8'),/\.page-widget-open\[hidden\]\{display:none!important\}/,'Inactive pages cannot leak retained widget panels behind the active page');
+let githubState='active';window.OpenSesameWidgetLifecycle={isActive:id=>id==='github'&&githubState==='active'};
+P.github();assert(P.list().some(x=>x.id==='builtin-github'));githubState='inactive';events.dispatchEvent(new Event('open-sesame-widgets-changed'));assert(!P.list().some(x=>x.id==='builtin-github'));assert.equal(P.active,false);assert.equal(node('github-monitor').parentElement,node('pane-plugins'));
+P.github();assert.equal(P.active,false,'Opening an inactive built-in never activates or installs it');githubState='active';events.dispatchEvent(new Event('open-sesame-widgets-changed'));window.OpenSesameNotes.finish=()=>true;P.github();assert.equal(P.active,true);assert.equal(node('github-monitor').hidden,false);
+console.log('Built-in deactivation retires its retained host and requires explicit reactivation before reopening.');

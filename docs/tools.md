@@ -41,3 +41,5 @@ A package uses existing operations; it never supplies a handler. The renderer co
 The local storage key open-sesame-tools-v1 contains an array of instances with separate identities, validated definitions, saved configuration, pin state and an optional prior definition. Unknown or corrupt storage is preserved and writes fail closed until it is recovered; never clear user storage to make a test pass. Workspace handoffs transfer drafts in memory and filter them against installed definitions. Nothing is synchronized to an account.
 
 The Tools manager provides fixture previews, instance configuration, export, replacement, rollback and removal. Installed instances also appear in their declared page as separate tabs; the existing native panes stay mounted, preserving their sessions and drafts. Launcher entries open those tabs and never execute package actions directly. Configuration edits, page changes, collapse and removal retire pending source reads. Inactive or removed results cannot write into the current view.
+
+See [optional widgets and lifecycle controls](widget-lifecycle.md) for activation, deactivation, uninstall, RSS defaults and saved-data behavior.
