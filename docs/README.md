@@ -6,7 +6,7 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 
 | Area | Read first | Related implementation notes |
 | --- | --- | --- |
-| Tools and integrations | [Tool creation and submissions](tools.md), [GitHub monitor](github-monitor-widget.md) | [Connection setup and UI priorities](desktop-polish-plan.md#plugin-setup-and-private-configuration) |
+| Tools and integrations | [Tool creation and submissions](tools.md), [GitHub monitor](github-monitor-widget.md) | [Page tabs and application workspace](widget-pages-and-application.md), [connection setup](desktop-polish-plan.md#plugin-setup-and-private-configuration) |
 | Capture and launcher | [Command palette](command-palette.md), [widget/launcher lifecycle](widget-launcher-fit.md) | [Desktop interaction polish](desktop-interaction-polish.md) covers shell routing, playlists and Escape |
 | Familiars | [CLI integration contract](coven-familiars-integration.md), [persistent chat and commands](familiar-chat-commands.md) | [Permissions and layout](familiar-permissions-and-layout.md) |
 | Window and display | [Display following](notch-display-follow.md), [display pinning and shared Spotify](display-pinning-and-spotify.md) | [Desktop setup and smoke pass](../desktop/README.md) |

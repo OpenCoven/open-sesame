@@ -1,0 +1,35 @@
+/* All installed views share the owning page's native tab strip. */
+#widget-panel .page-widget-open{display:flex!important;flex-direction:column!important;gap:12px!important;min-width:0;min-height:0}
+#widget-panel .page-widget-open>:not(.page-widget-host-toolbar):not(.page-widget-view){display:none!important}
+#widget-panel .page-widget-host-toolbar{display:flex!important;flex:none;min-width:0;gap:8px;height:auto!important;min-height:34px}
+#widget-panel .page-widget-host-toolbar>:not(.page-widget-tab-holder){display:none!important}
+#widget-panel .page-widget-host-toolbar [role=tablist]{max-width:100%;overflow-x:auto;scrollbar-width:thin;flex-wrap:nowrap!important;white-space:nowrap;min-width:0}
+#widget-panel .page-widget-tab{flex:none;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+#widget-panel .page-widget-view{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0;overflow:auto;gap:12px;padding:0 2px;overscroll-behavior:contain}
+#widget-panel .page-widget-view[hidden]{display:none!important}
+#widget-panel.page-widget-active>.widget-capture-footer{display:none!important}
+#widget-panel .page-widget-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;color:var(--ink-muted);font-size:11px}
+#widget-panel .page-widget-actions button{font:inherit;background:none;color:var(--ink-secondary);border:1px solid var(--line);padding:7px 10px;border-radius:7px}
+#widget-panel .installed-widget-content{width:100%;max-width:1100px;align-self:center;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;padding:4px 0 12px}
+#widget-panel .installed-widget-content>:is(h3,p,small){grid-column:1/-1;margin:0;overflow-wrap:anywhere}
+#widget-panel .installed-widget-content h3{font-size:20px;font-weight:500;letter-spacing:-.4px}
+#widget-panel .installed-widget-content p{font-size:12px;line-height:1.6;color:var(--ink-secondary)}
+#widget-panel .installed-widget-content small{font-size:10px;line-height:1.6;color:var(--ink-muted)}
+#widget-panel .installed-widget-content section{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--surface-raised)}
+#widget-panel .installed-widget-content strong{font-size:12px;font-weight:500}
+#widget-panel .installed-widget-content :is(input,textarea){display:block;box-sizing:border-box;width:100%;margin-top:8px;border:1px solid var(--line);border-radius:7px;padding:10px;background:var(--surface-inset);color:var(--ink-primary);font:inherit;font-size:12px}
+#widget-panel .installed-widget-content textarea{min-height:150px;resize:vertical}
+#widget-panel .installed-widget-content label{font-size:11px;color:var(--ink-muted)}
+#widget-panel .installed-widget-content li{font-size:12px;line-height:1.6;padding:4px 0;overflow-wrap:anywhere}
+#widget-panel .installed-widget-content button{justify-self:start;align-self:end;min-height:32px;padding:7px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised);color:var(--ink-primary);font:inherit;font-size:11px}
+#widget-panel .installed-widget-content button:hover{background:var(--surface-hover)}
+#widget-panel .page-widget-status{flex:none;margin:0;color:var(--ink-muted);font-size:11px;line-height:1.5}
+
+#widget-panel .page-widget-host-toolbar .page-widget-tab-holder:not([role=tablist])>:not([role=tablist]){display:none!important}
+/* A remembered selection must never override the owning page's visibility. */
+#widget-panel .page-widget-open[hidden]{display:none!important}
+
+#widget-panel .tool-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#widget-panel .page-widget-actions>small{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
+#widget-panel .page-widget-actions{justify-content:flex-end}
+#widget-panel .installed-widget-content [hidden]{display:none!important}

@@ -208,7 +208,7 @@ class GitHubMonitor:
                         rows = response.get('workflow_runs') if kind == 'runs' and isinstance(response, dict) else response
                         if not isinstance(rows, list): raise GitHubError('response', 'This section returned invalid data.')
                         entries = []
-                        for row in rows[:6 if kind == 'runs' else 8]:
+                        for row in rows[:6 if kind == 'runs' else 30]:
                             if not isinstance(row, dict): continue
                             if kind == 'issues' and row.get('pull_request') is not None: continue
                             number = row.get('id' if kind == 'runs' else 'number')
@@ -216,7 +216,11 @@ class GitHubMonitor:
                             entries.append({'id': number, 'title': text(row.get('display_title') or row.get('name') if kind == 'runs' else row.get('title')),
                                             'subtitle': text(row.get('head_branch') if kind == 'runs' else row['user'].get('login') if isinstance(row.get('user'), dict) else '', 128),
                                             'state': text(row.get('conclusion') or row.get('status') if kind == 'runs' else 'draft' if row.get('draft') else 'open', 40),
-                                            'url': base + ('/actions/runs/' if kind == 'runs' else '/pull/' if kind == 'pulls' else '/issues/') + str(number)})
+                                            'url': base + ('/actions/runs/' if kind == 'runs' else '/pull/' if kind == 'pulls' else '/issues/') + str(number),
+                                            'updatedAt': text(row.get('updated_at'), 40), 'createdAt': text(row.get('created_at'), 40),
+                                            'workflow': text(row.get('name') if kind == 'runs' else '', 128),
+                                            'event': text(row.get('event') if kind == 'runs' else '', 40)})
+                            if len(entries) >= (6 if kind == 'runs' else 8): break
                         value['sections'][section] = {'entries': entries}
                     except GitHubError as error:
                         if error.code == 'auth': raise

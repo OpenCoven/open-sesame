@@ -15,6 +15,6 @@ await button.handlers.click();assert.equal(calls.at(-1),'window.display.choose')
 const change=status=>events.get('open-sesame-desktop-event')({detail:{event:'window.display.changed',status}});
 change({pinned:true,name:'Studio',available:true});assert.equal(label.textContent,'Display · Studio');
 change({pinned:true,name:'Studio',available:false});assert.equal(label.textContent,'Display · Studio (unavailable)');assert.match(button.title,/reconnects/);
-change({pinned:true,name:'Studio',available:true,detached:true});assert.match(button.title,/docked/);
+change({pinned:true,name:'Studio',available:true,detached:true});assert.match(button.title,/application window/);
 change({pinned:false,available:true});assert.equal(label.textContent,'Display · Follow pointer');
 console.log('Display preference: native-only controls, read-only initialization, explicit menu request, selected/unavailable/detached states and follow-pointer restoration passed. No display was moved.');

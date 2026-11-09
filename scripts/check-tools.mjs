@@ -3,7 +3,7 @@ import fs from 'node:fs';import vm from 'node:vm';import {webcrypto} from 'node:
 const ctx=vm.createContext({TextEncoder,URL,crypto:webcrypto});vm.runInContext(fs.readFileSync('dist/tools-model.js','utf8'),ctx);const M=ctx.OpenSesameToolsModel;
 const raw=fs.readFileSync('dist/tools/meeting-notes/tool.json','utf8');const d=M.parse(raw);
 for(const slug of fs.readdirSync('dist/tools'))M.parse(fs.readFileSync('dist/tools/'+slug+'/tool.json','utf8'));
-for(const mutate of [x=>x.schemaVersion=2,x=>x.html='<script>bad()</script>',x=>x.capabilities=['terminal.open'],x=>x.source={operation:'note.save'},x=>x.components[0].field='unknown',x=>x.actions[0]={label:'Bad',operation:'link.open',value:'javascript:alert(1)'}]){const bad=JSON.parse(raw);mutate(bad);assert.throws(()=>M.parse(JSON.stringify(bad)))}
+for(const mutate of [x=>x.schemaVersion=3,x=>x.html='<script>bad()</script>',x=>x.capabilities=['terminal.open'],x=>x.source={operation:'note.save'},x=>x.components[0].field='unknown',x=>x.actions[0]={label:'Bad',operation:'link.open',value:'javascript:alert(1)'}]){const bad=JSON.parse(raw);mutate(bad);assert.throws(()=>M.parse(JSON.stringify(bad)))}
 assert.throws(()=>M.parse(' '.repeat(100001)));assert.throws(()=>M.parse('{'));
 const first=M.instance(d),second=M.instance(d);assert.notEqual(first.id,second.id);first.config.notes='Keep my draft';const update=M.parse(raw);update.version='1.0.1';const changed=M.replace(first,update);assert.equal(changed.config.notes,'Keep my draft');assert.equal(M.rollback(changed).definition.version,'1.0.0');
 const fourth=M.parse(raw);fourth.id='fourth-tool';fourth.name='Fourth tool';assert.equal(M.parse(JSON.stringify(fourth)).name,'Fourth tool');
@@ -19,3 +19,10 @@ console.log('Durable instance recovery, required bindings and UTF-8 package limi
 const {spawnSync}=await import('node:child_process'),{tmpdir}=await import('node:os'),path=await import('node:path');
 const temporary=fs.mkdtempSync(path.join(tmpdir(),'sesame-tool-scaffold-')),target=path.join(temporary,'fourth-example');
 try{for(const command of ['create','validate','preview']){const result=spawnSync(process.execPath,['scripts/tools.mjs',command,target],{encoding:'utf8',timeout:10000});assert.equal(result.status,0,result.stderr)}const generated=M.parse(fs.readFileSync(path.join(target,'tool.json'),'utf8'));assert.equal(generated.id,'fourth-example');assert(fs.existsSync(path.join(target,'README.md')));assert.equal(spawnSync(process.execPath,['scripts/tools.mjs','create',target],{timeout:10000}).status,1,'Existing packages cannot be overwritten');}finally{fs.rmSync(temporary,{recursive:true})}
+
+assert.equal(M.page(d),'projects');
+const legacy=JSON.parse(raw);legacy.schemaVersion=1;delete legacy.page;const legacyDefinition=M.parse(JSON.stringify(legacy));assert.equal(M.page(legacyDefinition),'widgets');
+for(const mutate of [x=>delete x.page,x=>x.page='secret',x=>x.page={projects:true}]){const bad=JSON.parse(raw);mutate(bad);assert.throws(()=>M.parse(JSON.stringify(bad)),/page/)}
+const oldInstance=M.instance(legacyDefinition);oldInstance.config.notes='Saved legacy value';const recovered=M.restore([oldInstance]);assert.equal(M.page(recovered[0].definition),'widgets');assert.equal(recovered[0].config.notes,'Saved legacy value');
+const moved=M.replace(oldInstance,d);assert.equal(M.page(moved.definition),'projects');assert.equal(moved.config.notes,'Saved legacy value');assert.equal(M.page(M.rollback(moved).definition),'widgets');
+console.log('Required v2 page, legacy Widgets fallback, saved configuration and cross-page rollback pass.');

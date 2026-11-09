@@ -29,4 +29,4 @@ Connect explicitly, enter credentials when requested, and optionally remember th
 
 Real installed-app, macOS Screen Sharing, standard VNC server and secure gateway acceptance remains pending; local transport and controller tests alone do not establish interoperability.
 
-Reusable declarative tools provide local import, fixture preview, expandable/pinned collection cards, launcher navigation and explicit approved actions. GitHub summaries use existing connected repositories; feed headlines use saved Reader data. See [tool creation and submissions](tools.md). Automated contract/UI tests and native compilation do not establish rendered layout or live-provider acceptance.
+Reusable declarative tools provide local import, fixture preview, declared page categories, installed page tabs, expandable manager cards, launcher navigation and explicit approved actions. GitHub summaries use existing connected repositories; feed headlines use saved Reader data. See [tool creation and submissions](tools.md). Automated contract/UI tests and native compilation do not establish rendered layout or live-provider acceptance.

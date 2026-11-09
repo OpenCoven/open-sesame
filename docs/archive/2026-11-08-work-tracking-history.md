@@ -1,8 +1,14 @@
 # Historical work narrative through November 8, 2026
 
-This is the preserved source narrative through the agent-readability integration of main `bc69e160ad6023ece1407fb48f64a4fb3b8a0cda`. Owner, branch, installed-version, host-blocker and next-action statements below are historical observations. They are not current task claims or authorization. Consult the [live-state lookup](../work-tracking.md#find-current-work) before resuming any task. Original machine-specific receipts remain under the common Git directory.
+This is the preserved source narrative through the agent-readability integration of main `ff4b5c2c33055a19c99a4fab193c0da07e6d0ac4`. Owner, branch, installed-version, host-blocker and next-action statements below are historical observations. They are not current task claims or authorization. Consult the [live-state lookup](../work-tracking.md#find-current-work) before resuming any task. Original machine-specific receipts remain under the common Git directory.
 
 # Development work and handoff
+
+## Widget pages, GitHub and application window, November 8
+
+`widget-pages-github-20261108` owns `codex/widget-pages-github` in `open-sesame-widget-pages`, started from signed v0.0.19 main `659735507d572f5ea9e4ad74f5730e4913334524` and rebased onto independently delivered VNC/secret-check main `bc69e160ad6023ece1407fb48f64a4fb3b8a0cda`. The task adds a required page to new widget packages, compatible page tabs for installed tools, a more scannable GitHub dashboard and a freely resizable application pop-out with visible keep-open and display controls. Existing v1 definitions remain under Widgets with configuration and drafts preserved. Installation never contacts a provider or executes an action.
+
+Implement the versioned contract and page adapters first, then GitHub filtering/sorting/status and application controls; run focused lifecycle checks, the full Mac verifier and exact-head hosted checks, and inspect rendered wide/narrow layouts with synthetic data. Native display movement, user capture, provider writes and real model requests are separate acceptance gates. The embedded computer-agent prototype remains independently owned and unfinished; continue its broker/controller work after this UI batch.
 
 ## Desktop interaction polish, November 8
 
