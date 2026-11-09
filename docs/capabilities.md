@@ -16,9 +16,17 @@ This matrix distinguishes implemented surfaces from evidence of operation. Use t
 | Screen notes | Explicit native capture/import, local Vision OCR and review/edit/save. | Synthetic OCR/native/renderer checks; actual screen permission, capture selection and installed output require target-device observation. See [Screen notes](screen-notes-and-capture.md). |
 | Declarative tools | Versioned JSON packages, fixture-only preview, local instances, approved reads/actions and export/update/rollback. | Contract/UI fixture checks and browser observations are distinct from installed native and real-provider acceptance. See [tool contract](tools.md). |
 | Agent monitor | Recognized current-user process discovery, contextual Pause/Resume and confirmed SIGTERM Stop, with fresh identity and short-lived capability checks. | Tests mock signals and cover ownership, expiry, PID reuse, stale confirmations and privacy. Live user process control remains separate; OS state is not task/approval progress. |
-| Remote desktops / message controllers | Supplied web VNC viewers; opt-in BlueBubbles/Photon adapters. | External gateways and live providers require their own explicit setup and acceptance. |
+| Remote desktops / message controllers | Bundled noVNC with native TCP, secure WebSocket gateways and saved HTTPS viewers; opt-in BlueBubbles/Photon adapters. | Real TCP backpressure and browser RFB fixture tests pass; installed app, actual servers, gateway TLS, Keychain prompts and live controllers require explicit acceptance. |
 | Windows / Linux desktop | No qualified packaged host. | Portable tests do not establish desktop support. |
 
 Items/settings are local to the device. Account sync, system reminders and native notifications are not qualified features. Protected Share readiness means filtered video reached its output window; it does not establish that a meeting app is sharing that window or exclude Open Sesame from another app's entire-display capture. Never display a protective or connected state based solely on a preview, executable presence, or successful compilation.
+
+## Built-in remote desktops
+
+Console → Desktops supports direct VNC host/port connections in the authenticated Mac app, secure `wss://` RFB gateways in Mac and browser, and existing HTTPS web viewers. The native bridge opens only explicitly requested sessions from the bundled main document; it does not expose a network listener. Ordinary direct TCP does not encrypt the desktop stream; use a trusted network or an independently secured transport. Tailnet and Local labels do not discover machines or establish network access.
+
+Connect explicitly, enter credentials when requested, and optionally remember them in macOS Keychain. Browser credentials stay in memory. Sessions offer fit/actual size, view-only, fullscreen, Ctrl-Alt-Del, manual text clipboard transfer, disconnect and reconnect. Up to four built-in connections can remain open while switching tools. Logout, reload and exit close them. Existing HTTPS viewer pages retain their separate authentication and cannot report an RFB handshake to Open Sesame.
+
+Real installed-app, macOS Screen Sharing, standard VNC server and secure gateway acceptance remains pending; local transport and controller tests alone do not establish interoperability.
 
 Reusable declarative tools provide local import, fixture preview, expandable/pinned collection cards, launcher navigation and explicit approved actions. GitHub summaries use existing connected repositories; feed headlines use saved Reader data. See [tool creation and submissions](tools.md). Automated contract/UI tests and native compilation do not establish rendered layout or live-provider acceptance.

@@ -6,7 +6,7 @@ from distribution_safety import private_path, validate_dist
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'dist/downloads/open-sesame-desktop-source.zip'
-SOURCES = ('README.md', 'AGENTS.md', '.github', '.gitignore', 'package.json', 'run-macos.sh', 'desktop', 'dist', 'docs', 'scripts', 'vendor-src', 'examples', 'web')
+SOURCES = ('README.md', 'AGENTS.md', '.github', '.githooks', '.gitignore', 'package.json', 'package-lock.json', 'run-macos.sh', 'desktop', 'dist', 'docs', 'scripts', 'vendor-src', 'examples', 'web')
 
 
 def build():

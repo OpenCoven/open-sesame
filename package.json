@@ -13,7 +13,14 @@
     "predev": "python3 scripts/build-desktop-source.py",
     "dev": "python3 desktop/dev_server.py",
     "dev:macos": "bash run-macos.sh",
+    "test:vnc:browser": "node scripts/fixtures/vnc-browser.mjs",
+    "hooks:install": "python3 -B scripts/install-hooks.py",
+    "check:secrets": "python3 -B scripts/check-secrets.py",
     "tools": "node scripts/tools.mjs",
     "check:docs": "node scripts/check-docs.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.0",
+    "ws": "8.22.2"
   }
 }

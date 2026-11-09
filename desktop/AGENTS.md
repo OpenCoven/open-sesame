@@ -1,6 +1,6 @@
 # Native host and Python adapters
 
-Read the [repository map](../docs/repository-map.md), [desktop setup](README.md) and [capability boundaries](../docs/capabilities.md). [OpenSesame.swift](OpenSesame.swift) owns AppKit/WKWebView lifecycle and method routing; [bridge.py](bridge.py) owns the stdio JSON service and real PTY sessions. Swift-only capture/window/account handlers and Python-backed operations are separate paths.
+Read the [repository map](../docs/repository-map.md), [desktop setup](README.md) and [capability boundaries](../docs/capabilities.md). [OpenSesame.swift](OpenSesame.swift) owns AppKit/WKWebView lifecycle and method routing; [bridge.py](bridge.py) owns the stdio JSON service and real PTY sessions. Swift-only capture/window/account and [VNC transport](VNCTransport.swift) handlers and Python-backed operations are separate paths.
 
 Keep authentication, trusted main-frame file-origin validation and per-method validation at the receiving boundary. External WKWebViews cannot inherit the application message handler. Full-access Familiar replies use [native request-bound confirmation](FamiliarPermissions.swift) and backend policy binding. A renderer flag or executable discovery is not authorization. Sign-out/expiry must close the relevant host work; retain cancellation, generation checks and identity-bound process cleanup.
 

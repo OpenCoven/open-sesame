@@ -27,13 +27,16 @@ The authenticated native host uses the installed CLI; only an explicit Send star
 
 ## Development
 
-Use Node.js 22 (matching CI), Python 3, and Git. GitHub CLI (`gh`) is needed for REST remote refresh and delivery, not for offline core checks. Native compilation requires macOS 13+, Xcode with Swift 6.2+, and the verified vendored WorkOS SDK sources; the SDK builds offline. The bounded verifier requires Python 3.13+ on Mac for non-reaping process observation through [`os.waitid`](https://docs.python.org/3.13/library/os.html#os.waitid); this does not change the standalone app-build command. There are no npm or Python package dependencies for the core checks. Hygiene checks additionally use `lsof`. CI configures Node 22 and Python 3.13; local qualification records the versions actually executed.
+Use Node.js 22 (matching CI), Python 3, and Git. GitHub CLI (`gh`) is needed for REST remote refresh and delivery, not for offline core checks. Native compilation requires macOS 13+, Xcode with Swift 6.2+, and the verified vendored WorkOS SDK sources; the SDK builds offline. The bounded verifier requires Python 3.13+ on Mac for non-reaping process observation through [`os.waitid`](https://docs.python.org/3.13/library/os.html#os.waitid); this does not change the standalone app-build command. There are no npm or Python package dependencies for the core checks. Optional VNC browser fixtures use the lockfile-pinned Playwright/ws development dependencies and a browser installation; see [VNC checks](docs/vnc-desktops.md#checks). Hygiene checks additionally use `lsof`. CI configures Node 22 and Python 3.13; local qualification records the versions actually executed.
 
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Generate the source download and serve the loopback sign-in/download preview at `http://127.0.0.1:4173`. |
 | `npm run dev:macos` | Build, sign for local development, and open `build/Open Sesame.app`. |
 | `bash desktop/build-macos.sh` | Compile the Mac bundle without launching. |
+| `npm run hooks:install` | Install versioned pre-commit secret checks for this worktree after checking prerequisites/custom hooks. |
+| `npm run check:secrets` | Scan staged paths and staged changes with the required Gitleaks scanner; no history audit. |
+| `npm run test:vnc:browser` | Run the optional synthetic framebuffer probe after installing its separate prerequisites. |
 | `npm run check:docs` | Validate first-party Markdown links, source paths and heading anchors without network access. |
 | `npm run tools -- create my-tool` | Scaffold a declarative tool package; validate it with `npm run tools -- validate my-tool`. |
 | `npm run check` | Run widget/model checks and JavaScript syntax validation. |
@@ -45,6 +48,8 @@ Use Node.js 22 (matching CI), Python 3, and Git. GitHub CLI (`gh`) is needed for
 | `npm run project:refresh` | Refresh all branch/open-PR pages through GitHub REST using `gh api`. |
 | `npm run project:task -- --help` | Claim, checkpoint, or explicitly release a local task. |
 | `npm run project:prune -- --help` | Plan guarded local retirement; dry run is the default. |
+
+Before committing in a Git checkout, follow [pre-commit setup](docs/development-workflow.md#pre-commit-secret-checks); the hook uses Gitleaks and preserves existing custom hook paths.
 
 Verification stores logs and a JSON report under `build/verification/<UTC time>/`. A timeout or leaked owned process is a failure. The report records source fingerprints, tool versions, scope, exit codes, and process cleanup. Compilation and fixture results do not establish GUI, physical-device, live-provider, or hosted CI acceptance. Find current owners and evidence through the [live-state lookup](docs/work-tracking.md#find-current-work); dated task narratives remain in the archive.
 

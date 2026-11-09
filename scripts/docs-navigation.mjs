@@ -93,6 +93,6 @@ export function markdownFiles(root) {
     if (info.isDirectory()) for (const name of fs.readdirSync(absolute)) walk(path.posix.join(relative, name));
     else if (/\.md$/i.test(relative)) files.push(relative);
   }
-  for (const name of fs.readdirSync(root)) if (/\.md$/i.test(name) || ['.github', 'desktop', 'dist', 'docs', 'examples', 'scripts', 'web'].includes(name)) walk(name);
+  for (const name of fs.readdirSync(root)) if (/\.md$/i.test(name) || ['.github', '.githooks', 'desktop', 'dist', 'docs', 'examples', 'scripts', 'web'].includes(name)) walk(name);
   return files.sort();
 }

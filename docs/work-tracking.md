@@ -14,7 +14,7 @@ A handoff records task ID/owner, branch/worktree, scope/dependencies, exact head
 
 ## Agent-readability audit
 
-Task `agent-readability-20261108` owns `codex/agent-readability` in the isolated `open-sesame-agent-readability` worktree, starting from `659735507d572f5ea9e4ad74f5730e4913334524`. Its scope is end-to-end agent onboarding, source/test navigation, accurate host/state boundaries, current-vs-historical guidance and verifiable documentation links. It changes guidance and documentation checks rather than application behavior. Exact qualification, publication state and continuation are in its shared task record.
+Task `agent-readability-20261108` owns `codex/agent-readability` in the isolated `open-sesame-agent-readability` worktree, starting from `659735507d572f5ea9e4ad74f5730e4913334524`. Its scope is end-to-end agent onboarding, source/test navigation, accurate host/state boundaries, current-vs-historical guidance and verifiable documentation links. It changes guidance, documentation checks and source-package completeness rather than application behavior. Main advanced to `bc69e160ad6023ece1407fb48f64a4fb3b8a0cda` during the audit; the VNC and pre-commit safeguards are included in the final source/test map. Exact qualification, publication state and continuation are in its shared task record.
 
 ## Historical narratives
 
