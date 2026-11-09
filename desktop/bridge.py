@@ -4,6 +4,7 @@
 # Native origin/authentication checks live in OpenSesame.swift; stdout is the JSON-line transport. See docs/repository-map.md.
 from controller import Controller
 from computer_controls import control as computer_control
+from computer_agent import ComputerAgent
 from live_agents import LiveAgents, agent_status
 from process_workspace import History
 from agent_monitor import terminal_target, enrich_snapshot, snapshot as agent_snapshot, control_process as agent_control
@@ -225,9 +226,41 @@ class Bridge:
         self.coven_threads_lock = threading.Lock()
         self.github = GitHubMonitor()
         self.github_slot = threading.BoundedSemaphore(1)
+        self.computer = ComputerAgent(emit, native=native_permissions)
+        self.computer_slot = threading.BoundedSemaphore(1)
 
     def handle(self, message):
         request_id = message.get('requestId')
+        method = message.get('method', '')
+        if isinstance(method, str) and (method.startswith('native.computer.') or method in ('computer.status', 'computer.cancel')):
+            params = message.get('params', {})
+            allowed = {'computer.status': {'provider'}, 'computer.cancel': {'runId'}, 'native.computer.configure': {'apiKey'}, 'native.computer.prepare': {'prompt', 'history', 'provider'}, 'native.computer.finish': {'token', 'approved', 'session'}, 'native.computer.reply': {'id', 'runId', 'session', 'reply'}}
+            if method not in allowed or method.startswith('native.') and not self.native_permissions or not isinstance(params, dict) or set(params) - allowed[method]:
+                self.emit({'requestId': request_id, 'error': 'Unsupported computer request.'}); return
+            # Replies and Stop must never wait behind status/provider startup.
+            immediate = method in ('computer.cancel', 'native.computer.reply')
+            if not immediate and not self.computer_slot.acquire(blocking=False):
+                self.emit({'requestId': request_id, 'error': 'Computer setup is already in progress.'}); return
+            def computer_request():
+                try:
+                    if method == 'computer.status':
+                        provider = params.get('provider', 'coven')
+                        if provider not in {'coven', 'codex', 'anthropic'}: raise ValueError('Choose a supported computer provider.')
+                        result = self.computer.status(provider)
+                    elif method == 'computer.cancel': result = self.computer.cancel(params.get('runId'))
+                    elif method == 'native.computer.configure': result = self.computer.configure(params)
+                    elif method == 'native.computer.prepare': result = self.computer.prepare(params)
+                    elif method == 'native.computer.finish': result = self.computer.finish(params.get('token'), params.get('approved'), params.get('session'))
+                    else: result = self.computer.reply(params)
+                    self.emit({'requestId': request_id, 'result': result})
+                except ValueError as error: self.emit({'requestId': request_id, 'error': str(error)[:300]})
+                except Exception: self.emit({'requestId': request_id, 'error': 'The computer task could not continue. Your request is kept.'})
+                finally:
+                    if not immediate: self.computer_slot.release()
+                    with self.coven_threads_lock: self.coven_threads.discard(threading.current_thread())
+            thread = threading.Thread(target=computer_request, daemon=True)
+            with self.coven_threads_lock: self.coven_threads.add(thread)
+            thread.start(); return
         if message.get('method') in ('github.status', 'github.add', 'github.remove', 'github.snapshot'):
             method, params = message['method'], message.get('params') or {}
             allowed = {'force'} if method == 'github.status' else {'repository', 'force'} if method == 'github.snapshot' else {'repository'}
@@ -403,6 +436,7 @@ class Bridge:
         return True
 
     def close(self):
+        self.computer.close()
         self.github.close()
         self.coven.close()
         with self.coven_threads_lock: threads = list(self.coven_threads)

@@ -28,7 +28,7 @@
       if(command==='outline')return {kind:'item',type:'note',text:window.OpenSesameCaptureCatalog.outlineText(body),hint:body?'Save outline':'Add a topic, then subtopics separated by > or new lines',incomplete:!body};
       if(command==='screenshot')return {kind:'screen',request:body,hint:'Capture, extract text and review locally',label:'Open screen notes'};
       if(['find','search'].includes(command))return {kind:'find',query:body,hint:'Search this conversation',label:'Search conversation',incomplete:!body};
-      if(['computer','agent'].includes(command))return {kind:'agent',task:body,computer:command==='computer',hint:body?'Review '+(command==='computer'?'computer action':'Coven request'):'Describe the '+(command==='computer'?'computer action':'agent task'),label:'Review in Agents',incomplete:!body};
+      if(['computer','agent'].includes(command))return {kind:'agent',task:body,computer:command==='computer',hint:body?'Review '+(command==='computer'?'computer action':'Coven request'):'Describe the '+(command==='computer'?'computer action':'agent task'),label:command==='computer'?'Review computer task':'Review in Agents',incomplete:!body};
       if(['note','task','todo','bookmark'].includes(command))return {kind:'item',type:command==='todo'?'task':command,text:body,hint:'Save '+(command==='todo'?'task':command),incomplete:!body};
       if(views[command])return {kind:'view',view:views[command],value:body,hint:'Open '+(command==='lockin'?'Focus':command),label:'Open '+command};
       if(!body&&window.OpenSesameCaptureCatalog?.search('/'+command).length)return {kind:'help',hint:'Choose a command'};
@@ -48,7 +48,7 @@
       const label=window.OpenSesameLive?.action()||'Search transcript';
       return {kind:'live',question:text,label,hint:label+' · Enter'};
     }
-    if(/^(?:open|launch|click|type|scroll|navigate|search the web|take a screenshot|switch to|move the mouse)\b/i.test(text))return {kind:'agent',task:text,computer:true,hint:'Review computer action in Coven',label:'Review in Agents'};
+    if(/^(?:open|launch|click|type|scroll|navigate|search the web|take a screenshot|switch to|move the mouse)\b/i.test(text))return {kind:'agent',task:text,computer:true,hint:'Review in Coven Computer',label:'Review computer task'};
     return {kind:'item',hint:'Save note · type / for commands'};
   }
   const el=id=>document.getElementById(id),input=()=>el('capture-input'),menu=()=>el('capture-commands'),DRAFT='open-sesame-capture-draft-v1';
@@ -147,7 +147,8 @@
     if(intent.kind==='live')return window.OpenSesameLive?.ask(intent.question)===true;
     if(intent.kind==='find')return window.OpenSesameCovenChat?.search(intent.query)===true;
     if(intent.kind==='chat')return window.OpenSesameCovenChat?.send(intent.task)===true;
-    if(['agent','bash'].includes(intent.kind)){if(intent.incomplete){input().focus();return false}if(!window.openSesameStartAgent){toast('Terminal is unavailable. Keep your request and reload.');return false}return window.openSesameStartAgent({launcher:intent.kind==='bash'?'bash':'coven',task:(intent.computer?'Computer use request: ':'')+intent.task,projectId:document.getElementById('capture-project').value})!==false}
+    if(intent.kind==='agent'&&intent.computer)return window.OpenSesameComputerAgent?.review(intent.task)!==false;
+    if(['agent','bash'].includes(intent.kind)){if(intent.incomplete){input().focus();return false}if(!window.openSesameStartAgent){toast('Terminal is unavailable. Keep your request and reload.');return false}return window.openSesameStartAgent({launcher:intent.kind==='bash'?'bash':'coven',task:intent.task,projectId:document.getElementById('capture-project').value})!==false}
     if(intent.kind==='view'){
       if(intent.view==='focus'&&intent.value&&(!/^\d+(?:\s*(?:m|min|minutes))?$/i.test(intent.value)||!OpenSesameFocusCalendarModel.validDuration(parseInt(intent.value,10)))){toast('Use /focus with 15–1440 whole minutes.');return false}
       changeScenario(intent.view);

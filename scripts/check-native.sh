@@ -19,3 +19,8 @@ xcrun swiftc -o "$open_sesame_check/system-audio-tests" "$open_sesame_root/deskt
 "$open_sesame_check/system-audio-tests"
 
 bash scripts/check-vnc-native.sh
+
+xcrun swiftc -o "$open_sesame_check/computer-model-tests" "$open_sesame_root/desktop/ComputerAgentModel.swift" "$open_sesame_root/desktop/tests/ComputerAgentModelTests.swift"
+"$open_sesame_check/computer-model-tests"
+xcrun swiftc -o "$open_sesame_check/computer-controller-tests" "$open_sesame_root/desktop/ComputerAgentModel.swift" "$open_sesame_root/desktop/ComputerAgent.swift" "$open_sesame_root/desktop/tests/ComputerAgentTests.swift" -framework AppKit -framework ScreenCaptureKit -framework ImageIO -framework Security
+"$open_sesame_check/computer-controller-tests"
