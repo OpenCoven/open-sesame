@@ -16,7 +16,7 @@
   try{if(JSON.parse(localStorage.getItem('open-sesame-builtin-widgets-v1')||'[]').includes('github'))builtins=['github']}catch{}
   const make=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const currentPage=()=>({focus:'focus',music:'media',youtube:'media',media:'media',items:'projects',familiars:'console','agent-monitor':'console',terminal:'console',remote:'console',reading:'reader',audio:'live',plugins:'widgets'})[state.scenario];
-  function list(){return [...window.OpenSesameTools.list(),...(builtins.includes('github')?[{id:'builtin-github',name:'GitHub',page:'projects',builtin:true}]:[])]}
+  function list(){return [...window.OpenSesameTools.list(),...((window.OpenSesameWidgetLifecycle ? window.OpenSesameWidgetLifecycle.isActive('github') : builtins.includes('github'))?[{id:'builtin-github',name:'GitHub',page:'projects',builtin:true}]:[])]}
   function save(){try{localStorage.setItem('open-sesame-page-tabs-v1',JSON.stringify(selected))}catch{}}
   function context(page){
     if(contexts.has(page))return contexts.get(page);
@@ -73,11 +73,15 @@
   }
   function open(id){const x=list().find(x=>x.id===id);if(x)choose(x.page,id)}
   function github(){
+    if(window.OpenSesameWidgetLifecycle){
+      if(!window.OpenSesameWidgetLifecycle.isActive('github')){toast('Activate GitHub in Widgets first.');return}
+      choose('projects','builtin-github');window.OpenSesameGitHubMonitor.activate();return;
+    }
     if(!builtins.includes('github')){try{localStorage.setItem('open-sesame-builtin-widgets-v1',JSON.stringify(['github']))}catch{toast('Could not save the installed widget.');return}builtins.push('github')}
     choose('projects','builtin-github');window.OpenSesameGitHubMonitor.activate();
   }
-  window.OpenSesamePageWidgets={open,github,sync,list,get active(){return !!selected[currentPage()]},close(){deactivate(currentPage());sync()},removeGithub(){try{localStorage.setItem('open-sesame-builtin-widgets-v1','[]')}catch{toast('Could not save the change.');return}builtins=[];deactivate('projects');sync()}};
-  window.addEventListener('open-sesame-tools-changed',sync);window.addEventListener('open-sesame-layout',sync);
+  window.OpenSesamePageWidgets={open,github,sync,list,get active(){return !!selected[currentPage()]},close(){deactivate(currentPage());sync()},removeGithub(){if(window.OpenSesameWidgetLifecycle){window.OpenSesameWidgetLifecycle.set('github','uninstalled');return}try{localStorage.setItem('open-sesame-builtin-widgets-v1','[]')}catch{toast('Could not save the change.');return}builtins=[];deactivate('projects');sync()}};
+  window.addEventListener('open-sesame-widgets-changed',sync);window.addEventListener('open-sesame-tools-changed',sync);window.addEventListener('open-sesame-layout',sync);
   window.addEventListener('open-sesame-view-changed',()=>{window.OpenSesameTools.invalidate();sync();if(selected[currentPage()]==='builtin-github')window.OpenSesameGitHubMonitor.activate()});
   window.addEventListener('open-sesame-tool-status',e=>{const c=contexts.get(currentPage());const status=c?.view.querySelector('.page-widget-status');if(status)status.textContent=e.detail});
   sync();

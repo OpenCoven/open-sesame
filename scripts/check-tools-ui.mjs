@@ -50,3 +50,16 @@ let pageVisible=true;const pageHost=new Node('article'),dispose=ctx.OpenSesameTo
 ctx.openSesameBridge.request=(method,params)=>{calls.push([method,params]);return new Promise(resolve=>{if(method==='github.status')statusResolve=resolve;else snapshotResolve=resolve})};
 const pageRead=findButton(pageHost,'Load live data').click();pageVisible=false;dispose();statusResolve({authenticated:true,repositories:['OpenCoven/example']});await pageRead;assert.equal(calls.at(-1)[0],'github.status','Leaving before status completes prevents a snapshot');
 console.log('Inline page mounting, shared drafts and cancelled read scope pass.');
+// Disabling an installed instance retires its read, launcher and page entry while preserving both saved config and draft.
+ctx.OpenSesameTools.open();const draftHost=expand(savedId),draftInput=draftHost.querySelectorAll('textarea')[0];draftInput.value='Retained inactive draft';draftInput.oninput();
+const beforeConfig=JSON.stringify(readInstalled().find(x=>x.id===savedId).config);
+await findButton(entry(savedId),'Deactivate widget').click();assert(!ctx.OpenSesameTools.list().some(x=>x.id===savedId));assert.equal(JSON.stringify(readInstalled().find(x=>x.id===savedId).config),beforeConfig);assert(ctx.OpenSesameTools.handoff().some(([id,fields])=>id===savedId&&fields.notes==='Retained inactive draft'));
+assert.equal(findButton(entry(savedId),'Open in Projects').disabled,true);
+await findButton(entry(savedId),'Activate widget').click();assert(ctx.OpenSesameTools.list().some(x=>x.id===savedId));assert.equal(expand(savedId).querySelectorAll('textarea')[0].value,'Retained inactive draft');
+ctx.OpenSesameTools.open();pageVisible=true;const activeHost=new Node('article');ctx.OpenSesameTools.mount(githubId,activeHost,()=>pageVisible);const retiring=findButton(activeHost,'Load live data').click();await findButton(entry(githubId),'Deactivate widget').click();statusResolve({authenticated:true,repositories:['OpenCoven/example']});const previousCalls=calls.length;await retiring;assert.equal(calls.length,previousCalls,'Deactivation prevents the next provider read');
+await findButton(entry(savedId),'Uninstall widget').click();assert(!readInstalled().some(x=>x.id===savedId));assert(ctx.items.some(x=>x.title==='Meeting title'),'Uninstall keeps independently saved Projects content');
+console.log('Inactive tool configuration/drafts, page/launcher removal, reactivation, pending read retirement and uninstall content preservation pass.');
+
+const remoteTools=readInstalled().map(x=>({...x,active:false})),remoteEvent=new Event('storage');Object.assign(remoteEvent,{key:'open-sesame-tools-v1',newValue:JSON.stringify(remoteTools)});ctx.dispatchEvent(remoteEvent);assert.equal(ctx.OpenSesameTools.list().length,0,'Floating-document deactivation removes original page entries');
+const remoteActive=new Event('storage');Object.assign(remoteActive,{key:'open-sesame-tools-v1',newValue:JSON.stringify(remoteTools.map(x=>({...x,active:true})))});ctx.dispatchEvent(remoteActive);assert.equal(ctx.OpenSesameTools.list().length,remoteTools.length);
+console.log('Floating-document tool activation and page/launcher synchronization pass.');

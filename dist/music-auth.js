@@ -32,6 +32,7 @@
     const promise=new Promise((resolve,reject)=>{const tag=document.createElement('script');tag.src=url;tag.async=true;tag.referrerPolicy='strict-origin-when-cross-origin';const timer=setTimeout(()=>{tag.remove();reject(Error('Sign-in could not load. Check your connection and try again.'))},20000);tag.onload=()=>{clearTimeout(timer);test()?resolve():reject(Error('The sign-in service is unavailable. Please try again.'))};tag.onerror=()=>{clearTimeout(timer);tag.remove();reject(Error('Sign-in could not load. Check your connection and try again.'))};document.head.append(tag)}).catch(error=>{scripts.delete(url);throw error});scripts.set(url,promise);return promise;
   }
   async function prepare(id){
+    if(window.OpenSesameWidgetLifecycle?.isActive(id)===false)return;
     const s=states[id];if(!supports(service)||!configured(id)||s.ready||s.loading||id==='spotify')return;
     const attempt=s.attempt;s.loading=true;s.error='';render();
     try{
@@ -40,7 +41,7 @@
       if(attempt===s.attempt)s.ready=true;
     }catch(error){if(attempt===s.attempt)s.error=m.publicError(error)}finally{if(attempt===s.attempt)s.loading=false;render()}
   }
-  function open(){el('music-account-panel').hidden=false;el('music-account-toggle').setAttribute('aria-expanded','true');el('music-account-config-value').value=service==='apple'?'':config[configKey(service)]||'';render();prepare(service);el('music-account-close').focus({preventScroll:true})}
+  function open(){if(window.OpenSesameWidgetLifecycle?.isActive(service)===false){toast('Activate this music widget in Widgets first.');return}el('music-account-panel').hidden=false;el('music-account-toggle').setAttribute('aria-expanded','true');el('music-account-config-value').value=service==='apple'?'':config[configKey(service)]||'';render();prepare(service);el('music-account-close').focus({preventScroll:true})}
   function close(focus=true){const panel=el('music-account-panel');panel.hidden=true;el('music-account-config-value').value='';el('music-account-toggle').setAttribute('aria-expanded','false');const previous=externalHost;externalHost=null;if(previous){previous.parent.insertBefore(panel,previous.next?.parentNode===previous.parent?previous.next:null);panel.classList.remove('plugins-auth-panel');providerChanged(previous.service);el('music-account-config-value').value='';if(focus)previous.returnFocus()?.focus({preventScroll:true});}else if(focus)el('music-account-toggle').focus({preventScroll:true});}
   function providerChanged(id){if(!Object.hasOwn(names,id))return;const changed=id!==service;service=id;if(changed){el('music-account-setup').open=false;el('music-account-config-value').value=service==='apple'?'':config[configKey(service)]||''}render();if(!el('music-account-panel').hidden)prepare(service)}
   el('music-account-toggle').addEventListener('click',()=>el('music-account-panel').hidden?open():close());el('music-account-close').addEventListener('click',close);
@@ -58,12 +59,12 @@
     el('music-account-setup').open=false;render();prepare(id);toast(names[id]+' app setup saved'+(id==='apple'?' for this session.':'.'));
   });
   el('music-account-connect').addEventListener('click',async()=>{
-    const id=service,s=states[id];if(!supports(service)){setError(id,host.message);return}if(!configured(id)){el('music-account-setup').open=true;el('music-account-config-value').focus();return}if(s.busy||s.loading)return;if(id!=='spotify'&&!s.ready){await prepare(id);if(s.ready)el('music-account-connect').focus({preventScroll:true});return}
+    const id=service,s=states[id];if(window.OpenSesameWidgetLifecycle?.isActive(id)===false){toast('Activate this music widget in Widgets first.');return}if(!supports(service)){setError(id,host.message);return}if(!configured(id)){el('music-account-setup').open=true;el('music-account-config-value').focus();return}if(s.busy||s.loading)return;if(id!=='spotify'&&!s.ready){await prepare(id);if(s.ready)el('music-account-connect').focus({preventScroll:true});return}
     s.error='';s.busy=true;s.expired=false;const attempt=++s.attempt;render();
     try{
       if(id==='spotify'&&native){
         nativeStarting=true;
-        try{await window.openSesameBridge.request('music.spotify.configure',{clientId:config.spotifyClientId});if(attempt!==s.attempt)return;const status=await window.openSesameBridge.request('music.spotify.signIn');nativeStarting=false;applyNative(status);return}finally{nativeStarting=false}
+        try{await window.openSesameBridge.request('music.spotify.configure',{clientId:config.spotifyClientId});if(attempt!==s.attempt)return;const status=await window.openSesameBridge.request('music.spotify.signIn');nativeStarting=false;if(attempt===s.attempt&&window.OpenSesameWidgetLifecycle?.isActive(id)!==false)applyNative(status);return}finally{nativeStarting=false}
       }
       if(id==='spotify'){
         if(location.protocol!=='https:'||!crypto.subtle)throw Error('Open the private HTTPS Site to connect Spotify.');
@@ -109,5 +110,6 @@
   }
   setInterval(()=>{let changed=false;for(const s of Object.values(states))if(s.session&&s.session.expiresAt<=Date.now()){s.session=null;s.expired=true;changed=true}if(changed)render()},15000);
   window.addEventListener('open-sesame-view-changed',()=>{if(externalHost&&state.scenario!=='plugins')close(false)});
+  window.addEventListener('open-sesame-widgets-changed',()=>{for(const id of Object.keys(states))if(!window.OpenSesameWidgetLifecycle.isActive(id)){states[id].attempt++;states[id].busy=false;states[id].loading=false}if(!window.OpenSesameWidgetLifecycle.isActive(service))close(false);render()});
   window.OpenSesameMusicAuth={providerChanged,snapshot(){return Object.fromEntries(Object.entries(states).map(([id,s])=>[id,{supported:supports(id),connected:!!s.session&&s.session.expiresAt>Date.now(),configured:configured(id),busy:s.busy,loading:s.loading,error:s.error,expired:s.expired,name:s.session?.name||''}]))},openFor(id,{host,returnFocus}){if(!Object.hasOwn(names,id))return;close(false);const panel=el('music-account-panel');externalHost={parent:panel.parentNode,next:panel.nextSibling,service,returnFocus};host.append(panel);panel.classList.add('plugins-auth-panel');providerChanged(id);open();},get applePlayer(){return states.apple.session&&appleInstance?.isAuthorized?appleInstance:null}};providerChanged(service);callback();
 })();

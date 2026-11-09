@@ -143,6 +143,7 @@
   function ask(raw) {
     const typed=raw.trim(), slash=typed.startsWith('/'), shortcut=slash?shortcuts.find(typed):null;
     const question=slash?(shortcut?.prompt || typed.slice(1).trim()):typed, agent=selector.value;
+    if(agent!=='local'&&window.OpenSesameWidgetLifecycle?.isActive(agent)===false){toast('Activate this agent widget in Widgets first.');return false}
     const full = [audioSession.final,audioSession.interim].filter(Boolean).join('\n').trim();
     if (!full) { toast('Record or try the demo before asking.'); showView('transcript'); return false }
     if (pending || !question || question.length > 2000) { toast(pending?'Wait for the current answer.':'Use a question under 2,001 characters.'); return false }
@@ -301,6 +302,9 @@
   window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario!=='audio'){settings(false);closeEditor()}else {update();drawEntries()}});
   window.addEventListener('open-sesame-layout',()=>{if(!state.expanded||window.OpenSesameLauncher?.active)closeEditor()});
   window.addEventListener('open-sesame-desktop-disconnected',()=>{checkNumber++;available={};checking=false;update()});
+  function syncWidgetState(){if(pending&&window.OpenSesameWidgetLifecycle.isActive(pending.agent)===false){generation++;pending.error=true;pending.answer='Widget deactivated; answer discarded.';pending=null}if(selector.value!=='local'&&window.OpenSesameWidgetLifecycle.isActive(selector.value)===false)selector.value='local';for(const option of selector.options)if(option.value!=='local')option.disabled=!window.OpenSesameWidgetLifecycle.isActive(option.value);drawEntries();update()}
+  window.addEventListener('open-sesame-widgets-changed',syncWidgetState);
+  if(window.OpenSesameWidgetLifecycle)syncWidgetState();
   window.OpenSesameLive = {handoff(data){if(data){entries=data.entries;sample=data.sample;recapThrough=data.recapThrough;drawEntries();showView(data.view)}return JSON.parse(JSON.stringify({entries,sample,recapThrough,view:conversationView}))},get busy(){return !!pending},get demoRunning(){return demoTimer!==null},ask,update,placeholder,action,inQuestions:()=>state.scenario==='audio'&&!$('audio-record').checked,beforeListen,isDemo:()=>sample,startDemo,endDemo,stopForHide(){endDemo();if(audioSession.active||audioSession.starting)stopAudio()}};
   drawEntries(); update(); openSesameBridge.ready.then(checkProviders);
 })();
