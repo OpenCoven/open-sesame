@@ -14,7 +14,7 @@ document=new EventTarget();document.hidden=false;document.getElementById=get;doc
 const window=new EventTarget(),timers=new Map(),announcements=[];let serial=0,respond=async()=>({machine:'Fixture Mac',agents:[]}),calls=0;
 const controls=[];let controlReply=async()=>({signalSent:true});
 const bridge={available:true,ready:Promise.resolve(),request:async(method,params)=>{if(method==='agents.control'){controls.push(params);return controlReply()}assert.equal(method,'agents.snapshot');calls++;return respond()}};
-window.openSesameBridge=bridge;window.addEventListener('open-sesame-agents-updated',e=>announcements.push(e.detail));
+window.localStorage={getItem:key=>key==='open-sesame-process-view'?'grid':null,setItem(){}};window.openSesameBridge=bridge;window.addEventListener('open-sesame-agents-updated',e=>announcements.push(e.detail));
 vm.runInNewContext(fs.readFileSync('dist/agent-monitor.js','utf8'),{window,document,openSesameBridge:bridge,state:{scenario:'agent-monitor'},icon:()=>'<svg></svg>',CustomEvent,Date,setTimeout:fn=>{timers.set(++serial,fn);return serial},clearTimeout:id=>timers.delete(id)});
 const flush=()=>new Promise(resolve=>setImmediate(resolve));await flush();
 assert.equal(get('agent-empty').hidden,false);assert.match(get('agent-empty-title').textContent,/Ready/);assert.equal(get('agent-refresh').disabled,false);assert.equal(get('agent-clear-filters').hidden,true);
@@ -23,8 +23,8 @@ respond=async()=>({machine:'Fixture Mac',agents});await window.OpenSesameAgentMo
 agents[0].activity={state:'waiting',source:'fixture',since:Date.now()-60000};agents[0].cwd='/fixture/repo';agents[0].repository={name:'repo',branch:'feature'};
 const layoutTools=get('pane-agent-monitor').querySelector('.agent-filter-row').children.find(n=>n.className==='agent-workspace-tools');
 const layoutButtons=layoutTools.children[0].children;
-for(const label of ['Table','List','Grid','Board','Gantt']){layoutButtons.find(b=>b.textContent===label).click();assert.equal(get('agent-cards').dataset.layout,label.toLowerCase());if(label==='Board')assert.equal(get('agent-cards').children.length,6)}
-layoutButtons[0].click();
+for(const label of ['Table','List','Grid','Board','Gantt']){layoutButtons.find(b=>b.textContent===label).click();assert.equal(get('agent-cards').dataset.layout,label.toLowerCase());if(label==='Board')assert.equal(get('agent-cards').children.length,6);if(label==='Table')assert.equal(get('agent-cards').children[0].tag,'table')}
+layoutButtons[2].click();
 const needsButton=layoutTools.children[1];needsButton.click();assert.equal(get('agent-cards').children.length,1);needsButton.click();
 get('agent-search').value='feature';get('agent-search').dispatchEvent(new Event('input'));assert.equal(get('agent-cards').children.length,1);get('agent-search').value='';get('agent-search').dispatchEvent(new Event('input'));
 

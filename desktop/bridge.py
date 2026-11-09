@@ -281,13 +281,15 @@ class Bridge:
             thread = threading.Thread(target=coven_request, daemon=True)
             with self.coven_threads_lock: self.coven_threads.add(thread)
             thread.start(); return
-        if message.get('method') in ('agents.snapshot', 'agents.control'):
+        if message.get('method') in ('agents.snapshot', 'agents.control', 'agents.terminal', 'agents.history.clear'):
             if not self.agent_scan_slot.acquire(blocking=False):
                 self.emit({'requestId': request_id, 'error': 'An agent scan is already running.'})
                 return
             def scan_agents():
                 try:
-                    self.emit({'requestId': request_id, 'result': self.agent_workspace_snapshot(message.get('params') or {}) if message['method'] == 'agents.snapshot' else agent_control(message.get('params') or {})})
+                    params = message.get('params') or {}
+                    if not isinstance(params, dict): raise ValueError('Invalid agent request.')
+                    self.emit({'requestId': request_id, 'result': self.call(message['method'], params)})
                 except Exception as error:
                     self.emit({'requestId': request_id, 'error': str(error)[:300]})
                 finally:
@@ -335,7 +337,11 @@ class Bridge:
 
     def agent_workspace_snapshot(self, params=None):
         result = enrich_snapshot(agent_snapshot(), self.sessions, (params or {}).get('screens', {}))
-        result['history'] = self.process_history.update(result['agents'])
+        try:
+            result['history'] = self.process_history.update(result['agents'])
+        except OSError:
+            result['history'] = list(self.process_history.rows.values())
+            result['historyError'] = 'Activity history could not be saved. Live discovery remains available.'
         return result
 
     def call(self, method, params):

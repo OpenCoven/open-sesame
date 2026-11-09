@@ -6,6 +6,9 @@ import re
 import subprocess
 import threading
 import time
+import math
+import sys
+import tempfile
 
 
 def run(args, timeout=1):
@@ -36,13 +39,26 @@ def classify(provider, screen):
 
 class History:
     def __init__(self, path=None):
-        self.path = pathlib.Path(path or pathlib.Path.home() / 'Library/Application Support/Open Sesame/process-history.json')
+        base = pathlib.Path.home() / ('Library/Application Support/Open Sesame' if sys.platform == 'darwin' else '.local/state/open-sesame')
+        self.path = pathlib.Path(path or base / 'process-history.json')
         self.lock = threading.Lock()
         self.rows = {}
         try:
+            if self.path.stat().st_size > 8_000_000: raise ValueError('History exceeds local metadata limit')
             value = json.loads(self.path.read_text())
             if isinstance(value, dict): self.rows = value
         except (OSError, ValueError): pass
+        self.rows = self.valid_rows(self.rows)
+
+    @staticmethod
+    def valid_rows(rows):
+        valid = {}
+        states = {'working', 'waiting', 'ready', 'completed', 'unknown', 'exited'}
+        for key, row in list(rows.items())[:256]:
+            if not isinstance(key, str) or not isinstance(row, dict) or not isinstance(row.get('lastSeen'), (int, float)) or not math.isfinite(row['lastSeen']) or not isinstance(row.get('intervals'), list): continue
+            intervals = [i for i in row['intervals'][-256:] if isinstance(i, dict) and i.get('state') in states and all(isinstance(i.get(k), (int, float)) and math.isfinite(i[k]) for k in ('start', 'end')) and i['end'] >= i['start']]
+            valid[key] = {**row, 'id':key, 'name':str(row.get('name','Agent'))[:128], 'repository':row.get('repository') if isinstance(row.get('repository'),dict) else {}, 'cwd':row.get('cwd') if isinstance(row.get('cwd'),str) else '', 'provider':row.get('provider') if isinstance(row.get('provider'),str) else '', 'intervals': intervals}
+        return valid
 
     def update(self, agents, now=None):
         now = int(time.time()*1000) if now is None else now
@@ -64,13 +80,15 @@ class History:
                     intervals.append({'start':now, 'end':now, 'state':state})
                 if state == 'waiting': a['activity'].setdefault('since', intervals[-1]['start'])
                 row['lastSeen'] = now
-                row['intervals'] = [i for i in intervals if i['end'] >= cutoff][-2000:]
-            self.rows = dict(sorted(self.rows.items(), key=lambda pair:pair[1]['lastSeen'], reverse=True)[:1000])
+                row['intervals'] = [i for i in intervals if i['end'] >= cutoff][-256:]
+            self.rows = dict(sorted(self.rows.items(), key=lambda pair:pair[1]['lastSeen'], reverse=True)[:256])
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            temp = self.path.with_suffix('.tmp')
-            fd = os.open(temp, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o600)
-            with os.fdopen(fd, 'w') as stream: json.dump(self.rows, stream)
-            os.replace(temp, self.path)
+            fd, temp = tempfile.mkstemp(prefix='.process-history-', dir=self.path.parent)
+            try:
+                with os.fdopen(fd, 'w') as stream: json.dump(self.rows, stream)
+                os.replace(temp, self.path)
+            finally:
+                pathlib.Path(temp).unlink(missing_ok=True)
             return list(self.rows.values())
 
     def clear(self):

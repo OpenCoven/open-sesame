@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Opt-in lifecycle hook. Stores only state and identity, never hook payload text."""
 import argparse
-import hashlib
+import itertools
+import re
 import json
 import os
 import pathlib
-import socket
 import subprocess
 import sys
 import time
-from agent_monitor import process_identities
+from agent_monitor import process_identities, agent_identity
 
-ROOT = pathlib.Path.home() / 'Library/Application Support/Open Sesame/agent-activity'
+ROOT = pathlib.Path.home() / ('Library/Application Support/Open Sesame/agent-activity' if sys.platform == 'darwin' else '.local/state/open-sesame/agent-activity')
 
 
 def report(state):
@@ -24,8 +24,13 @@ def report(state):
         seen.add(pid)
         identity = identities.get(pid)
         if identity:
-            key = hashlib.sha256((socket.gethostname()+str(pid)+str(identity[:3])).encode()).hexdigest()[:24]
+            key = agent_identity(pid, identity)
             ROOT.mkdir(parents=True,exist_ok=True,mode=0o700)
+            for old in itertools.islice(ROOT.iterdir(), 512):
+                if re.fullmatch(r'[a-f0-9]{24}\.json', old.name):
+                    try:
+                        if old.stat().st_mtime < time.time()-7*86400: old.unlink()
+                    except FileNotFoundError: pass
             path = ROOT / (key+'.json')
             tmp = ROOT / (key+'.'+str(os.getpid())+'.tmp')
             fd = os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
@@ -37,12 +42,12 @@ def report(state):
 
 
 def activity(key):
-    if not key: return None
+    if not isinstance(key, str) or not re.fullmatch(r'[a-f0-9]{24}', key): return None
     try:
         path = ROOT / (key+'.json')
         if path.stat().st_size > 2048: return None
         value = json.loads(path.read_text())
-        if value.get('state') in ('working','waiting','ready','completed') and value.get('source') == 'lifecycle': return value
+        if isinstance(value, dict) and isinstance(value.get('since'), int) and value['since'] <= int(time.time()*1000)+5000 and value.get('state') in ('working','waiting','ready','completed') and value.get('source') == 'lifecycle': return value
     except (OSError,ValueError): pass
     return None
 
@@ -56,6 +61,6 @@ if __name__ == '__main__':
     if args.claude:
         payload = json.loads(sys.stdin.read(65536))
         event = payload.get('hook_event_name')
-        state = {'UserPromptSubmit':'working','PreToolUse':'working','PostToolUse':'working','PermissionRequest':'waiting','Stop':'completed'}.get(event)
+        state = {'UserPromptSubmit':'working','PreToolUse':'working','PostToolUse':'working','PostToolUseFailure':'working','PermissionRequest':'waiting','Stop':'completed'}.get(event)
         if event == 'Notification': state = {'permission_prompt':'waiting','elicitation_dialog':'waiting','idle_prompt':'ready'}.get(payload.get('notification_type'))
     if state: report(state)

@@ -32,5 +32,31 @@ class WorkspaceTests(unittest.TestCase):
     def test_repository_directory_spaces(self):
         with tempfile.TemporaryDirectory(prefix='repo with spaces ') as folder:
             subprocess.run(['git','init', '-q', folder],check=True)
-            # rev-parse HEAD fails before a first commit, so directory remains known independently.
-            self.assertEqual(repository_context(folder), {})
+            context = repository_context(folder)
+            self.assertEqual(pathlib.Path(context['root']), pathlib.Path(folder).resolve())
+            self.assertTrue(context['branch'])
+
+    def test_corrupt_history_rows_are_ignored(self):
+        import json
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder)/'history.json'
+            path.write_text(json.dumps({'bad': {'lastSeen':'not a time','intervals':[]}, 'bad2': {'lastSeen':100000,'intervals':[None,{'start':1,'end':2,'state':'fake'}]}}))
+            h=History(path)
+            self.assertNotIn('bad',h.rows)
+            self.assertEqual(h.rows['bad2']['intervals'],[])
+            h.update([],100001)
+
+    def test_history_disk_failure_preserves_live_discovery(self):
+        from unittest.mock import patch
+        from bridge import Bridge
+        bridge=Bridge(lambda _:None)
+        self.addCleanup(bridge.close)
+        with patch('bridge.agent_snapshot',return_value={'agents':[]}), patch.object(bridge.process_history,'update',side_effect=OSError('fixture read-only')):
+            result=bridge.call('agents.snapshot',{})
+        self.assertEqual(result['agents'],[])
+        self.assertIn('historyError',result)
+
+    def test_identity_survives_reparenting(self):
+        from agent_monitor import agent_identity
+        self.assertEqual(agent_identity(42,(1,501,'start','codex')),agent_identity(42,(2,501,'start','codex')))
+        self.assertNotEqual(agent_identity(42,(1,501,'start','codex')),agent_identity(42,(1,501,'later','codex')))
