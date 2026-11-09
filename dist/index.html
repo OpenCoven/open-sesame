@@ -44,7 +44,7 @@
   <script src="bookmark-model.js?v=6a111c3f2b6a" defer></script>
   <script src="focus-calendar-model.js?v=0a25c0d1a82a" defer></script>
   <script src="native-surfaces.js?v=c0d86cd56f0f" defer></script>
-  <script src="app.js?v=abfb1408b472" defer></script>
+  <script src="app.js?v=73b786d86bd7" defer></script>
   <script src="bookmarks.js?v=e69a15e3d5e6" defer></script>
   <script src="frame.js?v=77800e925385" defer></script>
   <script src="focus-calendar.js?v=774553116a29" defer></script>
@@ -95,7 +95,7 @@
   <script src="compact-media.js?v=c83a4e230748" defer></script>
   <link rel="stylesheet" href="compact-indicators.css?v=24ed94f27273">
   <script src="compact-indicators.js?v=c0bea1b6e4b6" defer></script>
-  <script src="lockin.js?v=37f519e46c85" defer></script>
+  <script src="lockin.js?v=64851cbc9f12" defer></script>
   <link rel="stylesheet" href="screen-notes.css?v=7db8d82e2de7">
   <script src="screen-notes.js?v=186456b19116" defer></script>
   <script src="notes.js?v=5c98607c8aca" defer></script>
@@ -153,7 +153,7 @@
 <script src="familiar-rail-resize.js?v=07d83b0b3193" defer></script>
 <link rel="stylesheet" href="page-widgets.css?v=4e107e963478">
 <script src="page-widgets.js?v=8ccb8ea1ee6b" defer></script>
-<link rel="stylesheet" href="application-polish.css?v=217506ea6907">
+<link rel="stylesheet" href="application-polish.css?v=2000ea8f371e">
 <script src="application-chrome.js?v=64294316b799" defer></script>
 <link rel="stylesheet" href="process-workspace.css?v=71fd24fd7f5d">
 </head>
@@ -281,7 +281,7 @@
                       <form id="media-form" class="lockin-source-form" novalidate hidden><label class="sr-only" for="media-url">Media URL</label><i data-icon="link"></i><input id="media-url" type="text" placeholder="Audio or video URL…" autocomplete="url" spellcheck="false"><button type="submit" aria-label="Load media URL" title="Load URL"><i data-icon="arrow-up-right"></i></button><button id="media-link-cancel" type="button" aria-label="Close media link" title="Close link"><i data-icon="close"></i></button></form>
                       <p id="media-error" class="lockin-player-error" role="alert" hidden></p>
                       <div id="media-workspace" class="media-workspace"><div id="media-stage" class="lockin-player-stage"><div id="media-empty" class="lockin-player-empty"><i data-icon="folder"></i><strong>Start a playlist</strong><span>Choose one track or video, then add more whenever you like.</span><button id="media-choose" type="button"><i data-icon="music"></i>Choose media</button></div><div id="media-artwork" class="media-artwork" aria-hidden="true" hidden><div class="media-record"><i data-icon="music"></i></div><span>LOCAL AUDIO</span></div><video id="local-media" controls playsinline preload="metadata" hidden></video></div><aside id="media-queue" class="media-queue playlist-rail" aria-label="Media playlist" hidden><div class="workspace-rail-heading playlist-rail-heading"><span>Playlist</span><button id="media-repeat" type="button" aria-label="Repeat off" title="Repeat off"><i data-icon="reset"></i></button></div><div class="media-search playlist-rail-search"><i data-icon="search"></i><label for="media-search" class="sr-only">Search media playlist</label><input id="media-search" type="search" placeholder="Find in playlist…" autocomplete="off" spellcheck="false"></div><ol class="playlist-rail-list" id="media-queue-list" aria-label="Media tracks"></ol><p id="media-queue-empty" hidden>No matching tracks.</p><div id="media-queue-pages" class="workspace-pagination" hidden><button id="media-queue-prev" type="button" aria-label="Previous media page"><i data-icon="chevron"></i></button><span id="media-queue-page"></span><button id="media-queue-next" type="button" aria-label="Next media page"><i data-icon="chevron"></i></button></div></aside></div>
-                      <div id="media-carousel" role="region" aria-roledescription="carousel" aria-label="Browse playlist" tabindex="0" hidden></div><div class="media-now-playing" hidden><span id="media-title">Your own soundtrack.</span><small id="media-position"></small><button id="media-previous" class="workspace-icon-button" type="button" aria-label="Previous track" title="Previous track"><i data-icon="previous"></i></button><button id="media-next" class="workspace-icon-button" type="button" aria-label="Next track" title="Next track"><i data-icon="next"></i></button></div><span id="media-announcement" class="sr-only" aria-live="polite"></span>
+                      <div id="media-carousel" role="region" aria-roledescription="carousel" aria-label="Browse playlist" tabindex="0" hidden></div><div class="media-now-playing" hidden><button id="media-play" class="workspace-icon-button" type="button" aria-label="Play track" title="Play track"><i data-icon="play"></i></button><span id="media-title">Your own soundtrack.</span><label class="sr-only" for="media-seek">Playback position</label><input id="media-seek" type="range" min="0" max="0" step="0.1" value="0" disabled><small id="media-time" aria-label="Playback time">0:00 / 0:00</small><small id="media-position"></small><button id="media-previous" class="workspace-icon-button" type="button" aria-label="Previous track" title="Previous track"><i data-icon="previous"></i></button><button id="media-next" class="workspace-icon-button" type="button" aria-label="Next track" title="Next track"><i data-icon="next"></i></button></div><span id="media-announcement" class="sr-only" aria-live="polite"></span>
                     </div>
                   </section>
                   <div id="pane-focus" role="tabpanel" aria-labelledby="tab-lockin" class="widget-pane focus-pane" hidden>
