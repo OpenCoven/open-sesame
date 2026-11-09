@@ -682,6 +682,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             positionPanel()
             respond(requestId, result: true); return
         }
+        if method == "project.reveal" {
+            guard let path = params["path"] as? String, path.hasPrefix("/"), !path.contains("\0"), FileManager.default.fileExists(atPath: path) else { respond(requestId, error: "Folder unavailable."); return }
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            respond(requestId, result: true); return
+        }
         if method == "project.chooseFolder" {
             let picker = NSOpenPanel(); picker.canChooseDirectories = true; picker.canChooseFiles = false; picker.allowsMultipleSelection = false; picker.prompt = "Use project folder"
             picker.begin { [weak self] response in self?.respond(requestId, result: response == .OK ? ["path": picker.url?.path ?? ""] : ["path": ""]) }
@@ -708,7 +713,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             }
             return
         }
-        let allowed = ["github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
+        let allowed = ["github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "agents.control", "agents.terminal", "agents.history.clear", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
         guard allowed.contains(method), let input = input, bridge?.isRunning == true else { respond(requestId, error: "The desktop terminal bridge is unavailable."); return }
         do { var data = try JSONSerialization.data(withJSONObject: body); data.append(10); try input.write(contentsOf: data) } catch { respond(requestId, error: "Could not reach the desktop terminal bridge.") }
     }
