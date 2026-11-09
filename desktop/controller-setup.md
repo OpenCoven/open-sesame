@@ -12,7 +12,7 @@ Browser retrieval requires the publisher's CORS permission; the desktop helper c
 
 ## Commands
 
-Open Reading → Options → iMessage controller. The tester applies commands to the current widget and explains failures. The same restricted parser handles provider messages.
+Open Reader → Options → iMessage controller. The tester applies commands to the current widget and explains failures. The same restricted parser handles provider messages.
 
 | Command | Action |
 | --- | --- |

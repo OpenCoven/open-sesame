@@ -12,9 +12,13 @@ For any continuation, reconcile the recorded head/base with actual Git state and
 
 A handoff records task ID/owner, branch/worktree, scope/dependencies, exact head/base and dirty state, executed commands and receipt paths, acceptance achieved/open, cleanup disposition and one next action. Shared mutable records and machine-specific output stay outside the source package; stable implementation contracts belong in feature docs. Preserve existing owners and use explicit transfer rather than assuming another session has finished.
 
-## Agent-readability audit
+## Maintain navigation and handoffs
 
-Task `agent-readability-20261108` owns `codex/agent-readability` in the isolated `open-sesame-agent-readability` worktree, starting from `659735507d572f5ea9e4ad74f5730e4913334524`. Its scope is end-to-end agent onboarding, source/test navigation, accurate host/state boundaries, current-vs-historical guidance and verifiable documentation links. It changes guidance, documentation checks and source-package completeness rather than application behavior. Main advanced to `bc69e160ad6023ece1407fb48f64a4fb3b8a0cda` during the audit; the VNC and pre-commit safeguards are included in the final source/test map. Exact qualification, publication state and continuation are in its shared task record.
+Use the [source/test map](repository-map.md) and [documentation index](README.md) when adding or moving a subsystem. Record an actual task's owner, worktree, exact source identity and next action in the shared task/receipt record. Keep this entry page as a stable lookup rather than a list of assignments that becomes stale after merge.
+
+A copyable continuation can use this template after filling it from current evidence:
+
+> Resume task `<task-id>` only after matching its shared claim to the actual worktree and owner. Refresh Git/REST state, read the indexed report and original failures, preserve existing work, and execute the recorded next action within the session's authority. Keep each unmet acceptance class explicit.
 
 ## Historical narratives
 

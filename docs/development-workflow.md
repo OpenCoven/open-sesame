@@ -62,7 +62,7 @@ Before removal, the tool creates an archive ref and bundle, verifies the bundle,
 
 ## Interruptions and completion
 
-Before stopping, checkpoint exact head/base, dirty source fingerprint, commands and receipts, original failures, current owners, cleanup dispositions, unmet criteria, and one next action. Leave a copyable continuation prompt in `docs/work-tracking.md`. Completion requires evidence for every acceptance criterion; a host blocker must remain explicit. Do not turn unavailable GUI/device/provider/hosted evidence into a successful check.
+Before stopping, checkpoint exact head/base, dirty source fingerprint, commands and receipts, original failures, current owners, cleanup dispositions, unmet criteria, and one next action. Leave a copyable continuation prompt in the shared task/receipt record and use [work-tracking.md](work-tracking.md) as the stable lookup. Completion requires evidence for every acceptance criterion; a host blocker must remain explicit. Do not turn unavailable GUI/device/provider/hosted evidence into a successful check.
 
 ## Pre-commit secret checks
 
