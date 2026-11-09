@@ -23,6 +23,7 @@ class ComputerAgentTests(unittest.TestCase):
         self.root = Path(temporary.name); self.events = []; self.now = 1000; self.native_event = threading.Event()
         self.binary = self.root / 'engine'
         self.fixture('print(json.dumps({"type":"result","success":True}))')
+        account = patch('computer_accounts.account', return_value={'available':True,'configured':True,'provider':'fixture','model':'fixture-model','route':'fixture-route','destination':'https://fixture.invalid','driver':'codex'});account.start();self.addCleanup(account.stop)
         self.agent = ComputerAgent(self.emit, native=True, binary=self.binary, clock=lambda: self.now, trusted_fixture=True)
         self.addCleanup(self.agent.close)
 
@@ -39,6 +40,34 @@ class ComputerAgentTests(unittest.TestCase):
 
     def wait_done(self):
         self.agent.run['worker'].join(4); self.assertFalse(self.agent.run['worker'].is_alive())
+
+    def test_stop_during_account_recheck_revokes_unstarted_native_session(self):
+        proposal = self.agent.prepare({'prompt':'Fixture'})
+        entered, release = threading.Event(), threading.Event()
+        original = self.agent.status
+        errors = []
+        def blocked(*args, **kwargs):
+            entered.set(); self.assertTrue(release.wait(3)); return original(*args, **kwargs)
+        def finish():
+            try: self.agent.finish(proposal['token'], True, 's' * 64)
+            except ValueError as error: errors.append(str(error))
+        with patch.object(self.agent, 'status', side_effect=blocked), patch('computer_agent.subprocess.Popen') as spawn:
+            worker = threading.Thread(target=finish); worker.start()
+            try:
+                self.assertTrue(entered.wait(3))
+                self.agent.cancel_session('s' * 64)
+            finally:
+                release.set(); worker.join(3)
+            self.assertFalse(worker.is_alive()); spawn.assert_not_called()
+        self.assertTrue(errors); self.assertIsNone(self.agent.run)
+
+    def test_stop_before_finish_worker_is_also_revoked(self):
+        proposal=self.agent.prepare({'prompt':'Fixture'})
+        self.agent.cancel_session('s'*64)
+        with patch('computer_agent.subprocess.Popen') as spawn:
+            with self.assertRaisesRegex(ValueError,'stopped'): self.agent.finish(proposal['token'],True,'s'*64)
+            spawn.assert_not_called()
+        self.assertIsNone(self.agent.run)
 
     def test_action_fields_and_geometry_fail_closed(self):
         valid = action_request({'action': 'click', 'observation': 'frame', 'coordinate': [12, 23], 'text': None})
@@ -103,6 +132,7 @@ print(json.dumps({'type':'result','success':True}),flush=True)''')
             run = self.start(); owned = self.agent.run['process']; self.assertTrue(self.agent.cancel(run['runId'])['cancelled']); self.wait_done()
             self.assertIsNotNone(owned.returncode); self.assertIsNone(unrelated.poll()); self.assertEqual(self.agent.run['state'], 'cancelled')
             self.assertFalse(any(e.get('type') == 'error' for e in self.events)); self.assertFalse(self.agent.cancel('stale')['cancelled'])
+            self.assertTrue(any(e.get('event')=='computer.progress' and e.get('runId')==run['runId'] and e.get('type')=='paused' for e in self.events), 'Native cancellation must retire the renderer task')
         finally: unrelated.terminate(); unrelated.wait(timeout=3)
 
 
@@ -124,7 +154,7 @@ class ComputerBridgeBoundaryTests(unittest.TestCase):
 
     def test_renderer_only_bridge_cannot_prepare_approve_or_complete(self):
         bridge, events = self.bridge(False)
-        for method in ['native.computer.prepare', 'native.computer.finish', 'native.computer.reply', 'native.computer.configure']:
+        for method in ['native.computer.prepare', 'native.computer.finish', 'native.computer.reply', 'native.computer.configure', 'native.computer.cancel']:
             events.clear(); bridge.handle({'requestId': 'fixture', 'method': method, 'params': {}})
             self.assertIn('error', self.wait(events))
         self.assertFalse(bridge.computer.proposals)
@@ -143,8 +173,7 @@ class ComputerBridgeBoundaryTests(unittest.TestCase):
         bridge, events = self.bridge(True)
         for params in [{'provider':'shell'},{'provider':'coven','arbitrary':'refused'}]:
             events.clear(); bridge.handle({'requestId':'status','method':'computer.status','params':params}); self.assertIn('error', self.wait(events))
-        events.clear(); key = 'fixture-native-account-value-0000000000'
-        bridge.handle({'requestId':'setup','method':'native.computer.configure','params':{'apiKey':key}})
-        result = self.wait(events); self.assertEqual(result['result'], {'configured':True}); self.assertNotIn(key,json.dumps(events))
-        bridge.computer.proposals['old'] = {'expires':100}
-        bridge.computer.configure({'apiKey':''}); self.assertEqual(bridge.computer.proposals,{})
+        events.clear()
+        bridge.handle({'requestId':'setup','method':'native.computer.configure','params':{'apiKey':'fixture-key-must-be-rejected'}})
+        result = self.wait(events); self.assertIn('error',result)
+        self.assertFalse(hasattr(bridge.computer,'api_key'))

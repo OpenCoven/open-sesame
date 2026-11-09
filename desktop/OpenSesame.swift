@@ -511,7 +511,6 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         process.executableURL = URL(fileURLWithPath: python)
         process.arguments = ["-B", "-u", resources.appendingPathComponent("bridge.py").path, "--stdio"]
         var environment = ProcessInfo.processInfo.environment
-        environment["OPEN_SESAME_COMPUTER_STORED_API_KEY"] = computerAgent.account.key
         process.environment = environment
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = stderr
         stdout.fileHandleForReading.readabilityHandler = { [weak self, weak process] handle in
@@ -583,14 +582,6 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             guard Set(params.keys) == ["kind"], let kind = params["kind"] as? String, ["screen", "accessibility"].contains(kind), !computerAgent.active else { respond(requestId, error: "Finish the current task before changing permissions."); return }
             computerAgent.requestPermission(kind); respond(requestId, result: computerAgent.permissions); return
         }
-        if method == "computer.account" {
-            guard Set(params.keys) == ["action"], let action = params["action"] as? String, ["connect", "disconnect"].contains(action), !computerAgent.active else { respond(requestId, error: "Finish the current task before changing its account."); return }
-            computerAgent.account.manage(window: panel, disconnect: action == "disconnect") { [weak self] saved in
-                guard let self, self.authentication.authenticated else { return }
-                guard saved else { self.respond(requestId, result: ["saved": false]); return }
-                self.nativeCall("native.computer.configure", params: ["apiKey": self.computerAgent.account.key]) { response in self.respond(requestId, result: response["error"] == nil ? ["saved": true] : nil, error: response["error"] as? String) }
-            }; return
-        }
         if method == "computer.start" {
             computerAgent.start(params, preferredDisplay: placementScreen().flatMap(screenID)?.uint32Value) { [weak self] response in self?.respond(requestId, result: response["result"] ?? (response["cancelled"] != nil ? ["cancelled": true] : nil), error: response["error"] as? String) }; return
         }
@@ -598,7 +589,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "computer.status" {
             nativeCall(method, params: params) { [weak self] response in
                 guard let self else { return }
-                var result = response["result"] as? [String: Any] ?? [:]; result["permissions"] = self.computerAgent.permissions; result["savedAccount"] = !self.computerAgent.account.key.isEmpty
+                var result = response["result"] as? [String: Any] ?? [:]; result["permissions"] = self.computerAgent.permissions
                 self.respond(requestId, result: response["error"] == nil ? result : nil, error: response["error"] as? String)
             }; return
         }
@@ -757,7 +748,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             }
             return
         }
-        let allowed = ["github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "agents.control", "agents.terminal", "agents.history.clear", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
+        let allowed = ["computer.login", "github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "agents.control", "agents.terminal", "agents.history.clear", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
         guard allowed.contains(method), let input = input, bridge?.isRunning == true else { respond(requestId, error: "The desktop terminal bridge is unavailable."); return }
         do { var data = try JSONSerialization.data(withJSONObject: body); data.append(10); try input.write(contentsOf: data) } catch { respond(requestId, error: "Could not reach the desktop terminal bridge.") }
     }

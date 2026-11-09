@@ -22,5 +22,8 @@ bash scripts/check-vnc-native.sh
 
 xcrun swiftc -o "$open_sesame_check/computer-model-tests" "$open_sesame_root/desktop/ComputerAgentModel.swift" "$open_sesame_root/desktop/tests/ComputerAgentModelTests.swift"
 "$open_sesame_check/computer-model-tests"
-xcrun swiftc -o "$open_sesame_check/computer-controller-tests" "$open_sesame_root/desktop/ComputerAgentModel.swift" "$open_sesame_root/desktop/ComputerAgent.swift" "$open_sesame_root/desktop/tests/ComputerAgentTests.swift" -framework AppKit -framework ScreenCaptureKit -framework ImageIO -framework Security
+xcrun swiftc -o "$open_sesame_check/computer-controller-tests" "$open_sesame_root/desktop/ComputerAgentModel.swift" "$open_sesame_root/desktop/ComputerPointer.swift" "$open_sesame_root/desktop/ComputerAgent.swift" "$open_sesame_root/desktop/tests/ComputerAgentTests.swift" -framework AppKit -framework ScreenCaptureKit -framework ImageIO -framework Security
 "$open_sesame_check/computer-controller-tests"
+
+xcrun swiftc -o "$open_sesame_check/computer-pointer-tests" "$open_sesame_root/desktop/ComputerPointer.swift" "$open_sesame_root/desktop/tests/ComputerPointerTests.swift" -framework AppKit
+"$open_sesame_check/computer-pointer-tests"

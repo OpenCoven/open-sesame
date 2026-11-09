@@ -63,50 +63,6 @@ fn server(
     });
     (url, worker)
 }
-fn stream(action: Option<serde_json::Value>, clean: bool) -> String {
-    let mut events = Vec::new();
-    if let Some(action) = action {
-        events.push(("content_block_start",json!({"index":0,"content_block":{"type":"tool_use","id":"call-fixture","name":"computer","input":{}}})));
-        events.push(("content_block_delta",json!({"index":0,"delta":{"type":"input_json_delta","partial_json":action.to_string()}})));
-        events.push(("content_block_stop", json!({"index":0})));
-        events.push((
-            "message_delta",
-            json!({"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}),
-        ));
-    } else {
-        events.push((
-            "content_block_start",
-            json!({"index":0,"content_block":{"type":"text","text":""}}),
-        ));
-        events.push((
-            "content_block_delta",
-            json!({"index":0,"delta":{"type":"text_delta","text":"Fixture visibly verified."}}),
-        ));
-        events.push((
-            "message_delta",
-            json!({"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}),
-        ));
-    }
-    if clean {
-        events.push(("message_stop", json!({})));
-    }
-    events
-        .into_iter()
-        .map(|(event, data)| format!("event: {event}\ndata: {data}\n\n"))
-        .collect()
-}
-fn engine(base: String) -> Arc<dyn LlmProvider> {
-    Arc::new(
-        AnthropicProvider::from_config(ClientConfig {
-            api_key: "fixture-not-a-credential".into(),
-            api_base: base,
-            max_retries: 0,
-            request_timeout: Duration::from_secs(5),
-            ..Default::default()
-        })
-        .unwrap(),
-    )
-}
 fn start() -> Start {
     Start {
         prompt: "Inspect the synthetic screen and click its fixture target".into(),
@@ -114,45 +70,31 @@ fn start() -> Start {
     }
 }
 #[tokio::test]
-async fn real_provider_stream_roundtrips_native_http_and_typed_images() {
-    let (base, provider) = server(vec![
-        (
-            "text/event-stream",
-            stream(Some(json!({"action":"observe"})), true),
-        ),
-        (
-            "text/event-stream",
-            stream(
-                Some(json!({"action":"click","observation":"frame-1","coordinate":[320,240]})),
-                true,
-            ),
-        ),
-        ("text/event-stream", stream(None, true)),
-    ]);
+async fn cli_planner_roundtrips_native_http_and_typed_images() {
     let reply = |id: &str| {
         json!({"summary":"Synthetic observation","observation":{"id":id,"width":640,"height":480,"app":"Fixture","display":"Fixture display"},"image":"/9j/Zml4dHVyZQ=="}).to_string()
     };
-    let (native, actions) = server(vec![
-        ("application/json", reply("frame-1")),
-        ("application/json", reply("frame-2")),
+    let (native, requests) = server(vec![
+        ("application/json",json!({"message":"Observe.","action":{"action":"observe"}}).to_string()),
+        ("application/json",reply("frame-1")),
+        ("application/json",json!({"message":"Click.","action":{"action":"click","observation":"frame-1","coordinate":[320,240]}}).to_string()),
+        ("application/json",reply("frame-2")),
+        ("application/json",json!({"message":"Fixture visibly verified.","action":null}).to_string()),
     ]);
     execute(
         start(),
-        engine(base),
-        "fixture-model".into(),
         reqwest::Client::builder().no_proxy().build().unwrap(),
         reqwest::Url::parse(&(native + "/computer")).unwrap(),
         "fixture-private-native-token-00000000".into(),
     )
     .await
     .unwrap();
-    let requests = provider.join().unwrap();
-    assert_eq!(requests.len(), 3);
-    let actions = actions.join().unwrap();
-    assert_eq!(actions[0]["action"], "observe");
-    assert_eq!(actions[1]["observation"], "frame-1");
-    assert_eq!(actions[1]["coordinate"], json!([320.0, 240.0]));
-    let blocks = requests[1]["messages"].as_array().unwrap().last().unwrap()["content"]
+    let requests = requests.join().unwrap();
+    assert_eq!(requests.len(), 5);
+    assert_eq!(requests[1]["action"], "observe");
+    assert_eq!(requests[3]["observation"], "frame-1");
+    assert_eq!(requests[3]["coordinate"], json!([320.0, 240.0]));
+    let blocks = requests[2]["messages"].as_array().unwrap().last().unwrap()["content"]
         .as_array()
         .unwrap();
     assert!(blocks
@@ -162,20 +104,21 @@ async fn real_provider_stream_roundtrips_native_http_and_typed_images() {
         && b["text"]
             .as_str()
             .is_some_and(|s| s.contains("frame-1") && s.contains("640"))));
-    assert_eq!(requests[0]["tools"].as_array().unwrap().len(), 1);
+    assert!(requests[0]["system"]
+        .as_str()
+        .unwrap()
+        .contains("Open Sesame"));
 }
 #[tokio::test]
-async fn truncated_tool_stream_cannot_dispatch_native_action() {
+async fn truncated_planner_result_cannot_dispatch_native_action() {
     let (base, provider) = server(vec![(
-        "text/event-stream",
-        stream(Some(json!({"action":"observe"})), false),
+        "application/json",
+        "{\"message\":\"unfinished\",\"action\":".into(),
     )]);
     let result = execute(
         start(),
-        engine(base),
-        "fixture-model".into(),
         reqwest::Client::new(),
-        reqwest::Url::parse("http://127.0.0.1:1/computer").unwrap(),
+        reqwest::Url::parse(&(base + "/computer")).unwrap(),
         "fixture-private-token-0000000000000".into(),
     )
     .await;

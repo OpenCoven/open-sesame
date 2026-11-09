@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="focus-overview.css?v=19682a753f32">
   <script src="storage-migration.js?v=3ac2f2e93e7d" defer></script>
   <script src="widget-lifecycle.js?v=17a671138c6e" defer></script>
-  <script src="bridge.js?v=36de37a35888" defer></script>
+  <script src="bridge.js?v=5605fe532aa4" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f69" defer></script>
   <script src="vendor/purify.min.js?v=4936212d7362" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e99" defer></script>
@@ -37,8 +37,8 @@
   <script src="world-clock.js?v=a426e7b365cd" defer></script>
   <script src="calculator.js?v=c064e126d2ec" defer></script>
   <script src="syntax.js?v=f0c2e3477f1c" defer></script>
-  <script src="computer-agent.js?v=334acc564b83" defer></script>
-<link rel="stylesheet" href="computer-agent.css?v=acf817d11771">
+  <script src="computer-agent.js?v=7a74ac331a64" defer></script>
+<link rel="stylesheet" href="computer-agent.css?v=ca4c4c1996cb">
 <script src="computer-controls.js?v=1e537ed2febb" defer></script>
   <script src="capture.js?v=ea386e4db18e" defer></script>
   <script src="item-workflow.js?v=e0ff202e7b80" defer></script>
@@ -62,7 +62,7 @@
   <script src="voice.js?v=0c825cf8aae3" defer></script>
   <script src="agents-layout.js?v=96fb8f98e417" defer></script>
   <script src="coven-chat.js?v=b010c4c85601" defer></script>
-  <script src="terminal.js?v=5c336cc27e3a" defer></script>
+  <script src="terminal.js?v=edfd80e02843" defer></script>
   <script src="github-viewer.js?v=6bc0d7da9cbf" defer></script>
   <script src="exports.js?v=2e6981ef7778" defer></script>
   <script src="site-feeds.js?v=92b76944ee52" defer></script>
@@ -387,7 +387,7 @@
                   <section id="agents-workspace" class="agents-workspace" role="tabpanel" aria-labelledby="tab-agents" hidden>
                   <div id="agents-toolbar" class="agents-toolbar console-toolbar" aria-label="Console controls"><div id="agents-context" class="agents-context"><button id="agents-rail-toggle" class="workspace-rail-toggle" type="button" aria-label="Hide pane list" aria-expanded="true" aria-controls="terminal-rail" title="Hide pane list"><i data-icon="rail-left"></i></button><div class="agents-mode-tabs console-mode-tabs" role="tablist" aria-label="Console views"><button id="agents-familiars" type="button" role="tab" data-agents="familiars" aria-controls="pane-familiars" aria-selected="false" tabindex="-1"><i data-icon="chat"></i><span>Familiars</span></button><button id="agents-monitor" type="button" role="tab" data-agents="agent-monitor" aria-controls="pane-agent-monitor" aria-selected="false" tabindex="-1"><i data-icon="agents"></i><span>Processes</span></button><button id="agents-shells" type="button" role="tab" data-agents="terminal" aria-controls="pane-terminal" aria-selected="true"><i data-icon="terminal"></i><span>Shells</span></button><button id="agents-computer" type="button" role="tab" data-agents="computer-agent" aria-controls="pane-computer-agent" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Computer</span></button><button id="agents-desktops" type="button" role="tab" data-agents="remote" aria-controls="pane-remote" aria-selected="false" tabindex="-1"><i data-icon="monitor"></i><span>Desktops</span></button></div></div><button id="terminal-more" aria-label="Shell preferences" aria-expanded="false" aria-controls="terminal-options" title="Shell preferences"><i data-icon="sliders"></i></button><button id="remote-settings" aria-label="Desktop preferences" title="Desktop preferences" hidden><i data-icon="sliders"></i></button></div>
                   <section id="pane-computer-agent" class="widget-pane" role="tabpanel" aria-labelledby="agents-computer" hidden>
-                    <header class="computer-heading"><div><h2>Coven Computer</h2><p id="computer-connection">Connect an account to get started.</p></div><div class="computer-account-controls"><label class="sr-only" for="computer-provider">Computer provider</label><select id="computer-provider"><option value="coven">Coven default account</option><option value="codex">Coven Codex account</option><option value="anthropic">Anthropic API</option></select><button id="computer-refresh" type="button" title="Refresh account and permissions" aria-label="Refresh account and permissions"><i data-icon="reset"></i></button><details><summary>Account</summary><div class="computer-account-menu"><button id="computer-account" type="button">Connect Anthropic API</button><button id="computer-remove-account" type="button" hidden>Remove saved API key</button></div></details></div></header>
+                    <header class="computer-heading"><div><h2>Coven Computer</h2><p id="computer-connection">Sign in through your CLI account.</p></div><div class="computer-account-controls"><label class="sr-only" for="computer-provider">Computer driver</label><select id="computer-provider"><option value="codex">Codex · ChatGPT</option><option value="claude">Claude Code</option><option value="familiar">Coven Familiar</option></select><label class="sr-only" for="computer-familiar">Familiar driver</label><select id="computer-familiar" hidden><option value="">Choose familiar…</option></select><label class="sr-only" for="computer-driver">Familiar account</label><select id="computer-driver" hidden><option value="codex">via Codex · ChatGPT</option><option value="claude">via Claude Code</option></select><button id="computer-account" type="button">Sign in with ChatGPT</button><button id="computer-refresh" type="button" title="Refresh account and permissions" aria-label="Refresh account and permissions"><i data-icon="reset"></i></button></div></header>
                     <div id="computer-setup" class="computer-setup"><p>Enable access in macOS, then refresh. Each task asks you to approve its display and provider. Screenshots are shared only during an approved task.</p><div><button id="computer-permission-screen" type="button">Screen Recording · Enable</button><button id="computer-permission-accessibility" type="button">Accessibility · Enable</button></div></div>
                     <div class="computer-conversation"><div id="computer-empty" class="computer-empty"><i data-icon="monitor"></i><strong>Your Mac, with a helping hand.</strong><p>Describe a task and review access before it starts. Use your mouse or keyboard to pause; Stop is also available in the menu bar.</p></div><div id="computer-messages" role="log" aria-label="Computer task progress" aria-live="polite" aria-relevant="additions"></div></div>
                     <form id="computer-task-form"><label class="sr-only" for="computer-task">Describe a computer task</label><textarea id="computer-task" rows="2" maxlength="32768" placeholder="What would you like to do on your Mac?"></textarea><div class="computer-task-actions"><span id="computer-task-status" role="status">Ready</span><div><button id="computer-stop" type="button" hidden>Stop task</button><button id="computer-start" type="submit" disabled>Review &amp; start <span aria-hidden="true">↗</span></button></div></div></form>

@@ -2,8 +2,6 @@ import AppKit
 import ApplicationServices
 import ScreenCaptureKit
 import ImageIO
-import Security
-import LocalAuthentication
 
 // All state and input dispatch stay on the application's main actor. The private
 // session nonce never crosses to JavaScript; only task text/progress does.
@@ -14,10 +12,10 @@ import LocalAuthentication
     var authenticated: () -> Bool = { false }
     var publish: ([String: Any]) -> Void = { _ in }
     var collapse: () -> Void = {}
-    let account = OpenSesameComputerAccount()
     private struct Run { var id: String?; let session: String; let display: CGDirectDisplayID; let displayName: String; let marker: Int64 }
     private var run: Run?
     private var startingSession: String?
+    private var agentPointer: OpenSesameAgentPointer?
     private var observation: OpenSesameComputerObservation?
     private struct Focus { let element: AXUIElement; let bounds: CGRect; let role: String; let subrole: String }
     private var keyboardTarget: (id: String, focus: Focus)?
@@ -27,7 +25,7 @@ import LocalAuthentication
     private var approval: NSAlert?
     private var cancelApproval: (() -> Void)?
     private var task: Task<Void, Never>?
-    var active: Bool { run != nil || approval != nil || cancelApproval != nil || startingSession != nil || account.busy }
+    var active: Bool { run != nil || approval != nil || cancelApproval != nil || startingSession != nil }
 
     var permissions: [String: Any] {
         var supported = false
@@ -78,8 +76,10 @@ import LocalAuthentication
             func id(_ screen: NSScreen) -> CGDirectDisplayID? { (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value }
             if let index = screens.firstIndex(where: { id($0) == preferredDisplay }) { picker.selectItem(at: index) }
             let destination = proposal["destination"] as? String ?? provider
+            let familiar = proposal["familiar"] as? [String: Any]
+            let familiarContext = familiar.map { "\nFamiliar: \($0["displayName"] as? String ?? "")\nWorkspace identity: \($0["workspace"] as? String ?? "Not specified")" } ?? ""
             let alert = NSAlert(); self.approval = alert; alert.messageText = "Allow Coven to use this screen?"
-            alert.informativeText = "\(provider) · \(model)\nDestination: \(destination)\n\nScreenshots of the selected display are sent to this provider. The agent can click, type, scroll and drag across applications, including actions that change files or send information. This approval is only for this task, for up to 10 minutes. Touch the mouse or keyboard to pause. Stop cannot undo completed actions.\n\nTask: \(String(prompt.prefix(4000)))\(prompt.count > 4000 ? "… (full task remains in the app)" : "")"
+            alert.informativeText = "\(provider) · \(model)\nDestination: \(destination)\(familiarContext)\n\nScreenshots of the selected display are sent to this provider. The agent can click, type, scroll and drag across applications, including actions that change files or send information. This approval is only for this task, for up to 10 minutes. Touch the mouse or keyboard to pause. Stop cannot undo completed actions.\n\nTask: \(String(prompt.prefix(4000)))\(prompt.count > 4000 ? "… (full task remains in the app)" : "")"
             alert.accessoryView = picker; alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Allow this task")
             alert.buttons[0].keyEquivalent = "\r"; alert.buttons[1].keyEquivalent = ""
             alert.beginSheetModal(for: window) { result in
@@ -92,13 +92,13 @@ import LocalAuthentication
         }
     }
     func stop() {
-        account.cancel()
+        agentPointer?.hide()
         generation += 1; task?.cancel(); task = nil; observation = nil; keyboardTarget = nil
         let previous = run; run = nil; startingSession = nil
         monitors.forEach { NSEvent.removeMonitor($0) }; monitors.removeAll()
         if let alert = approval, let window, window.attachedSheet === alert.window { window.endSheet(alert.window, returnCode: .cancel) }
         let cancel = cancelApproval; cancelApproval = nil; approval = nil; cancel?()
-        if let id = previous?.id { call("computer.cancel", ["runId": id]) { _ in } }
+        if let previous { call("native.computer.cancel", ["session": previous.session]) { _ in } }
     }
     func progress(_ value: [String: Any]) {
         guard value["event"] as? String == "computer.progress", let id = value["runId"] as? String, run?.id == id, let kind = value["type"] as? String, ["result", "paused", "error"].contains(kind) else { return }
@@ -146,7 +146,7 @@ import LocalAuthentication
             }
         }
     }
-    private func stopMonitoring() { monitors.forEach { NSEvent.removeMonitor($0) }; monitors.removeAll() }
+    private func stopMonitoring() { agentPointer?.hide(); monitors.forEach { NSEvent.removeMonitor($0) }; monitors.removeAll() }
     private func require(_ ticket: Int) throws {
         guard generation == ticket, run != nil, authenticated(), !Task.isCancelled, CGPreflightScreenCaptureAccess(), AXIsProcessTrusted() else { throw OpenSesameComputerAction.Failure.interrupted }
     }
@@ -180,33 +180,63 @@ import LocalAuthentication
         }
         throw OpenSesameComputerAction.Failure.invalid
     }
+    private struct PointerTarget { let window: OpenSesamePointerWindow; let application: NSRunningApplication }
+    private func pointerTarget(at point: CGPoint, display: CGRect) throws -> PointerTarget {
+        let rows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        let windows = rows.compactMap(OpenSesamePointerWindow.init)
+        guard let window = OpenSesamePointerWindow.choose(windows, point: point, display: display, owner: ProcessInfo.processInfo.processIdentifier, pointerWindow: agentPointer.flatMap { $0.panel.windowNumber > 0 ? CGWindowID($0.panel.windowNumber) : nil }), let app = NSRunningApplication(processIdentifier: window.pid), !app.isTerminated else { throw OpenSesameComputerAction.Failure.invalid }
+        return PointerTarget(window: window, application: app)
+    }
     private func dispatch(_ action: OpenSesameComputerAction, observed: OpenSesameComputerObservation, ticket: Int, marker: Int64) async throws {
-        func post(_ event: CGEvent?) throws {
+        func post(_ event: CGEvent?, target: PointerTarget? = nil, expectedForeground: pid_t? = nil) throws {
             try require(ticket)
             guard CGDisplayBounds(observed.display) == observed.bounds else { throw OpenSesameComputerAction.Failure.displayChanged }
             if action.kind == .type || action.kind == .key {
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == observed.foreground, let target = keyboardTarget, target.id == observed.id, let current = Self.focus(observed.foreground), CFEqual(target.focus.element, current.element), current.bounds == target.focus.bounds, OpenSesameComputerFocusPolicy.allows(role: current.role, subrole: current.subrole, bounds: current.bounds, display: observed.bounds) else { throw OpenSesameComputerAction.Failure.focusChanged }
             }
             guard let event else { throw OpenSesameComputerAction.Failure.invalid }
-            event.setIntegerValueField(.eventSourceUserData, value: marker); event.post(tap: .cghidEventTap)
+            event.setIntegerValueField(.eventSourceUserData, value: marker)
+            if let target {
+                guard !target.application.isTerminated, NSWorkspace.shared.frontmostApplication?.processIdentifier == (expectedForeground ?? observed.foreground), let row = (CGWindowListCopyWindowInfo(.optionIncludingWindow, target.window.id) as? [[String: Any]])?.first, let current = OpenSesamePointerWindow(row), current.pid == target.window.pid, current.bounds == target.window.bounds else { throw OpenSesameComputerAction.Failure.focusChanged }
+                target.window.configure(event, marker: marker)
+                if agentPointer == nil { agentPointer = OpenSesameAgentPointer() }; agentPointer?.move(to: event.location)
+                event.postToPid(target.window.pid)
+            } else {
+                guard event.type == .keyDown || event.type == .keyUp else { throw OpenSesameComputerAction.Failure.invalid }
+                event.post(tap: .cghidEventTap)
+            }
         }
         let source = CGEventSource(stateID: .combinedSessionState)
-        func mouse(_ type: CGEventType, _ point: CGPoint, right: Bool = false, clicks: Int64 = 1) throws { let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: right ? .right : .left); event?.setIntegerValueField(.mouseEventClickState, value: clicks); try post(event) }
+        func mouse(_ type: CGEventType, _ point: CGPoint, target: PointerTarget, expectedForeground: pid_t, right: Bool = false, clicks: Int64 = 1) throws { let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: right ? .right : .left); event?.setIntegerValueField(.mouseEventClickState, value: clicks); try post(event, target: target, expectedForeground: expectedForeground) }
         switch action.kind {
         case .click, .double_click, .right_click, .move, .drag:
             let point = try observed.screenPoint(action.coordinate!)
             guard !ownWindowContains(point) else { throw OpenSesameComputerAction.Failure.invalid }
-            if action.kind == .move { try mouse(.mouseMoved, point); return }
+            let target = try pointerTarget(at: point, display: observed.bounds)
+            var expectedForeground = observed.foreground
+            if action.kind != .move && target.application.activationPolicy == .regular && target.window.pid != observed.foreground {
+                guard target.application.activate(options: []) else { throw OpenSesameComputerAction.Failure.focusChanged }
+                for _ in 0..<10 { try require(ticket); if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.window.pid { break }; try await Task.sleep(nanoseconds: 20_000_000) }
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == target.window.pid, try pointerTarget(at: point, display: observed.bounds).window == target.window else { throw OpenSesameComputerAction.Failure.focusChanged }
+                expectedForeground = target.window.pid
+            }
+            if action.kind == .move { try mouse(.mouseMoved, point, target: target, expectedForeground: expectedForeground); return }
             if action.kind == .drag {
                 let end = try observed.screenPoint(action.endCoordinate!)
                 guard !ownWindowContains(end) else { throw OpenSesameComputerAction.Failure.invalid }
-                try mouse(.leftMouseDown, point)
+                try mouse(.leftMouseDown, point, target: target, expectedForeground: expectedForeground)
                 var last = point
-                defer { if let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left) { up.setIntegerValueField(.eventSourceUserData, value: marker); up.post(tap: .cghidEventTap) } }
-                for step in 1...12 { try await Task.sleep(nanoseconds: 25_000_000); last = CGPoint(x: point.x + (end.x-point.x)*Double(step)/12, y: point.y + (end.y-point.y)*Double(step)/12); try mouse(.leftMouseDragged, last) }
+                defer { if let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left) { if !target.application.isTerminated { target.window.configure(up, marker: marker); up.postToPid(target.window.pid) } } }
+                for step in 1...12 { try await Task.sleep(nanoseconds: 25_000_000); last = CGPoint(x: point.x + (end.x-point.x)*Double(step)/12, y: point.y + (end.y-point.y)*Double(step)/12); try mouse(.leftMouseDragged, last, target: target, expectedForeground: expectedForeground) }
             } else {
                 let right = action.kind == .right_click
-                for click in 1...(action.kind == .double_click ? 2 : 1) { try mouse(right ? .rightMouseDown : .leftMouseDown, point, right: right, clicks: Int64(click)); try mouse(right ? .rightMouseUp : .leftMouseUp, point, right: right, clicks: Int64(click)) }
+                func clickPair(_ count: Int64) throws {
+                    try mouse(right ? .rightMouseDown : .leftMouseDown, point, target: target, expectedForeground: expectedForeground, right: right, clicks: count)
+                    // Balance only our own press, even if its action closes or changes the window.
+                    defer { if !target.application.isTerminated, let up = CGEvent(mouseEventSource: source, mouseType: right ? .rightMouseUp : .leftMouseUp, mouseCursorPosition: point, mouseButton: right ? .right : .left) { up.setIntegerValueField(.mouseEventClickState, value: count); target.window.configure(up, marker: marker); up.postToPid(target.window.pid) } }
+                    try require(ticket)
+                }
+                for click in 1...(action.kind == .double_click ? 2 : 1) { try clickPair(Int64(click)) }
             }
         case .type:
             guard observed.foreground != ProcessInfo.processInfo.processIdentifier else { throw OpenSesameComputerAction.Failure.focusChanged }
@@ -221,13 +251,14 @@ import LocalAuthentication
         case .scroll:
             let point = try observed.screenPoint(action.coordinate ?? CGPoint(x: observed.imageSize.width / 2, y: observed.imageSize.height / 2))
             guard !ownWindowContains(point) else { throw OpenSesameComputerAction.Failure.invalid }
+            let target = try pointerTarget(at: point, display: observed.bounds)
             var remaining = action.amount!
             while remaining > 0 {
                 let amount = Int32(min(remaining, 10)), direction = action.direction!
                 let vertical: Int32 = direction == "up" ? amount : direction == "down" ? -amount : 0
                 let horizontal: Int32 = direction == "left" ? amount : direction == "right" ? -amount : 0
                 let event = CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)
-                event?.location = point; try post(event); remaining -= Int(amount)
+                event?.location = point; try post(event, target: target); remaining -= Int(amount)
             }
         case .wait: try await Task.sleep(nanoseconds: UInt64(action.milliseconds!) * 1_000_000)
         default: throw OpenSesameComputerAction.Failure.invalid
@@ -235,7 +266,7 @@ import LocalAuthentication
     }
     private func ownWindowContains(_ point: CGPoint) -> Bool {
         let height = CGDisplayBounds(CGMainDisplayID()).height
-        return NSApp.windows.filter(\.isVisible).contains { window in let frame = window.frame; return CGRect(x: frame.minX, y: height-frame.maxY, width: frame.width, height: frame.height).contains(point) }
+        return NSApp.windows.filter { $0.isVisible && $0.identifier?.rawValue != "open-sesame-agent-pointer" }.contains { window in let frame = window.frame; return CGRect(x: frame.minX, y: height-frame.maxY, width: frame.width, height: frame.height).contains(point) }
     }
     private static func focus(_ pid: pid_t) -> Focus? {
         guard pid > 0, pid != ProcessInfo.processInfo.processIdentifier else { return nil }
@@ -261,50 +292,5 @@ import LocalAuthentication
         var flags: CGEventFlags = []
         for part in parts.dropLast() { switch part { case "cmd","command","meta": flags.insert(.maskCommand); case "ctrl","control": flags.insert(.maskControl); case "alt","option": flags.insert(.maskAlternate); case "shift": flags.insert(.maskShift); default: return nil } }
         return (code, flags)
-    }
-}
-
-// A native secure field and this app's own Keychain item; no key reaches WebKit
-// or modifies the user's Coven account/configuration.
-@MainActor final class OpenSesameComputerAccount {
-    private let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "computer-agent.com.perch.widgetstudio", kSecAttrAccount as String: "anthropic-api"]
-    private var alert: NSAlert?
-    private var pending: ((Bool) -> Void)?
-    var busy: Bool { pending != nil }
-    var key: String {
-        var value: CFTypeRef?
-        var request = query; request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne; let context = LAContext(); context.interactionNotAllowed = true; request[kSecUseAuthenticationContext as String] = context
-        guard SecItemCopyMatching(request as CFDictionary, &value) == errSecSuccess, let data = value as? Data else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-    static func valid(_ value: String) -> Bool { (20...4096).contains(value.utf8.count) && value.utf8.allSatisfy { $0 > 32 && $0 < 127 } }
-    func manage(window: NSWindow, disconnect: Bool, completion: @escaping (Bool) -> Void) {
-        guard !busy, window.attachedSheet == nil else { completion(false); return }
-        let prompt = NSAlert(); alert = prompt; pending = completion
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 28))
-        prompt.messageText = disconnect ? "Remove this app's Anthropic API key?" : "Connect an Anthropic API account"
-        prompt.informativeText = disconnect ? "This removes only the key saved by Open Sesame. Your Coven accounts are preserved." : "Paste your Anthropic API key into this native secure field. Open Sesame saves it in your Mac Keychain. Computer tasks use this account only when you select Anthropic; provider usage may incur charges. Connecting does not send a model request."
-        if !disconnect { field.placeholderString = "Anthropic API key"; prompt.accessoryView = field }
-        prompt.addButton(withTitle: "Cancel"); prompt.addButton(withTitle: disconnect ? "Remove key" : "Save to Keychain"); prompt.buttons[0].keyEquivalent = "\r"; prompt.buttons[1].keyEquivalent = ""
-        prompt.beginSheetModal(for: window) { result in
-            guard self.alert === prompt else { return }
-            var success = false
-            if result == .alertSecondButtonReturn {
-                if disconnect { let code = SecItemDelete(self.query as CFDictionary); success = code == errSecSuccess || code == errSecItemNotFound }
-                else if Self.valid(field.stringValue) {
-                    let attributes: [String: Any] = [kSecValueData as String: Data(field.stringValue.utf8), kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
-                    let code = SecItemUpdate(self.query as CFDictionary, attributes as CFDictionary)
-                    success = code == errSecSuccess
-                    if code == errSecItemNotFound { success = SecItemAdd(self.query.merging(attributes) { _, new in new } as CFDictionary, nil) == errSecSuccess }
-                }
-            }
-            field.stringValue = ""; self.alert = nil; let callback = self.pending; self.pending = nil; callback?(success)
-        }
-        if !disconnect { prompt.window.initialFirstResponder = field }
-    }
-    func cancel() {
-        let previous = alert; alert = nil
-        if let previous, let parent = previous.window.sheetParent { parent.endSheet(previous.window, returnCode: .cancel) }
-        let callback = pending; pending = nil; callback?(false)
     }
 }

@@ -1,20 +1,8 @@
-use claurst_api::{
-    client::ClientConfig, AnthropicProvider, CodexProvider, LlmProvider, ProviderError,
-    ProviderRequest, StopReason, StreamEvent, SystemPrompt,
-};
-use claurst_core::{
-    config::Settings,
-    types::{
-        ContentBlock, ImageSource, Message, MessageContent, ToolDefinition, ToolResultContent,
-    },
-};
-use futures::StreamExt;
+use claurst_core::types::{ContentBlock, ImageSource, Message, MessageContent, ToolResultContent};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
-    collections::BTreeMap,
     io::{self, Write},
-    sync::Arc,
     time::Duration,
 };
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
@@ -65,6 +53,12 @@ enum Kind {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Plan {
+    message: String,
+    action: Option<Action>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NativeReply {
     summary: String,
     #[serde(default)]
@@ -90,124 +84,6 @@ fn emit(value: serde_json::Value) -> Result<(), &'static str> {
     serde_json::to_writer(&mut locked, &value).map_err(|_| "Output closed")?;
     locked.write_all(b"\n").map_err(|_| "Output closed")?;
     locked.flush().map_err(|_| "Output closed")
-}
-fn public_error(error: &ProviderError) -> &'static str {
-    match error {
-        ProviderError::AuthFailed { .. } => "Coven provider sign-in needs attention.",
-        ProviderError::RateLimited { .. } => "The provider is rate limited. Wait, then resume.",
-        ProviderError::QuotaExceeded { .. } => "The provider account has no available quota.",
-        ProviderError::ModelNotFound { .. } => "The configured model is unavailable.",
-        ProviderError::ContextOverflow { .. } => {
-            "This task reached its context limit. Continue with a shorter request."
-        }
-        _ => {
-            "The provider request failed. Your task is kept; check the connection before resuming."
-        }
-    }
-}
-async fn provider() -> Result<(Arc<dyn LlmProvider>, String, String, String, String), &'static str>
-{
-    let settings = Settings::load()
-        .await
-        .map_err(|_| "Coven settings could not be read.")?;
-    let mut config = settings.effective_config();
-    match std::env::var("OPEN_SESAME_COMPUTER_PROVIDER").as_deref() {
-        Ok("codex") => {
-            config.provider = Some("codex".into());
-            config.model = None;
-        }
-        Ok("anthropic") => {
-            config.provider = Some("anthropic".into());
-            config.model = None;
-        }
-        Ok("coven") | Err(_) => {}
-        _ => return Err("Unsupported computer provider"),
-    }
-    let model = config.effective_model().to_owned();
-    let id = config.selected_provider_id().to_owned();
-    if let Ok(expected) = std::env::var("OPEN_SESAME_COMPUTER_EXPECTED_PROVIDER") {
-        if expected != id
-            || std::env::var("OPEN_SESAME_COMPUTER_EXPECTED_MODEL")
-                .ok()
-                .as_deref()
-                != Some(model.as_str())
-        {
-            return Err("Provider configuration changed. Review the task and approve again.");
-        }
-    }
-    let own_key = std::env::var("OPEN_SESAME_COMPUTER_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty());
-    let api_base = if own_key.is_some() {
-        ClientConfig::default().api_base
-    } else {
-        config.resolve_anthropic_api_base()
-    };
-    let destination_url = reqwest::Url::parse(if id == "anthropic" {
-        &api_base
-    } else {
-        "https://chatgpt.com"
-    })
-    .map_err(|_| "The configured provider address is invalid.")?;
-    let destination = format!(
-        "{}://{}{}",
-        destination_url.scheme(),
-        destination_url
-            .host_str()
-            .ok_or("The configured provider address is invalid.")?,
-        destination_url
-            .port()
-            .map(|port| format!(":{port}"))
-            .unwrap_or_default()
-    );
-    let route = claurst_core::oauth_config::pkce::code_challenge(&format!(
-        "{id}\n{model}\n{}",
-        if id == "anthropic" {
-            api_base.as_str()
-        } else {
-            "coven-codex"
-        }
-    ));
-    if let Ok(expected) = std::env::var("OPEN_SESAME_COMPUTER_EXPECTED_ROUTE") {
-        if expected != route {
-            return Err("Provider configuration changed. Review the task and approve again.");
-        }
-    }
-    let engine: Arc<dyn LlmProvider> = match id.as_str() {
-        "codex" | "openai-codex" => Arc::new(
-            CodexProvider::from_stored()
-                .ok_or("Connect Codex in Coven to use this configured provider.")?,
-        ),
-        "anthropic" => {
-            let (key, bearer) = match own_key {
-                Some(key) => (key, false),
-                None => config.resolve_anthropic_auth_async().await.ok_or(
-                    "Connect an Anthropic API account, or select a connected Coven Codex account.",
-                )?,
-            };
-            if key.is_empty() {
-                return Err("The configured Coven provider is not signed in.");
-            }
-            Arc::new(
-                AnthropicProvider::from_config(ClientConfig {
-                    api_key: key,
-                    use_bearer_auth: bearer,
-                    api_base,
-                    ..Default::default()
-                })
-                .map_err(|_| "The configured provider could not be initialized.")?,
-            )
-        }
-        _ => return Err("This Coven provider is not supported by the embedded engine."),
-    };
-    let capabilities = engine.capabilities();
-    if !capabilities.image_input || !capabilities.tool_calling {
-        return Err("Choose a Coven provider with image and tool support.");
-    }
-    Ok((engine, id, model, route, destination))
-}
-fn definition() -> ToolDefinition {
-    ToolDefinition { name:"computer".into(), description:"Observe and operate the selected Mac display through Open Sesame. Observe first. Coordinates refer to the returned image; every input action requires the latest observation id, which is consumed. Actions are serial and return a fresh image. Ask the user before sensitive actions or when blocked. No shell, filesystem or other tools exist.".into(), input_schema:json!({"type":"object","additionalProperties":false,"properties":{"action":{"type":"string","enum":["observe","click","double_click","right_click","move","drag","type","key","scroll","wait","ask_user"]},"observation":{"type":"string"},"coordinate":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},"end_coordinate":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},"text":{"type":"string","maxLength":4000},"direction":{"type":"string","enum":["up","down","left","right"]},"amount":{"type":"integer","minimum":1,"maximum":20},"milliseconds":{"type":"integer","minimum":0,"maximum":2000}},"required":["action"]}) }
 }
 // Retain text/tool pairing while bounding screenshot memory and provider input.
 fn prune_images(messages: &mut [Message]) {
@@ -341,14 +217,11 @@ async fn run(start: Start) -> Result<(), &'static str> {
         .timeout(Duration::from_secs(175))
         .build()
         .map_err(|_| "Native channel unavailable")?;
-    let (engine, id, model, _, _) = provider().await?;
-    emit(json!({"type":"ready","provider":id,"model":model}))?;
-    execute(start, engine, model, native, url, token).await
+    emit(json!({"type":"ready"}))?;
+    execute(start, native, url, token).await
 }
 async fn execute(
     start: Start,
-    engine: Arc<dyn LlmProvider>,
-    model: String,
     native: reqwest::Client,
     url: reqwest::Url,
     token: String,
@@ -369,131 +242,49 @@ async fn execute(
     for turn in 0..MAX_TURNS {
         prune_images(&mut messages);
         emit(json!({"type":"status","text":"Thinking","turn":turn+1}))?;
-        let request = ProviderRequest {
-            model: model.clone(),
-            messages: messages.clone(),
-            system_prompt: Some(SystemPrompt::Text(SYSTEM.into())),
-            tools: vec![definition()],
-            max_tokens: 4096,
-            temperature: None,
-            top_p: None,
-            top_k: None,
-            stop_sequences: vec![],
-            thinking: None,
-            provider_options: json!({}),
-        };
-        let mut stream = engine
-            .create_message_stream(request)
+        let mut planner = url.clone();
+        planner.set_path("/planner");
+        let response = native
+            .post(planner)
+            .bearer_auth(&token)
+            .json(&json!({"system":SYSTEM,"messages":messages}))
+            .send()
             .await
-            .map_err(|e| public_error(&e))?;
-        let mut blocks = BTreeMap::new();
-        let mut arguments: BTreeMap<usize, String> = BTreeMap::new();
-        let mut stopped = false;
-        let mut stop_reason = None;
-        let mut bytes = 0;
-        while let Some(event) = tokio::time::timeout(Duration::from_secs(90), stream.next())
+            .map_err(|_| "CLI planner was interrupted")?;
+        if !response.status().is_success() {
+            return Err("CLI planner rejected this task. Check sign-in and approve again.");
+        }
+        let data = response
+            .bytes()
             .await
-            .map_err(|_| "The provider stream stalled.")?
-        {
-            match event.map_err(|e| public_error(&e))? {
-                StreamEvent::ContentBlockStart {
-                    index,
-                    content_block,
-                } => {
-                    if blocks.len() >= 32 || blocks.insert(index, content_block).is_some() {
-                        return Err("Invalid provider content");
-                    }
-                }
-                StreamEvent::TextDelta { index, text } => {
-                    bytes += text.len();
-                    if bytes > 131072 {
-                        return Err("Provider reply is too large");
-                    }
-                    match blocks.entry(index).or_insert(ContentBlock::Text {
-                        text: String::new(),
-                    }) {
-                        ContentBlock::Text { text: value } => value.push_str(&text),
-                        _ => return Err("Invalid text stream"),
-                    };
-                    emit(json!({"type":"delta","text":text}))?;
-                }
-                StreamEvent::InputJsonDelta {
-                    index,
-                    partial_json,
-                } => {
-                    let value = arguments.entry(index).or_default();
-                    value.push_str(&partial_json);
-                    if value.len() > 32768 {
-                        return Err("Tool request is too large");
-                    }
-                }
-                StreamEvent::SignatureDelta { index, signature } => {
-                    if let Some(ContentBlock::Thinking {
-                        signature: value, ..
-                    }) = blocks.get_mut(&index)
-                    {
-                        value.push_str(&signature)
-                    }
-                }
-                StreamEvent::ThinkingDelta { index, thinking } => {
-                    if let Some(ContentBlock::Thinking {
-                        thinking: value, ..
-                    }) = blocks.get_mut(&index)
-                    {
-                        value.push_str(&thinking)
-                    }
-                }
-                StreamEvent::MessageDelta {
-                    stop_reason: reason,
-                    ..
-                } => {
-                    if reason.is_some() {
-                        stop_reason = reason
-                    }
-                }
-                StreamEvent::MessageStop => {
-                    stopped = true;
-                    break;
-                }
-                StreamEvent::Error { .. } => return Err("The provider stream failed."),
-                _ => {}
-            }
+            .map_err(|_| "Planner response interrupted")?;
+        if data.len() > 32768 {
+            return Err("Planner reply is too large");
         }
-        if !stopped || matches!(stop_reason, Some(StopReason::MaxTokens) | None) {
-            return Err(
-                "The provider reply did not finish cleanly. No pending action was executed.",
-            );
+        let plan: Plan = serde_json::from_slice(&data)
+            .map_err(|_| "Incomplete or invalid planner reply. No pending action was executed.")?;
+        if plan.message.len() > 16000 {
+            return Err("Planner message is too large");
         }
-        for (index, value) in arguments {
-            match blocks.get_mut(&index) {
-                Some(ContentBlock::ToolUse { input, .. }) => {
-                    *input = serde_json::from_str(&value).map_err(|_| "Invalid tool JSON")?
-                }
-                _ => return Err("Invalid tool stream"),
-            }
+        if !plan.message.is_empty() {
+            emit(json!({"type":"delta","text":plan.message}))?;
         }
-        let assistant: Vec<ContentBlock> = blocks.into_values().collect();
-        let calls: Vec<_> = assistant
-            .iter()
-            .filter_map(|b| {
-                if let ContentBlock::ToolUse { id, name, input } = b {
-                    Some((id.clone(), name.clone(), input.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        messages.push(Message::assistant_blocks(assistant));
-        if !calls.is_empty() && stop_reason != Some(StopReason::ToolUse) {
-            return Err("Tool reply did not finish cleanly. No pending action was executed.");
-        }
-        if calls.is_empty() {
+        let Some(action) = plan.action else {
             emit(json!({"type":"result","success":true}))?;
             return Ok(());
-        }
-        if calls.len() != 1 {
-            return Err("The computer agent must act serially. Observe again before continuing.");
-        }
+        };
+        validate(&action)?;
+        let id = format!("computer-{}", turn + 1);
+        let input = serde_json::to_value(&action).map_err(|_| "Invalid action")?;
+        messages.push(Message::assistant_blocks(vec![
+            ContentBlock::Text { text: plan.message },
+            ContentBlock::ToolUse {
+                id: id.clone(),
+                name: "computer".into(),
+                input: input.clone(),
+            },
+        ]));
+        let calls = vec![(id, "computer".to_string(), input)];
         for (id, name, input) in calls {
             if name != "computer" {
                 return Err("Unrecognized tool refused");
@@ -543,16 +334,7 @@ async fn main() {
         return;
     }
     if args == ["--status"] {
-        match provider().await {
-            Ok((_, provider, model, route, destination)) => {
-                let _ = emit(
-                    json!({"configured":true,"provider":provider,"model":model,"route":route,"destination":destination}),
-                );
-            }
-            Err(message) => {
-                let _ = emit(json!({"configured":false,"message":message}));
-            }
-        }
+        let _ = emit(json!({"available":true,"transport":"account-owned-cli","version":2}));
         return;
     }
     if !args.is_empty() {

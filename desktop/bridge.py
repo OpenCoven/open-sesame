@@ -226,29 +226,30 @@ class Bridge:
         self.coven_threads_lock = threading.Lock()
         self.github = GitHubMonitor()
         self.github_slot = threading.BoundedSemaphore(1)
-        self.computer = ComputerAgent(emit, native=native_permissions)
+        self.computer = ComputerAgent(emit, native=native_permissions, familiars=self.coven.familiars)
         self.computer_slot = threading.BoundedSemaphore(1)
 
     def handle(self, message):
         request_id = message.get('requestId')
         method = message.get('method', '')
-        if isinstance(method, str) and (method.startswith('native.computer.') or method in ('computer.status', 'computer.cancel')):
+        if isinstance(method, str) and (method.startswith('native.computer.') or method in ('computer.status', 'computer.cancel', 'computer.login')):
             params = message.get('params', {})
-            allowed = {'computer.status': {'provider'}, 'computer.cancel': {'runId'}, 'native.computer.configure': {'apiKey'}, 'native.computer.prepare': {'prompt', 'history', 'provider'}, 'native.computer.finish': {'token', 'approved', 'session'}, 'native.computer.reply': {'id', 'runId', 'session', 'reply'}}
+            allowed = {'computer.status': {'provider', 'driver', 'familiarId'}, 'computer.cancel': {'runId'}, 'computer.login': {'provider'}, 'native.computer.cancel': {'session'}, 'native.computer.prepare': {'prompt', 'history', 'provider', 'driver', 'familiarId'}, 'native.computer.finish': {'token', 'approved', 'session'}, 'native.computer.reply': {'id', 'runId', 'session', 'reply'}}
             if method not in allowed or method.startswith('native.') and not self.native_permissions or not isinstance(params, dict) or set(params) - allowed[method]:
                 self.emit({'requestId': request_id, 'error': 'Unsupported computer request.'}); return
             # Replies and Stop must never wait behind status/provider startup.
-            immediate = method in ('computer.cancel', 'native.computer.reply')
+            immediate = method in ('computer.cancel', 'native.computer.cancel', 'native.computer.reply')
             if not immediate and not self.computer_slot.acquire(blocking=False):
                 self.emit({'requestId': request_id, 'error': 'Computer setup is already in progress.'}); return
             def computer_request():
                 try:
                     if method == 'computer.status':
-                        provider = params.get('provider', 'coven')
-                        if provider not in {'coven', 'codex', 'anthropic'}: raise ValueError('Choose a supported computer provider.')
-                        result = self.computer.status(provider)
+                        provider = params.get('provider', 'codex')
+                        if provider not in {'codex', 'claude', 'familiar'}: raise ValueError('Choose a supported computer provider.')
+                        result = self.computer.status(provider, driver=params.get('driver','codex'), familiar_id=params.get('familiarId',''))
                     elif method == 'computer.cancel': result = self.computer.cancel(params.get('runId'))
-                    elif method == 'native.computer.configure': result = self.computer.configure(params)
+                    elif method == 'native.computer.cancel': result = self.computer.cancel_session(params.get('session'))
+                    elif method == 'computer.login': result = self.computer.login(params.get('provider'))
                     elif method == 'native.computer.prepare': result = self.computer.prepare(params)
                     elif method == 'native.computer.finish': result = self.computer.finish(params.get('token'), params.get('approved'), params.get('session'))
                     else: result = self.computer.reply(params)

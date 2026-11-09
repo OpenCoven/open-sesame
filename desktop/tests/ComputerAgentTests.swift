@@ -18,8 +18,6 @@ import ImageIO
         precondition(decoded.width == 1280 && decoded.height == 720)
         let base64 = jpeg.base64EncodedString(); let wire = try JSONSerialization.data(withJSONObject: ["image":base64,"summary":String(repeating:"x",count:16000)])
         precondition(wire.count < 1048576)
-        precondition(!OpenSesameComputerAccount.valid("short")); precondition(!OpenSesameComputerAccount.valid(String(repeating:"x",count:30)+"\n"))
-        precondition(OpenSesameComputerAccount.valid(String(repeating:"fixture",count:8)))
         let controller = OpenSesameComputerAgent(); var calls = [String]()
         controller.call = { method,_,done in calls.append(method); done(["result":true]) }
         // Authentication false makes both operations read-only refusals.

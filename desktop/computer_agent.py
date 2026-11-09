@@ -12,6 +12,7 @@ import signal
 import subprocess
 import threading
 import time
+import computer_accounts
 
 KINDS = {'observe', 'click', 'double_click', 'right_click', 'move', 'drag', 'type', 'key', 'scroll', 'wait', 'ask_user'}
 FIELDS = {'action', 'observation', 'coordinate', 'end_coordinate', 'text', 'direction', 'amount', 'milliseconds'}
@@ -72,13 +73,13 @@ def native_reply(value):
 
 
 class ComputerAgent:
-    def __init__(self, emit, *, native=False, binary=None, clock=time.monotonic, trusted_fixture=False):
+    def __init__(self, emit, *, native=False, binary=None, clock=time.monotonic, trusted_fixture=False, familiars=None):
         self.emit, self.native, self.clock = emit, native, clock
         self.binary = Path(binary) if binary else self.default_binary()
+        self.familiars = familiars
         self.trusted_fixture = trusted_fixture
         self.lock = threading.RLock(); self.process_lock = threading.Lock()
-        self.proposals = {}; self.run = None; self.pending = None; self.closed = False
-        self.api_key = os.environ.pop('OPEN_SESAME_COMPUTER_STORED_API_KEY', '') if native else ''
+        self.proposals = {}; self.cancelled_sessions = {}; self.run = None; self.pending = None; self.closed = False
 
     @staticmethod
     def default_binary():
@@ -94,57 +95,59 @@ class ComputerAgent:
                 if receipt.get('binary_sha256') != hashlib.sha256(self.binary.read_bytes()).hexdigest(): raise ValueError('Embedded engine integrity check failed.')
             except (OSError, ValueError, KeyError): raise ValueError('Embedded engine integrity check failed. Rebuild or update Open Sesame.') from None
 
-    def configure(self, params):
-        if not self.native or not isinstance(params, dict) or set(params) != {'apiKey'}: raise ValueError('Native account setup is required.')
-        key = bounded_text(params['apiKey'], 4096, empty=True)
-        if key and (not key.isascii() or any(c.isspace() for c in key)): raise ValueError('Enter a valid API key.')
-        with self.lock:
-            if self.run and self.run['state'] == 'running': raise ValueError('Stop the computer task before changing its account.')
-            self.proposals.clear(); self.api_key = key
-        return {'configured': bool(key)}
+    def environment(self, provider='codex'):
+        if provider not in computer_accounts.PROVIDERS: raise ValueError('Choose Codex or Claude Code CLI sign-in.')
+        return {k: v for k, v in os.environ.items() if not k.startswith('OPEN_SESAME_COMPUTER_') and k not in computer_accounts.SECRET_ENV}
 
-    def environment(self, provider='coven'):
-        if provider not in {'coven', 'codex', 'anthropic'}: raise ValueError('Choose a supported computer provider.')
-        environment = {k: v for k, v in os.environ.items() if not k.startswith('OPEN_SESAME_COMPUTER_')}
-        environment['OPEN_SESAME_COMPUTER_PROVIDER'] = provider
-        if self.api_key and provider == 'anthropic': environment['OPEN_SESAME_COMPUTER_API_KEY'] = self.api_key
-        return environment
-
-    def status(self, provider='coven', *, private=False):
+    def status(self, provider='codex', *, private=False, driver='codex', familiar_id=''):
         self.verify_binary()
-        try:
-            completed = subprocess.run([str(self.binary), '--status'], capture_output=True, timeout=20, check=True, env=self.environment(provider))
-            if len(completed.stdout) > 8192: raise ValueError()
-            value = json.loads(completed.stdout)
-            if not isinstance(value, dict) or type(value.get('configured')) is not bool: raise ValueError()
-            result = {'available': True, 'configured': value['configured'], 'native': self.native}
-            if value['configured']:
-                if private: result['route'] = bounded_text(value.get('route'), 100)
-                result.update(provider=bounded_text(value.get('provider'), 100), model=bounded_text(value.get('model'), 200), destination=bounded_text(value.get('destination', value.get('provider')), 400))
-            else:
-                result['message'] = 'Connect an image-capable Coven provider before starting a computer task.'
-            return result
-        except (OSError, subprocess.SubprocessError, ValueError):
-            return {'available': True, 'configured': False, 'native': self.native, 'message': 'The embedded engine could not read its provider configuration.'}
+        if provider not in {'codex','claude','familiar'} or driver not in computer_accounts.PROVIDERS: raise ValueError('Choose a supported CLI account.')
+        chosen = driver if provider == 'familiar' else provider
+        value = computer_accounts.account(chosen)
+        value['accountConfigured'] = value['configured']
+        value['driver'] = chosen
+        if provider == 'familiar':
+            try:
+                roster = self.familiars(include_avatars=False) if self.familiars else []
+                value['familiars'] = [{k:f[k] for k in ('id','displayName','description','workspace') if k in f} for f in roster]
+                familiar = next((f for f in roster if f['id'] == familiar_id), None)
+                if not familiar:
+                    value.update(configured=False, message='Choose a Coven familiar to drive this task.')
+                else:
+                    value['familiar'] = {k:familiar[k] for k in ('id','displayName','description','workspace') if k in familiar}
+                    value['provider'] = familiar['displayName'] + ' · via ' + computer_accounts.PROVIDERS[chosen][0]
+                    value['accountRoute'] = value.get('route')
+                    value['route'] = hashlib.sha256(json.dumps([value.get('route'),value['familiar']],sort_keys=True).encode()).hexdigest()
+            except (ValueError, OSError): value.update(configured=False, message='Connect Coven in Familiars, then refresh the driver list.')
+        result = {k:v for k,v in value.items() if not k.startswith('_') and (private or k not in {'route','accountRoute'})}
+        result.update(available=True, installed=value['available'], native=self.native)
+        return result
+
+    def login(self, provider):
+        with self.lock:
+            if self.run and self.run['state'] == 'running': raise ValueError('Stop the computer task before account login.')
+            self.proposals.clear()
+        if computer_accounts.account(provider)['configured']: return {'kind':'account-ready','provider':provider}
+        return computer_accounts.login_target(provider)
 
     def prepare(self, params):
         if not self.native: raise ValueError('Computer tasks require the authenticated Mac app.')
-        if not isinstance(params, dict) or set(params) - {'prompt', 'history', 'provider'}: raise ValueError('Unsupported computer task parameters.')
+        if not isinstance(params, dict) or set(params) - {'prompt', 'history', 'provider', 'driver', 'familiarId'}: raise ValueError('Unsupported computer task parameters.')
         prompt = bounded_text(params.get('prompt'), 32768); history = params.get('history', [])
         if not isinstance(history, list) or len(history) > 30: raise ValueError('Task history is too large.')
         for entry in history:
             if not isinstance(entry, dict) or set(entry) != {'role', 'text'} or entry['role'] not in {'user', 'assistant'}: raise ValueError('Invalid task history.')
             bounded_text(entry['text'], 16000)
         if len(json.dumps({'prompt': prompt, 'history': history}).encode()) > 400000: raise ValueError('Task history is too large.')
-        provider = params.get('provider', 'coven')
-        if provider not in {'coven', 'codex', 'anthropic'}: raise ValueError('Choose a supported computer provider.')
-        status = self.status(provider, private=True)
+        provider = params.get('provider', 'codex')
+        if provider not in {'codex','claude','familiar'}: raise ValueError('Choose a supported computer provider.')
+        status = self.status(provider, private=True, driver=params.get('driver','codex'), familiar_id=params.get('familiarId',''))
         if not status['configured']: raise ValueError(status['message'])
         token = secrets.token_urlsafe(32)
         with self.lock:
             if self.closed or self.run and self.run['state'] == 'running': raise ValueError('Stop the current computer task first.')
-            self.proposals = {token: {'prompt': prompt, 'history': history, 'status': status, 'provider': provider, 'expires': self.clock() + 90}}
-        return {'token': token, 'prompt': prompt, 'provider': status['provider'], 'model': status['model'], 'destination': status['destination']}
+            self.proposals = {token: {'prompt': prompt, 'history': history, 'status': status, 'provider': provider, 'driver': status['driver'], 'familiarId': params.get('familiarId',''), 'expires': self.clock() + 90}}
+        return {'token': token, 'prompt': prompt, 'provider': status['provider'], 'model': status['model'], 'destination': status['destination'], 'familiar': status.get('familiar')}
 
     def finish(self, token, approved, session=None):
         with self.lock:
@@ -153,7 +156,13 @@ class ComputerAgent:
             if approved is not True: return {'cancelled': True}
             if not isinstance(session, str) or not 32 <= len(session) <= 128 or not session.isascii() or not all(c.isalnum() or c in '-_' for c in session): raise ValueError('Native task approval is required.')
             if self.run and self.run['state'] == 'running': raise ValueError('Stop the current computer task first.')
+            if session in self.cancelled_sessions: raise ValueError('Task stopped before startup.')
             self.verify_binary()
+        # Login/roster metadata may take seconds; Stop and native replies must remain responsive.
+        current = self.status(proposal['provider'], private=True, driver=proposal['driver'], familiar_id=proposal['familiarId'])
+        if not current['configured'] or current.get('route') != proposal['status']['route']: raise ValueError('Account or familiar changed. Review and approve again.')
+        with self.lock:
+            if self.closed or session in self.cancelled_sessions or proposal['expires'] < self.clock() or self.run and self.run['state'] == 'running': raise ValueError('Task changed. Review and approve again.')
             run = {'id': secrets.token_hex(16), 'session': session, 'state': 'running', 'process': None, 'server': None, 'server_started': False, 'worker': None, 'deadline': None, 'steps': 0, 'characters': 0}
             self.run = run
             owner = self
@@ -164,20 +173,25 @@ class ComputerAgent:
                     self.connection.settimeout(5)
                     try:
                         length = int(self.headers.get('Content-Length', '0'))
-                        if self.client_address[0] != '127.0.0.1' or self.path != '/computer' or self.headers.get('Origin') or self.headers.get('Transfer-Encoding') or not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + channel_token):
+                        if self.client_address[0] != '127.0.0.1' or self.path not in {'/computer','/planner'} or self.headers.get('Origin') or self.headers.get('Transfer-Encoding') or not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + channel_token):
                             self.send_error(403); return
-                        if self.headers.get('Host') != '127.0.0.1:' + str(self.server.server_port) or self.headers.get_content_type() != 'application/json' or not 0 < length <= 32768:
+                        if self.headers.get('Host') != '127.0.0.1:' + str(self.server.server_port) or self.headers.get_content_type() != 'application/json' or not 0 < length <= (4_500_000 if self.path == '/planner' else 32768):
                             self.send_error(400); return
                         body = self.rfile.read(length)
                         if len(body) != length: self.send_error(400); return
-                        action = action_request(json.loads(body))
-                        result = owner.request_native(run, action)
+                        if self.path == '/planner':
+                            context = json.loads(body)
+                            familiar = proposal['status'].get('familiar')
+                            if familiar and isinstance(context,dict) and isinstance(context.get('system'),str): context['system'] = 'You are '+familiar['displayName']+', Coven familiar '+familiar['id']+'. You are driving an Open Sesame computer-use task. Your workspace identity is '+familiar.get('workspace','unspecified')+'. Role: '+familiar.get('description','')+'\n'+context['system']
+                            result = computer_accounts.plan(proposal['driver'], proposal['status'].get('accountRoute') or proposal['status']['route'], context, lambda: run['state'] != 'running')
+                            if result['action'] is not None: action_request(result['action'])
+                        else: result = owner.request_native(run, action_request(json.loads(body)))
                         data = json.dumps(result, separators=(',', ':')).encode(); self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
                     except (OSError, ValueError, TypeError):
                         try: self.send_error(400)
                         except OSError: pass
             server = HTTPServer(('127.0.0.1', 0), Handler); server.timeout = 1; run['server'] = server
-            environment = dict(self.environment(proposal['provider']), OPEN_SESAME_COMPUTER_ENDPOINT='http://127.0.0.1:' + str(server.server_port) + '/computer', OPEN_SESAME_COMPUTER_TOKEN=channel_token, OPEN_SESAME_COMPUTER_EXPECTED_PROVIDER=proposal['status']['provider'], OPEN_SESAME_COMPUTER_EXPECTED_MODEL=proposal['status']['model'], OPEN_SESAME_COMPUTER_EXPECTED_ROUTE=proposal['status']['route'])
+            environment = dict(self.environment(proposal['driver']), OPEN_SESAME_COMPUTER_ENDPOINT='http://127.0.0.1:' + str(server.server_port) + '/computer', OPEN_SESAME_COMPUTER_TOKEN=channel_token, OPEN_SESAME_COMPUTER_EXPECTED_PROVIDER=proposal['status']['provider'], OPEN_SESAME_COMPUTER_EXPECTED_MODEL=proposal['status']['model'], OPEN_SESAME_COMPUTER_EXPECTED_ROUTE=proposal['status']['route'])
             try:
                 process = subprocess.Popen([str(self.binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, start_new_session=True)
                 run['process'] = process
@@ -282,16 +296,30 @@ class ComputerAgent:
             if run['server_started']: server.shutdown()
             server.server_close()
 
+    def cancel_session(self, session):
+        if not isinstance(session, str) or not 32 <= len(session) <= 128 or not session.isascii() or not all(c.isalnum() or c in '-_' for c in session):
+            raise ValueError('Invalid native session cancellation.')
+        with self.lock:
+            # Keep a tombstone through the maximum approval lifetime, even if Stop
+            # arrives before the finish worker begins checking its proposal.
+            now = self.clock()
+            self.cancelled_sessions = {key: expiry for key, expiry in self.cancelled_sessions.items() if expiry >= now}
+            self.cancelled_sessions[session] = now + 95
+            run_id = self.run['id'] if self.run and self.run['session'] == session else None
+        return self.cancel(run_id) if run_id else {'cancelled': True}
+
     def cancel(self, run_id):
         with self.lock:
             run = self.run
-            if run is None or run['id'] != run_id: return {'cancelled': False}
+            if run is None or run['id'] != run_id or run['state'] != 'running': return {'cancelled': False}
+            run['state'] = 'cancelled'
             self.proposals.clear()
         self.stop(run, 'cancelled')
+        self.emit({'event':'computer.progress','runId':run['id'],'type':'paused','text':'Task stopped. Review the screen before continuing.'})
         return {'cancelled': True}
 
     def close(self):
         with self.lock:
-            self.closed = True; self.proposals.clear(); self.api_key = ''; run = self.run
+            self.closed = True; self.proposals.clear(); run = self.run
         if run: self.stop(run, 'cancelled')
         if run and run.get('worker') and run['worker'] is not threading.current_thread(): run['worker'].join(timeout=4)
