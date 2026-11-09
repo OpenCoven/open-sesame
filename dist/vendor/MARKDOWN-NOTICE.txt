@@ -2,6 +2,8 @@
 Official source: https://github.com/BunsDev/create-markdown
 Pinned commit: c5c291c9801078674069fd30eea8203777e6f7d8
 MIT license: create-markdown-LICENSE
+Local modification: linear prefix/content matching for tokenizer ReDoS (alerts #13–16).
+Regression and source/bundle parity check: node scripts/check-markdown-redos.mjs
 
 DOMPurify 3.4.17
 Official distribution source: https://github.com/cure53/DOMPurify/blob/main/dist/purify.min.js

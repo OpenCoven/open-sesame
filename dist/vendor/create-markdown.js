@@ -1,4 +1,4 @@
-/*! @create-markdown/core + preview 2.0.3 | MIT | pinned source c5c291c9801078674069fd30eea8203777e6f7d8 */
+/*! @create-markdown/core + preview 2.0.3 | MIT | pinned source c5c291c9801078674069fd30eea8203777e6f7d8 + local linear-prefix security patch */
 (()=>{const factories={"packages/core/src/index.ts":function(__exports,__require){
 __exports.generateId=__require("packages/core/src/core/utils.ts").generateId;
 __exports.deepClone=__require("packages/core/src/core/utils.ts").deepClone;
@@ -894,12 +894,12 @@ __exports.mapBlocks=mapBlocks;
 },
 "packages/core/src/parsers/tokenizer.ts":function(__exports,__require){
 const PATTERNS = {
-    heading: /^(#{1,6})\s+(.*)$/,
+    heading: /^(#{1,6})\s+/,
     setextH1: /^=+\s*$/,
     setextH2: /^-+\s*$/,
-    bulletList: /^(\s*)([-*+])\s+(.*)$/,
-    numberedList: /^(\s*)(\d+)\.\s+(.*)$/,
-    checkList: /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/,
+    bulletList: /^(\s*)([-*+])\s+/,
+    numberedList: /^(\s*)(\d+)\.\s+/,
+    checkList: /^(\s*)[-*+]\s+\[([ xX])\]\s+/,
     codeFence: /^(\s*)(`{3,}|~{3,})(\w*)?\s*$/,
     blockquote: /^>\s?(.*)$/,
     callout: /^>\s*\[!(\w+)\]\s*$/,
@@ -909,6 +909,15 @@ const PATTERNS = {
     image: /^!\[([^\]]*)\]\(([^)]+)\)$/,
     blank: /^\s*$/
 };
+function matchContentPrefix(line, pattern) {
+    const prefix = line.match(pattern);
+    if (!prefix) return null;
+    const content = line.slice(prefix[0].length).match(/^(.*)$/);
+    return content ? [
+        ...prefix,
+        content[1]
+    ] : null;
+}
 function tokenize(markdown) {
     const lines = markdown.split(/\r?\n/);
     const tokens = [];
@@ -990,7 +999,7 @@ function tokenizeLine(line, state, allLines, lineIndex) {
             };
         }
     }
-    const headingMatch = line.match(PATTERNS.heading);
+    const headingMatch = matchContentPrefix(line, PATTERNS.heading);
     if (headingMatch) {
         return {
             type: 'heading',
@@ -1026,7 +1035,7 @@ function tokenizeLine(line, state, allLines, lineIndex) {
             line: lineNumber
         };
     }
-    const checkListMatch = line.match(PATTERNS.checkList);
+    const checkListMatch = matchContentPrefix(line, PATTERNS.checkList);
     if (checkListMatch) {
         const checked = checkListMatch[2].toLowerCase() === 'x';
         return {
@@ -1040,7 +1049,7 @@ function tokenizeLine(line, state, allLines, lineIndex) {
             }
         };
     }
-    const bulletMatch = line.match(PATTERNS.bulletList);
+    const bulletMatch = matchContentPrefix(line, PATTERNS.bulletList);
     if (bulletMatch) {
         return {
             type: 'bullet_list_item',
@@ -1053,7 +1062,7 @@ function tokenizeLine(line, state, allLines, lineIndex) {
             }
         };
     }
-    const numberedMatch = line.match(PATTERNS.numberedList);
+    const numberedMatch = matchContentPrefix(line, PATTERNS.numberedList);
     if (numberedMatch) {
         return {
             type: 'numbered_list_item',
