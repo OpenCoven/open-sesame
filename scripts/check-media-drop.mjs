@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
 class Node extends EventTarget{
  constructor(){super();this.children=[];this.attrs={};this.classList={toggle(){},contains:()=>false}}
- append(...items){this.children.push(...items)}insertBefore(n,b){const i=this.children.indexOf(b);this.children.splice(i<0?this.children.length:i,0,n)}setAttribute(k,v){this.attrs[k]=String(v)}focus(){}
+ append(...items){this.children.push(...items)}insertBefore(n,b){const i=this.children.indexOf(b);this.children.splice(i<0?this.children.length:i,0,n)}before(n){this.sibling=n}getAttribute(k){return this.attrs[k]||null}setAttribute(k,v){this.attrs[k]=String(v)}focus(){}
 }
 const nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,new Node());return nodes.get(id)},added=[],messages=[];
 const window={OpenSesameLocalMedia:{addFiles:(files,options)=>added.push({files,options})},OpenSesameRails:{set(){}}},document={createElement:()=>new Node(),getElementById:get};

@@ -77,3 +77,22 @@
 #widget-panel #github-monitor-cards{flex-shrink:0}
 @container github-monitor (max-width:540px){#widget-panel #github-monitor-account{display:none}#widget-panel #github-monitor .github-repositories{flex:1 1 100%}}
 @container github-monitor (max-width:540px){#widget-panel #github-monitor-project{flex-direction:row;align-items:center}#widget-panel #github-monitor-project-copy{-webkit-line-clamp:1}#widget-panel #github-monitor-project-open{font-size:10px}}
+
+/* Short application windows keep the first activity row below usable controls. */
+@media(max-height:520px){
+ #widget-anchor #widget-panel #github-monitor{gap:7px}
+ #widget-panel #github-monitor :is(button,input,select,summary){min-height:28px;padding:5px 8px;font-size:10px}
+ #widget-panel #github-monitor .github-repo-toolbar{gap:6px}
+ #widget-panel #github-monitor .github-repositories{flex:1 1 100px}
+ #widget-panel #github-monitor #github-monitor-project{padding:0;gap:6px}
+ #widget-panel #github-monitor #github-monitor-project-copy{display:none}
+ #widget-panel #github-monitor #github-monitor-project-open{font-size:10px}
+ #widget-panel #github-monitor .github-collection-toolbar{gap:0}
+ #widget-panel #github-monitor #github-monitor-views button{min-height:28px;padding:4px 7px}
+ #widget-panel #github-monitor .github-filters{gap:6px}
+ #widget-panel #github-monitor .github-search{flex:1 1 120px}
+ #widget-panel #github-monitor .github-filters>label:not(.github-search){flex:0 1 auto}
+ #widget-panel #github-monitor .github-section>header{padding:8px 10px}
+ #widget-panel #github-monitor .github-entry{min-height:52px;padding:8px 10px;gap:8px}
+ #widget-panel #github-monitor .github-entry strong{font-size:11px;line-height:1.4}
+}

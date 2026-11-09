@@ -4,7 +4,7 @@
   const toolbar=document.createElement('div'),tabs=document.createElement('div');
   toolbar.className='console-toolbar projects-toolbar';tabs.className='console-mode-tabs projects-mode-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Project collections');
   workspace.id='projects-collection';workspace.setAttribute('role','tabpanel');
-  const groups=[['note','Notes','capture'],['bookmark','Bookmarks','bookmark'],['task','Tasks','check'],['all','Recent','items']];
+  const groups=[['note','Notes','capture'],['bookmark','Bookmarks','bookmark'],['task','Tasks','check']];
   let lastKind='note';
   function collection(kind){
     if(window.OpenSesameNotes?.finish(false)===false)return false;
@@ -24,8 +24,9 @@
   actions.id='projects-rail-actions';actions.setAttribute('role','group');actions.setAttribute('aria-label','Collection sidebar controls');count.id='projects-item-count';
   actions.append(el('item-search-toggle'),el('detail-width-toggle'));el('items-rail-heading').append(count,actions);
   toolbar.append(tabs,pane.querySelector('.global-project'),pane.querySelector('.library-tools'));pane.prepend(toolbar);pane.classList.add('projects-tabbed');
+  function normalize(){if(!itemsArchive&&!groups.some(group=>group[0]===categoryFilter))categoryFilter=lastKind}
   function sync(){
-    const kind=groups.some(group=>group[0]===categoryFilter)?categoryFilter:'all';if(!itemsArchive)lastKind=kind;
+    const kind=groups.some(group=>group[0]===categoryFilter)?categoryFilter:lastKind;if(!itemsArchive)lastKind=kind;
     for(const button of buttons){const selected=button.dataset.kind===kind&&!itemsArchive;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;}
     const title=itemsArchive?'Archived':groups.find(group=>group[0]===kind)[1],total=filteredItems().length;
     workspace.setAttribute('aria-labelledby','projects-'+kind);el('collection-title').textContent=title;el('capture-list').setAttribute('aria-label',title);
@@ -33,5 +34,5 @@
   }
   function show(){collection(lastKind)}
   window.addEventListener('open-sesame-home',event=>{if(event.detail==='items')show()});
-  window.OpenSesameProjects={sync,show,leave(){},flatCollections:true,get selected(){return lastKind}};collection('note');
+  window.OpenSesameProjects={sync,show,normalize,leave(){},flatCollections:true,get selected(){return lastKind}};collection('note');
 })();

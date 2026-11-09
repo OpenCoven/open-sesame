@@ -6,6 +6,7 @@ class Node extends EventTarget{
   constructor(tag='div',cls=''){super();this.tag=tag;this.className=cls;this.children=[];this.attrs={};this.dataset={};this.value='';this.hidden=false;this.disabled=false;this.scrollTop=0;this.classList={toggle(){}}}
   append(...items){this.children.push(...items)}replaceChildren(...items){this.children=[...items];this.scrollTop=0}setAttribute(k,v){this.attrs[k]=String(v)}
   querySelector(selector){const cls=selector.slice(1);return this.children.find(n=>n.className===cls)||this.children.map(n=>n.querySelector(selector)).find(Boolean)}
+  querySelectorAll(){return this.children.flatMap(n=>[n,...n.querySelectorAll()]).filter(n=>n.dataset.processControl)}
   focus(){document.activeElement=this}click(){if(!this.disabled)this.dispatchEvent(new Event('click'))}
 }
 const get=id=>{if(!nodes.has(id))nodes.set(id,new Node());return nodes.get(id)};
@@ -22,9 +23,9 @@ const agents=[{pid:101,name:'Fixture Agent',provider:'coven',state:'running',cpu
 respond=async()=>({machine:'Fixture Mac',agents});await window.OpenSesameAgentMonitor.refresh();assert.equal(get('agent-cards').children.length,2);assert.equal(get('agent-empty').hidden,true);
 agents[0].activity={state:'waiting',source:'fixture',since:Date.now()-60000};agents[0].cwd='/fixture/repo';agents[0].repository={name:'repo',branch:'feature'};
 const layoutTools=get('pane-agent-monitor').querySelector('.agent-filter-row').children.find(n=>n.className==='agent-workspace-tools');
-const layoutButtons=layoutTools.children[0].children;
-for(const label of ['Table','List','Grid','Board','Gantt']){layoutButtons.find(b=>b.textContent===label).click();assert.equal(get('agent-cards').dataset.layout,label.toLowerCase());if(label==='Board')assert.equal(get('agent-cards').children.length,6);if(label==='Table')assert.equal(get('agent-cards').children[0].tag,'table')}
-layoutButtons[2].click();
+const layoutSelect=layoutTools.children[0];assert.equal(layoutSelect.tag,'select');assert.equal(layoutSelect.attrs['aria-label'],'Process layout');
+for(const label of ['Table','List','Grid','Board','Gantt']){layoutSelect.value=label.toLowerCase();layoutSelect.dispatchEvent(new Event('change'));assert.equal(get('agent-cards').dataset.layout,label.toLowerCase());if(label==='Board')assert.equal(get('agent-cards').children.length,6);if(label==='Table')assert.equal(get('agent-cards').children[0].tag,'table')}
+layoutSelect.value='grid';layoutSelect.dispatchEvent(new Event('change'));
 const needsButton=layoutTools.children[1];needsButton.click();assert.equal(get('agent-cards').children.length,1);needsButton.click();
 get('agent-search').value='feature';get('agent-search').dispatchEvent(new Event('input'));assert.equal(get('agent-cards').children.length,1);get('agent-search').value='';get('agent-search').dispatchEvent(new Event('input'));
 
@@ -32,8 +33,10 @@ const filter=state=>get('agent-state-filters').children.find(n=>n.dataset.state=
 filter('running').click();assert.equal(get('agent-cards').children.length,1);assert.equal(filter('running').attrs['aria-pressed'],'true');assert.equal(get('agent-clear-filters').hidden,false);
 get('agent-search').value='no match';get('agent-search').dispatchEvent(new Event('input'));assert.equal(get('agent-empty').hidden,false);assert.match(get('agent-empty-title').textContent,/No matching/);
 get('agent-clear-filters').click();assert.equal(get('agent-search').value,'');assert.equal(get('agent-cards').children.length,2);assert.equal(filter('all').attrs['aria-pressed'],'true');
-const actions=()=>get('agent-cards').children[0].children.at(-1).children;
+const actions=()=>get('agent-cards').children[0].children.at(-1).children.flatMap(n=>n.tag==='details'?n.children:n.children?.[0]?.tag==='summary'?n.children:[n]);
+assert.equal(get('pane-agent-monitor').querySelector('.agent-more-filters').tag,'details');assert.equal(get('agent-cards').children[0].children.at(-1).children[0].tag,'details');
 actions().find(b=>b.textContent==='Stop…').click();assert.equal(controls.length,0,'Stop requires an explicit confirmation');
+const stopMenu=get('agent-cards').children[0].children.at(-1).children[0];const escape=new Event('keydown',{cancelable:true});Object.defineProperty(escape,'key',{value:'Escape'});stopMenu.dispatchEvent(escape);await window.OpenSesameAgentMonitor.refresh();assert.equal(get('agent-cards').children[0].children.at(-1).children[0].open,false,'Escape clears stop confirmation through refresh');actions().find(b=>b.textContent==='Stop…').click();
 assert.ok(actions().some(b=>b.textContent==='Cancel'));actions().find(b=>b.textContent==='Cancel').click();assert.equal(controls.length,0);
 actions().find(b=>b.textContent==='Pause process').click();await flush();assert.equal(controls[0].action,'pause');assert.equal(controls[0].token,'fixture-first');
 assert.equal(controls[0].pid,101);assert.match(get('agent-action-status').textContent,/signal sent/);

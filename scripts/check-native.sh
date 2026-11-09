@@ -27,3 +27,6 @@ xcrun swiftc -o "$open_sesame_check/computer-controller-tests" "$open_sesame_roo
 
 xcrun swiftc -o "$open_sesame_check/computer-pointer-tests" "$open_sesame_root/desktop/ComputerPointer.swift" "$open_sesame_root/desktop/tests/ComputerPointerTests.swift" -framework AppKit
 "$open_sesame_check/computer-pointer-tests"
+
+xcrun swiftc -o "$open_sesame_check/speech-transcript-tests" "$open_sesame_root/desktop/SpeechTranscript.swift" "$open_sesame_root/desktop/tests/SpeechTranscriptTests.swift"
+"$open_sesame_check/speech-transcript-tests"

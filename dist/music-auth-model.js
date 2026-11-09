@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
-  const SPOTIFY_SCOPE='user-read-private',YOUTUBE_SCOPE='https://www.googleapis.com/auth/youtube.readonly';
+  const SPOTIFY_SCOPE='user-read-private user-library-read playlist-read-private playlist-read-collaborative',YOUTUBE_SCOPE='https://www.googleapis.com/auth/youtube.readonly';
   const validClient=(provider,value)=>typeof value==='string'&&(provider==='spotify'?/^[a-f0-9]{32}$/i.test(value):provider==='youtube'?/^\d+-[a-z0-9-]+\.apps\.googleusercontent\.com$/i.test(value):false);
   function publicConfig(source={}){source=source&&typeof source==='object'?source:{};return {spotifyClientId:validClient('spotify',source.spotifyClientId)?source.spotifyClientId:'',googleClientId:validClient('youtube',source.googleClientId)?source.googleClientId:''}}
   function environment(location,native=false){const supported=location.protocol==='https:';return {supported,native,message:supported?'':'This provider requires the HTTPS browser version. Spotify can also connect in the installed Mac app.'}}

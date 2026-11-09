@@ -12,6 +12,7 @@ final class OpenSesameVoiceInput {
     private var session = ""
     private var source = "mic"
     private var text = ""
+    private var transcript = OpenSesameSpeechTranscript()
     private var tapped = false
     private var lastMicLevel = 0.0
     private var limit: Timer?
@@ -22,7 +23,7 @@ final class OpenSesameVoiceInput {
     func start(id: String, locale: String, source: String = "mic", completion: @escaping (String?) -> Void) {
         stop(id: session, cancel: true)
         guard !id.isEmpty, id.count <= 80, ["mic", "system", "both"].contains(source) else { completion("Invalid voice source."); return }
-        session = id; text = ""; self.source = source
+        session = id; text = ""; transcript = OpenSesameSpeechTranscript(); self.source = source
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 guard let self, self.session == id else { completion("Voice input cancelled."); return }
@@ -51,7 +52,12 @@ final class OpenSesameVoiceInput {
                 DispatchQueue.main.async {
                     guard let self, self.session == id, self.request === request else { return }
                     if let result {
-                        self.text = String(result.bestTranscription.formattedString.prefix(12000))
+                        let transcription = result.bestTranscription, segments = transcription.segments
+                        let timed = segments.contains { $0.duration > 0 || $0.timestamp > 0 }
+                        self.text = self.transcript.update(transcription.formattedString,
+                            start: timed ? segments.first?.timestamp : nil,
+                            end: timed ? segments.last.map { $0.timestamp + $0.duration } : nil,
+                            sealed: result.isFinal || result.speechRecognitionMetadata != nil)
                         self.emit(["event": "voice.result", "id": id, "text": self.text, "final": false])
                         if result.isFinal { self.finish(id: id); return }
                     }

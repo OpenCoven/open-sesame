@@ -15,3 +15,7 @@ Real isolated tmux association, PTY attachment, disconnect, and external-session
 ## Verification
 
 Run `npm run verify` for the full Mac gate, including imports from the built application bundle. Run `PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node scripts/review-process-browser.mjs` for the read-only browser fixture review; screenshots are written under ignored `build/process-browser/`. Lifecycle hook configuration is opt-in, and no hook changes permission decisions.
+
+## Compact controls
+
+The primary search bar contains a single layout selector for Table, List, Grid, Board and Gantt, plus Needs you. Filters & history holds sorting, provider/project/terminal filters and history clearing. List rows keep agent, repository, activity, resource metrics and terminal access aligned; full paths remain available in Details. Each Actions disclosure retains pause/resume, stop confirmation and Details. Escape closes an open disclosure. Signal authorization and stale-process checks remain unchanged.

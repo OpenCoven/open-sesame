@@ -7,3 +7,26 @@
 #widget-panel .agent-filter-row{height:auto;min-height:32px;align-items:flex-start}#widget-panel .agent-workspace-tools{min-width:0}#widget-panel .agent-inspector{max-width:100%;box-sizing:border-box}
 
 #widget-panel .agent-actions button{background:var(--surface-raised,#211e25);color:var(--ink-primary,#ddd);border:1px solid var(--line,#49404f);border-radius:6px;padding:5px 8px;cursor:pointer}#widget-panel .agent-actions button:disabled{opacity:.45;cursor:default}.agent-timeline-row .agent-interval:focus-visible{outline:2px solid #d1b5e5;outline-offset:2px}
+
+/* A compact primary bar; advanced filters and process signals stay discoverable. */
+#widget-panel .agent-filter-row{align-items:center;gap:8px}
+#widget-panel .agent-workspace-tools{width:auto;flex:0 1 auto;order:0;flex-basis:auto;align-items:center;gap:6px}
+#widget-panel .agent-filter-row .agent-search{flex:1 1 220px;min-width:100px}
+#widget-panel .agent-more-filters{display:flex;max-width:100%;font-size:11px}
+#widget-panel .agent-more-filters>summary,.agent-action-menu>summary{cursor:pointer;list-style:none;border:1px solid var(--line);border-radius:6px;padding:6px 9px;background:var(--surface-raised);color:var(--ink-secondary);white-space:nowrap}
+#widget-panel .agent-more-filters[open]{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px}
+#widget-panel .agent-more-filters[open]>summary{margin-bottom:5px}
+#widget-panel .agent-more-filters>select,#widget-panel .agent-more-filters>button{margin:3px}
+#widget-panel .agent-action-menu{position:relative;min-width:0}
+#widget-panel .agent-action-menu[open]{display:flex;flex-direction:column;gap:5px;padding:5px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised)}
+#widget-panel .agent-action-menu button{width:100%;text-align:left;white-space:nowrap}
+#widget-panel .agent-action-menu summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#widget-panel .agent-cards[data-layout=list] .agent-card{display:grid;grid-template-columns:minmax(140px,1fr) minmax(180px,2fr) minmax(170px,1fr) auto;gap:12px;padding:9px 12px;min-height:58px;align-items:center}
+#widget-panel .agent-cards[data-layout=list] .agent-card>header{gap:7px;min-width:0;flex-wrap:wrap}
+#widget-panel .agent-cards[data-layout=list] .agent-identity strong{font-size:11px}
+#widget-panel .agent-cards[data-layout=list] .agent-repo-context{gap:2px;font-size:11px}
+#widget-panel .agent-cards[data-layout=list] .agent-repo-context small:nth-child(3){display:none}
+#widget-panel .agent-cards[data-layout=list] .agent-metrics{border:0;margin:0;padding:0;gap:12px}
+#widget-panel .agent-cards[data-layout=list] .agent-actions{border:0;margin:0;padding:0;gap:5px;justify-content:flex-end}
+#widget-panel .agent-cards[data-layout=list] .agent-activity{font-size:10px}
+@container open-sesame-widget (max-width:800px){#widget-panel .agent-cards[data-layout=list] .agent-card{grid-template-columns:minmax(120px,1fr) minmax(150px,1fr)}#widget-panel .agent-cards[data-layout=list] .agent-actions{justify-content:flex-start}}

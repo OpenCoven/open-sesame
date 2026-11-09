@@ -1,0 +1,20 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+// Browser engines reset result indexes when they restart after a speech pause.
+const engines=[],jobs=new Map(),values=[];let serial=0;
+class Engine{constructor(){engines.push(this)}start(){this.onstart?.()}stop(){this.onend?.()}abort(){}}
+const window={};vm.runInNewContext(fs.readFileSync('dist/recognition.js','utf8'),{window});
+const recognition=window.OpenSesameRecognition.create({Engine,onText:value=>values.push(value),timers:{setTimeout(fn){jobs.set(++serial,fn);return serial},clearTimeout:id=>jobs.delete(id)}});
+const result=(engine,entries)=>engine.onresult({resultIndex:0,results:entries.map(([text,final])=>Object.assign([{transcript:text}],{isFinal:final}))});
+recognition.start();result(engines[0],[['Before the pause.',true],['Temporary tail',false]]);result(engines[0],[['Before the pause.',true],['Corrected tail.',true]]);engines[0].onend();const restart=[...jobs.values()].at(-1);jobs.clear();restart();
+result(engines[1],[['After the pause.',true]]);assert.equal(values.at(-1).final,'Before the pause. Corrected tail.\nAfter the pause.');
+result(engines[1],[['After the pause.',true],['Ending',false]]);recognition.stop();assert.equal(values.at(-1).final,'Before the pause. Corrected tail.\nAfter the pause. Ending');
+const complete=values.at(-1).final;result(engines[0],[['Stale callback',true]]);assert.equal(values.at(-1).final,complete);
+// Exercise the actual native Live event handler, preserving complete segment text.
+const source=fs.readFileSync('dist/audio.js','utf8'),start=source.indexOf("window.addEventListener('open-sesame-desktop-event'"),end=source.indexOf('async function startAudio()',start),elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,{value:'mic',textContent:''});return elements.get(id)};
+let receive,restarts=0,rendered='';const session={active:true,starting:false,stopping:false,final:'Earlier capture.',interim:''};
+const context={window:{addEventListener:(_name,fn)=>receive=fn},$:el,audioSession:session,nativeRecordingID:'',nativeSpeechID:'live-1',nativeStopPending:false,audioGeneration:1,renderNativeInput(){},renderTranscript(){rendered=session.final},stopAudio(){throw Error('Unexpected audio stop')},startNativeSegment(){restarts++;context.nativeSpeechID='live-'+(restarts+1)},finishAudioStop(){session.stopping=false}};
+vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+const event=(id,text,final)=>receive({detail:{id,event:'voice.result',text,final}});
+event('live-1','Before the pause.\nAfter the pause.',false);assert.equal(session.final,'Earlier capture.');event('live-1','Before the pause.\nAfter the pause.',true);assert.equal(session.final,'Earlier capture.\nBefore the pause.\nAfter the pause.');assert.equal(restarts,1);
+event('live-1','Late duplicate',true);assert.equal(restarts,1);event('live-2','Next segment.',true);assert.equal(rendered,'Earlier capture.\nBefore the pause.\nAfter the pause.\nNext segment.');assert.ok(source.includes('new Blob([text]'),'Export uses full accumulated text');assert.ok(source.includes('const text=audioSession.final.trim()'),'Copy uses full accumulated text');
+console.log('Transcript pause regression: browser result-index resets/restarts, partial correction and stop flush; native cumulative chunks, late callbacks and multi-segment copy/export source preserve full transcript. No audio captured.');
