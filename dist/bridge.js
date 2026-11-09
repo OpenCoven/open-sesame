@@ -1,4 +1,6 @@
 'use strict';
+// Renderer transport only: Swift owns origin/authentication/method authorization and delegates selected operations to desktop/bridge.py.
+// The legacy dev-WebSocket branch is not a machine host: desktop/dev_server.py refuses that route. See docs/repository-map.md.
 (()=>{
   const pending=new Map();let next=0,send=null,available=false;
   const page=window.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);

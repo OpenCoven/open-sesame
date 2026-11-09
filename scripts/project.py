@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Local task ownership, read-only inventory, and guarded branch/worktree retirement."""
+# Shared mutable records live under the common Git directory, not inside an individual source checkout.
+# See docs/work-tracking.md for current-state lookup and docs/development-workflow.md for the ownership/retirement contract.
 import argparse
 from contextlib import contextmanager
 import datetime as dt

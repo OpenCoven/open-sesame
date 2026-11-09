@@ -1,3 +1,5 @@
+// Native application entrypoint, window lifecycle and authenticated main-frame RPC gateway.
+// Handlers below own Swift-only operations; the allowlisted Python path uses Bridge.handle in bridge.py. See docs/repository-map.md.
 import AppKit
 import WebKit
 import ColorSync

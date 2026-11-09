@@ -13,6 +13,7 @@
     "predev": "python3 scripts/build-desktop-source.py",
     "dev": "python3 desktop/dev_server.py",
     "dev:macos": "bash run-macos.sh",
-    "tools": "node scripts/tools.mjs"
+    "tools": "node scripts/tools.mjs",
+    "check:docs": "node scripts/check-docs.mjs"
   }
 }
