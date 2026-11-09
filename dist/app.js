@@ -248,7 +248,7 @@ new ResizeObserver(fitFocusTopics).observe($('pane-focus'));window.addEventListe
 function resetFocus(){window.dispatchEvent(new Event('open-sesame-focus-reset'));focusElapsedMs=0;focusRunning=false;focusRemaining=focusMinutes*60;lastFocusTopic='';focusPage=0;renderAgendaList();renderFocus()}
 $('timer-reset').addEventListener('click',resetFocus);
 function saveItems(){
-  try{localStorage.setItem('open-sesame-items-v1',JSON.stringify(items));return true}catch{toast('Couldn’t save on this device. Your draft is still here.');return false}
+  try{localStorage.setItem('open-sesame-items-v1',JSON.stringify(items));window.dispatchEvent(new Event('open-sesame-items-changed'));return true}catch{toast('Couldn’t save on this device. Your draft is still here.');return false}
 }
 function itemKind(n){return n.kind|| (n.url?'bookmark':'note')}
 function thoughtTitle(n){
@@ -339,6 +339,7 @@ function toggleItemCategory(kind){
   $('item-group-'+kind)?.focus({preventScroll:true});
 }
 function renderItems({detail=true}={}){
+  window.OpenSesameProjects?.normalize();
   syncProjectScope();
   window.OpenSesameBookmarks?.sync();
   const visible=filteredItems(),list=$('capture-list');list.replaceChildren();
@@ -353,7 +354,7 @@ function renderItems({detail=true}={}){
   const count=scopedItemCount();$('capture-count').textContent=count+' item'+(count===1?'':'s');list.scrollTop=0;
   if(libraryOpen&&detail)renderDetail();if(state.scenario==='items')renderCompact();window.OpenSesameProjects?.sync();
 }
-function openItem(id){if(window.OpenSesameNotes?.finish(false)===false)return;selectedItemId=id;revealItem=true;const item=currentItem();if(item){itemsArchive=OpenSesameItemWorkflow.isArchived(item);expandedCategories.clear();expandedCategories.add(itemKind(item));}libraryOpen=true;render();$('detail-title').focus({preventScroll:true})}
+function openItem(id){if(window.OpenSesameNotes?.finish(false)===false)return;selectedItemId=id;revealItem=true;const item=currentItem();if(item){categoryFilter=itemKind(item);itemsArchive=OpenSesameItemWorkflow.isArchived(item);expandedCategories.clear();expandedCategories.add(itemKind(item));}libraryOpen=true;render();$('detail-title').focus({preventScroll:true})}
 function deleteItem(id){items=items.filter(n=>n.id!==id);if(selectedItemId===id)selectedItemId='';saveItems();renderItems();toast('Item removed.')}
 function currentItem(){return items.find(n=>n.id===selectedItemId)}
 function syncDetailWidth(){

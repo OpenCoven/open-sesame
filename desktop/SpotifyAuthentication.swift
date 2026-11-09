@@ -11,6 +11,7 @@ private final class SpotifyRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
 @MainActor
 final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextProviding {
     static let defaultClientID = "000d9575abe844d9a0c258ddc9c0bc09"
+    static let scopes = "user-read-private user-library-read playlist-read-private playlist-read-collaborative"
     static let redirect = "opensesame-spotify://auth/callback"
     private var browser: ASWebAuthenticationSession?
     private var task: Task<Void, Never>?
@@ -61,7 +62,7 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
         let proof = try Self.proof(), client = clientID, ticket = epoch + 1, started = Date()
         epoch = ticket; busy = true; error = ""; changed?()
         var url = URLComponents(string: "https://accounts.spotify.com/authorize")!
-        url.queryItems = [URLQueryItem(name: "client_id", value: client), URLQueryItem(name: "response_type", value: "code"), URLQueryItem(name: "redirect_uri", value: Self.redirect), URLQueryItem(name: "scope", value: "user-read-private"), URLQueryItem(name: "state", value: proof.state), URLQueryItem(name: "code_challenge_method", value: "S256"), URLQueryItem(name: "code_challenge", value: proof.challenge)]
+        url.queryItems = [URLQueryItem(name: "client_id", value: client), URLQueryItem(name: "response_type", value: "code"), URLQueryItem(name: "redirect_uri", value: Self.redirect), URLQueryItem(name: "scope", value: Self.scopes), URLQueryItem(name: "state", value: proof.state), URLQueryItem(name: "code_challenge_method", value: "S256"), URLQueryItem(name: "code_challenge", value: proof.challenge)]
         browser = ASWebAuthenticationSession(url: url.url!, callbackURLScheme: "opensesame-spotify") { [weak self] callback, _ in
             Task { @MainActor in
                 guard let self, ticket == self.epoch else { return }
@@ -76,7 +77,7 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
                             var encoded = URLComponents(); encoded.queryItems = fields
                             var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!); request.httpMethod = "POST"; request.httpBody = encoded.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B").data(using: .utf8); request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
                             let token = try await Self.json(request)
-                            guard let access = token["access_token"] as? String, !access.isEmpty, let seconds = token["expires_in"] as? NSNumber, seconds.doubleValue.isFinite, seconds.doubleValue > 0, (token["scope"] as? String ?? "").split(separator: " ").contains("user-read-private") else { throw Issue.invalid }
+                            guard let access = token["access_token"] as? String, !access.isEmpty, let seconds = token["expires_in"] as? NSNumber, seconds.doubleValue.isFinite, seconds.doubleValue > 0, Self.scopes.split(separator: " ").allSatisfy({ (token["scope"] as? String ?? "").split(separator: " ").contains($0) }) else { throw Issue.invalid }
                             var profile = URLRequest(url: URL(string: "https://api.spotify.com/v1/me")!); profile.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
                             let user = try await Self.json(profile)
                             guard let id = user["id"] as? String, !id.isEmpty else { throw Issue.invalid }
@@ -89,6 +90,30 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
         }
         browser?.presentationContextProvider = self; browser?.prefersEphemeralWebBrowserSession = false
         if browser?.start() != true { failed(ticket) }
+    }
+    static func libraryURL(kind: String, offset: Int) throws -> URL {
+        guard ["tracks", "playlists"].contains(kind), (0...100000).contains(offset) else { throw Issue.invalid }
+        return URL(string: "https://api.spotify.com/v1/me/" + kind + "?limit=50&offset=\(offset)")!
+    }
+    static func libraryPage(_ data: [String: Any], kind: String, offset: Int) throws -> [String: Any] {
+        _ = try libraryURL(kind: kind, offset: offset)
+        guard let entries = data["items"] as? [Any] else { throw Issue.invalid }
+        let items: [[String: Any]] = entries.prefix(50).compactMap { entry in
+            guard let entry = entry as? [String: Any], let item = (kind == "tracks" ? entry["track"] as? [String: Any] : entry), item["is_local"] as? Bool != true,
+                  let id = item["id"] as? String, id.range(of: "^[a-zA-Z0-9]{22}$", options: .regularExpression) != nil, let title = item["name"] as? String, !title.isEmpty else { return nil }
+            let artists = item["artists"] as? [[String: Any]] ?? []
+            let detail = kind == "tracks" ? artists.compactMap { $0["name"] as? String }.joined(separator: ", ") : (item["owner"] as? [String: Any])?["display_name"] as? String ?? ""
+            return ["id": id, "name": String(title.prefix(500)), "detail": String(detail.prefix(500)), "url": "https://open.spotify.com/" + (kind == "tracks" ? "track/" : "playlist/") + id]
+        }
+        return ["items": items, "nextOffset": data["next"] as? String != nil && offset + 50 <= 100000 ? offset + 50 as Any : NSNull()]
+    }
+    func library(kind: String, offset: Int) async throws -> [String: Any] {
+        let url = try Self.libraryURL(kind: kind, offset: offset), ticket = epoch
+        guard let access = accessToken, expires > Date() else { throw Issue.unavailable }
+        var request = URLRequest(url: url); request.setValue("Bearer " + access, forHTTPHeaderField: "Authorization")
+        let data = try await Self.json(request)
+        guard ticket == epoch, accessToken == access, expires > Date(), !Task.isCancelled else { throw Issue.unavailable }
+        return try Self.libraryPage(data, kind: kind, offset: offset)
     }
     private func failed(_ ticket: Int) {
         guard ticket == epoch else { return }

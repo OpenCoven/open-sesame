@@ -14,6 +14,21 @@ import CryptoKit
         precondition(OpenSesameSpotify.effectiveClientID("") == OpenSesameSpotify.defaultClientID)
         precondition(OpenSesameSpotify.effectiveClientID("invalid") == OpenSesameSpotify.defaultClientID)
         precondition(OpenSesameSpotify.effectiveClientID(String(repeating: "b", count: 32)) == String(repeating: "b", count: 32), "Existing explicit public-client overrides are preserved")
+        precondition(Set(OpenSesameSpotify.scopes.split(separator: " ")) == Set(["user-read-private", "user-library-read", "playlist-read-private", "playlist-read-collaborative"]))
+        let id = "0123456789ABCDEFGHIJKL"
+        let page = try OpenSesameSpotify.libraryPage(["items": [["track": ["id": id, "name": "Song", "artists": [["name": "Artist"]]]], ["track": NSNull()]], "next": "https://untrusted.example"], kind: "tracks", offset: 0)
+        let songs = page["items"] as! [[String: Any]]
+        precondition(songs.count == 1 && songs[0]["url"] as? String == "https://open.spotify.com/track/" + id)
+        precondition(page["nextOffset"] as? Int == 50)
+        let next = try OpenSesameSpotify.libraryURL(kind: "tracks", offset: 50)
+        precondition(next.absoluteString == "https://api.spotify.com/v1/me/tracks?limit=50&offset=50")
+        let playlists = try OpenSesameSpotify.libraryPage(["items": [["id": id, "name": "Private list", "owner": ["display_name": "Owner"]]], "next": NSNull()], kind: "playlists", offset: 0)
+        precondition((playlists["items"] as! [[String: Any]])[0]["detail"] as? String == "Owner")
+        precondition(playlists["nextOffset"] is NSNull)
+        for (kind, offset) in [("tracks", -1), ("tracks", 100001), ("https://untrusted.example", 0)] {
+            do { _ = try OpenSesameSpotify.libraryURL(kind: kind, offset: offset); fatalError("Accepted invalid library page") } catch {}
+        }
+        do { _ = try OpenSesameSpotify.libraryPage([:], kind: "tracks", offset: 0); fatalError("Accepted malformed library") } catch {}
         let url = OpenSesameSpotify.redirect + "?state=" + first.state + "&code=fixture-code"
         let returned = try OpenSesameSpotify.code(URL(string: url)!, state: first.state)
         precondition(returned == "fixture-code")

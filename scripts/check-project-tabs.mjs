@@ -13,18 +13,20 @@ let finish=true,renders=0;window.OpenSesameNotes={finish:()=>finish};
 const ctx={window,document,icon:()=>'<svg></svg>',libraryOpen:false,detailFullWidth:false,itemsArchive:false,libraryQuery:'',itemsSearchOpen:false,expandedCategories:new Set(),categoryFilter:'all',projectFilter:'retained-project',selectedItemId:'',filteredItems(){return Array(ctx.itemsArchive?0:({note:2,bookmark:1,task:1,all:4}[ctx.categoryFilter])).fill({})},selectCollection(kind){ctx.categoryFilter=kind;ctx.selectedItemId=''},render(){renders++;window.OpenSesameProjects?.sync()}};
 vm.runInNewContext(fs.readFileSync('dist/projects-overview.js','utf8'),ctx);
 const tabs=el('pane-items').children[0].children[0],buttons=tabs.children;
-assert.equal(buttons.length,4);assert.equal(ctx.categoryFilter,'note');assert.equal(ctx.libraryOpen,true);assert.equal(workspace.attrs['aria-labelledby'],'projects-note');
+assert.equal(buttons.length,3);assert.equal(ctx.categoryFilter,'note');assert.equal(ctx.libraryOpen,true);assert.equal(workspace.attrs['aria-labelledby'],'projects-note');
 assert.equal(el('capture-list-heading').children.length,0,'Project scope and global actions share the tab toolbar instead of consuming a second header');
 assert.equal(projectPicker.parentElement,el('pane-items').children[0]);assert.equal(el('new-item').parentElement,libraryTools,'New item remains available when the sidebar is hidden');
 assert.equal(el('item-search-toggle').parentElement.id,'projects-rail-actions');assert.equal(el('detail-width-toggle').parentElement,el('item-search-toggle').parentElement);
-for(const [index,kind] of ['note','bookmark','task','all'].entries()){
+for(const [index,kind] of ['note','bookmark','task'].entries()){
   buttons[index].click();assert.equal(ctx.categoryFilter,kind);assert.equal(ctx.projectFilter,'retained-project');
   assert.equal(buttons[index].attrs['aria-selected'],'true');assert.equal(buttons.filter(b=>b.tabIndex===0).length,1);
-  assert.equal(buttons.filter(b=>b.attrs['aria-selected']==='true').length,1);assert.equal(el('capture-list').attrs['aria-label'],['Notes','Bookmarks','Tasks','Recent'][index]);
-  assert.equal(el('items-rail-heading').children.find(n=>n.id==='projects-item-count').textContent,String([2,1,1,4][index]));
+  assert.equal(buttons.filter(b=>b.attrs['aria-selected']==='true').length,1);assert.equal(el('capture-list').attrs['aria-label'],['Notes','Bookmarks','Tasks'][index]);
+  assert.equal(el('items-rail-heading').children.find(n=>n.id==='projects-item-count').textContent,String([2,1,1][index]));
 }
-finish=false;buttons[0].click();assert.equal(ctx.categoryFilter,'all','A pending unsaved editor blocks collection changes');finish=true;
+finish=false;buttons[0].click();assert.equal(ctx.categoryFilter,'task','A pending unsaved editor blocks collection changes');finish=true;
 buttons[1].focus();const key=new Event('keydown',{cancelable:true});Object.defineProperty(key,'key',{value:'ArrowRight'});tabs.dispatchEvent(key);assert.equal(ctx.categoryFilter,'task');assert.equal(document.activeElement,buttons[2]);
 ctx.itemsArchive=true;window.OpenSesameProjects.sync();assert.equal(el('collection-title').textContent,'Archived');window.OpenSesameProjects.show();assert.equal(ctx.itemsArchive,false);assert.equal(ctx.categoryFilter,'task');assert.equal(ctx.projectFilter,'retained-project');assert.ok(renders>0);
 const html=fs.readFileSync('dist/index.html','utf8');assert.ok(!html.includes('id="terminal-agent"'));assert.ok(html.includes('interface-polish.css'));
 console.log('Projects: one selected tab, scoped count, consolidated toolbar/sidebar, retained project scope, keyboard navigation, unsaved-editor guard and archive return passed with a simulated DOM.');
+
+ctx.categoryFilter='all';window.OpenSesameProjects.normalize();assert.equal(ctx.categoryFilter,'task','Legacy all-items selection returns to the last remaining collection');ctx.itemsArchive=true;ctx.categoryFilter='all';window.OpenSesameProjects.normalize();assert.equal(ctx.categoryFilter,'all','Archive retains all item kinds');ctx.itemsArchive=false;window.OpenSesameProjects.show();buttons[2].focus();const wrap=new Event('keydown',{cancelable:true});Object.defineProperty(wrap,'key',{value:'ArrowRight'});tabs.dispatchEvent(wrap);assert.equal(ctx.categoryFilter,'note');assert.equal(document.activeElement,buttons[0],'Keyboard navigation wraps through only Notes, Bookmarks and Tasks');

@@ -636,6 +636,14 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method.hasPrefix("music.spotify.") {
             do {
                 switch method {
+                case "music.spotify.library":
+                    guard let kind = params["kind"] as? String, let offset = params["offset"] as? Int else { respond(requestId, error: "Invalid Spotify library page."); return }
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        do { self.respond(requestId, result: try await self.spotify.library(kind: kind, offset: offset)) }
+                        catch { self.respond(requestId, error: "Spotify library unavailable. Reconnect to grant library access, or retry shortly.") }
+                    }
+                    return
                 case "music.spotify.status": break
                 case "music.spotify.configure": try spotify.configure(params["clientId"] as? String ?? "")
                 case "music.spotify.signIn": try spotify.signIn()

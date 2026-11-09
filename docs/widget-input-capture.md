@@ -38,3 +38,9 @@ Plugin setup, current native OAuth limits, and private configuration handling ar
 ## Flat dark appearance in v0.0.7
 
 The widget stays opaque while clicking, typing, holding, resizing, and changing views. The native blur layer and Alt-hold/Space opacity gesture are removed. Background holding remains a speech-entry action. Menus and controls use solid dark surfaces; keyboard focus is visible without a surface fade. Static navigation dots replace the animated edge and retain the existing enabled preference. See the [four UI refinements](desktop-polish-plan.md#flat-dark-ui-polish) for the palette, selection states, compact controls, and acceptance limits.
+
+## Complete transcripts across pauses
+
+Native speech keeps completed utterances when recognition begins returning only the phrase after a pause. Timestamped corrections replace their matching audio span, while interim revisions update the current tail; cumulative final results replace the spans they cover without duplicating them. Empty callbacks preserve captured text. Live commits the complete segment before starting its next bounded recognition request, and Copy and text export use the accumulated transcript. Browser recognition also retains completed text across restarts after silence.
+
+Run `node scripts/check-transcript-retention.mjs` and the native checks for synthetic pause, correction, restart and duplicate-result regressions. These checks do not capture audio; real microphone/system-audio recognition and installed-app behavior remain separate acceptance.

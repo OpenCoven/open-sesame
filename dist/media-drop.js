@@ -1,10 +1,10 @@
 'use strict';
 (()=>{
   const el=id=>document.getElementById(id),pane=el('pane-media'),zone=document.createElement('div'),label=document.createElement('span');
-  zone.id='media-dropzone';zone.setAttribute('role','region');zone.setAttribute('aria-label','Media drop zone');label.id='media-drop-label';label.textContent='Drop audio or video files or a folder here';zone.append(label,el('media-choose'));pane.insertBefore(zone,el('media-workspace'));el('media-choose').title='Choose audio or video files';
+  zone.id='media-dropzone';zone.setAttribute('role','region');zone.setAttribute('aria-label','Media drop zone');label.id='media-drop-label';label.textContent='Drop audio or video files or a folder here';zone.append(label);el('media-file-open').before(el('media-choose'));pane.insertBefore(zone,el('media-workspace'));el('media-choose').title='Choose audio or video files';
   let depth=0,loading=false;
   const fileDrag=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');
-  function highlight(active){pane.classList.toggle('media-drop-active',active);label.textContent=active?'Release to add media to your playlist':'Drop audio or video files or a folder here'}
+  function highlight(active){pane.classList.toggle('media-drop-active',active);zone.hidden=!active&&!!el('local-media').getAttribute('src');label.textContent=active?'Release to add media to your playlist':'Drop audio or video files or a folder here'}
   async function dropped(transfer){
     const direct=Array.from(transfer.files||[]),roots=Array.from(transfer.items||[]).map(item=>item.webkitGetAsEntry?.()).filter(Boolean),files=[];let folder=false;
     async function visit(entry,prefix='',level=0){

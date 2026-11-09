@@ -10,14 +10,23 @@
     reader:['pane-reading','#reading-toolbar','#reading-collections','reading'],
     live:['pane-audio',null,null,'audio'],widgets:['pane-plugins',null,null,'plugins']
   };
-  const githubHost=el('github-monitor'),githubHome=githubHost.parentElement;
+  const githubHost=el('github-monitor'),githubHome=githubHost.parentElement,taskHost=el('task-manager'),taskHome=taskHost.parentElement;
   const contexts=new Map();let selected={},builtins=[],syncing=false,serial=0;
   try{const saved=JSON.parse(localStorage.getItem('open-sesame-page-tabs-v1')||'{}');for(const page of Object.keys(adapters))if(typeof saved[page]==='string')selected[page]=saved[page]}catch{}
   try{if(JSON.parse(localStorage.getItem('open-sesame-builtin-widgets-v1')||'[]').includes('github'))builtins=['github']}catch{}
   const make=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const currentPage=()=>({focus:'focus',music:'media',youtube:'media',media:'media',items:'projects',familiars:'console','agent-monitor':'console','computer-agent':'console',terminal:'console',remote:'console',reading:'reader',audio:'live',plugins:'widgets'})[state.scenario];
-  function list(){return [...window.OpenSesameTools.list(),...((window.OpenSesameWidgetLifecycle ? window.OpenSesameWidgetLifecycle.isActive('github') : builtins.includes('github'))?[{id:'builtin-github',name:'GitHub',page:'projects',builtin:true}]:[])]}
+  function list(){return [...window.OpenSesameTools.list(),...((window.OpenSesameWidgetLifecycle ? window.OpenSesameWidgetLifecycle.isActive('github') : builtins.includes('github'))?[{id:'builtin-github',name:'GitHub',page:'projects',builtin:true}]:[]),...(window.OpenSesameWidgetLifecycle?.isActive('task-manager')?[{id:'builtin-task-manager',name:'Task Manager',page:'projects',builtin:true}]:[])]}
   function save(){try{localStorage.setItem('open-sesame-page-tabs-v1',JSON.stringify(selected))}catch{}}
+  function revealSelected(c){
+    const selected=c.tabs.querySelector('[aria-selected="true"]');
+    if(!selected||typeof selected.getBoundingClientRect!=='function'||!c.tabs.clientWidth)return;
+    const strip=c.tabs.getBoundingClientRect(),tab=selected.getBoundingClientRect();
+    const left=strip.left+c.tabs.clientLeft,right=left+c.tabs.clientWidth;
+    // Scroll only the strip: scrollIntoView would also move the page/content.
+    if(tab.right>right)c.tabs.scrollLeft+=tab.right-right;
+    else if(tab.left<left)c.tabs.scrollLeft+=tab.left-left;
+  }
   function context(page){
     if(contexts.has(page))return contexts.get(page);
     const [id,toolbarSelector,tabsSelector]=adapters[page],root=el(id);let toolbar=toolbarSelector&&root.querySelector(toolbarSelector),tabs=tabsSelector&&root.querySelector(tabsSelector);
@@ -25,11 +34,12 @@
     const view=make('section','page-widget-view');view.id='page-widget-view-'+page;view.hidden=true;view.setAttribute('role','tabpanel');view.tabIndex=0;root.append(view);
     for(const child of toolbar.children)if(child===tabs||child.contains(tabs))child.classList.add('page-widget-tab-holder');
     const c={root,toolbar,tabs,view,id:null,definition:null,dispose:null};contexts.set(page,c);
+    if(typeof ResizeObserver!=='undefined'){c.resize=new ResizeObserver(()=>revealSelected(c));c.resize.observe(tabs)}
     tabs.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||!tabs.contains(b)||b.dataset.pageWidget)return;deactivate(page);sync()},true);
     tabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||e.altKey||e.ctrlKey||e.metaKey)return;const buttons=[...tabs.querySelectorAll('[role="tab"]')].filter(b=>!b.hidden&&!b.disabled),index=buttons.indexOf(document.activeElement);if(index<0)return;e.preventDefault();e.stopImmediatePropagation();const next=buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowLeft'?-1:1)+buttons.length)%buttons.length];next.click();next.focus({preventScroll:true})},true);
     return c;
   }
-  function release(c){if(c.id==='builtin-github'){window.OpenSesameGitHubMonitor.pause();githubHome.append(githubHost);githubHost.hidden=true}c.dispose?.();c.dispose=null}
+  function release(c){if(c.id==='builtin-task-manager'){window.OpenSesameTaskManager?.pause();taskHome?.append(taskHost);taskHost.hidden=true}if(c.id==='builtin-github'){window.OpenSesameGitHubMonitor.pause();githubHome.append(githubHost);githubHost.hidden=true}c.dispose?.();c.dispose=null}
   function deactivate(page){delete selected[page];save();window.OpenSesameTools.invalidate();const c=contexts.get(page);if(c?.id==='builtin-github')window.OpenSesameGitHubMonitor?.pause();}
   function choose(page,id){
     if(!list().some(x=>x.id===id&&x.page===page))return;
@@ -55,7 +65,8 @@
           for(const b of c.tabs.querySelectorAll('[role="tab"]')){const yes=b.dataset.pageWidget===x.id;b.setAttribute('aria-selected',String(yes));b.tabIndex=yes?0:-1;if(yes)c.view.setAttribute('aria-labelledby',b.id)}
           if(c.id!==x.id||c.definition!==x.definition){
             release(c);c.id=x.id;c.definition=x.definition;c.view.replaceChildren();
-            if(x.builtin){c.view.append(githubHost);window.OpenSesameGitHubMonitor.mount(()=>currentPage()===page&&selected[page]===x.id&&state.expanded&&!window.OpenSesameLauncher?.active)}
+            if(x.id==='builtin-task-manager'){c.view.append(taskHost);window.OpenSesameTaskManager.mount(()=>currentPage()===page&&selected[page]===x.id&&state.expanded&&!window.OpenSesameLauncher?.active)}
+            else if(x.builtin){c.view.append(githubHost);window.OpenSesameGitHubMonitor.mount(()=>currentPage()===page&&selected[page]===x.id&&state.expanded&&!window.OpenSesameLauncher?.active)}
             else{
               const actions=make('header','page-widget-actions'),manage=make('button','','Manage widget'),body=make('article','installed-widget-content'),status=make('p','page-widget-status');manage.type='button';manage.onclick=()=>window.OpenSesameTools.open();status.setAttribute('role','status');actions.append(make('small','',M.pages[page]+' / '+x.name),manage);c.view.append(actions,body,status);
               c.dispose=window.OpenSesameTools.mount(x.id,body,()=>currentPage()===page&&selected[page]===x.id&&state.expanded&&!c.view.hidden&&!window.OpenSesameTools.active);
@@ -67,6 +78,7 @@
           if(!c.tabs.querySelector('[aria-selected="true"]')){const first=c.tabs.querySelector('[role="tab"]');first?.setAttribute('aria-selected','true');if(first)first.tabIndex=0}
         }
       }
+      for(const c of contexts.values())if(!c.root.hidden)revealSelected(c);
       const active=!!selected[pageNow]&&widgets.some(x=>x.id===selected[pageNow]&&x.page===pageNow);panel.classList.toggle('page-widget-active',active);
       window.OpenSesameShellInput?.sync();window.OpenSesameFocusControls?.sync();
     }finally{syncing=false}

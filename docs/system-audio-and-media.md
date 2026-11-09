@@ -27,3 +27,7 @@ Media's existing file inputs now open a trusted, authenticated native sheet atta
 ## Verification and remaining acceptance
 
 Run `npm run verify` with `OPEN_SESAME_VERSION=0.0.11`. The native check includes synthetic system audio, existing native geometry and Spotify checks; the full suite also exercises avatar filesystem refusal paths, the real JS-to-Python Coven fixture, media drops, playlist queueing/layout and version rendering. Keep original failures and the final exact-head report in common-Git task receipts. App compilation/signature, local tests, hosted CI, source merge, private packaging, installed activation and live GUI/device/provider acceptance remain separate evidence. No real system audio was recorded, avatar changed, user agent signaled or familiar prompted by automated verification.
+
+## Local media controls
+
+Local media uses one application playback bar for play/pause, seeking, elapsed/duration, previous/next, volume and video fullscreen. Native video controls are enabled only in fullscreen, including the WebKit native fallback. Unknown/live durations disable seeking. Choose media stays in the file header; the drop hint appears when empty or while dragging files. Existing folder/link import, saved playlists, queue search, carousel and repeat remain available. Run `node scripts/check-media-transport.mjs` and `node scripts/review-media-simple.mjs` (with Playwright installed or `PLAYWRIGHT_MODULE` set) for synthetic transport and generated-WAV browser checks. These do not establish installed-device playback acceptance.
