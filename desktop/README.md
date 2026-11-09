@@ -13,7 +13,7 @@ plutil -lint 'build/Open Sesame.app/Contents/Info.plist'
 open 'build/Open Sesame.app'
 ```
 
-`npm run dev:macos` combines building and opening. Rebuild after changing Python installations, web assets, or helper modules. The native executable is `OpenSesame`; the historical bundle identifier stays stable for website data and permissions. Run `npm run verify` for the bounded automated baseline and retain its report. See the [current acceptance ledger](../docs/work-tracking.md) before interpreting earlier validation claims.
+`npm run dev:macos` combines building and opening. Rebuild after changing Python installations, web assets, or helper modules. The native executable is `OpenSesame`; the historical bundle identifier stays stable for website data and permissions. Run `npm run verify` for the bounded automated baseline and retain its report. Use the [current-state lookup](../docs/work-tracking.md#find-current-work) and [source/test map](../docs/repository-map.md) before interpreting earlier validation claims.
 
 ## Local shell smoke pass
 
@@ -55,3 +55,5 @@ Clicking outside the docked Mac widget collapses it to the compact notch or menu
 Earlier detailed feature descriptions and environment-specific results are preserved in the [desktop README archive](../docs/archive/2026-11-06-desktop-readme.md).
 
 The [Familiar access controls](../docs/familiar-permissions-and-layout.md) keep read-only defaults and require native confirmation for each full-access reply or workspace avatar replacement. The roster uses the same remembered collapse control as Shells and Desktops. [GitHub monitoring](../docs/github-monitor-widget.md) installs from Widgets into a Projects tab and reads recent repository activity through the existing local GitHub CLI account; it performs no GitHub writes and embeds no credentials.
+
+For declarative tools, use Widgets → Tools or `/tools`; see [authoring and page placement](../docs/tools.md). The source label `plugins` remains the internal key for Widgets. The [scoped native instructions](AGENTS.md) describe routing, packaging and fixture-state boundaries.

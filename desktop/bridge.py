@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Open Sesame's stdio PTY/SSH bridge, with an optional loopback iMessage receiver."""
+# Session owns real PTY lifetime; Bridge routes JSON requests to adapters and closes owned work.
+# Native origin/authentication checks live in OpenSesame.swift; stdout is the JSON-line transport. See docs/repository-map.md.
 from controller import Controller
 from computer_controls import control as computer_control
 from live_agents import LiveAgents, agent_status

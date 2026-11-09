@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """The same bounded verification entry point is used locally and by CI."""
+# Explicit stage orchestration; check.mjs separately discovers JavaScript checks.
+# run_bounded.py owns timeout/process cleanup, and source_fingerprint must match after all stages. See scripts/AGENTS.md.
 import argparse
 import hashlib
 import json

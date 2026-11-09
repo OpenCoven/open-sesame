@@ -1,5 +1,7 @@
 # Widget input and Live audio patch
 
+This implementation note records early widget releases. Use the [documentation index](README.md), [capability matrix](capabilities.md) and current source for today’s entrypoints and acceptance limits. Versioned verification examples reproduce their historical candidate; they do not select the current release or task.
+
 The private v0.0.1 patch adds a single Live audio setup: choose **Transcribe** or **Record audio**, choose the source, then Start. Stop finishes the current capture and exposes its output. Transcription creates text without saving an audio file; recording creates audio without transcription. Questions appear once there is transcript text. The question composer no longer contains a second recording control or competing microphone button.
 
 On macOS, Microphone uses native speech recognition for transcription and a native AAC recorder for audio. The selected system microphone name appears during capture. Save audio opens the macOS save dialog for an `.m4a` file. Save before quitting or starting another recording; audio stays in a temporary local file until then. Clearing a transcript preserves an existing recording. The recorder's input and metering use Apple's [AVAudioRecorder](https://developer.apple.com/documentation/avfaudio/avaudiorecorder).

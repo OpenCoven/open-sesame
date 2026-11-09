@@ -1,5 +1,7 @@
 # Native capture, avatars and media
 
+This implementation note records v0.0.11 and subsequent capture/media follow-ups. Use the [documentation index](README.md), [capability matrix](capabilities.md) and current source for today’s entrypoints and acceptance limits. Versioned verification examples reproduce their historical candidate; they do not select the current release or task.
+
 ## System audio
 
 In Live, choose **System audio** or **Microphone + system audio**, choose Transcribe or Record audio, then Start. The installed Mac app uses ScreenCaptureKit audio capture instead of browser `getDisplayMedia`; macOS 13 or later is required by the existing app. System-only capture does not request microphone access. The combined source also requests microphone access, and transcription requests Speech Recognition. macOS controls Screen & System Audio Recording access under Privacy & Security; denial produces an actionable message and leaves capture stopped. Access is requested only after Start. See Apple's [audio capture configuration](https://developer.apple.com/documentation/screencapturekit/scstreamconfiguration/capturesaudio).
