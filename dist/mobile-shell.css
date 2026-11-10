@@ -198,3 +198,27 @@ html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-p
  .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
  .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{min-height:14rem;flex-shrink:0}
 }
+/* The page view owns mobile scrolling; a fitted task list must not collapse under its form. */
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager{flex:none;min-height:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager-items{flex:none;overflow:visible;min-height:0}
+ .open-sesame-mobile #widget-panel #task-manager-list-form{flex-wrap:wrap}
+ .open-sesame-mobile #widget-panel #task-manager-list-name{flex:1 1 100%}
+ .open-sesame-mobile #widget-panel .task-manager-heading{flex-wrap:wrap}
+ .open-sesame-mobile #widget-panel .task-manager-heading>div{flex:1 1 10rem}
+ .open-sesame-mobile #widget-panel .task-manager-heading strong{font-size:1.25rem}
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager :is(button,select,input){font-size:1rem;min-height:44px}
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager .task-manager-title{font-size:1rem!important}
+ .open-sesame-mobile #widget-panel :is(#task-manager-form,.task-manager-filters)>:is(input,select){flex:1 1 9rem;max-width:100%;width:auto;box-sizing:border-box}
+ .open-sesame-mobile #widget-panel #task-manager-title{flex-basis:100%}
+ .open-sesame-mobile #widget-panel .task-manager-summary{flex-wrap:wrap;font-size:.75rem}
+ .open-sesame-mobile #widget-panel .task-manager-summary b{font-size:1rem}
+ .open-sesame-mobile #widget-panel :is(.task-manager-meta,.task-manager-pages){font-size:.75rem}
+ .open-sesame-mobile #widget-panel .task-manager-foot{font-size:.6875rem;line-height:1.5}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content h3{font-size:1.5rem}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content :is(p,strong,label,li,button){font-size:.875rem;line-height:1.5}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content small{font-size:.75rem}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content button{min-height:44px;white-space:normal;overflow-wrap:anywhere;max-width:100%}
+
+.open-sesame-mobile #widget-anchor #widget-panel .page-widget-host-toolbar :is(#reading-collections,#lockin-tabs,[role=tablist]) [role=tab]{font-size:.875rem!important;min-height:44px!important;height:auto!important;max-height:none!important}
+
+.open-sesame-mobile #widget-anchor #widget-panel .page-widget-host-toolbar [role=tablist]{height:auto!important;min-height:48px!important}

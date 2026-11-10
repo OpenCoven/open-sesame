@@ -8,13 +8,13 @@ export async function checkMobilePreservation(page){
   saveItems();OpenSesameWidgetLifecycle.set('task-manager','active');OpenSesamePageWidgets.open('builtin-task-manager');
  });
  await page.locator('#task-manager-title').fill('Keep this installed widget draft');
- await page.locator('#task-manager-items').evaluate(n=>{n.scrollTop=200});
- const scroll=await page.locator('#task-manager-items').evaluate(n=>n.scrollTop);assert(scroll>0,'Fixture must actually scroll the installed widget');
+ await page.locator('#page-widget-view-projects').evaluate(n=>{n.scrollTop=200});
+ const scroll=await page.locator('#page-widget-view-projects').evaluate(n=>n.scrollTop);assert(scroll>0,'Fixture must actually scroll the installed widget page');
  await page.locator('[data-mobile-destination=today]').click();
  await page.locator('[data-mobile-destination=projects]').click();
  assert.equal(await page.evaluate(()=>OpenSesamePageWidgets.active),true,'Destination navigation retains installed page selection');
  assert.equal(await page.locator('#task-manager-title').inputValue(),'Keep this installed widget draft');
- assert.equal(await page.locator('#task-manager-items').evaluate(n=>n.scrollTop),scroll,'Installed widget scroll anchor survives navigation');
+ assert.equal(await page.locator('#page-widget-view-projects').evaluate(n=>n.scrollTop),scroll,'Installed widget page scroll anchor survives navigation');
  await page.locator('[data-mobile-destination=today]').click();
  await page.locator('.mobile-card').filter({hasText:'Latest note'}).click();
  assert.equal(await page.evaluate(()=>OpenSesamePageWidgets.active),false,'Explicit latest-note link reveals the native note');
