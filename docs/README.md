@@ -6,6 +6,7 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 
 | Area | Read first | Related implementation notes |
 | --- | --- | --- |
+| Mobile design reference | [Preserved v0.3 reference and checks](mobile-reference.md) | [Original specimen](../examples/mobile-reference/README.md); host, storage and connected transport remain separately gated |
 | Tools and integrations | [Tool creation and submissions](tools.md), [GitHub monitor](github-monitor-widget.md) | [Optional widgets and lifecycle controls](widget-lifecycle.md), [Page tabs and application workspace](widget-pages-and-application.md), [connection setup](desktop-polish-plan.md#plugin-setup-and-private-configuration) |
 | To-do tasks | [Task Manager](task-manager.md) | Shared Projects lists, priorities, due dates and recoverable completion |
 | Capture and launcher | [Command palette](command-palette.md), [widget/launcher lifecycle](widget-launcher-fit.md) | [Desktop interaction polish](desktop-interaction-polish.md) covers shell routing, playlists and Escape |
