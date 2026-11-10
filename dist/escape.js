@@ -9,6 +9,7 @@
     // Local menus/dialogs receive Escape before this final window-level fallback.
     if([...document.querySelectorAll('[role=dialog],[role=menu],[role=listbox]')].some(node=>!node.hidden&&node.getClientRects().length))return false;
     if(window.OpenSesameContentFocus?.active){event.preventDefault();event.stopImmediatePropagation();window.OpenSesameContentFocus.exit();return true}
+    if(window.OpenSesameMobile?.active){event.preventDefault();event.stopImmediatePropagation();window.OpenSesameMobile.navigate('today');return true}
     if(!state.expanded&&!window.OpenSesameLauncher?.active)return false;
     event.preventDefault();event.stopImmediatePropagation();void window.OpenSesameWindow?.collapse({focus:true});return true;
   }

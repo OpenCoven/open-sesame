@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const context={window:{}};
+vm.runInNewContext(fs.readFileSync('dist/item-workflow.js','utf8'),context);
+vm.runInNewContext(fs.readFileSync('dist/mobile-model.js','utf8'),context);
+const M=context.window.OpenSesameMobileModel,W=context.window.OpenSesameItemWorkflow;
+const items=[{id:'old',kind:'note',text:'Old',updatedAt:1},{id:'new',kind:'note',text:'<script>literal</script>',updatedAt:3},{id:'archived',kind:'note',stage:'done',updatedAt:4},{id:'task',kind:'task'},{id:'done',kind:'task',done:true},{id:'stage',kind:'task',stage:'done'},{id:'bookmark',kind:'bookmark',url:'https://example.org',readingLater:true}];
+let result=M.today({items,workflow:W,focus:{remaining:57,running:true},reading:{count:2}});
+assert.equal(result.latest.id,'new');assert.equal(result.tasks.open,1);assert.equal(result.tasks.done,2);assert.equal(result.focus.remaining,57);assert.equal(result.reading.count,2);
+items[1].stage='done';items[3].done=true;
+result=M.today({items,workflow:W,focus:{remaining:0,running:false},reading:{count:0}});
+assert.equal(result.latest.id,'old');assert.equal(result.tasks.open,0);assert.equal(result.tasks.done,3);
+assert.equal(M.today({items:[],workflow:W,focus:{},reading:{count:0}}).latest,null);
+for(const [scenario,destination] of [['items','projects'],['plugins','widgets'],['focus','focus'],['terminal','console'],['familiars','console'],['computer-agent','console'],['reading','today'],['music','today']])assert.equal(M.destination(scenario),destination);
+console.log('Mobile Today derives live canonical items, archive semantics, focus and reading without prototype persistence.');
+const seal=M.seal({id:'real-id',displayName:'Zoë Marin'});
+assert.equal(seal.initial,'Z');assert(['shield','square','circle'].includes(seal.shape));
+assert.equal(M.seal({id:'real-id',displayName:'Another name'}).shape,seal.shape,'Decorative shape derives from canonical ID, never names or demo fixtures');
+assert.equal(M.seal({id:'unicode',displayName:'👩🏽‍💻 helper'}).initial,'👩🏽‍💻');
+assert.equal(M.seal(null).initial,'');
+const projected=M.today({items,workflow:W,focus:{},reading:{count:0}});assert.deepEqual(Array.from(projected.tasks.entries),[],'Completed tasks never remain actionable in Today');
+
+const html=fs.readFileSync('dist/index.html','utf8');assert(html.includes('mobile-model.js')&&html.indexOf('mobile-model.js')<html.indexOf('familiars.js'),'Presentation projection must load before familiar rendering consumes it');

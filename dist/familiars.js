@@ -11,6 +11,7 @@
   function make(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
   function cancelPermission(){client.cancelPermission?.().catch(()=>{});el('familiar-access').value='read-only'}
   const familiar=()=>roster.find(f=>f.id===selected),current=()=>records.get(selected),draft=()=>drafts.get(selected)||'';
+  const introSeal=make('span','mobile-familiar-seal familiar-intro-seal');introSeal.setAttribute('aria-hidden','true');el('familiar-chat-empty').prepend(introSeal);
   const replyIndicator=make('p','familiar-reply-indicator');replyIndicator.setAttribute('role','status');replyIndicator.setAttribute('aria-live','polite');
   const commands=window.OpenSesameFamiliarCommands,commandMenu=make('div','familiar-command-menu'),commandResult=make('section','familiar-command-result'),commandHeading=make('strong'),commandBody=make('div','familiar-command-body'),commandClose=make('button','','×');
   commandMenu.id='familiar-command-menu';commandMenu.hidden=true;commandMenu.setAttribute('role','listbox');commandMenu.setAttribute('aria-label','Chat commands');el('familiar-compose').prepend(commandMenu);
@@ -69,6 +70,7 @@
   });
   function announceConnection(){window.dispatchEvent(new CustomEvent('open-sesame-familiars-changed',{detail:{connected,count:roster.length,error}}))}
   function paintAvatar(mark,f){
+    const seal=window.OpenSesameMobileModel?.seal(f);if(seal){mark.dataset.initial=seal.initial;mark.dataset.sealShape=seal.shape;}
     const emoji=f?.emoji&&!/^[a-z][a-z0-9-]*:/i.test(f.emoji)?f.emoji:'';mark.textContent=emoji;if(!emoji)mark.innerHTML=icon('chat');
     if(typeof f?.avatarUrl==='string'&&f.avatarUrl.length<=256*1024&&/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(f.avatarUrl)){
       const image=make('img');image.alt='';image.src=f.avatarUrl;image.addEventListener('error',()=>{mark.textContent=emoji;if(!emoji)mark.innerHTML=icon('chat')},{once:true});mark.replaceChildren(image);
@@ -78,7 +80,10 @@
     const focused=document.activeElement?.dataset.familiar;const query=el('familiar-search').value.trim().toLowerCase(),shown=roster.filter(f=>(f.displayName+' '+f.name+' '+f.description).toLowerCase().includes(query)),list=el('familiar-list'),key=JSON.stringify([rosterVersion,selected,query,connected,[...jobs.keys()]]);
     if(key===lastRosterKey)return;lastRosterKey=key;const oldScroll=list.scrollTop;list.replaceChildren();for(const f of shown){const b=make('button','familiar-row');b.type='button';b.id='familiar-tab-'+f.id;b.dataset.familiar=f.id;b.setAttribute('role','tab');b.setAttribute('aria-controls','familiar-thread');b.setAttribute('aria-selected',String(selected===f.id));b.tabIndex=selected===f.id||!shown.some(row=>row.id===selected)&&shown[0]===f?0:-1;b.title=f.description||f.displayName;
       const emoji=f.emoji&&!/^[a-z][a-z0-9-]*:/i.test(f.emoji)?f.emoji:'',mark=make('span','familiar-avatar',emoji),copy=make('span','familiar-row-copy');paintAvatar(mark,f);mark.setAttribute('aria-hidden','true');b.dataset.busy=String(jobs.has(f.id));b.title=[f.displayName,f.description,jobs.has(f.id)?'Replying…':f.name].filter(Boolean).join(' · ');copy.append(make('strong','',f.displayName),make('small','',jobs.has(f.id)?'Replying…':f.name));b.append(mark,copy);b.addEventListener('click',()=>choose(f.id));
-      b.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();const i=shown.indexOf(f),next=shown[event.key==='Home'?0:event.key==='End'?shown.length-1:(i+(event.key==='ArrowDown'?1:-1)+shown.length)%shown.length];choose(next.id,false);el('familiar-tab-'+next.id)?.focus({preventScroll:true})});list.append(b)}
+      b.addEventListener('keydown',event=>{const horizontal=el('familiar-list').getAttribute('aria-orientation')==='horizontal',forward=horizontal?'ArrowRight':'ArrowDown',backward=horizontal?'ArrowLeft':'ArrowUp';if(![forward,backward,'Home','End'].includes(event.key))return;event.preventDefault();const i=shown.indexOf(f),next=shown[event.key==='Home'?0:event.key==='End'?shown.length-1:(i+(event.key===forward?1:-1)+shown.length)%shown.length];choose(next.id,false);el('familiar-tab-'+next.id)?.focus({preventScroll:true})});list.append(b)}
+    if(list.getAttribute('aria-orientation')==='horizontal'){
+      const active=el('familiar-tab-'+selected);if(active){const bounds=list.getBoundingClientRect(),tab=active.getBoundingClientRect();if(tab.right>bounds.right)list.scrollLeft+=tab.right-bounds.right;else if(tab.left<bounds.left)list.scrollLeft+=tab.left-bounds.left}
+    }
     list.scrollTop=oldScroll;if(focused)el('familiar-tab-'+focused)?.focus({preventScroll:true});
     el('familiar-roster-count').textContent=shown.length===roster.length?String(roster.length):shown.length+' / '+roster.length;
     el('familiar-roster-empty').hidden=shown.length>0;el('familiar-roster-empty').textContent=!connected?'Connect Coven to see your familiars.':roster.length?'No familiar matches this search.':'No familiars are configured in Coven yet. Create one with the setup guide.';
@@ -94,7 +99,7 @@
     const rows=(record?.messages||[]).filter(message=>message.text&&(!query||message.text.toLowerCase().includes(query))).map(messageNode),existing=Array.from(log.children);
     const job=jobs.get(selected);if(job&&!query&&!record?.messages.at(-1)?.text){replyIndicator.textContent=job.status;rows.push(replyIndicator)}
     if(rows.length!==existing.length||rows.some((row,i)=>row!==existing[i]))log.replaceChildren(...rows);
-    const empty=el('familiar-chat-empty');empty.hidden=!record?.conversationId||rows.length>0||jobs.has(selected);
+    const empty=el('familiar-chat-empty'),seal=window.OpenSesameMobileModel?.seal(familiar());introSeal.textContent=seal?.initial||'';introSeal.dataset.sealShape=seal?.shape||'shield';introSeal.hidden=!familiar();empty.hidden=!record?.conversationId||rows.length>0||jobs.has(selected);
     empty.querySelector('strong').textContent=query?'No matching messages':'Ready for '+(familiar()?.displayName||'your familiar');
     empty.querySelector('p').textContent=query?'Try another phrase, or press Escape in search to return to the conversation.':'Send a message below to begin. This conversation stays with this familiar.';
     log.hidden=!record?.conversationId||!rows.length;
@@ -132,7 +137,7 @@
     const ticket=++generation;loading=true;paint();
     try{if(!jobs.has(fid)){const record=validConversation(await client.openConversation(fid),fid);if(ticket!==generation)return;records.set(fid,record)}if(ticket!==generation)return;if(incoming&&!draft()){drafts.set(fid,incoming);incoming='';el('familiar-message').value=draft();saveDraft()}}
     catch(e){if(ticket===generation){records.set(fid,{familiarId:fid,messages:[],error:e.message});toast(e.message)}}
-    finally{if(ticket===generation){loading=false;paint();if(focus&&current()?.conversationId)el('familiar-message').focus({preventScroll:true})}}
+    finally{if(ticket===generation){loading=false;paint();if(focus&&current()?.conversationId){if(window.OpenSesameMobile?.active&&innerWidth<=600&&innerHeight<=420)window.OpenSesameRails?.set('familiars',false);el('familiar-message').focus({preventScroll:true})}}}
   }
   async function connect(){
     if(window.OpenSesameWidgetLifecycle?.isActive('coven')===false){toast('Activate Coven Familiars in Widgets first.');return}
@@ -180,6 +185,6 @@
     if(!defaultFamiliar){defaultFamiliar=destination.familiarId;try{localStorage.setItem('open-sesame-default-familiar-v1',defaultFamiliar)}catch{}paint()}
     el('familiar-message').focus({preventScroll:true});return true;
   }
-  window.OpenSesameFamiliars={connect,routeDraft,defaultRecipient:()=>roster.find(f=>f.id===(defaultFamiliar||selected))||roster[0],recipients:()=>roster.map(({id,name,displayName})=>({id,name,displayName})),search,summary:()=>familiar()?.displayName||'Familiars',snapshot:()=>({connected,count:roster.length,error}),prepareDraft(text=''){if(text){if(selected&&draft().trim()){toast('Your existing familiar draft is kept. Save or clear it before preparing another message.');return false}incoming=text.slice(0,20000);if(selected&&current()?.conversationId){drafts.set(selected,incoming);incoming='';el('familiar-message').value=draft();saveDraft()}try{localStorage.setItem('open-sesame-familiar-queued-draft-v1',incoming)}catch{}}paint();return true}};
+  window.OpenSesameFamiliars={connect,routeDraft,defaultRecipient:()=>roster.find(f=>f.id===(defaultFamiliar||selected))||roster[0],recipients:()=>roster.map(({id,name,displayName})=>({id,name,displayName})),search,summary:()=>familiar()?.displayName||'Familiars',snapshot:()=>({connected,count:roster.length,error,selected:familiar()?{id:familiar().id,displayName:familiar().displayName}:null}),prepareDraft(text=''){if(text){if(selected&&draft().trim()){toast('Your existing familiar draft is kept. Save or clear it before preparing another message.');return false}incoming=text.slice(0,20000);if(selected&&current()?.conversationId){drafts.set(selected,incoming);incoming='';el('familiar-message').value=draft();saveDraft()}try{localStorage.setItem('open-sesame-familiar-queued-draft-v1',incoming)}catch{}}paint();return true}};
   paint();
 })();

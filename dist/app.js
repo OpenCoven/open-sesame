@@ -198,6 +198,7 @@ function agendaPosition(){
   const start=focusTopics.slice(0,index).reduce((s,t)=>s+t.minutes*60,0);return{elapsed,index,start,end:start+focusTopics[index].minutes*60};
 }
 function renderFocus(){
+  window.dispatchEvent(new Event('open-sesame-focus-tick'));
   const rowHeight=parseFloat(getComputedStyle($('pane-focus')).getPropertyValue?.('--focus-topic-height'))||26;
   $('focus-topic-list').style.height=(Math.min(focusPerPage,focusTopics.length-focusPage*focusPerPage)*rowHeight)+'px';
   const str=time(focusRemaining).split(':'),p=agendaPosition(),topic=focusTopics[p.index],limit=topicLimit(),capped=focusTopics.length>=limit;

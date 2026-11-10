@@ -4,7 +4,7 @@
   const M = OpenSesameToolsModel, key = 'open-sesame-tools-v1', drafts = new Map();
   const accessNames = {'github.summary': 'Read connected GitHub repositories', 'feeds.headlines': 'Read saved feed headlines', 'note.save': 'Save notes to Projects', navigate: 'Open workspace views', 'link.open': 'Open web links'};
   const accessText = definition => definition.capabilities.map(name => accessNames[name]).join(', ') || 'None';
-  let installed = [], ticket = 0, storageError = false, importTicket = 0;
+  let installed = [], ticket = 0, storageError = false, importTicket = 0, returnFocus = null;
   try { installed = M.restore(JSON.parse(localStorage.getItem(key) || '[]')); }
   catch { storageError = true; } // Keep unreadable storage intact for recovery.
 
@@ -46,7 +46,7 @@
   const launch = node('button', 'Tools · Import or create');
   launch.type = 'button';
   launch.className = 'tools-open';
-  launch.onclick = () => open();
+  launch.onclick = () => { launch.focus({preventScroll:true}); open(); };
   document.getElementById('pane-plugins').prepend(launch);
 
   function invalidate() { ++ticket; }
@@ -265,10 +265,10 @@
     }
   }
   function open(id) {
-    if (id && window.OpenSesamePageWidgets) { if (dialog.open) dialog.close(); window.OpenSesamePageWidgets.open(id); return; }
+    if (id && window.OpenSesamePageWidgets) { returnFocus = null; if (dialog.open) dialog.close(); window.OpenSesamePageWidgets.open(id); return; }
     invalidate();
     changeScenario('plugins');
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) { returnFocus = document.activeElement; dialog.showModal(); }
     draw();
     if (id) {
       const detail = [...collection.querySelectorAll('details')].find(n => n.dataset.instance === id);
@@ -284,9 +284,9 @@
     ]});
   }
   dialog.addEventListener('keydown', event => event.stopPropagation());
-  const closed = () => { invalidate(); ++importTicket; };
+  const closed = () => { invalidate(); ++importTicket; if (returnFocus && state.expanded && state.scenario === 'plugins') { const target = returnFocus.isConnected && returnFocus.getClientRects?.().length ? returnFocus : launch; target.focus({preventScroll:true}); } returnFocus = null; };
   dialog.addEventListener('close', closed);
-  dialog.addEventListener('cancel', closed);
+  dialog.addEventListener('cancel', () => { invalidate(); ++importTicket; });
   window.addEventListener('open-sesame-view-changed', () => { if (state.scenario !== 'plugins' && dialog.open) dialog.close(); });
   window.addEventListener('open-sesame-layout', () => { if (!state.expanded && dialog.open) dialog.close(); });
   // A floating browser workspace shares storage but has a separate script lifetime.
