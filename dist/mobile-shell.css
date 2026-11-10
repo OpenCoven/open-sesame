@@ -287,3 +287,11 @@ html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-p
 }
 
 .open-sesame-mobile #widget-panel #focus-calendar-editor header strong{font-size:1.25rem}
+
+/* Content focus keeps the existing article pane and gives its sole visible grid item the full row. */
+.open-sesame-mobile #widget-anchor #widget-panel.content-focused #reading-workspace{grid-template-rows:minmax(0,1fr);min-height:0;flex:1}
+.open-sesame-mobile #widget-panel.content-focused #reading-detail{grid-row:1}
+.open-sesame-mobile #widget-panel.content-focused :is(.mobile-header,.mobile-navigation){display:none!important}
+.open-sesame-mobile #widget-panel .content-focus-bar{min-height:44px;flex-basis:44px}
+.open-sesame-mobile #widget-panel .content-focus-bar>span{font-size:.875rem}
+.open-sesame-mobile #widget-panel #content-focus-exit{height:44px;width:44px}

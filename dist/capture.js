@@ -103,6 +103,7 @@
     const destinations=[['focus','Focus','Timer, agenda, and calendar','focus'],['entertainment','Media','Music, YouTube, and local files','music'],['projects','Projects','Notes, bookmarks, tasks, and recent items','items'],['console','Console','Shells, agents, and desktops','terminal'],['reader','Reader','Articles, papers, and saved reading','rss'],['live','Live','Transcribe and ask about a conversation','mic'],['widgets','Widgets','Apps, accounts, and local connections','plugins']].map(([id,label,description,icon])=>({id:'launch-'+id,value:'/'+id,label,description,icon,group:'open',kind:'destination'}));
     const entries=window.OpenSesameLauncher?.active?[...destinations,...catalog.roots.filter(row=>!['open','focus'].includes(row.id))]:[...questions,...catalog.roots],branch=trail.at(-1);
     matches=branch?branch.children:catalog.search(term,entries).filter(row=>group==='all'||row.group===group);
+    matches=matches.filter(row=>window.OpenSesameWorkspaceWidgets?.commandAvailable(row)!==false);
     measureMenu();menuPage=Math.min(menuPage,Math.max(0,Math.ceil(matches.length/pageSize)-1));
     menu().hidden=false;input().setAttribute('aria-expanded','true');el('capture-command-toggle').setAttribute('aria-expanded','true');
     el('capture-command-back').hidden=!branch;el('capture-command-title').textContent=branch?trail.map(row=>row.label).join(' / '):window.OpenSesameLauncher?.active?'Open into':live?'Questions & actions':'What would you like to do?';
@@ -137,6 +138,8 @@
     clearTimeout(draftTimer);draftTimer=setTimeout(writeDraft,200);
   }
   window.openSesameCapture={openMenu:()=>{dismissedValue=null;group='all';trail=[];show(false)},choose:()=>choose(active,true),back,interpret,isReservedCommand,hide,refresh,resize,execute(intent){
+    if(intent.kind==='audio-mode'&&window.OpenSesameWidgetLifecycle?.isActive('transcribe')===false){toast('Activate Transcribe in Widgets first.');return false}
+    if(intent.kind==='view'&&window.OpenSesameWorkspaceWidgets?.available(intent.view)===false){toast('Activate this widget in Widgets first.');return false}
     if(intent.kind==='tools'){window.OpenSesameTools?.open();return true}
     if(intent.kind==='tool'){window.OpenSesameTools?.open(intent.id);return true}
     if(intent.kind==='computer'){window.OpenSesameComputer?.run(intent.control);return false}

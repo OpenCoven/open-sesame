@@ -68,6 +68,8 @@ The UI says **Widgets**, **Console**, **Live**, **Projects** and **Focus**. Exis
 
 ## Verification and delivery route
 
+Mobile architecture work starts in [docs/mobile](mobile/README.md): the [proposed host ADR](mobile/adr-001-mobile-host.md), [source/transport ownership inventory](mobile/source-inventory.md) and [capability-state contract](mobile/capabilities.md). These are design contracts pending ratification, not an iOS/Android host or replacement state/identity implementation. Validate their local navigation with `npm run check:docs` and inspect their source-backed claims during review.
+
 For a focused JavaScript check, run `node scripts/check-NAME.mjs`. For a focused Python module, use its discoverable file pattern, for example `python3 -B -m unittest discover -s desktop/tests -p 'test_github_monitor.py' -v`. Native Swift test scripts compile synthetic checks; they do not require an actual provider login. [scripts/AGENTS.md](../scripts/AGENTS.md) describes discovery and the bounded runner. [desktop/AGENTS.md](../desktop/AGENTS.md) describes the native boundary and prerequisites.
 
 `npm run check` includes the documentation navigation check. Run `npm run verify` for Mac scope or `npm run verify -- --portable` for explicit portable scope. Run only one verifier per worktree and freeze source during a run; the final fingerprint must match. See [development workflow](development-workflow.md#implement--verify--review) for evidence, and the actual [CI workflow](../.github/workflows/verify.yml) for selected versions and trigger conditions.
@@ -77,3 +79,7 @@ For a focused JavaScript check, run `node scripts/check-NAME.mjs`. For a focused
 ## Shared mobile presentation
 
 [Mobile shell](../dist/mobile-shell.js), [projection model](../dist/mobile-model.js) and [scoped CSS](../dist/mobile-shell.css) reuse the existing renderer owners. See the [ownership and acceptance contract](mobile-shell.md), [projection checks](../scripts/check-mobile-shell.mjs) and [optional browser fixture](../scripts/fixtures/mobile-browser.mjs) [reference presentation fixture](../scripts/fixtures/mobile-visual.mjs) and [installed form fixture](../scripts/fixtures/mobile-forms.mjs) and [built-in interiors](../scripts/fixtures/mobile-interiors.mjs).
+
+## Content focus, terminal clipboard and recipient routing
+
+Shared presentation uses [content-focus.js](../dist/content-focus.js), [content-focus.css](../dist/content-focus.css) and [rail-headings.js](../dist/rail-headings.js); active native surfaces are gated by [workspace-widgets.js](../dist/workspace-widgets.js). [terminal-clipboard.js](../dist/terminal-clipboard.js) pairs explicit copy/paste with [TerminalClipboard.swift](../desktop/TerminalClipboard.swift) and [private-pasteboard native tests](../desktop/tests/TerminalClipboardTests.swift). Default and tagged question routing uses [familiar-routing-model.js](../dist/familiar-routing-model.js), [familiar-capture.js](../dist/familiar-capture.js) and [recipient regressions](../scripts/check-familiar-routing.mjs). [The rendered review](../scripts/review-content-focus.mjs) exercises the combined workspace behavior with disposable synthetic state.

@@ -3,6 +3,7 @@
   const el=id=>document.getElementById(id),client=window.OpenSesameCovenClient,records=new Map(),jobs=new Map(),drafts=new Map(),harnessChoices=new Map(),messageNodes=new WeakMap();
   let rosterVersion=0,lastRosterKey='',connection=0;
   let avatarBusy=false,avatarTarget='';
+  let defaultFamiliar='',routeTicket=0;try{defaultFamiliar=localStorage.getItem('open-sesame-default-familiar-v1')||''}catch{}
   let roster=[],connected=false,connecting=false,selected='',generation=0,loading=false,error='',incoming='',frame=0;
   try{incoming=(localStorage.getItem('open-sesame-familiar-queued-draft-v1')||'').slice(0,20000)}catch{}
   try{const saved=JSON.parse(localStorage.getItem('open-sesame-familiar-drafts-v1')||'{}');for(const [id,text]of Object.entries(saved))if(typeof text==='string'&&text.length<=20000)drafts.set(id,text)}catch{}
@@ -48,6 +49,8 @@
   function validConversation(value,fid){if(!value||value.familiarId!==fid||typeof value.conversationId!=='string'||!Number.isInteger(value.revision)||!Array.isArray(value.messages)||value.messages.length>120||!['coven-code','codex','claude'].includes(value.harness)||value.messages.some(m=>!m||!['user','assistant'].includes(m.role)||typeof m.text!=='string'))throw Error('Coven returned an invalid conversation. Reconnect to refresh.');return value}
   const avatarButton=make('button','familiar-avatar','');avatarButton.id='familiar-avatar-edit';avatarButton.type='button';avatarButton.setAttribute('aria-label','Set familiar avatar');el('familiar-thread-header').prepend(avatarButton);
   const avatarInput=make('input');avatarInput.type='file';avatarInput.accept='image/png,image/jpeg,image/webp,image/gif,image/avif';avatarInput.hidden=true;avatarInput.setAttribute('aria-label','Choose familiar avatar');el('pane-familiars').append(avatarInput);
+  const defaultButton=make('button','familiar-default','');defaultButton.id='familiar-default';defaultButton.type='button';defaultButton.innerHTML=icon('bookmark');el('familiar-thread-header').append(defaultButton);
+  defaultButton.addEventListener('click',()=>{if(!selected)return;defaultFamiliar=selected;try{localStorage.setItem('open-sesame-default-familiar-v1',selected)}catch{}paint();toast(familiar().displayName+' is your default familiar.')});
   avatarButton.addEventListener('click',()=>{if(avatarBusy||!connected||!selected)return;avatarTarget=selected;avatarInput.value='';avatarInput.click()});
   avatarInput.addEventListener('change',async()=>{
     const file=avatarInput.files?.[0],id=avatarTarget,ticket=connection;if(!file||!id||avatarBusy)return;
@@ -111,6 +114,7 @@
     el('familiar-welcome-action').hidden=loading||connected&&!f&&!roster.length;el('familiar-welcome-action').disabled=connecting||!available;
     el('familiar-welcome-action').textContent=f&&connected?'Try again':connected?'Choose a familiar':'Connect Coven';
     el('familiar-thread-header').hidden=!f;el('familiar-compose').hidden=!f||!record?.conversationId;el('familiar-harness-row').hidden=!f||!record?.conversationId;
+    defaultButton.hidden=!f;defaultButton.disabled=!connected||loading;defaultButton.setAttribute('aria-pressed',String(!!f&&defaultFamiliar===f.id));defaultButton.title=defaultButton.ariaLabel=f?(defaultFamiliar===f.id?'Default familiar · ':'Use by default · ')+f.displayName:'Choose a default familiar';
     avatarButton.hidden=!f;avatarButton.disabled=avatarBusy||!connected||connecting;if(f){paintAvatar(avatarButton,f);avatarButton.title='Change avatar · avatars/'+f.id+'.png';avatarButton.setAttribute('aria-label','Set avatar for '+f.displayName)}
     if(f){el('familiar-workspace').textContent=job?.awaitingPermission?'Awaiting permission · Open Sesame':job?.elevated?'Full access for this reply':'Read-only · Persistent session';el('familiar-name').textContent=f.displayName;el('familiar-workspace').title=f.workspace||'';el('familiar-thread').setAttribute('aria-label','Conversation with '+f.displayName);el('familiar-message').placeholder='Message '+f.displayName+'…';el('familiar-message').setAttribute('aria-label','Message '+f.displayName)}else el('familiar-thread').removeAttribute('aria-labelledby');
     el('familiar-harness').disabled=!!job||loading||!!record?.sessionId;if(record?.harness)el('familiar-harness').value=record.sessionId?record.harness:harnessChoices.get(selected)||record.harness;
@@ -167,6 +171,20 @@
   document.addEventListener('keydown',event=>{if(state.scenario==='familiars'&&(event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='f'){event.preventDefault();search()}});
   window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario==='familiars')paint();else{cancelPermission();commandDismissed=true;closeCommands()}});window.addEventListener('open-sesame-desktop-disconnected',()=>{cancelPermission();commandTicket++;commandResult.hidden=true;commandDismissed=true;closeCommands();connection++;generation++;connected=false;connecting=false;loading=false;error='Desktop connection closed. Reconnect before sending.';for(const record of records.values())record.error=error;paint();announceConnection()});window.addEventListener('open-sesame-desktop-ready',paint);openSesameBridge.ready.then(()=>{let remembered=false;try{remembered=localStorage.getItem('open-sesame-coven-connected-v1')==='true'}catch{}if(remembered)connect();else paint()});
   window.addEventListener('open-sesame-widgets-changed',()=>{if(window.OpenSesameWidgetLifecycle.isActive('coven'))return;lifecycleEpoch++;saveDraft();cancelPermission();connection++;generation++;commandTicket++;connecting=false;loading=false;connected=false;for(const job of jobs.values())client.cancel(job.runId).catch(()=>{});jobs.clear();error='Widget inactive. Activate it in Widgets, then reconnect.';paint();announceConnection()});
-  window.OpenSesameFamiliars={connect,search,summary:()=>familiar()?.displayName||'Familiars',snapshot:()=>({connected,count:roster.length,error,selected:familiar()?{id:familiar().id,displayName:familiar().displayName}:null}),prepareDraft(text=''){if(text){if(selected&&draft().trim()){toast('Your existing familiar draft is kept. Save or clear it before preparing another message.');return false}incoming=text.slice(0,20000);if(selected&&current()?.conversationId){drafts.set(selected,incoming);incoming='';el('familiar-message').value=draft();saveDraft()}try{localStorage.setItem('open-sesame-familiar-queued-draft-v1',incoming)}catch{}}paint();return true}};
+  async function routeDraft(text){
+    const ticket=++routeTicket;
+    if(window.OpenSesameWidgetLifecycle?.isActive('coven')===false){toast('Activate Coven Familiars in Widgets first.');return false}
+    if(!connected)await connect();
+    if(ticket!==routeTicket||!connected)return false;
+    const destination=window.OpenSesameFamiliarRoutingModel.resolve(text,roster,defaultFamiliar||selected);
+    if(destination.error){toast(destination.error);return false}
+    if(destination.question&&(drafts.get(destination.familiarId)?.trim()||incoming.trim())){toast('Your existing familiar draft is kept. Send or save it before opening another question.');return false}
+    changeScenario('familiars');await choose(destination.familiarId,false);
+    if(ticket!==routeTicket||!connected||window.OpenSesameWidgetLifecycle?.isActive('coven')===false||selected!==destination.familiarId||!current()?.conversationId)return false;
+    if(destination.question&&!window.OpenSesameFamiliars.prepareDraft(destination.question))return false;
+    if(!defaultFamiliar){defaultFamiliar=destination.familiarId;try{localStorage.setItem('open-sesame-default-familiar-v1',defaultFamiliar)}catch{}paint()}
+    el('familiar-message').focus({preventScroll:true});return true;
+  }
+  window.OpenSesameFamiliars={connect,routeDraft,defaultRecipient:()=>roster.find(f=>f.id===(defaultFamiliar||selected))||roster[0],recipients:()=>roster.map(({id,name,displayName})=>({id,name,displayName})),search,summary:()=>familiar()?.displayName||'Familiars',snapshot:()=>({connected,count:roster.length,error,selected:familiar()?{id:familiar().id,displayName:familiar().displayName}:null}),prepareDraft(text=''){if(text){if(selected&&draft().trim()){toast('Your existing familiar draft is kept. Save or clear it before preparing another message.');return false}incoming=text.slice(0,20000);if(selected&&current()?.conversationId){drafts.set(selected,incoming);incoming='';el('familiar-message').value=draft();saveDraft()}try{localStorage.setItem('open-sesame-familiar-queued-draft-v1',incoming)}catch{}}paint();return true}};
   paint();
 })();

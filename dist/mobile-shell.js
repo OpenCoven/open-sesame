@@ -22,13 +22,13 @@
   const homeCapture=make('button','mobile-capture-entry');homeCapture.type='button';homeCapture.setAttribute('aria-haspopup','dialog');homeCapture.innerHTML=icon('plus');homeCapture.append(make('span','','Capture a thought…'));homeCapture.addEventListener('click',openCapture);
   const essentials=make('h2','mobile-section-title','Your essentials'),cards=make('div','mobile-today-cards');home.append(greeting,homeCapture,essentials,cards);
   function card(label,action){const b=make('button','mobile-card'),title=make('strong','',label),detail=make('span','');b.type='button';b.append(title,detail);b.addEventListener('click',action);cards.append(b);return {button:b,title,detail}}
-  const focus=card('Focus',()=>{if(navigate('focus'))panel.querySelector('button[data-focus-view=agenda]').click()});focus.button.classList.add('mobile-focus-card');const focusFooter=make('small','mobile-focus-footer'),focusHint=make('span'),focusGlyph=make('i');focusFooter.append(focusHint,focusGlyph);focus.button.append(focusFooter);
-  const note=card('Latest note',()=>{const n=source().latest;if(!n){openCapture({currentTarget:note.button});return}if(navigate('projects')){el('projects-note').click();openItem(n.id)}});note.button.classList.add('mobile-note-card');
+  const focus=card('Focus',()=>{if(!available('agenda','Agenda'))return;if(navigate('focus'))panel.querySelector('button[data-focus-view=agenda]').click()});focus.button.classList.add('mobile-focus-card');const focusFooter=make('small','mobile-focus-footer'),focusHint=make('span'),focusGlyph=make('i');focusFooter.append(focusHint,focusGlyph);focus.button.append(focusFooter);
+  const note=card('Latest note',()=>{const n=source().latest;if(!available('notes','Notes'))return;if(!n){openCapture({currentTarget:note.button});return}if(navigate('projects')){el('projects-note').click();openItem(n.id)}});note.button.classList.add('mobile-note-card');
   const noteProject=make('small','');note.button.append(noteProject);
-  const tasks=card('Tasks',()=>{if(navigate('projects'))el('projects-task').click()});tasks.button.classList.add('mobile-summary-link');
+  const tasks=card('Tasks',()=>{if(!available('task-manager','Tasks'))return;if(navigate('projects'))window.OpenSesamePageWidgets.open('builtin-task-manager')});tasks.button.classList.add('mobile-summary-link');
   const taskSection=make('section','mobile-task-section'),taskList=make('div','mobile-task-list');taskSection.setAttribute('aria-label','Today’s tasks');taskSection.append(tasks.button,taskList);home.append(taskSection);
-  const familiar=make('button','mobile-familiar-entry'),familiarSeal=make('span','mobile-familiar-seal'),familiarCopy=make('span'),familiarTitle=make('strong','','A familiar, by your side.'),familiarStatus=make('small');familiar.type='button';familiarSeal.setAttribute('aria-hidden','true');familiarCopy.append(familiarTitle,familiarStatus);familiar.append(familiarSeal,familiarCopy);familiar.addEventListener('click',()=>{if(navigate('console')){el('agents-familiars').click();el('agents-familiars').focus({preventScroll:true})}});home.append(familiar);
-  const reader=card('Reading',()=>{if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');const later=panel.querySelector('[data-reading-scope=later]');later.click();window.openSesameReading?.openSaved(source().reading.links?.[0]?.id);sync();later.focus({preventScroll:true})});reader.button.classList.add('mobile-summary-link','mobile-reading-link');home.append(reader.button);
+  const familiar=make('button','mobile-familiar-entry'),familiarSeal=make('span','mobile-familiar-seal'),familiarCopy=make('span'),familiarTitle=make('strong','','A familiar, by your side.'),familiarStatus=make('small');familiar.type='button';familiarSeal.setAttribute('aria-hidden','true');familiarCopy.append(familiarTitle,familiarStatus);familiar.append(familiarSeal,familiarCopy);familiar.addEventListener('click',()=>{if(!available('coven','Coven'))return;if(navigate('console')){el('agents-familiars').click();el('agents-familiars').focus({preventScroll:true})}});home.append(familiar);
+  const reader=card('Reading',()=>{if(!available('reader','Reader'))return;if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');const later=panel.querySelector('[data-reading-scope=later]');later.click();window.openSesameReading?.openSaved(source().reading.links?.[0]?.id);sync();later.focus({preventScroll:true})});reader.button.classList.add('mobile-summary-link','mobile-reading-link');home.append(reader.button);
   const nav=make('nav','mobile-navigation');nav.setAttribute('aria-label','Mobile destinations');
   const buttons=new Map();
   for(const [id,label,glyph] of [['today','Today','compass'],['projects','Projects','items'],['widgets','Widgets','plugins'],['focus','Focus','focus'],['console','Console','terminal']]){
@@ -40,6 +40,7 @@
     if(window.OpenSesameProjects.closeDetails()){sync();el('capture-list').focus({preventScroll:true})}
   });
   el('note-detail').prepend(itemsBack);
+  function available(id,label){if(window.OpenSesameWidgetLifecycle.isActive(id)||id==='reader'&&window.OpenSesameWidgetLifecycle.isActive('rss'))return true;if(navigate('widgets')){if(el('plugins-connected').getAttribute('aria-pressed')==='true')el('plugins-connected').click();el('plugins-category').value='all';el('plugins-category').dispatchEvent(new Event('change'));const search=el('plugins-search');search.value=label;search.dispatchEvent(new Event('input',{bubbles:true}));search.focus({preventScroll:true})}return false}
   function source(){return M.today({items:items.filter(n=>inProject(n)),workflow:OpenSesameItemWorkflow,focus:{remaining:focusRemaining,running:focusRunning},reading:window.openSesameReading?.summary()||{count:0}})}
   let taskSignature='';
   function updateToday(){
@@ -49,15 +50,16 @@
     focus.detail.textContent=time(data.focus.remaining);focusHint.textContent=data.focus.running?'In your own rhythm':'Make space to begin';focusGlyph.innerHTML=icon(data.focus.running?'pause':'play');focus.button.setAttribute('aria-label','Focus · '+(data.focus.running?'In progress · ':'Ready · ')+time(data.focus.remaining));
     reader.detail.textContent=data.reading.count+' saved for later'+(data.reading.links?.[0]?' · '+data.reading.links[0].title:' · Open Reader');
     const f=window.OpenSesameFamiliars?.snapshot(),selected=f?.connected?f.selected:null,seal=M.seal(selected);
-    familiarSeal.textContent=seal.initial||'◇';familiarSeal.dataset.sealShape=seal.shape;familiarStatus.textContent=selected?selected.displayName+' · Open conversation':f?.connected?'Choose a familiar':'Desktop not connected';
-    const signature=JSON.stringify(data.tasks.entries.map(n=>[n.id,thoughtTitle(n),n.projectId]));
+    familiarSeal.textContent=seal.initial||'◇';familiarSeal.dataset.sealShape=seal.shape;familiarStatus.textContent=!window.OpenSesameWidgetLifecycle.isActive('coven')?'Activate Coven in Widgets':selected?selected.displayName+' · Open conversation':f?.connected?'Choose a familiar':'Desktop not connected';
+    const taskActive=window.OpenSesameWidgetLifecycle.isActive('task-manager');
+    const signature=JSON.stringify([taskActive,data.tasks.entries.map(n=>[n.id,thoughtTitle(n),n.projectId,projectName(n.projectId)])]);
     if(signature!==taskSignature){
       const focused=taskList.contains(document.activeElement);taskSignature=signature;taskList.replaceChildren();
       for(const n of data.tasks.entries){
         const row=make('div','mobile-task-row'),check=make('button','mobile-task-check'),open=make('button','mobile-task-open'),title=make('span','',thoughtTitle(n)),project=make('small','',projectName(n.projectId));
-        check.type=open.type='button';check.setAttribute('aria-label','Complete task: '+thoughtTitle(n));check.setAttribute('aria-pressed','false');check.innerHTML=icon('check');
-        check.addEventListener('click',()=>{const current=items.find(item=>item.id===n.id);if(current)setItemStatus(current,'done')});
-        open.addEventListener('click',()=>{if(navigate('projects')){el('projects-task').click();openItem(n.id)}});open.append(title,project);row.append(check,open);taskList.append(row);
+        check.type=open.type='button';check.disabled=open.disabled=!taskActive;check.setAttribute('aria-label','Complete task: '+thoughtTitle(n));check.setAttribute('aria-pressed','false');check.innerHTML=icon('check');
+        check.addEventListener('click',()=>{try{window.OpenSesameTaskStore.update(n.id,{completed:true})}catch(error){toast(error.message)}});
+        open.addEventListener('click',()=>{if(navigate('projects')){window.OpenSesamePageWidgets.open('builtin-task-manager');window.OpenSesameTaskManager.openTask(n.id)}});open.append(title,project);row.append(check,open);taskList.append(row);
       }
       if(focused)tasks.button.focus({preventScroll:true});
     }
@@ -67,7 +69,7 @@
   function remember(){if(!current)return;positions.set(current,[...panel.querySelectorAll('.widget-pane, .widget-pane *')].filter(n=>n.scrollTop||n.scrollLeft).map(n=>[n,n.scrollTop,n.scrollLeft]))}
   function navigate(id){
     if(!active||window.OpenSesameNotes?.finish(false)===false)return false;
-    remember();today=id==='today';
+    if(id==='today')window.OpenSesameContentFocus?.exit({restoreFocus:false});remember();today=id==='today';
     if(!today)changeScenario(({projects:'items',widgets:'plugins',focus:'focus',console:'agents'})[id]);
     sync();for(const [node,top,left] of positions.get(id)||[]){node.scrollTop=top;node.scrollLeft=left}
     buttons.get(id)?.focus({preventScroll:true});return true;
@@ -104,7 +106,7 @@
     const nodes=[...footer.querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(n=>!n.disabled&&n.getClientRects().length);
     if(!nodes.length)return;const first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
   });
-  for(const event of ['open-sesame-layout','open-sesame-items-changed','open-sesame-projects-changed','open-sesame-reading-changed','open-sesame-focus-tick','open-sesame-familiars-changed'])window.addEventListener(event,schedule);
+  for(const event of ['open-sesame-layout','open-sesame-items-changed','open-sesame-projects-changed','open-sesame-reading-changed','open-sesame-focus-tick','open-sesame-familiars-changed','open-sesame-widgets-changed'])window.addEventListener(event,schedule);
   window.addEventListener('open-sesame-view-changed',()=>{const fromHome=home.contains(document.activeElement);today=false;sync();if(active&&fromHome)(buttons.get(M.destination(state.scenario))||capture).focus({preventScroll:true})});
   query.addEventListener('change',()=>{sync();viewport()});window.addEventListener('resize',viewport);window.visualViewport?.addEventListener('resize',viewport);window.visualViewport?.addEventListener('scroll',viewport);
   window.OpenSesameMobile={navigate,openCapture,captureClosed,get active(){return active}};

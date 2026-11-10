@@ -22,7 +22,7 @@ export async function checkMobilePreservation(page){
  assert(await page.locator('#detail-title').isVisible());
  await page.locator('[data-mobile-destination=today]').click();
  await page.locator('.mobile-card').filter({hasText:'Tasks'}).click();
- assert.equal(await page.locator('#projects-task').getAttribute('aria-selected'),'true','Task summary routes to native Tasks');
+ assert.equal(await page.locator('#task-manager').isVisible(),true,'Task summary routes to the installed Task Manager');
  await page.evaluate(()=>OpenSesamePageWidgets.open('builtin-task-manager'));
  assert.equal(await page.locator('#task-manager-title').inputValue(),'Keep this installed widget draft','Explicit native route preserves installed widget draft for reopening');
  await page.locator('[data-mobile-destination=today]').click();
@@ -30,6 +30,15 @@ export async function checkMobilePreservation(page){
  await page.keyboard.press('Enter');
  assert.equal(await page.locator('[data-reading-scope=later]').getAttribute('aria-selected'),'true','Reading summary routes to canonical saved-for-later collection');
  assert.equal(await page.evaluate(()=>document.getElementById('pane-reading').contains(document.activeElement)),true,'Keyboard routing moves focus into visible Reader');
+ await page.evaluate(()=>{const data=openSesameReading.handoff();data.entries.push({id:'mobile-focus-article',title:'Cached content focus article',url:'https://example.org/cached',body:'<p>Preserved readable article content.</p>'.repeat(30),full:true});data.scope='all';data.selected='mobile-focus-article';openSesameReading.handoff(data)});
+ await page.locator('#reading-content-focus').click();
+ assert.equal(await page.evaluate(()=>OpenSesameContentFocus.active),true);
+ assert(await page.locator('#reading-article').evaluate(n=>n.getBoundingClientRect().height>=100),'Focused mobile article retains a usable reading surface');
+ await page.keyboard.press('Escape');
+ assert.equal(await page.evaluate(()=>OpenSesameContentFocus.active),false,'Escape restores content before navigating Today');
+ assert.equal(await page.evaluate(()=>state.scenario),'reading');
+ await page.locator('#reading-content-focus').click();await page.evaluate(()=>OpenSesameMobile.navigate('today'));
+ assert.equal(await page.evaluate(()=>OpenSesameContentFocus.active),false,'Today retires the content-only presentation without remounting the pane');
  const definition=await page.request.get(new URL('/dist/tools/meeting-notes/tool.json',page.url()).href).then(r=>r.json());
  await page.evaluate(definition=>{
   const instance=OpenSesameToolsModel.instance({...definition,page:'focus'});instance.id='mobile-focus-notes';

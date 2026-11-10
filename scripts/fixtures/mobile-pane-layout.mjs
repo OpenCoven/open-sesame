@@ -9,6 +9,7 @@ for(const [name,type]of Object.entries({chromium,webkit})){
   const page=await browser.newPage({viewport:{width:320,height:640}});
   await page.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
   await page.goto(origin+'/dist/index.html');await page.waitForFunction(()=>window.OpenSesameMobile?.active);
+  await page.evaluate(()=>{for(const id of ['notes','bookmarks','reader','coven','agenda','shells','task-manager'])OpenSesameWidgetLifecycle.set(id,'active')});
   await page.evaluate(()=>{items=[{id:'narrow-note',kind:'note',text:'A narrow-screen note',body:'Saved body',updatedAt:1}];saveItems();changeScenario('items');openItem('narrow-note')});
   for(const [width,height]of [[320,640],[390,844],[568,320]]){
    await page.setViewportSize({width,height});
@@ -42,7 +43,7 @@ for(const [name,type]of Object.entries({chromium,webkit})){
    await page.locator('[data-mobile-destination=focus]').click();
    await page.locator('#focus-start').click({trial:true,timeout:2000});
    await page.locator('[data-mobile-destination=widgets]').click();
-   await page.locator('#plugins-search').fill('Task Manager');
+   await page.locator('#plugins-search').fill('Tasks');
    await page.locator('[data-plugin="task-manager"]').click({trial:true,timeout:2000});
    await page.locator('#plugins-search').fill('');
   }

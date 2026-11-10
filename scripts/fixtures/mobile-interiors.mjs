@@ -12,6 +12,7 @@ for(const [name,type]of Object.entries({chromium,webkit})){
    try{
     await page.route('**/*',r=>r.request().url().startsWith(origin+'/')?r.continue():r.abort());
     await page.goto(origin+'/dist/index.html');await page.waitForFunction(()=>window.OpenSesameMobile?.active);
+  await page.evaluate(()=>{for(const id of ['notes','bookmarks','reader','coven','agenda','shells','task-manager'])OpenSesameWidgetLifecycle.set(id,'active')});
     for(const [width,height,font]of [[320,640,16],[320,640,32],[568,320,16],[768,1024,32]]){
      await page.setViewportSize({width,height});await page.evaluate(font=>document.documentElement.style.fontSize=font+'px',font);
      if(area==='calendar'){
@@ -34,6 +35,7 @@ for(const [name,type]of Object.entries({chromium,webkit})){
       await article.evaluate(n=>n.scrollTop=200);const scroll=await article.evaluate(n=>n.scrollTop);assert(scroll>0,'Article really scrolls');
       await page.locator('[data-mobile-destination=today]').click();await page.locator('[data-mobile-destination=console]').click();await page.evaluate(()=>changeScenario('reading'));
       assert.equal(await article.evaluate(n=>n.scrollTop),scroll,'Navigation preserves the reading anchor');
+      await page.locator('#reading-export-toggle').click({timeout:2500});
       await page.locator('#reading-later').click({timeout:2500});assert.equal(await page.locator('#reading-later').getAttribute('aria-pressed'),'true');
       await article.focus();await article.scrollIntoViewIfNeeded();
       const visible=await article.boundingBox(),header=await page.locator('.mobile-header').boundingBox(),nav=await page.locator('.mobile-navigation').boundingBox();

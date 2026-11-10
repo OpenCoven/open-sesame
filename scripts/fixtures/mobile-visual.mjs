@@ -11,6 +11,7 @@ for(const [name,type]of Object.entries({chromium,webkit})){
   await page.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
   await page.addInitScript(()=>{if(window===window.top)localStorage.setItem('opensesame.mobile.prototype.v1',JSON.stringify({items:[{type:'task',title:'PROTOTYPE_ONLY_TASK'}],familiar:'Kitty'}))});
   await page.goto(origin+'/dist/index.html');await page.waitForFunction(()=>window.OpenSesameMobile?.active);
+  await page.evaluate(()=>{for(const id of ['notes','bookmarks','reader','coven','agenda','shells','task-manager'])OpenSesameWidgetLifecycle.set(id,'active')});
   assert(!await page.locator('.mobile-today').innerText().then(t=>/PROTOTYPE_ONLY_TASK|Kitty/.test(t)),'Prototype storage never populates production Today');
   await page.evaluate(()=>{
    projects=[{id:'visual-project',name:'OpenCoven'}];
@@ -28,6 +29,13 @@ for(const [name,type]of Object.entries({chromium,webkit})){
    if(output){await fs.mkdir(output,{recursive:true});await page.screenshot({path:path.join(output,`today-${name}-${width}.png`)})}
    receipts.push({browser:name,width,height,essentialsRow:true,timerSingleLine:true});
   }
+  await page.evaluate(()=>OpenSesameWidgetLifecycle.set('task-manager','inactive'));
+  await page.waitForTimeout(50);
+  assert.equal(await page.locator('.mobile-task-check').isDisabled(),true,'Today cannot mutate an inactive Task Manager');
+  await page.evaluate(()=>OpenSesameWidgetLifecycle.set('task-manager','active'));
+  await page.locator('.mobile-task-open').click();
+  assert.equal(await page.locator('#task-manager-title').inputValue(),'Canonical task','Today opens the real task editor');
+  await page.locator('[data-mobile-destination=today]').click();
   await page.locator('.mobile-task-check').click();
   await page.waitForFunction(()=>document.querySelector('.mobile-task-section').textContent.includes('0 open · 1 completed'));
   assert.equal(await page.evaluate(()=>OpenSesameItemWorkflow.isArchived(items.find(n=>n.id==='visual-task'))),true);
@@ -37,6 +45,13 @@ for(const [name,type]of Object.entries({chromium,webkit})){
   await page.locator('#capture-form').evaluate(form=>form.requestSubmit());
   await page.waitForFunction(()=>state.scenario==='items'&&!OpenSesameLauncher.active);
   assert.equal(await page.evaluate(()=>document.activeElement!==document.body&&document.activeElement.getClientRects().length>0),true,'A home capture command returns focus to visible content');
+  await page.locator('[data-mobile-destination=today]').click();
+  await page.evaluate(()=>OpenSesameWidgetLifecycle.set('coven','inactive'));
+  await page.locator('.mobile-familiar-entry').click();
+  assert.equal(await page.evaluate(()=>state.scenario),'plugins');
+  await page.locator('[data-plugin=coven]').click({trial:true});
+  assert.equal(await page.evaluate(()=>OpenSesameWidgetLifecycle.isActive('coven')),false,'Availability route never activates the provider widget');
+  await page.evaluate(()=>OpenSesameWidgetLifecycle.set('coven','active'));
   await page.locator('[data-mobile-destination=today]').click();
   await page.locator('.mobile-familiar-entry').click();
   assert.equal(await page.evaluate(()=>state.scenario),'familiars');assert.equal(await page.evaluate(()=>OpenSesameFamiliars.snapshot().connected),false);

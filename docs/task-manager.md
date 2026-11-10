@@ -1,6 +1,6 @@
 # Task Manager
 
-Install Task Manager from Widgets → Productivity, then choose Open in Projects. Its Projects tab shares the existing task records used by `/task` and the Tasks category. No account or provider is required. Tasks stay in the existing device-local item storage; lists are the existing Projects, including Inbox.
+Tasks (Task Manager) is active on a fresh profile. Activate it from Widgets → Productivity if needed, then choose Open in Projects. Its Projects tab shares the existing task records used by `/task` and the Tasks category. No account or provider is required. Tasks stay in the existing device-local item storage; lists are the existing Projects, including Inbox.
 
 Add a title, choose a list and priority, and optionally set a due date. High, normal and low priorities are available. Due dates are calendar dates in the local time zone; overdue and due-today tasks are labeled. Dates do not schedule notifications. Use New list to create a shared Project, or choose an existing one. Select a task title to edit its title, list, priority or date. Existing task details and unrelated metadata are preserved.
 

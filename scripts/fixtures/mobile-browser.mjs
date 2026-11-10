@@ -15,6 +15,7 @@ for(const [name,type] of Object.entries({chromium,webkit})){
   await page.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
   await page.goto(origin+'/dist/index.html');
   await page.waitForFunction(()=>window.OpenSesameMobile?.active);
+  await page.evaluate(()=>{for(const id of ['notes','bookmarks','reader','coven','agenda','shells','task-manager'])OpenSesameWidgetLifecycle.set(id,'active')});
   assert.equal(await page.evaluate(async()=>{
    const serif=await document.fonts.load('16px "Open Sesame Mobile Serif"'),sans=await document.fonts.load('16px "Open Sesame Mobile Sans"');
    return serif.length===1&&sans.length===1&&serif[0].status==='loaded'&&sans[0].status==='loaded';
