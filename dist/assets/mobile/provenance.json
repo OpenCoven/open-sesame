@@ -1,0 +1,45 @@
+{
+  "scope": "Open Sesame mobile product presentation; not a canonical brand profile",
+  "files": {
+    "eb-garamond.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/ebgaramond/EBGaramond%5Bwght%5D.ttf",
+      "sha256": "ef9512f92f6d579e5dc75af59a5a4b1b8b47d2eda89e00b954d44520e5369027",
+      "bytes": 851176
+    },
+    "inter.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/inter/Inter%5Bopsz,wght%5D.ttf",
+      "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "bytes": 876576
+    },
+    "EB-Garamond-OFL.txt": {
+      "url": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/ebgaramond/OFL.txt",
+      "sha256": "0985066662eb755ed3683ae5482a81a9195b49ce3f7e165cc2388b3dbece7dd7",
+      "bytes": 4398
+    },
+    "Inter-OFL.txt": {
+      "url": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/inter/OFL.txt",
+      "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+      "bytes": 4377
+    },
+    "opencoven-mark.svg": {
+      "url": "https://raw.githubusercontent.com/OpenCoven/brand/798e2f5f2f1a69f5d156ccc0a9aafc4f7da55fc8/web/assets/mark.svg",
+      "sha256": "3cc1d06c3f957221760984937715f6cde38ac9f69cfa1eb18041c4cbd935c078",
+      "bytes": 1492
+    },
+    "BRAND-README.txt": {
+      "url": "https://raw.githubusercontent.com/OpenCoven/brand/798e2f5f2f1a69f5d156ccc0a9aafc4f7da55fc8/README.md",
+      "sha256": "6e8fdd37a2320c7fc415f78572dff85fb081bf6de7ff8a93a57b5203a0c24ce2",
+      "bytes": 3126
+    },
+    "BRAND-USAGE.txt": {
+      "url": "https://raw.githubusercontent.com/OpenCoven/brand/798e2f5f2f1a69f5d156ccc0a9aafc4f7da55fc8/docs/BRAND-USAGE.md",
+      "sha256": "748165a316bdf85937742ca81e0e0559bd49b6be3e04288c1d5b858fad025643",
+      "bytes": 1198
+    },
+    "eb-garamond-italic.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/ebgaramond/EBGaramond-Italic%5Bwght%5D.ttf",
+      "sha256": "bba2c4499c93c9612b90b9825d32b07da52fce2fe57562a1eb6b833553f93c4e",
+      "bytes": 754468
+    }
+  }
+}

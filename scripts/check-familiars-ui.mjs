@@ -9,7 +9,7 @@ async function environment(storage=new Map()){
     constructor(tag='div'){super();nodes.push(this);this.tag=tag;this.id='';this.children=[];this.dataset={};this.attrs={};this.value='';this.hidden=false;this.disabled=false;this.textContent='';this.scrollHeight=0;this.scrollTop=0;this.clientHeight=100;this.style={};this.classList={toggle(){}}}
     prepend(...items){this.children.unshift(...items)}append(...items){this.children.push(...items)}replaceChildren(...items){this.children=[...items];this.scrollTop=0}
     insertBefore(node,before){const index=this.children.indexOf(before);this.children.splice(index<0?this.children.length:index,0,node)}contains(node){return node===this||this.children.some(child=>child.contains(node))}
-    setAttribute(key,value){this.attrs[key]=String(value)}removeAttribute(key){delete this.attrs[key]}
+    setAttribute(key,value){this.attrs[key]=String(value)}getAttribute(key){return this.attrs[key]??null}removeAttribute(key){delete this.attrs[key]}
     focus(){document.activeElement=this}querySelector(tag){return this.children.find(n=>n.tag===tag)}click(){if(!this.disabled)this.dispatchEvent(new Event('click'))}
   }
   const get=id=>nodes.findLast(n=>n.id===id)||Object.assign(new Element(),{id});

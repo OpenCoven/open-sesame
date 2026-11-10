@@ -68,6 +68,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         let resources = Bundle.main.resourceURL!
         assets = resources.appendingPathComponent("web", isDirectory: true)
         let config = WKWebViewConfiguration()
+        // WKWebView disables the element Fullscreen API by default.
+        config.preferences.isElementFullscreenEnabled = true
         config.userContentController.add(self, name: "openSesame")
         let bookmarkScrollStyle = """
         if (window !== window.top && window.name === 'open-sesame-bookmark-preview') {
@@ -231,11 +233,24 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: "Copy", action: #selector(terminalCopy(_:)), keyEquivalent: "c").target = self
+        edit.addItem(withTitle: "Paste", action: #selector(terminalPaste(_:)), keyEquivalent: "v").target = self
+        edit.addItem(withTitle: "Select All", action: #selector(terminalSelectAll(_:)), keyEquivalent: "a").target = self
         editItem.submenu = edit
         main.addItem(appItem); main.addItem(editItem); NSApp.mainMenu = main
+    }
+
+    @objc func terminalCopy(_ sender: Any?) { terminalEdit("copy", fallback: #selector(NSText.copy(_:)), sender: sender) }
+    @objc func terminalPaste(_ sender: Any?) { terminalEdit("paste", fallback: #selector(NSText.paste(_:)), sender: sender) }
+    @objc func terminalSelectAll(_ sender: Any?) { terminalEdit("select-all", fallback: #selector(NSText.selectAll(_:)), sender: sender) }
+    func terminalEdit(_ action: String, fallback: Selector, sender: Any?) {
+        let responder = panel?.firstResponder
+        guard let web = web else { NSApp.sendAction(fallback, to: responder, from: sender); return }
+        web.evaluateJavaScript("window.OpenSesameTerminalClipboard?.nativeCommand('\(action)') === true") { [weak self] handled, _ in
+            if handled as? Bool != true, self?.panel?.firstResponder === responder {
+                NSApp.sendAction(fallback, to: responder, from: sender)
+            }
+        }
     }
 
     func createStatusItem() {
@@ -577,6 +592,13 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         if method == "auth.signOut" { respond(requestId, result: true); authentication.signOut(); return }
         if method == "system.info", !authentication.authenticated { respond(requestId, result: ["platform": "darwin", "authenticated": false]); return }
         guard authentication.authenticated || method == "window.focus" else { respond(requestId, error: "Sign in to Open Sesame before using this tool."); return }
+        if method == "terminal.clipboard.read" || method == "terminal.clipboard.write" {
+            do {
+                if method == "terminal.clipboard.read" { respond(requestId, result: try OpenSesameTerminalClipboard.read(params)) }
+                else { try OpenSesameTerminalClipboard.write(params); respond(requestId, result: true) }
+            } catch { respond(requestId, error: error.localizedDescription) }
+            return
+        }
         if method.hasPrefix("native.computer.") { respond(requestId, error: "This operation requires native task approval."); return }
         if method == "computer.permissions" { respond(requestId, result: computerAgent.permissions); return }
         if method == "computer.permission.request" {

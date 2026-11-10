@@ -23,3 +23,17 @@ The checked-in create-markdown runtime comes from the [vendored tokenizer](../ve
 [lockin.js](lockin.js) owns local-media play/seek; [media-transport.js](media-transport.js) adds shared volume, fullscreen and empty/drag hints to the same bar and video element; native controls are reserved for fullscreen. Keep live/unknown-duration seek disabled and preserve queue/file ownership in [lockin.js](lockin.js). Process presentation disclosures in [agent-monitor.js](agent-monitor.js) must preserve identity-bound native controls and explicit stop confirmation.
 
 [Image Studio](../docs/image-generation.md) uses the optional installation lifecycle and Media page adapter. Only explicit Generate sends a prompt; retire pending requests when hidden, deactivated or transferred. Keep prompt/shape drafts local and preview pixels out of shared workspace snapshots. Provider sign-in and export remain native operations.
+
+[mobile-shell.js](mobile-shell.js) owns responsive presentation over mounted panes; [mobile-model.js](mobile-model.js) derives Today from existing state. Keep native macOS modes excluded and preserve saved activity keys, capture ownership and page-widget identities. See the [mobile contract](../docs/mobile-shell.md); reference typography/mark and device qualification remain separate gates.
+
+Narrow mobile Projects uses the existing `libraryOpen` flag and [Projects owner](projects-overview.js) `closeDetails()` transition for collection/detail navigation. Keep save veto and focus return intact; do not add parallel item selection or persistence state in the mobile shell.
+
+Mobile Today task actions and Reader links call canonical owners. Familiar initial seals derive only from canonical IDs/display names, preserve custom avatar images and are decorative, never presence or permission. Keep the projection model loaded before familiar rendering; mobile CSS/roster orientation must restore desktop behavior when its scope ends.
+
+Mobile Task Manager keeps its form and task list in the installed page view’s scrolling flow, so enlarged controls cannot collapse the list. Preserve the native desktop list layout and the page scroll anchor during destination changes.
+
+Mobile Calendar and Reader styling retains their existing data, scheduling, pagination and article-scroll owners. Tools restores focus on dialog close, after native modal dismissal; an explicit installed-page route suppresses that restoration. Keep viewport-only presentation scoped to the mobile shell.
+
+[content-focus.js](content-focus.js) changes presentation without remounting live content; [escape.js](escape.js) restores focused content before collapsing the app and ignores retargeted keyup events. [rail-headings.js](rail-headings.js) delegates full-row targets to existing rail controls while preserving nested actions. [terminal-clipboard.js](terminal-clipboard.js) owns terminal selection/context-menu shortcuts and retires late paste reads after destination changes. [workspace-widgets.js](workspace-widgets.js) gates native view/navigation visibility with lifecycle state while [familiar-capture.js](familiar-capture.js) and [familiar-routing-model.js](familiar-routing-model.js) prepare default or explicitly tagged familiar drafts without sending them.
+
+Today task edits and completion must use Task Manager and its lifecycle-guarded shared store. Inactive content routes to the available Widgets entry without activation. Preserve the content-focus Escape-before-Today order and explicit fresh-profile widget defaults.

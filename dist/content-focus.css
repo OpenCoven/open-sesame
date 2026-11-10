@@ -1,0 +1,52 @@
+/* App header, collection controls, then one article row. Content gets the rest. */
+#widget-panel #reading-toolbar{height:32px;min-height:32px;max-height:32px;flex-wrap:nowrap;gap:6px;margin:0}
+#widget-panel #reading-collections{flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;scrollbar-width:none}
+#widget-panel #reading-collections>button{flex:none;white-space:nowrap}
+#widget-panel #reading-toolbar>button{flex:none;width:28px;min-width:28px;height:28px;padding:6px}
+#widget-panel #reading-feeds-toggle{max-width:28px}
+#widget-panel #reading-feeds-toggle :is(span,i:last-child){display:none}
+#widget-panel .reading-reader-header{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-rows:32px;align-items:center;gap:8px;padding:0 0 6px;margin:0;min-width:0}
+#widget-panel .reading-reader-top{display:contents}
+#widget-panel #reading-title{grid-column:1;grid-row:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-wrap:nowrap;font-size:14px;font-weight:450;line-height:24px;letter-spacing:-.2px}
+#widget-panel .reading-meta{grid-column:2;grid-row:1;min-width:0;max-width:180px;white-space:nowrap;font-size:10px}
+#widget-panel .reading-meta #reading-source{max-width:100px;overflow:hidden;text-overflow:ellipsis}
+#widget-panel .reading-article-actions{grid-column:3;grid-row:1;gap:1px;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+#widget-panel .reading-article-actions :is(button,a){width:28px!important;min-width:28px;height:28px!important;padding:6px!important;border:1px solid transparent;border-radius:6px;background:transparent;box-shadow:none;color:var(--ink-secondary)}
+#widget-panel .reading-article-actions :is(button,a):hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-panel button.content-focus-trigger{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-secondary)}
+#widget-panel button.content-focus-trigger:hover{background:var(--surface-hover);color:var(--ink-primary)}
+@media(max-width:900px){#widget-panel .reading-reader-header{grid-template-columns:minmax(0,1fr) auto;gap:4px}#widget-panel .reading-meta{display:none}#widget-panel .reading-article-actions{grid-column:2}}
+
+/* One reversible workspace-wide focus surface. All live content stays mounted. */
+#widget-anchor.expanded #widget-panel.widget-panel.content-focused{padding:8px 12px!important;gap:8px}
+#widget-panel.content-focused>.application-toolbar,#widget-panel.content-focused>.panel-top{display:none!important}
+#widget-panel .content-focus-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 30px;min-height:30px;border-bottom:1px solid var(--line);color:var(--ink-muted)}
+#widget-panel .content-focus-bar>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:450}
+#widget-panel #content-focus-exit{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-secondary)}
+#widget-panel #content-focus-exit:hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-panel.content-focused :is(#reading-toolbar,.reading-reader-header,#reading-rail,#items-sidebar,.projects-toolbar,.project-collections,#agents-toolbar,#familiar-rail,.familiars-heading,.terminal-panes-header,#terminal-pane-list,#terminal-rail,#remote-rail,#familiar-rail-resize,.terminal-carousel,.page-widget-host-toolbar,#lockin-workspace>.console-toolbar,#music-source-form,#spotify-library,.lockin-source-form,.media-toolbar,#youtube-queue-toggle,#youtube-queue,#media-queue,#media-queue-toggle){display:none!important}
+#widget-panel.content-focused :is(.reading-workspace,.items-workspace,.familiars-workspace,#remote-workspace,#youtube-workspace,#media-workspace){grid-template-columns:minmax(0,1fr)!important;gap:0!important}
+#widget-panel.content-focused :is(.reading-detail,.note-detail,.familiars-conversation){border:0!important;padding:0!important;min-width:0}
+#widget-panel.content-focused .widget-capture-footer{display:none!important}
+#widget-panel.content-focused[data-content-view=terminal] .widget-capture-footer,#widget-panel.content-focused[data-content-view=audio] .widget-capture-footer{display:flex!important}
+#widget-panel.content-focused #reading-content{gap:0}
+#widget-panel.content-focused #reading-article{font-size:15px;line-height:1.8;padding:8px max(0px,calc((100% - 76ch)/2)) 20px}
+@media(forced-colors:active){#widget-panel #content-focus-exit{border-color:ButtonText}}
+
+#widget-panel.content-focused .terminal-workspace{grid-template-columns:minmax(0,1fr)!important}
+
+#widget-panel .clickable-rail-heading{position:relative;isolation:isolate}
+#widget-panel .clickable-rail-heading>.rail-heading-toggle{position:absolute;inset:0;z-index:0;width:100%;height:100%;margin:0;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer}
+#widget-panel .clickable-rail-heading>.rail-heading-toggle:hover{background:var(--surface-hover)}
+#widget-panel .clickable-rail-heading>:not(.rail-heading-toggle){pointer-events:none}
+#widget-panel .clickable-rail-heading :is(button,a,input,select,textarea,summary):not(.rail-heading-toggle){position:relative;z-index:1;pointer-events:auto}
+#widget-panel .terminal-clipboard-menu{position:absolute;z-index:80;width:190px;padding:5px;border:1px solid var(--line);border-radius:9px;background:var(--surface-raised);box-shadow:0 12px 30px #0005}
+#widget-panel .terminal-clipboard-menu>button{display:block;width:100%;padding:8px 10px;text-align:left;font-size:12px;border-radius:5px;background:transparent;color:var(--ink-primary)}
+#widget-panel .terminal-clipboard-menu>button:hover,#widget-panel .terminal-clipboard-menu>button:focus-visible{background:var(--surface-hover)}
+#widget-panel .terminal-clipboard-menu>button:disabled{opacity:.4}
+
+#widget-panel .reading-export-menu>:is(#reading-later,#reading-read,#reading-speak,#reading-pdf-toggle){display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:6px 8px;max-width:none;box-shadow:none}
+#widget-panel .reading-export-menu :is(#reading-speak,#reading-pdf-toggle):after{content:attr(aria-label);font-size:11px}
+
+#widget-panel #familiar-default{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-muted)}
+#widget-panel #familiar-default[aria-pressed=true]{color:var(--ink-primary);background:#ffffff08}

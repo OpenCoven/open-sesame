@@ -1,0 +1,297 @@
+@font-face{font-family:"Open Sesame Mobile Serif";src:url("assets/mobile/eb-garamond.ttf?v=ef9512f92f6d") format("truetype");font-style:normal;font-weight:400 800;font-display:swap}
+@font-face{font-family:"Open Sesame Mobile Sans";src:url("assets/mobile/inter.ttf?v=29160a80ff49") format("truetype");font-style:normal;font-weight:100 900;font-display:swap}
+/* Mobile presentation tokens are scoped here; canonical desktop branding stays with flat-theme. */
+.mobile-header[hidden],.mobile-navigation[hidden],.mobile-today[hidden]{display:none!important}
+html.open-sesame-mobile{--mobile-paper:#eee9df;--mobile-accent:#c7b9dc;--mobile-base:#19191d;--mobile-raised:#222227;--mobile-line:#414047;--mobile-height:100dvh;--mobile-top:0px;background:var(--mobile-base);color:var(--mobile-paper)}
+.open-sesame-mobile body{margin:0;overflow:hidden}
+.open-sesame-mobile :is(.app-header,.sidebar,.workspace-heading,.preview-toolbar,.preview-footer,.bottom-bar,.wallpaper,.mac-menubar,.desktop-composition,.desktop-file,.desktop-dock,.exit-present,#menu-trigger,#compact-widget){display:none!important}
+.open-sesame-mobile :is(.app-body,.workspace,.preview-well,.desktop-frame,.desktop-viewport,.desktop){position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;transform:none!important;box-shadow:none!important;overflow:hidden!important}
+.open-sesame-mobile #widget-anchor.expanded{position:fixed!important;inset:var(--mobile-top) 0 auto!important;width:100%!important;height:var(--mobile-height)!important;transform:none!important;transition:none!important;border-radius:0!important}
+.open-sesame-mobile #widget-anchor:before,.open-sesame-mobile #widget-anchor:after{display:none!important}
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{display:flex!important;flex-direction:column;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;box-sizing:border-box;border:0;border-radius:0!important;padding:env(safe-area-inset-top) max(12px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px,env(safe-area-inset-left));background:var(--mobile-base);color:var(--mobile-paper);overflow:hidden;gap:8px}
+.open-sesame-mobile #widget-panel>.panel-top,.open-sesame-mobile #widget-panel>.application-toolbar,.open-sesame-mobile #frame-resize-layer{display:none!important}
+.open-sesame-mobile #widget-panel>.mobile-header{order:-2;display:flex;justify-content:space-between;align-items:center;flex:none;min-height:56px;gap:12px;border-bottom:1px solid var(--mobile-line)}
+.open-sesame-mobile .mobile-header strong{font-family:"Open Sesame Mobile Serif",Georgia,serif;font-size:1.4rem;font-weight:500}
+.open-sesame-mobile #widget-panel :is(.mobile-header button,.mobile-navigation button,.mobile-card){color:var(--mobile-paper);background:transparent;border:1px solid var(--mobile-line);border-radius:8px;min-height:44px;white-space:normal;font:inherit}
+.open-sesame-mobile #widget-panel .mobile-header button{padding:8px 12px}
+.open-sesame-mobile #widget-panel>.mobile-navigation{order:20;flex:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,3.5rem),1fr));gap:2px;border-top:1px solid var(--mobile-line);padding-block:6px}
+.open-sesame-mobile #widget-panel .mobile-navigation button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 1px;border-color:transparent;font-size:.75rem;overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-navigation svg{width:20px;height:20px}
+.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{color:var(--mobile-accent);border-color:var(--mobile-line);background:var(--mobile-raised)}
+.open-sesame-mobile .mobile-today{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 2px 24px}
+.open-sesame-mobile .mobile-today h1{font:400 2.7rem/1.15 "Open Sesame Mobile Serif",Georgia,serif;margin:0 0 8px}
+.open-sesame-mobile .mobile-today>p{font-size:1rem;line-height:1.6;margin:0 0 24px;color:#c4bec8}
+.open-sesame-mobile .mobile-today-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}
+.open-sesame-mobile #widget-panel .mobile-card{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:20px;text-align:left;background:var(--mobile-raised);overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-card strong{font:400 1.5rem/1.2 "Open Sesame Mobile Serif",Georgia,serif}
+.open-sesame-mobile .mobile-card span{font-size:1rem;line-height:1.5}
+.open-sesame-mobile #widget-panel button:focus-visible{outline:2px solid var(--mobile-accent);outline-offset:-2px}
+.open-sesame-mobile #widget-panel>.widget-capture-footer{flex:none;order:10;max-height:35%;overflow:auto}
+.open-sesame-mobile.mobile-today-open #widget-panel>:is(.widget-pane,#agents-workspace,#lockin-workspace,.widget-capture-footer){display:none!important}
+.open-sesame-mobile #widget-panel>:is(.widget-pane,#agents-workspace,#lockin-workspace){flex:1;min-height:0;max-height:none;min-width:0;width:100%;grid-column:auto;grid-row:auto}
+.open-sesame-mobile #widget-panel :is(.console-toolbar,.projects-toolbar,.focus-top){flex-wrap:wrap;height:auto;min-height:44px}
+.open-sesame-mobile #widget-panel :is(.console-mode-tabs,.projects-mode-tabs,.agents-mode-tabs,.focus-view-tabs){max-width:100%;overflow-x:auto;min-height:44px}
+.open-sesame-mobile #widget-panel :is(input,textarea,select){font-size:1rem}
+.open-sesame-mobile #widget-panel :is(.console-mode-tabs,.projects-mode-tabs,.agents-mode-tabs,.focus-view-tabs) button{min-height:44px}
+.open-sesame-mobile.mobile-capture-open #widget-panel>.widget-capture-footer{display:flex!important;flex-direction:column;position:absolute!important;inset:0!important;z-index:60;width:100%!important;height:100%!important;max-height:none!important;padding: max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));box-sizing:border-box;overflow:auto;background:var(--mobile-base)}
+.open-sesame-mobile.mobile-capture-open #capture-input{max-height:35dvh!important;min-height:44px}
+.open-sesame-mobile.mobile-capture-open #capture-form{flex:none;min-width:0}
+.open-sesame-mobile.mobile-capture-open #launcher-statusbar{margin-top:auto;flex-wrap:wrap;gap:8px}
+.open-sesame-mobile.mobile-capture-open #launcher-statusbar button{min-height:44px}
+.open-sesame-mobile.mobile-capture-open .launcher-keys{display:none}
+@media(prefers-reduced-motion:reduce){.open-sesame-mobile *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+@media(forced-colors:active){.open-sesame-mobile #widget-panel,.open-sesame-mobile #widget-panel .mobile-card{background:Canvas;color:CanvasText}.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{color:Highlight;border-color:Highlight}.open-sesame-mobile #widget-panel button:focus-visible{outline-color:Highlight}}
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{transform:none!important;--expanded-scale:1}
+.open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{display:flex!important}
+.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded{max-height:none!important;top:var(--mobile-top)!important}
+.open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{height:auto!important;flex:1;overflow:auto;min-height:100px}
+html.open-sesame-mobile body.capture-launcher-open #widget-anchor.expanded{inset:var(--mobile-top) 0 auto!important;width:100%!important;height:var(--mobile-height)!important;max-height:none!important;transform:none!important}
+html.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded #widget-panel>.widget-capture-footer{display:flex!important}
+
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{font-family:"Open Sesame Mobile Sans",system-ui,sans-serif}
+.open-sesame-mobile .mobile-brand{display:flex;align-items:center;gap:8px;min-width:0}
+.open-sesame-mobile .mobile-brand svg{width:28px;height:28px;flex:none;fill:currentColor}
+
+.mobile-items-back[hidden]{display:none!important}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{display:grid;grid-template-columns:minmax(0,1fr)!important;gap:0}
+ .open-sesame-mobile:not(.mobile-project-detail) #widget-panel #note-detail{display:none!important}
+ .open-sesame-mobile.mobile-project-detail #widget-panel #items-sidebar{display:none!important}
+ .open-sesame-mobile #widget-panel #note-detail{min-width:0;width:100%;border:0;padding-inline:0}
+ .open-sesame-mobile #widget-panel #detail-width-toggle{display:none!important}
+ .open-sesame-mobile #widget-panel .mobile-items-back{display:block;flex:none;align-self:flex-start;min-height:44px;padding:8px 12px;font:inherit;color:var(--mobile-paper);border:1px solid var(--mobile-line);border-radius:8px;background:var(--mobile-raised)}
+}
+
+@media(max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{min-height:220px;flex-shrink:0}
+}
+.open-sesame-mobile #widget-anchor #widget-panel :is(#md-preview-content,#md-preview-content .cm-preview,#md-source-panel #detail-body){font-size:1rem;line-height:1.6}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel .detail-topline{height:auto;min-height:44px;max-height:none}
+ .open-sesame-mobile #widget-anchor #widget-panel #detail-title{height:auto;min-height:44px;max-height:none;line-height:1.4}
+}
+@media(max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-focus:not(.page-widget-open):not([data-focus-view=calendar]){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-focus:not(.page-widget-open) .focus-clock-row{min-height:180px;flex-shrink:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-focus>.focus-top{flex-shrink:0}
+}
+@media(max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-plugins:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-plugins .plugins-results{min-height:180px;flex-shrink:0}
+}
+
+/* v0.3 presentation port from the supplied artifact f9fbd886: scoped product aliases only. */
+@font-face{font-family:"Open Sesame Mobile Serif";src:url("assets/mobile/eb-garamond-italic.ttf?v=bba2c4499c93") format("truetype");font-style:italic;font-weight:400 800;font-display:swap}
+html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-paper:#f0ede7;--mobile-accent:#cbbfdb;--mobile-line:#303034;--mobile-violet:#8e3dff}
+.open-sesame-mobile #widget-panel>.mobile-header{padding-inline:14px;min-height:64px;box-sizing:border-box}
+.open-sesame-mobile .mobile-header strong{font-size:1.625rem;letter-spacing:-.03em}
+.open-sesame-mobile .mobile-brand svg{width:25px;height:25px}
+.open-sesame-mobile #widget-panel .mobile-header button{font-size:.75rem}
+.open-sesame-mobile .mobile-today{padding:16px 14px 28px}
+.open-sesame-mobile .mobile-greeting{position:relative;margin:0 0 24px}
+.open-sesame-mobile .mobile-greeting-meta{display:flex;justify-content:space-between;gap:12px;margin:0 0 18px;font-size:.625rem;line-height:1.7;letter-spacing:.13em;text-transform:uppercase;color:#a8a4af}
+.open-sesame-mobile .mobile-greeting-meta>span:last-child{color:#b6a1c6}
+.open-sesame-mobile .mobile-greeting h1{font:400 2.8125rem/1.02 "Open Sesame Mobile Serif",Georgia,serif;letter-spacing:-.025em;margin:0;padding-right:45px;overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-greeting h1>span,.open-sesame-mobile .mobile-greeting h1>em{display:block}
+.open-sesame-mobile .mobile-greeting h1>em{color:var(--mobile-accent);font-weight:400}
+.open-sesame-mobile .mobile-doorway{position:absolute;right:0;top:42px;color:#776483;pointer-events:none}
+.open-sesame-mobile .mobile-doorway svg{width:42px;height:64px;stroke-width:.85}
+.open-sesame-mobile .mobile-aperture{fill:#b7a0c8;stroke:none}
+.open-sesame-mobile #widget-panel .mobile-capture-entry{display:flex;align-items:center;gap:12px;min-height:56px;width:100%;padding:10px 14px;background:#18171b;border:1px solid #38343d;border-left-color:#765294;border-radius:12px;color:var(--mobile-paper);font:inherit;font-size:.8125rem;text-align:left}
+.open-sesame-mobile .mobile-capture-entry svg{width:20px;height:20px;flex:none;color:#c5a3eb}
+.open-sesame-mobile .mobile-section-title{font-size:.8125rem;font-weight:500;line-height:1.5;margin:28px 0 12px}
+.open-sesame-mobile .mobile-today-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,7.5rem),1fr));gap:12px}
+.open-sesame-mobile #widget-panel .mobile-today-cards>.mobile-card{position:relative;min-height:176px;padding:16px;border-radius:14px;border-color:#353239;gap:14px;justify-content:space-between}
+.open-sesame-mobile .mobile-today-cards>.mobile-card>strong{font-family:"Open Sesame Mobile Sans",system-ui,sans-serif;font-size:.625rem;line-height:1.7;font-weight:400;letter-spacing:.08em;text-transform:uppercase}
+.open-sesame-mobile .mobile-focus-card>span{font-size:2.5rem;font-weight:300;line-height:1.2;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.open-sesame-mobile #widget-panel .mobile-today-cards>.mobile-note-card{background:#ddd6e1;color:#302637;border-color:#ddd6e1}
+.open-sesame-mobile .mobile-note-card>span{font-family:"Open Sesame Mobile Serif",Georgia,serif;font-style:italic;font-size:1.4375rem;line-height:1.08;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}
+.open-sesame-mobile .mobile-note-card>small{font-size:.625rem;color:#5d5266;line-height:1.5}
+.open-sesame-mobile .mobile-note-card:after{content:'';position:absolute;top:21px;right:17px;width:4px;height:4px;border:1px solid #807087;transform:rotate(45deg);pointer-events:none}
+.open-sesame-mobile .mobile-note-card>strong{padding-right:10px}
+.open-sesame-mobile #widget-panel .mobile-summary-link{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:50px;padding:10px 0;margin-top:20px;border:0;border-bottom:1px solid var(--mobile-line);border-radius:0;background:transparent}
+.open-sesame-mobile .mobile-summary-link>strong{font-family:inherit;font-size:.8125rem;line-height:1.5;font-weight:500}
+.open-sesame-mobile .mobile-summary-link>span{font-size:.6875rem;line-height:1.6;color:#c1bdc7;text-align:right}
+.open-sesame-mobile .mobile-task-row{display:flex;gap:8px;align-items:center;min-height:75px;border-bottom:1px solid var(--mobile-line)}
+.open-sesame-mobile #widget-panel .mobile-task-check{display:grid;place-items:center;flex:none;width:38px;min-height:48px;background:none;border:0;color:#81798c}
+.open-sesame-mobile .mobile-task-check svg{width:18px;height:18px;border:1px solid currentColor;border-radius:50%;box-sizing:border-box;padding:3px}
+.open-sesame-mobile .mobile-task-check svg path{visibility:hidden}
+.open-sesame-mobile #widget-panel .mobile-task-open{flex:1;min-width:0;min-height:60px;padding:12px 0;background:none;border:0;color:var(--mobile-paper);text-align:left;font:inherit}
+.open-sesame-mobile .mobile-task-open>span{display:block;font-size:.8125rem;line-height:1.65;overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-task-open>small{display:block;margin-top:5px;font-size:.625rem;line-height:1.6;letter-spacing:.08em;text-transform:uppercase;color:#a8a4af}
+.open-sesame-mobile #widget-panel .mobile-familiar-entry{display:flex;align-items:center;gap:16px;width:100%;min-height:80px;padding:16px 13px;margin:26px 0 0;text-align:left;border:1px solid #403747;border-left-color:#87679e;border-radius:14px;background:#19151e;color:var(--mobile-paper)}
+.open-sesame-mobile .mobile-familiar-entry strong{display:block;font:400 1.25rem/1.2 "Open Sesame Mobile Serif",Georgia,serif}
+.open-sesame-mobile .mobile-familiar-entry small{display:block;font-size:.625rem;line-height:1.7;margin-top:5px;color:#c1bdc7}
+.open-sesame-mobile .mobile-familiar-seal{display:grid;place-items:center;position:relative;flex:none;width:38px;height:42px;border:1px solid #8b729d;border-radius:50% 50% 42% 42%;font:italic 1.625rem/1 "Open Sesame Mobile Serif",Georgia,serif;color:#d9c8e8}
+.open-sesame-mobile [data-seal-shape=square]{border-radius:8px;border-color:#85889a;color:#c3c6d4}
+.open-sesame-mobile [data-seal-shape=circle]{border-radius:50%;border-color:#9a8b78;color:#d3c3ac}
+.open-sesame-mobile .mobile-familiar-seal:after{content:'';position:absolute;bottom:-3px;left:calc(50% - 2px);width:4px;height:4px;border:1px solid currentColor;background:var(--mobile-base);transform:rotate(45deg)}
+.open-sesame-mobile #widget-panel .mobile-navigation button{position:relative;border-radius:0;color:#a6a0ae}
+.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{border-color:transparent;background:transparent;color:#e3d8ef}
+.open-sesame-mobile .mobile-navigation [aria-current=page]:before{content:'';position:absolute;top:0;left:calc(50% - 3.5px);width:7px;height:3px;background:var(--mobile-violet)}
+.open-sesame-mobile .mobile-navigation svg:has(use){fill:currentColor;stroke:none}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar:not(:has(img)){position:relative;display:grid;place-items:center;flex:none;border:1px solid #8b729d;border-radius:50% 50% 42% 42%;font-size:0;color:#d9c8e8;background:transparent}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar:not(:has(img))>svg{display:none}
+.open-sesame-mobile .familiar-avatar:not(:has(img)):before{content:attr(data-initial);font:italic 1.125rem/1 "Open Sesame Mobile Serif",Georgia,serif}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar[data-seal-shape=square]:not(:has(img)){border-radius:8px;border-color:#85889a;color:#c3c6d4}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar[data-seal-shape=circle]:not(:has(img)){border-radius:50%;border-color:#9a8b78;color:#d3c3ac}
+.open-sesame-mobile #widget-panel :is(.familiar-welcome>strong,.plugin-copy>strong){font-family:"Open Sesame Mobile Serif",Georgia,serif;font-weight:400}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-clock-row{border:0;background:transparent;padding:12px 0}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-clock-face{position:relative;border:1px solid #443a4b;border-radius:50%;aspect-ratio:1;width:min(100%,235px);height:auto;justify-self:center;align-self:center}
+.open-sesame-mobile .focus-clock-face:before{content:'';position:absolute;top:-3px;left:calc(50% - 3px);width:6px;height:6px;background:var(--mobile-base);border:1px solid #c9b4dd;transform:rotate(45deg);pointer-events:none}
+@media(max-width:360px){.open-sesame-mobile .mobile-header strong{font-size:1.4375rem}.open-sesame-mobile .mobile-greeting h1{font-size:2.5625rem}.open-sesame-mobile #widget-panel .mobile-today-cards>.mobile-card{min-height:165px;padding:13px}}
+@media(forced-colors:active){
+ .open-sesame-mobile #widget-panel :is(.mobile-note-card,.mobile-familiar-entry){background:Canvas;color:CanvasText;border-color:CanvasText}
+ .open-sesame-mobile .mobile-note-card>small,.open-sesame-mobile .mobile-summary-link>span,.open-sesame-mobile .mobile-familiar-entry small{color:CanvasText}
+ .open-sesame-mobile .mobile-navigation [aria-current=page]:before{background:Highlight}
+ .open-sesame-mobile .mobile-doorway{color:GrayText}.open-sesame-mobile .mobile-aperture{fill:none}
+ .open-sesame-mobile #widget-panel .familiar-avatar,.open-sesame-mobile .mobile-familiar-seal{color:CanvasText;border-color:CanvasText}
+}
+.open-sesame-mobile #widget-anchor #widget-panel .mobile-summary-link{border:0;border-bottom:1px solid var(--mobile-line);border-radius:0;background:transparent}
+.open-sesame-mobile #widget-anchor #widget-panel .mobile-capture-entry{justify-content:flex-start}
+.open-sesame-mobile .mobile-focus-card{container-type:inline-size}
+.open-sesame-mobile .mobile-focus-card>span{font-size:min(2.5rem,35cqw);white-space:nowrap}
+.open-sesame-mobile .mobile-focus-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;font-size:.625rem;line-height:1.6;color:#a8a4af}
+.open-sesame-mobile .mobile-focus-footer>span{max-width:85px}
+.open-sesame-mobile .mobile-focus-footer i{display:grid;place-items:center;flex:none;width:28px;height:28px;border:1px solid #5b5067;border-radius:50%}
+.open-sesame-mobile .mobile-focus-footer svg{width:12px;height:12px}
+.open-sesame-mobile .mobile-focus-footer>span{font-size:inherit;line-height:inherit}
+.open-sesame-mobile .mobile-brand-period{color:var(--mobile-violet)}
+.familiar-intro-seal{display:none}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #familiars-workspace{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto minmax(0,1fr);gap:12px}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiars-workspace.rail-collapsed{grid-template-rows:minmax(0,1fr)}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-rail:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,36%);grid-template-rows:auto auto;gap:8px;padding:0 0 10px;border-right:0;border-bottom:1px solid var(--mobile-line);max-height:145px}
+ .open-sesame-mobile #widget-panel #familiar-rail>header{grid-column:1;grid-row:1;min-width:0}
+ .open-sesame-mobile #widget-panel #familiar-search{grid-column:2;grid-row:1;min-width:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-list{display:flex;flex-direction:row;grid-column:1/-1;grid-row:2;gap:8px;min-height:61px;max-height:74px;overflow-x:auto;overflow-y:hidden}
+ .open-sesame-mobile #widget-panel #familiar-list:empty{display:none!important}
+ .open-sesame-mobile #widget-panel #familiar-roster-empty{grid-column:1/-1;grid-row:2;margin:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-list>.familiar-row{flex:0 0 auto;min-width:120px;max-width:190px;min-height:61px;border-radius:10px;padding:9px;gap:10px}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-list>.familiar-row[aria-selected=true]{background:#241b2c;border-color:#9273aa;box-shadow:none}
+ .open-sesame-mobile #widget-panel #familiar-rail-resize{display:none!important}
+ .open-sesame-mobile #widget-panel #familiar-thread{width:100%;min-width:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-thread-header{flex-wrap:nowrap}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-thread-header>div{flex-basis:auto;min-width:0}
+ .open-sesame-mobile #widget-panel #familiar-compose{width:100%;min-width:0;box-sizing:border-box}
+ .open-sesame-mobile #widget-panel #familiar-chat-empty{align-items:center;text-align:center}
+ .open-sesame-mobile #widget-panel .familiar-intro-seal:not([hidden]){display:grid;width:52px;height:60px;font-size:2.3125rem;margin:16px auto 22px}
+ .open-sesame-mobile #widget-panel #familiar-chat-empty>i{display:none}
+ .open-sesame-mobile #widget-panel #familiar-chat-empty>strong{font:400 2.125rem/1.1 "Open Sesame Mobile Serif",Georgia,serif}
+}
+@media(max-width:600px) and (max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-rows:minmax(0,1fr)}
+ .open-sesame-mobile #widget-panel #familiars-workspace:not(.rail-collapsed)>#familiar-thread{display:none}
+ .open-sesame-mobile #widget-panel #familiar-rail:not([hidden]){max-height:none;min-height:0;overflow:auto}
+}
+.open-sesame-mobile .mobile-greeting-meta{flex-wrap:wrap}
+.open-sesame-mobile .mobile-doorway{top:auto;bottom:0}
+
+/* Allow enlarged text and font fallback to wrap the header without covering Capture. */
+.open-sesame-mobile #widget-panel>.mobile-header{flex-wrap:wrap;padding-block:8px}
+.open-sesame-mobile .mobile-brand{flex:1 1 180px}
+.open-sesame-mobile .mobile-brand strong{min-width:0;overflow-wrap:anywhere}
+.open-sesame-mobile #widget-panel .mobile-header button{flex:none}
+
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{min-height:14rem;flex-shrink:0}
+}
+/* The page view owns mobile scrolling; a fitted task list must not collapse under its form. */
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager{flex:none;min-height:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager-items{flex:none;overflow:visible;min-height:0}
+ .open-sesame-mobile #widget-panel #task-manager-list-form{flex-wrap:wrap}
+ .open-sesame-mobile #widget-panel #task-manager-list-name{flex:1 1 100%}
+ .open-sesame-mobile #widget-panel .task-manager-heading{flex-wrap:wrap}
+ .open-sesame-mobile #widget-panel .task-manager-heading>div{flex:1 1 10rem}
+ .open-sesame-mobile #widget-panel .task-manager-heading strong{font-size:1.25rem}
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager :is(button,select,input){font-size:1rem;min-height:44px}
+ .open-sesame-mobile #widget-anchor #widget-panel #task-manager .task-manager-title{font-size:1rem!important}
+ .open-sesame-mobile #widget-panel :is(#task-manager-form,.task-manager-filters)>:is(input,select){flex:1 1 9rem;max-width:100%;width:auto;box-sizing:border-box}
+ .open-sesame-mobile #widget-panel #task-manager-title{flex-basis:100%}
+ .open-sesame-mobile #widget-panel .task-manager-summary{flex-wrap:wrap;font-size:.75rem}
+ .open-sesame-mobile #widget-panel .task-manager-summary b{font-size:1rem}
+ .open-sesame-mobile #widget-panel :is(.task-manager-meta,.task-manager-pages){font-size:.75rem}
+ .open-sesame-mobile #widget-panel .task-manager-foot{font-size:.6875rem;line-height:1.5}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content h3{font-size:1.5rem}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content :is(p,strong,label,li,button){font-size:.875rem;line-height:1.5}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content small{font-size:.75rem}
+.open-sesame-mobile #widget-anchor #widget-panel .installed-widget-content button{min-height:44px;white-space:normal;overflow-wrap:anywhere;max-width:100%}
+
+.open-sesame-mobile #widget-anchor #widget-panel .page-widget-host-toolbar :is(#reading-collections,#lockin-tabs,[role=tablist]) [role=tab]{font-size:.875rem!important;min-height:44px!important;height:auto!important;max-height:none!important}
+
+.open-sesame-mobile #widget-anchor #widget-panel .page-widget-host-toolbar [role=tablist]{height:auto!important;min-height:48px!important}
+
+/* Calendar controls and its editor use the available mobile viewport. */
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus>.focus-top{overflow:visible;max-height:none;height:auto!important}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-calendar-header{flex-wrap:wrap;flex:1 1 100%;min-width:0;max-width:100%}
+.open-sesame-mobile #widget-panel .focus-calendar-header>strong{white-space:normal;flex:1 1 100%;font-size:1rem}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus :is(.focus-calendar-modes,.focus-calendar-nav)>button,.open-sesame-mobile #widget-anchor #widget-panel #focus-calendar-add{min-width:44px;min-height:44px;height:auto!important;font-size:.875rem!important}
+.open-sesame-mobile #widget-panel .focus-calendar-nav{flex-wrap:wrap}
+.open-sesame-mobile #widget-anchor #widget-panel #focus-calendar-editor{position:fixed;inset:var(--mobile-top) 0 auto!important;width:100%;height:var(--mobile-height);max-height:var(--mobile-height);box-sizing:border-box;overflow:auto;z-index:65;padding:16px;gap:12px;background:var(--mobile-base)}
+.open-sesame-mobile #widget-panel .focus-calendar-fields{flex-direction:column;align-items:stretch}
+.open-sesame-mobile #widget-panel #focus-calendar-editor :is(label,small){font-size:.875rem;line-height:1.5}
+.open-sesame-mobile #widget-panel #focus-calendar-editor input{font-size:1rem;min-height:44px;box-sizing:border-box;min-width:0;max-width:100%}
+.open-sesame-mobile #widget-panel #focus-calendar-editor :is(header,footer){flex-wrap:wrap}
+.open-sesame-mobile #widget-panel #focus-calendar-editor button{min-height:44px;font-size:.875rem}
+/* Native dialog ownership stays in Tools; only its mobile dimensions and typography change. */
+.open-sesame-mobile #widget-anchor #widget-panel .tools-dialog{box-sizing:border-box;width:calc(100% - 24px);max-height:calc(var(--mobile-height) - 24px);font-size:1rem;padding:16px}
+.open-sesame-mobile #widget-panel .tools-dialog :is(button,summary,label,p,small){font-size:.875rem;line-height:1.5;overflow-wrap:anywhere}
+.open-sesame-mobile #widget-panel .tools-dialog :is(button,summary){min-height:44px;max-width:100%;white-space:normal}
+.open-sesame-mobile #widget-panel .tools-dialog header{flex-wrap:wrap}
+.open-sesame-mobile #widget-panel .tools-dialog :is(input,textarea){max-width:100%}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #reading-workspace{display:grid;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto minmax(0,1fr);gap:8px}
+ .open-sesame-mobile #widget-anchor #widget-panel #reading-rail{max-height:none;min-height:0;width:100%;border:0;padding:0}
+ .open-sesame-mobile #widget-panel #reading-list{display:flex;overflow-x:auto;overflow-y:hidden;gap:8px;flex:none;min-height:44px}
+ .open-sesame-mobile #widget-panel #reading-list>button{flex:0 0 180px;min-height:44px}
+ .open-sesame-mobile #widget-panel #reading-detail{min-width:0;width:100%}
+}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-article{font-size:1rem;line-height:1.6}
+
+.open-sesame-mobile #widget-panel .tools-dialog h2{font-size:1.5rem}
+
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus>.focus-top{flex-wrap:wrap!important}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-calendar-header{height:auto!important;width:100%;margin:0!important}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus[data-focus-view=calendar]:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+.open-sesame-mobile #widget-anchor #widget-panel #focus-calendar{flex:none;min-height:16rem}
+.open-sesame-mobile #widget-panel #focus-calendar-grid{flex:none;min-height:20rem;grid-template-rows:1.5rem repeat(6,minmax(3rem,1fr))}
+.open-sesame-mobile #widget-panel #focus-calendar-grid[data-mode=week]{min-height:10rem;grid-template-rows:1.5rem minmax(5rem,1fr)}
+.open-sesame-mobile #widget-panel .focus-calendar-weekday{font-size:.625rem}
+.open-sesame-mobile #widget-panel .focus-calendar-cell>button{font-size:.875rem;min-height:32px}
+.open-sesame-mobile #widget-panel #focus-calendar-day{flex:none;min-height:14rem}
+.open-sesame-mobile #widget-panel .focus-calendar-event{height:auto;min-height:44px;flex-wrap:wrap}
+.open-sesame-mobile #widget-panel .focus-calendar-event :is(time,strong,small){font-size:.875rem;white-space:normal}
+
+.open-sesame-mobile #widget-anchor #widget-panel #pane-reading:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-reading:not(.page-widget-open) #reading-workspace{min-height:22rem;flex-shrink:0}
+.open-sesame-mobile:not(.mobile-capture-open) #widget-panel:has(#pane-reading:not([hidden]))>.widget-capture-footer{display:none!important}
+
+.open-sesame-mobile #widget-anchor #widget-panel #reading-toolbar{height:auto;min-height:44px;flex-wrap:wrap;flex:none}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-collections{height:auto!important;min-height:48px!important;max-width:100%;overflow-x:auto}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-collections>button{font-size:.875rem!important;min-height:44px!important;height:auto!important}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-title{font-size:1.25rem;line-height:1.3;overflow-wrap:anywhere}
+.open-sesame-mobile #widget-panel :is(.reading-item-copy>span,.reading-item-copy>small,.reading-meta){font-size:.875rem;line-height:1.5}
+.open-sesame-mobile #widget-panel .reading-reader-top{flex-wrap:wrap}
+.open-sesame-mobile #widget-panel .reading-article-actions{max-width:100%;flex-wrap:wrap}
+.open-sesame-mobile #widget-anchor #widget-panel .reading-article-actions :is(button,a){min-height:44px;min-width:44px;height:auto}
+
+.open-sesame-mobile #widget-anchor #widget-panel #reading-list .reading-item-copy :is(span,small){font-size:.875rem!important;line-height:1.5!important;max-height:none}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-list>button{height:auto!important;min-height:4.5rem;max-height:none!important}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-pages{min-height:44px;height:auto;flex:none;font-size:.875rem}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-pages button{height:auto;min-width:44px;min-height:44px}
+
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #reading-list{flex-direction:row;height:5rem!important;max-height:5rem;align-items:stretch}
+}
+
+.open-sesame-mobile #widget-panel #focus-calendar-editor header strong{font-size:1.25rem}
+
+/* Content focus keeps the existing article pane and gives its sole visible grid item the full row. */
+.open-sesame-mobile #widget-anchor #widget-panel.content-focused #reading-workspace{grid-template-rows:minmax(0,1fr);min-height:0;flex:1}
+.open-sesame-mobile #widget-panel.content-focused #reading-detail{grid-row:1}
+.open-sesame-mobile #widget-panel.content-focused :is(.mobile-header,.mobile-navigation){display:none!important}
+.open-sesame-mobile #widget-panel .content-focus-bar{min-height:44px;flex-basis:44px}
+.open-sesame-mobile #widget-panel .content-focus-bar>span{font-size:.875rem}
+.open-sesame-mobile #widget-panel #content-focus-exit{height:44px;width:44px}
