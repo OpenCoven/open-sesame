@@ -20,7 +20,7 @@ vm.runInNewContext(fs.readFileSync('dist/agent-monitor.js','utf8'),{window,docum
 const flush=()=>new Promise(resolve=>setImmediate(resolve));await flush();
 assert.equal(get('agent-empty').hidden,false);assert.match(get('agent-empty-title').textContent,/Ready/);assert.equal(get('agent-refresh').disabled,false);assert.equal(get('agent-clear-filters').hidden,true);
 const agents=[{pid:101,name:'Fixture Agent',provider:'coven',state:'running',cpuPercent:2,memoryMB:80,uptimeSeconds:125,controlToken:'fixture-first'},{pid:102,name:'Other Agent',provider:'codex',state:'sleeping',cpuPercent:0,memoryMB:90,uptimeSeconds:400,controlToken:'fixture-second'}];
-respond=async()=>({machine:'Fixture Mac',agents});await window.OpenSesameAgentMonitor.refresh();assert.equal(get('agent-cards').children.length,2);assert.equal(get('agent-empty').hidden,true);
+respond=async()=>({machine:'Fixture Mac',agents});await window.OpenSesameAgentMonitor.refresh();assert.equal(get('agent-cards').children.length,2);assert.equal(get('agent-empty').hidden,true);assert.match(get('agent-overview').textContent,/2 live/);assert.match(get('agent-overview').textContent,/CPU 2.0%/);assert.match(get('agent-overview').textContent,/RAM 170 MB/);
 agents[0].activity={state:'waiting',source:'fixture',since:Date.now()-60000};agents[0].cwd='/fixture/repo';agents[0].repository={name:'repo',branch:'feature'};
 const layoutTools=get('pane-agent-monitor').querySelector('.agent-filter-row').children.find(n=>n.className==='agent-workspace-tools');
 const layoutSelect=layoutTools.children[0];assert.equal(layoutSelect.tag,'select');assert.equal(layoutSelect.attrs['aria-label'],'Process layout');

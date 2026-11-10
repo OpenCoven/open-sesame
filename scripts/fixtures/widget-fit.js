@@ -30,7 +30,7 @@
       OpenSesameLauncher.close(true);if(state.size!=='full')state.size='max';changeScenario('youtube');
       window.OpenSesameNativeSurfaces.youtube=async(element,source,events)=>{
         const sample={destroy(){},getPlaylist:()=>playlistIds,getPlaylistIndex:()=>0,getVideoUrl:()=>source.url,getVideoData:()=>({title:'Isolated playlist preview',video_id:playlistIds[0]}),getPlayerState:()=>2,getCurrentTime:()=>0,loadPlaylist(){},cuePlaylist(){},setShuffle(){}};
-        element.style.display='grid';element.style.placeItems='center';element.style.color='#a09ba8';element.textContent='Player preview · no playback or provider connection';
+        element.style.display='grid';element.style.placeItems='center';element.style.color='#a09ba8';let preview=element.querySelector('.fixture-youtube-preview');if(!preview){preview=document.createElement('span');preview.className='fixture-youtube-preview';element.append(preview)}preview.textContent='Player preview · no playback or provider connection';
         setTimeout(()=>events.onReady({target:sample}),0);return sample;
       };
       window.OpenSesameYouTube.open({id:playlistIds[0],list:'PLopensesamefixture200',url:'https://www.youtube.com/playlist?list=PLopensesamefixture200'}).then(()=>{if(document.getElementById('youtube-queue').hidden)document.getElementById('youtube-queue-toggle').click()});

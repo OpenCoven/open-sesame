@@ -19,3 +19,9 @@ Run `npm run verify` for the full Mac gate, including imports from the built app
 ## Compact controls
 
 The primary search bar contains a single layout selector for Table, List, Grid, Board and Gantt, plus Needs you. Filters & history holds sorting, provider/project/terminal filters and history clearing. List rows keep agent, repository, activity, resource metrics and terminal access aligned; full paths remain available in Details. Each Actions disclosure retains pause/resume, stop confirmation and Details. Escape closes an open disclosure. Signal authorization and stale-process checks remain unchanged.
+
+## Agent summary and child processes
+
+The monitor shows live process totals, primary and child counts, working activity, CPU and RAM totals. List, Grid, Table and Board share provider marks, per-process CPU/RAM/uptime/state, embedded-session opening, a separate New agent shell action, and quick pause/resume and confirmed quit. New agent shell starts the named CLI without replaying private arguments or the existing conversation; opening a verified existing shell or tmux session keeps its original identity. A new shell is a separate agent session.
+
+Child relationships use the nearest discovered agent ancestor through same-user process ancestry. Known Node/Coven launcher wrappers are deduplicated while native same-provider children remain visible. This observes process relationships, not logical model delegation: in-process and remote subagents remain unobservable unless a supported integration supplies evidence. No low-CPU or process-parent heuristic establishes completion or permissions.

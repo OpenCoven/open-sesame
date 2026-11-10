@@ -1,6 +1,7 @@
 // Native application entrypoint, window lifecycle and authenticated main-frame RPC gateway.
 // Handlers below own Swift-only operations; the allowlisted Python path uses Bridge.handle in bridge.py. See docs/repository-map.md.
 import AppKit
+import AVFoundation
 import WebKit
 import ColorSync
 
@@ -23,6 +24,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var web: WKWebView!
     var surface: NSView!
     var voice: OpenSesameVoiceInput!
+    var diarization: OpenSesameSpeakerDiarization!
     var audioRecorder: OpenSesameAudioRecorder!
     var status: NSStatusItem!
     let vnc = VNCTransport()
@@ -52,6 +54,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var displayPreference = OpenSesameDisplayPreference.load()
     var displayMenuOpen = false
     var needsDisplayReanchor = false
+    var localPlayers: OpenSesameLocalMediaPlayers!
     var embeddedPages: [String: EmbeddedWebSurface] = [:]
     var outsideClickMonitors: [Any] = []
     var authentication: OpenSesameAuthentication!
@@ -90,6 +93,11 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             guard let data = try? JSONSerialization.data(withJSONObject: event), let text = String(data: data, encoding: .utf8) else { return }
             self?.web.evaluateJavaScript("window.__openSesameReceive(\(text))", completionHandler: nil)
         }
+        diarization = OpenSesameSpeakerDiarization(resources: Bundle.main.resourceURL!) { [weak self] event in
+            guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
+            self?.web.evaluateJavaScript("window.__openSesameReceive(\(json))", completionHandler: nil)
+        }
+        localPlayers = OpenSesameLocalMediaPlayers(template: assets.appendingPathComponent("local-media-player.html"))
         audioRecorder = OpenSesameAudioRecorder { [weak self] event in
             guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
             self?.web.evaluateJavaScript("window.__openSesameReceive(\(json))", completionHandler: nil)
@@ -198,8 +206,9 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             protectedShare.stop()
             spotify.disconnect()
             appUnlocked = false; pendingLauncher = false
-            voice.cancel(); audioRecorder.clear()
+            voice.cancel(); diarization.cancel(); audioRecorder.clear()
             for window in NSApp.windows { if let picker = window as? NSSavePanel, picker.isVisible { picker.cancel(nil) } }
+            localPlayers.closeAll()
             embeddedPages.values.forEach { $0.close() }; embeddedPages.removeAll()
             let previous = bridge; bridge = nil
             try? input?.close(); input = nil; readBuffer.removeAll()
@@ -647,6 +656,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 guard let id = params["displayID"] as? NSNumber, id.doubleValue.isFinite, id.doubleValue >= 0, id.doubleValue <= Double(UInt32.max), id.doubleValue.rounded() == id.doubleValue else { respond(requestId, error: "Choose an available display."); return }
                 protectedShare.start(displayID: id.uint32Value) { [weak self] error in self?.respond(requestId, result: self?.protectedShare.status, error: error) }
             case "privacy.stop": protectedShare.stop(); respond(requestId, result: protectedShare.status)
+            case "privacy.fullscreen": protectedShare.toggleFullscreen(); respond(requestId, result: protectedShare.status)
             case "privacy.show": protectedShare.show(); respond(requestId, result: protectedShare.status)
             default: respond(requestId, error: "Unsupported screen-share action.")
             }
@@ -677,29 +687,65 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             } catch { respond(requestId, error: "Check your Spotify public client ID and registered redirect URI.") }
             return
         }
+        if method.hasPrefix("media.player.") {
+            do {
+                if ["media.player.begin", "media.player.openURL"].contains(method), embeddedPages.values.filter({ $0.isPoppedOut }).count + localPlayers.count >= 8 { respond(requestId, error: "Close a player window before opening another."); return }
+                let result = try method == "media.player.openURL" ? localPlayers.openURL(params) : localPlayers.call(method, params)
+                respond(requestId, result: result)
+            } catch { respond(requestId, error: error.localizedDescription) }
+            return
+        }
+        if method == "media.windows.close" {
+            guard Set(params.keys) == ["provider"], let provider = params["provider"] as? String, ["youtube", "spotify", "apple", "local-media"].contains(provider) else { respond(requestId, error: "Invalid player provider."); return }
+            if provider == "local-media" { localPlayers.closeAll() }
+            for key in embeddedPages.keys.filter({ embeddedPages[$0]?.isPoppedOut == true && embeddedPages[$0]?.mediaProvider == provider }) { embeddedPages[key]?.close(); embeddedPages.removeValue(forKey: key) }
+            respond(requestId, result: true); return
+        }
         if method.hasPrefix("webview.") {
-            guard let id = params["id"] as? String, ["bookmark", "reading-bookmark", "youtube"].contains(id) else { respond(requestId, error: "Unsupported embedded page."); return }
+            guard let id = params["id"] as? String, (["bookmark", "reading-bookmark", "youtube"].contains(id) || id.range(of: "^media-pip-[A-Za-z0-9_-]{1,80}$", options: .regularExpression) != nil) else { respond(requestId, error: "Unsupported embedded page."); return }
             do {
                 if method == "webview.open" {
+                    if id.hasPrefix("media-pip-"), EmbeddedWebSurface.mediaURL(params["url"]) == nil { throw EmbeddedWebSurface.SurfaceError.invalidURL }
+                    if let previous = embeddedPages[id], previous.isPoppedOut { previous.orphan(); embeddedPages["detached-" + UUID().uuidString] = previous; embeddedPages.removeValue(forKey: id) }
                     if embeddedPages[id] == nil {
+                        guard embeddedPages.values.filter({ $0.isPoppedOut }).count + localPlayers.count < 8 else { respond(requestId, error: "Close a player window before opening another."); return }
                         embeddedPages[id] = EmbeddedWebSurface(id: id, parent: web, assets: assets) { [weak self] event in
                             guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
                             self?.web.evaluateJavaScript("window.__openSesameReceive(\(json))", completionHandler: nil)
                         }
                     }
+                    if let page = embeddedPages[id] { page.onClosed = { [weak self, weak page] in guard let self, let page else { return }; for key in self.embeddedPages.keys.filter({ self.embeddedPages[$0] === page }) { self.embeddedPages.removeValue(forKey: key) } } }
                     try embeddedPages[id]?.open(params)
                 } else if let page = embeddedPages[id], page.matches(params["generation"]) {
                     if method == "webview.frame" { try page.frame(params) }
                     else if method == "webview.command" { try page.command(params) }
-                    else if method == "webview.close" { page.close(); embeddedPages.removeValue(forKey: id) }
+                    else if method == "webview.popout" { if !page.isPoppedOut && embeddedPages.values.filter({ $0.isPoppedOut }).count + localPlayers.count >= 8 { respond(requestId, error: "Close a player window before opening another."); return }; if id.hasPrefix("media-pip-") { page.orphan() }; try page.popOut() }
+                    else if method == "webview.dock" { page.dock() }
+                    else if method == "webview.close" { if page.isPoppedOut { page.orphan(); embeddedPages["detached-" + UUID().uuidString] = page } else { page.close() }; embeddedPages.removeValue(forKey: id) }
                     else { throw EmbeddedWebSurface.SurfaceError.invalidCommand }
                 }
                 respond(requestId, result: true)
             } catch { respond(requestId, error: error.localizedDescription) }
             return
         }
+        if method.hasPrefix("diarization.") {
+            let id = params["id"] as? String ?? ""
+            if method == "diarization.status", params.isEmpty { respond(requestId, result: diarization.status()) }
+            else if method == "diarization.setup", params.isEmpty { respond(requestId, result: ["command": diarization.setupCommand()]) }
+            else if Set(params.keys) == ["id"], OpenSesameSpeakerDiarization.validID(id) {
+                if method == "diarization.start" { diarization.start(id: id) { [weak self] error in self?.respond(requestId, result: true, error: error) } }
+                else if method == "diarization.finish" { diarization.finish(id: id); respond(requestId, result: true) }
+                else if method == "diarization.cancel" { diarization.cancel(id: id); respond(requestId, result: true) }
+                else { respond(requestId, error: "Unsupported speaker action.") }
+            } else { respond(requestId, error: "Invalid speaker request.") }
+            return
+        }
         if method == "speech.start" {
-            voice.start(id: params["id"] as? String ?? "", locale: params["locale"] as? String ?? "en-US", source: params["source"] as? String ?? "mic") { [weak self] error in self?.respond(requestId, result: ["sourceLabel": self?.voice.inputName ?? "System microphone"], error: error) }
+            let speakerID = params["diarizationId"] as? String ?? ""
+            guard speakerID.isEmpty || speakerID == diarization.currentID else { respond(requestId, error: "The speaker session changed. Start again."); return }
+            let offset = diarization.offset
+            let sink: ((AVAudioPCMBuffer) -> Void)? = speakerID.isEmpty ? nil : { [weak self] buffer in self?.diarization.append(buffer) }
+            voice.start(id: params["id"] as? String ?? "", locale: params["locale"] as? String ?? "en-US", source: params["source"] as? String ?? "mic", audio: sink) { [weak self] error in self?.respond(requestId, result: ["sourceLabel": self?.voice.inputName ?? "System microphone", "wordOffset": offset], error: error) }
             return
         }
         if method.hasPrefix("record.") {
@@ -811,7 +857,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         NSApp.activate(ignoringOtherApps: true)
         picker.beginSheetModal(for: panel) { [weak self] response in completionHandler(response == .OK && self?.authentication.authenticated == true ? picker.urls : nil) }
     }
-    func applicationWillTerminate(_ notification: Notification) { computerAgent.stop(); vnc.closeAll(); screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didEndTrackingNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
+    func applicationWillTerminate(_ notification: Notification) { computerAgent.stop(); vnc.closeAll(); screenNotes.cancel(); familiarPermissions.cancel(); failNativeCallbacks(); protectedShare?.stop(); pointerFollowTimer?.invalidate(); pointerFollowTimer = nil; NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil); NotificationCenter.default.removeObserver(self, name: NSMenu.didEndTrackingNotification, object: nil); authentication?.shutdown(); outsideClickMonitors.forEach { NSEvent.removeMonitor($0) }; outsideClickMonitors.removeAll(); shortcut?.stop(); voice?.cancel(); diarization?.shutdown(); localPlayers?.closeAll(); audioRecorder?.clear(); embeddedPages.values.forEach { $0.close() }; try? input?.close(); bridge?.terminate() }
 }
 
 @main

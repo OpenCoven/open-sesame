@@ -41,7 +41,7 @@
   }
 
   function update() {
-    const text = Boolean(audioSession.final.trim());
+    const text = Boolean((window.OpenSesameSpeakers?.exportText()||audioSession.final).trim());
     const busy = audioSession.active || audioSession.starting || audioSession.stopping || demoTimer !== null;
     const compact = true;
     el('live-station').classList.toggle('compact',compact);
@@ -55,7 +55,8 @@
     el('live-sample').hidden = busy || text || !!audioSession.recordUrl;
     el('audio-start').hidden = busy;
     el('audio-stop').hidden = !busy;
-    el('audio-stop').disabled = !busy || audioSession.stopping;
+    const canFinish=audioSession.stopping&&((typeof nativeStopPending!=='undefined'&&nativeStopPending)||audioSession.recognizer);
+    el('audio-stop').disabled = !busy || audioSession.stopping&&!canFinish;el('audio-stop').textContent=canFinish?'Finish now':audioSession.stopping?'Finishing…':'Stop';
     el('audio-start').disabled = busy || Boolean(pending);
     el('audio-start').setAttribute('aria-label',$('audio-record').checked?'Start recording':'Start transcription');
     el('audio-start').title = el('audio-start').getAttribute('aria-label');
@@ -144,7 +145,7 @@
     const typed=raw.trim(), slash=typed.startsWith('/'), shortcut=slash?shortcuts.find(typed):null;
     const question=slash?(shortcut?.prompt || typed.slice(1).trim()):typed, agent=selector.value;
     if(agent!=='local'&&window.OpenSesameWidgetLifecycle?.isActive(agent)===false){toast('Activate this agent widget in Widgets first.');return false}
-    const full = [audioSession.final,audioSession.interim].filter(Boolean).join('\n').trim();
+    const full = window.OpenSesameSpeakers?.exportText() || [audioSession.final,audioSession.interim].filter(Boolean).join('\n').trim();
     if (!full) { toast('Record or try the demo before asking.'); showView('transcript'); return false }
     if (pending || !question || question.length > 2000) { toast(pending?'Wait for the current answer.':'Use a question under 2,001 characters.'); return false }
     if (agent !== 'local' && (!openSesameBridge.available || !available[agent])) {
@@ -206,7 +207,7 @@
   }
   function startDemo() {
     if (demoTimer !== null || audioSession.active || audioSession.starting || pending ||
-        !sample && (audioSession.final.trim() || audioSession.recordUrl)) return;
+        !sample && ((window.OpenSesameSpeakers?.exportText()||audioSession.final).trim() || audioSession.recordUrl)) return;
     reset(); sample = true; demoLine = 0; demoStart = Date.now();
     audioSession.final = ''; audioSession.interim = '';
     el('audio-status').textContent = 'Demo';

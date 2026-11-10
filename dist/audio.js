@@ -7,7 +7,7 @@ const audioSession={active:false,starting:false,stopping:false,streams:[],contex
 let audioGeneration=0,recordingGeneration=0;
 const nativeSpeechCapture=()=>Boolean(window.__OPEN_SESAME_NATIVE__ && !$('audio-record').checked);
 const nativeSpeechMic=()=>Boolean(window.__OPEN_SESAME_NATIVE__ && $('audio-source').value==='mic' && !$('audio-record').checked);
-let nativeSpeechID='', nativeStopPending=false;
+let nativeSpeechID='', nativeStopPending=false, nativeWordOffset=0;
 let nativeRecordingID='';
 audioSession.sourceLabel='';
 function audioCapability(mode=$('audio-record').checked?'record':'transcribe',source=$('audio-source').value){
@@ -38,13 +38,14 @@ function renderTranscript(){
     if(has)$('transcript-download').href=audioSession.textUrl;
     else $('transcript-download').removeAttribute('href');
   }
-  window.OpenSesameLive?.update();
+  window.OpenSesameSpeakers?.paint();window.OpenSesameLive?.update();
 }
 function setAudioControls(){
   const busy=audioSession.active||audioSession.starting||audioSession.stopping;
   ['audio-source','audio-transcribe','audio-record','audio-language'].forEach(id=>$(id).disabled=busy);
   if(!busy)audioSourceHelp();
-  $('audio-start').disabled=busy;$('audio-stop').disabled=!busy||audioSession.stopping;
+  $('audio-start').disabled=busy;$('audio-stop').disabled=!busy||audioSession.stopping&&!(nativeStopPending||audioSession.recognizer);
+  $('audio-stop').textContent=audioSession.stopping?'Finish now':'Stop';$('audio-stop').title=audioSession.stopping?'Input has stopped. Finish now with the text already captured.':'Stop listening';
   $('audio-live-dot').hidden=!audioSession.active;document.body.classList.toggle('audio-active',audioSession.active);
   $('panel-caption').textContent=audioSession.active?($('audio-record').checked?'RECORDING':'TRANSCRIBING')+' · '+time(Math.floor((Date.now()-audioSession.startedAt)/1000)):'A MOMENT FOR YOU';
   $('panel-privacy').title='Screen-share privacy · Option Shift P';
@@ -79,8 +80,10 @@ async function startNativeSegment(generation){
   const id = 'live-'+newId();
   nativeSpeechID = id;
   try {
-    const result=await openSesameBridge.request('speech.start',{id,locale:$('audio-language').value,source:$('audio-source').value});
+    const request={id,locale:$('audio-language').value,source:$('audio-source').value};if(window.OpenSesameSpeakers?.id)request.diarizationId=window.OpenSesameSpeakers.id;
+    const result=await openSesameBridge.request('speech.start',request);
     if(generation!==audioGeneration || id!==nativeSpeechID)return;
+    nativeWordOffset=Number.isFinite(result?.wordOffset)?result.wordOffset:0;
     audioSession.starting=false; audioSession.active=true;
     audioSession.sourceLabel=result?.sourceLabel||'System microphone';
     if(!audioSession.timer)audioSession.startedAt=Date.now();
@@ -117,6 +120,7 @@ window.addEventListener('open-sesame-desktop-event',event=>{
   if(data.event==='voice.error'){stopAudio(data.message || 'Transcription stopped.',true);return}
   if(data.event!=='voice.result')return;
   audioSession.interim=String(data.text||'').trim();
+  window.OpenSesameSpeakers?.accept(data.words,nativeWordOffset,!!data.final);
   if(audioSession.interim)$('transcript-status').textContent='Transcribing live';
   if(data.final){
     if(audioSession.interim)audioSession.final+=(audioSession.final?'\n':'')+audioSession.interim;
@@ -126,6 +130,7 @@ window.addEventListener('open-sesame-desktop-event',event=>{
   renderTranscript();
 });
 async function startAudio(){
+  if(window.OpenSesameWidgetLifecycle?.isActive('transcribe')===false){$('audio-status').textContent='Activate Transcribe in Widgets first.';return}
   if(audioSession.active||audioSession.starting||audioSession.stopping)return;
   const supported=audioCapability();
   if(!supported.available){$('audio-status').textContent=supported.reason;return}
@@ -142,7 +147,8 @@ async function startAudio(){
     audioSession.starting=true;
     $('audio-elapsed').textContent='0:00';
     $('audio-status').textContent=$('audio-source').value==='mic'?'Allow microphone access…':'Allow system audio recording…';
-    setAudioControls(); startNativeSegment(++audioGeneration); return;
+    const generation=++audioGeneration;setAudioControls();
+    try{await window.OpenSesameSpeakers?.begin(generation);if(generation!==audioGeneration)return;startNativeSegment(generation)}catch(error){if(generation===audioGeneration)stopAudio(error.message||'Could not prepare speaker labels.',true)}return;
   }
   if(window.__OPEN_SESAME_NATIVE__ && $('audio-record').checked){
     const request=++audioGeneration,id='record-'+newId();nativeRecordingID=id;audioSession.starting=true;
@@ -202,6 +208,7 @@ async function startAudio(){
 }
 let audioStopMessage='',audioFinishTimer=null;
 function finishAudioStop(){
+  window.OpenSesameSpeakers?.stop(false);
   clearTimeout(audioFinishTimer);audioFinishTimer=null;
   if(nativeSpeechID)openSesameBridge.request('speech.stop',{id:nativeSpeechID,cancel:true}).catch(()=>{});
   nativeSpeechID='';nativeStopPending=false;
@@ -216,6 +223,7 @@ function stopAudio(message=$('audio-record').checked?'Recording ready · save yo
   if(audioSession.stopping&&!immediate)return;
   audioStopMessage=message;audioGeneration++;audioSession.active=false;audioSession.starting=false;clearTimeout(audioSession.restartTimer);clearInterval(audioSession.timer);audioSession.timer=null;
   $('transcript-retry').hidden=true;
+  releaseAudio();
   if(audioSession.recorder&&audioSession.recorder.state!=='inactive')audioSession.recorder.stop();audioSession.recorder=null;
   if(nativeRecordingID){
     const id=nativeRecordingID;nativeRecordingID='';audioSession.stopping=true;setAudioControls();
@@ -223,19 +231,19 @@ function stopAudio(message=$('audio-record').checked?'Recording ready · save yo
     return;
   }
   if(!immediate&&(nativeSpeechID||audioSession.recognizer)&&!audioSession.speechFailed){
-    audioSession.stopping=true;$('audio-status').textContent='Finishing transcript…';setAudioControls();
+    nativeStopPending=!!nativeSpeechID;audioSession.stopping=true;$('audio-status').textContent='Input stopped · finishing last words…';setAudioControls();
     audioFinishTimer=setTimeout(finishAudioStop,2200);
-    if(nativeSpeechID){nativeStopPending=true;openSesameBridge.request('speech.stop',{id:nativeSpeechID,cancel:false}).catch(finishAudioStop)}else audioSession.recognizer.stop();
-  }else finishAudioStop();
+    if(nativeSpeechID){nativeStopPending=true;openSesameBridge.request('speech.stop',{id:nativeSpeechID,cancel:false}).then(()=>window.OpenSesameSpeakers?.stop(false)).catch(finishAudioStop)}else audioSession.recognizer.stop();
+  }else{window.OpenSesameSpeakers?.stop(immediate);finishAudioStop()}
 }
-$('audio-start').addEventListener('click',startAudio);$('audio-stop').addEventListener('click',()=>window.OpenSesameLive?.demoRunning?window.OpenSesameLive.endDemo():stopAudio());
+$('audio-start').addEventListener('click',startAudio);$('audio-stop').addEventListener('click',()=>window.OpenSesameLive?.demoRunning?window.OpenSesameLive.endDemo():stopAudio(undefined,audioSession.stopping));
 $('audio-download').addEventListener('click',async event=>{if(!audioSession.nativeRecording)return;event.preventDefault();try{if(await openSesameBridge.request('record.save',{id:audioSession.nativeRecording}))toast('Audio saved.')}catch(error){toast(error.message||'Could not save audio.')}});
 $('transcript-clear').addEventListener('click',()=>{if(audioSession.active||audioSession.starting||audioSession.stopping)return;audioSession.final='';audioSession.interim='';renderTranscript()});
-$('transcript-copy').addEventListener('click',async()=>{const text=audioSession.final.trim();if(!text)return;try{await navigator.clipboard.writeText(text);toast('Transcript copied.')}catch{toast('Use Export .txt to save the complete transcript.')}});
+$('transcript-copy').addEventListener('click',async()=>{const text=(window.OpenSesameSpeakers?.exportText()||audioSession.final).trim();if(!text)return;try{await navigator.clipboard.writeText(text);toast('Transcript copied.')}catch{toast('Use Export .txt to save the complete transcript.')}});
 $('transcript-note').addEventListener('click',()=>{
   if(!audioSession.final.trim())return;if(activeItems().length>=30||items.length>=300){toast('Make room in Projects to save this transcript.');return}
   const title=(window.OpenSesameLive?.isDemo()?'Demo transcript · ':'Transcript · ')+new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'});
-  const note={id:newId(),text:title,title,kind:'note',url:'',done:false,body:audioSession.final.trim().slice(0,12000),projectId:$('capture-project').value==='__new'?'':$('capture-project').value};items.push(note);
+  const note={id:newId(),text:title,title,kind:'note',url:'',done:false,body:(window.OpenSesameSpeakers?.exportText()||audioSession.final).trim().slice(0,12000),projectId:$('capture-project').value==='__new'?'':$('capture-project').value};items.push(note);
   if(!saveItems()){items.pop();return}selectedItemId=note.id;revealItem=true;if(projectFilter!=='all')projectFilter=note.projectId||'inbox';libraryOpen=true;categoryFilter='note';expandedCategories.add('note');changeScenario('items');toast('Transcript saved as a note.');
 });
 window.addEventListener('pagehide',()=>{stopAudio('Stopped.',true);if(audioSession.recordUrl)URL.revokeObjectURL(audioSession.recordUrl);if(audioSession.textUrl)URL.revokeObjectURL(audioSession.textUrl)});

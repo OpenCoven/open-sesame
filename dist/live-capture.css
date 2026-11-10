@@ -51,3 +51,9 @@
 #widget-panel #pane-audio [hidden],#widget-panel #capture-voice[hidden],#widget-panel #widget-voice-open[hidden]{display:none!important}
 @container open-sesame-widget (max-width:570px){#widget-panel #pane-audio{overflow-y:auto}#widget-panel #live-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:none;overflow:visible;flex:none}#widget-panel #live-workspace>.live-main{min-height:185px}#widget-panel #live-capture{padding:7px;gap:5px}#widget-panel #live-active-source{display:none}}
 #widget-panel #live-capture #live-customize{flex:none;min-height:24px;padding:3px 7px;border:1px solid #343239;border-radius:6px;background:#1b1c20;color:#bdb5c7;font-size:10px}
+
+#widget-panel #transcribe-inactive{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;text-align:center;color:var(--ink-secondary)}
+#widget-panel #transcribe-inactive strong{font-size:18px;font-weight:450;color:var(--ink-primary)}
+#widget-panel #transcribe-inactive p{max-width:330px;margin:0;font-size:12px;line-height:1.7}
+#widget-panel #transcribe-inactive button{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface-selected);color:var(--ink-primary)}
+#widget-panel #transcribe-inactive[hidden],#widget-panel #live-workspace[hidden]{display:none!important}

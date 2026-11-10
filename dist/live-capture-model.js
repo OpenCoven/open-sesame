@@ -16,5 +16,6 @@
     if(source==='both')return label('System audio',activity.system)+' · '+label('Microphone',activity.mic);
     return source==='system'?label('System audio',activity.system):label('Microphone',activity.mic);
   }
-  window.OpenSesameLiveCaptureModel={capability,sources,inputStatus};
+  const outputHint=(mode,speakers=false)=>mode==='record'?'Audio file only':speakers?'Temporary local audio for speaker labels':'Text only · audio not saved';
+  window.OpenSesameLiveCaptureModel={capability,sources,inputStatus,outputHint};
 })();

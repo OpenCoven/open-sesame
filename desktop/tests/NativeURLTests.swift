@@ -4,6 +4,10 @@ import AppKit
 @main
 struct NativeURLTests {
     static func main() {
+        precondition(EmbeddedWebSurface.mediaURL("https://open.spotify.com/embed/track/1234567890123456789012?theme=0") != nil)
+        precondition(EmbeddedWebSurface.mediaURL("https://embed.music.apple.com/us/album/example/12345?theme=dark") != nil)
+        for value in ["file:///private/key", "https://evil.example/embed/track/1234567890123456789012", "https://user:password@open.spotify.com/embed/track/1234567890123456789012", "https://open.spotify.com:8443/embed/track/1234567890123456789012", "https://open.spotify.com/search/private"] { precondition(EmbeddedWebSurface.mediaURL(value) == nil) }
+
         for value in ["https://example.com/path", "http://localhost:4173/"] {
             precondition(EmbeddedWebSurface.pageURL(value) != nil)
         }

@@ -17,13 +17,15 @@ final class OpenSesameVoiceInput {
     private var lastMicLevel = 0.0
     private var limit: Timer?
     private var finishing: Timer?
+    private var audioSink: ((AVAudioPCMBuffer) -> Void)?
+    private var wordSnapshot: [[String: Any]] { transcript.words.map { ["text": $0.text, "start": $0.start, "end": $0.end] } }
     init(emit: @escaping ([String: Any]) -> Void) { self.emit = emit }
     var inputName: String { source == "system" ? "System audio" : source == "both" ? "Microphone + system audio" : AVCaptureDevice.default(for: .audio)?.localizedName ?? "System microphone" }
 
-    func start(id: String, locale: String, source: String = "mic", completion: @escaping (String?) -> Void) {
+    func start(id: String, locale: String, source: String = "mic", audio: ((AVAudioPCMBuffer) -> Void)? = nil, completion: @escaping (String?) -> Void) {
         stop(id: session, cancel: true)
         guard !id.isEmpty, id.count <= 80, ["mic", "system", "both"].contains(source) else { completion("Invalid voice source."); return }
-        session = id; text = ""; transcript = OpenSesameSpeechTranscript(); self.source = source
+        session = id; text = ""; transcript = OpenSesameSpeechTranscript(); self.source = source; self.audioSink = audio
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 guard let self, self.session == id else { completion("Voice input cancelled."); return }
@@ -57,8 +59,9 @@ final class OpenSesameVoiceInput {
                         self.text = self.transcript.update(transcription.formattedString,
                             start: timed ? segments.first?.timestamp : nil,
                             end: timed ? segments.last.map { $0.timestamp + $0.duration } : nil,
-                            sealed: result.isFinal || result.speechRecognitionMetadata != nil)
-                        self.emit(["event": "voice.result", "id": id, "text": self.text, "final": false])
+                            sealed: result.isFinal || result.speechRecognitionMetadata != nil,
+                            words: segments.map { .init(text: $0.substring, start: $0.timestamp, end: $0.timestamp + $0.duration) })
+                        self.emit(["event": "voice.result", "id": id, "text": self.text, "words": self.wordSnapshot, "final": false])
                         if result.isFinal { self.finish(id: id); return }
                     }
                     if error != nil {
@@ -71,7 +74,8 @@ final class OpenSesameVoiceInput {
             self.limit = timer; RunLoop.main.add(timer, forMode: .common); completion(nil)
         }
         if source != "mic" {
-            let capture = OpenSesameSystemAudio(output: { buffer in request.append(buffer) }, level: { [weak self] value in
+            let sink = self.audioSink
+            let capture = OpenSesameSystemAudio(output: { buffer in request.append(buffer); sink?(buffer) }, level: { [weak self] value in
                 DispatchQueue.main.async { guard self?.session == id else { return }; self?.emit(["event": "voice.level", "id": id, "level": value]) }
             }, failed: { [weak self] message in
                 guard self?.session == id else { return }; self?.emit(["event": "voice.error", "id": id, "message": message]); self?.stop(id: id, cancel: true)
@@ -83,8 +87,9 @@ final class OpenSesameVoiceInput {
         let input = engine.inputNode, format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { stop(id: id, cancel: true); completion("No available microphone was found."); return }
         lastMicLevel = 0
+        let sink = self.audioSink
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            request.append(buffer)
+            request.append(buffer); sink?(buffer)
             let now = ProcessInfo.processInfo.systemUptime
             guard let self, now - self.lastMicLevel >= 0.1, buffer.frameLength > 0, let samples = buffer.floatChannelData?[0] else { return }
             self.lastMicLevel = now
@@ -113,7 +118,7 @@ final class OpenSesameVoiceInput {
     }
     private func finish(id: String) {
         guard session == id else { return }
-        let value = text; stop(id: id, cancel: true); emit(["event": "voice.result", "id": id, "text": value, "final": true])
+        let value = text, words = wordSnapshot; stop(id: id, cancel: true); emit(["event": "voice.result", "id": id, "text": value, "words": words, "final": true])
     }
     func cancel() { stop(id: session, cancel: true) }
 }

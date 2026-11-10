@@ -30,3 +30,20 @@
 #widget-panel .agent-cards[data-layout=list] .agent-actions{border:0;margin:0;padding:0;gap:5px;justify-content:flex-end}
 #widget-panel .agent-cards[data-layout=list] .agent-activity{font-size:10px}
 @container open-sesame-widget (max-width:800px){#widget-panel .agent-cards[data-layout=list] .agent-card{grid-template-columns:minmax(120px,1fr) minmax(150px,1fr)}#widget-panel .agent-cards[data-layout=list] .agent-actions{justify-content:flex-start}}
+
+#widget-panel .agent-overview{margin:0;padding:8px 0;font-size:12px;line-height:1.6;color:var(--ink-secondary);font-variant-numeric:tabular-nums}
+#widget-panel .agent-avatar img{width:19px;height:19px;object-fit:contain}
+#widget-panel .agent-table td:first-child>header{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:170px}
+#widget-panel .agent-quick-actions{display:flex;align-items:center;gap:4px}
+#widget-panel .agent-quick-actions button{padding:5px 8px;min-height:28px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink-secondary);font-size:10px}
+#widget-panel .agent-actions:has(.agent-action-menu[open])>.agent-quick-actions{display:none}
+
+#widget-panel .agent-new-session{position:relative;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+#widget-panel .agent-new-session summary{min-height:30px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:11px;color:var(--ink-secondary)}
+#widget-panel .agent-new-session:not([open])>button{display:none}
+#widget-panel .agent-new-session>button{font-size:11px}
+
+#widget-panel .agent-new-session{display:block}
+#widget-panel .agent-launch-choices{position:absolute;right:0;top:calc(100% + 5px);z-index:80;display:flex;flex-direction:column;gap:3px;width:170px;padding:6px;border:1px solid var(--line);border-radius:9px;background:var(--surface-base);box-shadow:0 12px 30px #0004}
+#widget-panel .agent-new-session:not([open]) .agent-launch-choices{display:none}
+#widget-panel .agent-launch-choices button{text-align:left;font-size:11px;margin:0}

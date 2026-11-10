@@ -1,178 +1,62 @@
-/* A quiet, fitted home for real integrations. */
-#widget-panel #pane-plugins{position:relative;display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;gap:9px;padding:2px 0;overflow:visible;color:#ded5e6}
-#widget-panel .plugins-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none}
-#widget-panel .plugins-heading h2{font-size:19px;line-height:25px;font-weight:500;letter-spacing:-.5px;margin:0}
-#widget-panel .plugins-heading p{font-size:10px;line-height:16px;color:#a399ad;margin:2px 0 0}
-#widget-panel #plugins-refresh{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:8px;border-radius:8px;background:none;color:#ae9ebe}
-#widget-panel #plugins-refresh svg{width:14px;height:14px}
-#widget-panel .plugins-tools{display:flex;align-items:center;gap:6px;flex:none;height:32px}
-#widget-panel .plugins-search{display:flex;align-items:center;gap:7px;flex:1;min-width:0;height:32px;padding:0 9px;background:#ffffff04;border:1px solid #ffffff0c;border-radius:9px}
-#widget-panel .plugins-search svg{width:13px;height:13px;color:#9a8aa8;flex:none}
-#widget-panel #plugins-search{width:100%;min-width:0;padding:0;border:0;background:none;color:#e5dce9;font-family:inherit;font-size:11px;line-height:20px;outline-offset:4px;box-shadow:none}
-#widget-panel #plugins-search::placeholder{color:#93869f}
-#widget-panel #plugins-category,#widget-panel #plugins-connected{flex:none;height:32px;min-height:32px;border:1px solid #ffffff0c;border-radius:9px;padding:5px 10px;color:#bcb0c8;background-color:#ffffff04;font-size:10px;white-space:nowrap}
-#widget-panel #plugins-category{width:104px;padding-right:24px}
-#widget-panel #plugins-connected[aria-pressed=true]{color:#e4d1f2;border-color:#d6bbed38;background:#bda0db18}
-#widget-panel .plugins-results{position:relative;flex:1;min-height:0;min-width:0;overflow:hidden}
-#widget-panel .plugins-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr);gap:8px;height:100%}
-#widget-panel .plugin-card{display:grid;grid-template-columns:36px minmax(0,1fr);grid-template-rows:1fr auto;align-items:center;gap:8px 10px;width:100%;min-width:0;min-height:0;padding:13px;border-radius:13px;border:1px solid #ffffff0e;background:linear-gradient(135deg,#ffffff07,#ffffff02);text-align:left;color:#ded5e6;transition:background .15s,border-color .15s}
-#widget-panel .plugin-card:hover{background:linear-gradient(135deg,#c3a6df12,#ffffff04);border-color:#c6afdc35;filter:none}
-#widget-panel .plugin-logo{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:10px;background:#ffffff05;border:1px solid #ffffff06;color:#d5ac81}
-#widget-panel .plugin-logo img{display:block;width:24px;height:24px;object-fit:contain}
-#widget-panel .plugin-logo svg{width:23px;height:23px}
-#widget-panel .plugin-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
-#widget-panel .plugin-copy strong{font-size:13px;line-height:17px;font-weight:500;letter-spacing:-.15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-#widget-panel .plugin-copy small{font-size:10px;line-height:14px;color:#a79aad;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-#widget-panel .plugin-card-foot{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding-top:7px;border-top:1px solid #ffffff07}
-#widget-panel .plugin-state{display:inline-flex;align-items:center;gap:6px;font-size:9px;line-height:15px;color:#9d90a8;white-space:nowrap}
-#widget-panel .plugin-state:before{content:"";width:4px;height:4px;background:currentColor;border-radius:50%;flex:none}
-#widget-panel .plugin-state[data-tone=connected],#widget-panel .plugin-state[data-tone=configured]{color:#99bea8}
-#widget-panel .plugin-state[data-tone=detected]{color:#b8abda}
-#widget-panel .plugin-state[data-tone=attention]{color:#e4af94}
-#widget-panel .plugin-action{font-size:10px;line-height:16px;color:#c8b1da;white-space:nowrap}
-#widget-panel .plugins-bottom{display:flex;align-items:center;justify-content:space-between;min-height:23px;flex:none;font-size:9px;color:#8f829a}
-#widget-panel #plugins-pages{margin:0;height:24px;min-height:24px;border:0;background:transparent}
-#widget-panel #plugins-pages>button{width:24px;height:24px;padding:6px}#widget-panel #plugins-pages svg{width:12px;height:12px}
-#widget-panel .plugins-desktop{display:flex;align-items:center;gap:10px;flex:none;min-height:49px;padding:8px 10px;border:1px solid #ffffff0a;border-radius:11px;background:#ffffff03}
-#widget-panel .plugins-desktop>.plugin-logo{width:30px;height:30px;background:none;border:0}.plugins-desktop>.plugin-logo img{width:20px;height:20px}
-#widget-panel .plugins-desktop>div{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
-#widget-panel .plugins-desktop strong{font-size:11px;font-weight:450;line-height:14px}
-#widget-panel .plugins-desktop small{font-size:9px;line-height:12px;color:#9b8da7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#widget-panel #plugins-desktop-action{flex:none;height:28px;padding:4px 9px;border:1px solid #c8b1da20;border-radius:7px;background:#c8b1da09;color:#c8b1da;font-size:10px}
-#widget-panel .plugins-empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center}.plugins-empty>i{opacity:.6}.plugins-empty strong{font-size:13px;font-weight:450}.plugins-empty p{font-size:10px;color:#9d90a8;margin:0}.plugins-empty button{padding:6px 12px;border-radius:7px;background:#c8b1da16;color:#d6c0e5;font-size:10px}
-#widget-panel #plugins-status{margin:0;color:#dcac9c;font-size:10px;line-height:14px;flex:none}
-#widget-panel .plugin-detail,#widget-panel #music-account-panel.plugins-auth-panel{position:absolute;inset:0 0 auto auto;z-index:100;width:min(350px,100%);max-height:100%;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px;border:1px solid #d4bce629;border-radius:15px;background:linear-gradient(140deg,#343039fc,#211e26fc);box-shadow:0 15px 48px #0008,inset 0 1px #ffffff09;backdrop-filter:blur(24px);scrollbar-width:thin}
-#widget-panel .plugin-detail header{display:flex;align-items:center;gap:10px;flex:none}
-#widget-panel .plugin-detail h3{font-size:17px;font-weight:500;letter-spacing:-.3px;margin:0;flex:1}
-#widget-panel .plugin-detail header>button{width:28px;height:28px;padding:7px;border-radius:8px;background:#ffffff05;color:#b8a6c6}.plugin-detail header>button svg{width:14px;height:14px}
-#widget-panel .plugin-detail p{font-size:11px;line-height:1.65;color:#b9aebf;margin:0}
-#widget-panel .plugin-access{padding:12px;border:1px solid #ffffff0b;border-radius:10px;background:#ffffff03}.plugin-access strong{display:block;font-size:10px;font-weight:500;margin-bottom:5px;color:#d2c1dd}
-#widget-panel #plugin-detail-note{font-size:10px;color:#9e8eab}
-#widget-panel .plugin-setup{display:flex;flex-direction:column;gap:9px;flex:none;min-width:0}#widget-panel .plugin-setup>strong{font-size:11px;font-weight:500;color:#d9c8e5}#widget-panel .plugin-setup ol{margin:0;padding-left:19px;display:flex;flex-direction:column;gap:8px}#widget-panel .plugin-setup li{font-size:11px;line-height:1.65;color:#b9aebf;overflow-wrap:anywhere}#widget-panel .plugin-setup summary{font-size:10px;color:#d0b9df;cursor:pointer}#widget-panel .plugin-setup details p{margin-top:8px}
-#widget-panel .plugin-detail>:is(button,a){flex:none;display:flex;align-items:center;justify-content:center;gap:6px;min-height:32px;font-size:11px;border-radius:8px;padding:7px 10px;text-decoration:none}
-#widget-panel .plugin-primary{color:#231c2a;background:#c7afd9}.plugin-secondary{color:#d8c8e2;background:#ffffff07;border:1px solid #ffffff10}.plugin-detail a{color:#bda3ce;background:transparent}.plugin-detail a svg{width:12px;height:12px}
-#widget-panel #music-account-panel.plugins-auth-panel .music-account-heading{height:28px;flex:none}#widget-panel #music-account-panel.plugins-auth-panel .music-account-heading strong{font-size:16px}#widget-panel #music-account-panel.plugins-auth-panel :is(p,small){font-size:11px;line-height:1.6;margin:0}#widget-panel #music-account-panel.plugins-auth-panel>button{height:34px;min-height:34px;font-size:11px}#widget-panel #music-account-panel.plugins-auth-panel #music-account-state{font-size:11px;margin:0}
-@container open-sesame-widget (max-width:600px){#widget-panel .plugins-heading h2{font-size:16px;line-height:21px}#widget-panel .plugins-heading p{display:none}#widget-panel #pane-plugins{gap:7px}#widget-panel .plugin-card{padding:9px;grid-template-columns:28px minmax(0,1fr);gap:5px 8px;border-radius:10px}#widget-panel .plugin-card .plugin-logo{width:28px;height:28px;border-radius:8px}#widget-panel .plugin-card .plugin-logo img{width:21px;height:21px}#widget-panel .plugin-copy strong{font-size:12px}#widget-panel .plugin-copy small{font-size:9px}#widget-panel .plugin-card-foot{padding-top:5px}#widget-panel .plugins-desktop{min-height:43px;padding:6px 8px}#widget-panel #plugins-category{width:94px}#widget-panel #activity-menu>button{padding-inline:5px!important;gap:4px!important;font-size:9px!important}#widget-panel #activity-menu>button>i svg{width:11px;height:11px}}
-@media(prefers-reduced-motion:reduce){#widget-panel .plugin-card{transition:none}}
-
-/* Project rail: keep two useful lines, with one measured row height. */
-.library-open:not(.details-full-width) #widget-panel .items-workspace{grid-template-columns:clamp(174px,25cqw,250px) minmax(0,1fr);column-gap:12px}
-.library-open #widget-panel #items-sidebar{padding:0 10px 0 0;border-right:1px solid #ffffff09;gap:4px}
-.library-open #widget-panel #capture-list{--rail-row-height:50px;--project-row-height:50px;--rail-header-height:30px;gap:0;padding:0 2px}
-.library-open #widget-panel #capture-list[data-view=list] .capture-item{height:50px;min-height:50px;max-height:50px;padding:7px 8px;gap:8px;align-items:center}
-.library-open #widget-panel #capture-list .thought-content{min-width:0;flex:1;align-self:stretch;gap:2px;overflow:hidden;padding:0;justify-content:center}
-.library-open #widget-panel #capture-list[data-view=list] .thought-text{display:block;-webkit-line-clamp:unset;white-space:nowrap;overflow:hidden;overflow-wrap:normal;text-overflow:ellipsis;width:100%;max-height:none;font-size:12px!important;line-height:17px}
-.library-open #widget-panel #capture-list[data-view=list] .thought-url{display:block;font-size:10px!important;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;max-width:100%}
-.library-open #widget-panel #capture-list .delete-thought{display:none}
-.library-open #widget-panel #items-rail-heading{display:flex;align-items:center;gap:7px;flex:none;height:32px;min-height:32px;margin:0;padding:0 2px 4px;border-bottom:1px solid #ffffff07}
-.library-open #widget-panel #items-rail-heading .library-heading{min-width:0;padding:0;flex:1}.library-open #widget-panel #items-rail-heading strong{font-size:11px;font-weight:500;line-height:16px;color:#c5b8d0}
-.library-open #widget-panel #items-rail-heading #detail-width-toggle{width:28px;min-width:28px;height:28px;padding:6px;margin:0;border-radius:7px}
-.library-open #widget-panel .items-pagination{margin-top:auto;flex:none;height:32px;min-height:32px;gap:4px;padding:4px 0 0;justify-content:space-between}
-.library-open #widget-panel .items-pagination #items-page-summary{font-size:9px;line-height:14px;min-width:0}.library-open #widget-panel .items-pagination>div{height:26px;min-height:26px;gap:2px;padding:1px;grid-template-columns:21px minmax(28px,1fr) 21px}.library-open #widget-panel .items-pagination #items-page-label{min-width:28px;font-size:10px}.library-open #widget-panel .items-pagination button{height:24px;min-height:24px;width:21px;padding:5px}
-
-/* Reader metadata and actions share one baseline and one button size. */
-#widget-panel .reading-reader-top{min-height:32px;align-items:center;gap:8px}#widget-panel .reading-meta{min-height:32px;align-items:center}
-#widget-panel .reading-article-actions{display:flex;align-items:center;height:32px;min-height:32px;padding:2px;gap:2px!important;box-sizing:border-box}
-#widget-panel .reading-article-actions>:is(button,a),#widget-panel .reading-article-actions>button:not(.reader-icon),#widget-panel .reading-article-actions>button.reader-icon{display:grid;place-items:center;width:28px;min-width:28px;height:28px;min-height:28px;padding:7px;margin:0;border:1px solid transparent;border-radius:8px;box-sizing:border-box;transform:none}
-#widget-panel .reading-article-actions>:is(button,a) svg{display:block;width:14px;height:14px}
-#widget-panel .reading-article-actions>button[aria-pressed=true]{border-color:#cbb1e233;background:#c8a9df16}
-
-/* Calendar controls live alongside its view switch. */
-#widget-panel #pane-focus>.focus-top{gap:8px;flex-wrap:nowrap}
-#widget-panel #pane-focus>.focus-top .focus-calendar-header{display:none;flex:1;min-width:0;gap:6px;margin:0;height:32px;align-items:center}
-#widget-panel #pane-focus[data-focus-view=calendar]>.focus-top .focus-calendar-header{display:flex}
-#widget-panel .focus-calendar-header>strong{font-size:10px;text-align:center;padding:0;min-width:0;flex:1}
-#widget-panel .focus-calendar-header .focus-calendar-nav{flex:none;height:30px;min-height:30px;padding:2px;gap:1px;border-radius:8px}
-#widget-panel .focus-calendar-header .focus-calendar-nav button{height:24px;min-height:24px;min-width:24px;padding:5px;font-size:9px}
-#widget-panel .focus-calendar-header>button{display:grid;place-items:center;height:30px;width:30px;min-width:30px;padding:7px;border-radius:8px;flex:none}
-#widget-panel .focus-calendar-header svg{width:13px;height:13px}
-@container open-sesame-widget (max-width:620px){#widget-panel #pane-focus[data-focus-view=calendar]>.focus-top{gap:5px}#widget-panel #pane-focus[data-focus-view=calendar] .focus-view-tabs{gap:8px}#widget-panel #pane-focus>.focus-top .focus-calendar-modes>button{padding-inline:5px!important;font-size:9px!important}#widget-panel .focus-calendar-header{gap:3px!important}#widget-panel .focus-calendar-header>strong{font-size:9px}#widget-panel .focus-calendar-header .focus-calendar-nav button{min-width:20px;padding-inline:3px;font-size:8px}#widget-panel .focus-calendar-header>button{width:26px;min-width:26px}}
-
-/* Audio source is a single icon, with an overlay for choices and help. */
-#widget-panel #live-options .audio-options{gap:9px;min-height:30px}
-#widget-panel #live-source-toggle{display:grid;place-items:center;width:30px;height:30px;min-width:30px;padding:7px;border:1px solid #ffffff10;border-radius:8px;background:#ffffff05;color:#c9b5db}
-#widget-panel #live-source-toggle svg{width:15px;height:15px}#widget-panel #live-source-toggle[aria-expanded=true]{background:#c8acdf18;border-color:#c8acdf38}
-#widget-panel #live-source-menu{position:absolute;top:48px;left:14px;z-index:5;width:min(258px,calc(100% - 28px));padding:6px;border:1px solid #d8bcea2b;border-radius:12px;background:linear-gradient(135deg,#39323ffc,#241f2bfc);box-shadow:0 10px 35px #0008;backdrop-filter:blur(24px)}
-#widget-panel #live-source-menu>button{display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:8px 9px;border-radius:8px;background:none;color:#c7b9d1;font-size:11px;text-align:left}
-#widget-panel #live-source-menu>button>span{flex:1}#widget-panel #live-source-menu svg{width:14px;height:14px;flex:none}#widget-panel #live-source-menu>button>svg:last-child{visibility:hidden}#widget-panel #live-source-menu>button[aria-checked=true]{background:#c8acdf13;color:#efdcfc}#widget-panel #live-source-menu>button[aria-checked=true]>svg:last-child{visibility:visible}#widget-panel #live-source-menu>button:hover{background:#ffffff08}#widget-panel #live-source-menu #audio-source-help{border-top:1px solid #ffffff0c;margin:5px 3px 0;padding:9px 6px 5px;font-size:10px;line-height:1.55;color:#ac9ab9}
-
-/* Agent states are counted filters directly below search. */
-#widget-panel #pane-agent-monitor{gap:9px}
-#widget-panel .agent-monitor-heading{min-height:22px;gap:8px;align-items:center;padding:0;margin:0}
-#widget-panel .agent-monitor-heading .agent-eyebrow,#widget-panel .agent-monitor-heading h2{display:none}
-#widget-panel .agent-monitor-heading>div{min-width:0;flex:1}
-#widget-panel #agent-connection{font-size:10px;line-height:16px;color:#a99bb5;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#widget-panel .agent-filter-row{height:32px;min-height:32px;gap:6px}
-#widget-panel .agent-filter-row>button,#widget-panel .agent-filter-row .agent-search{height:32px;min-height:32px;border-radius:8px}
-#widget-panel #agent-refresh{width:32px;height:32px;min-width:32px;padding:8px;background:none;border-color:transparent}
-#widget-panel #agent-demo{background:transparent;border-color:#ffffff0b;font-size:10px}
-#widget-panel .agent-state-filters{display:flex;align-items:center;flex-wrap:wrap;gap:4px;flex:none;min-width:0;padding:0 0 2px}
-#widget-panel .agent-state-filter{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:none;height:28px;min-height:28px;padding:0 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:#a398ad;font-size:10px;line-height:16px;white-space:nowrap}
-#widget-panel .agent-filter-count{min-width:14px;text-align:center;font-size:9px;line-height:17px;font-variant-numeric:tabular-nums;color:#95899f}
-#widget-panel .agent-state-filter:hover{color:#ded3e7;background:#ffffff05}
-#widget-panel .agent-state-filter[aria-pressed=true]{color:#e5d9ef;border-color:#c8b0dc26;background:linear-gradient(#c5acdc16,#c5acdc09);box-shadow:inset 0 1px #ffffff07}
-#widget-panel .agent-state-filter[aria-pressed=true] .agent-filter-count{color:#d3bddf}
-#widget-panel .agent-state-filter:focus-visible{outline:1px solid #c7afdf;outline-offset:2px}
-@container open-sesame-widget (max-width:600px){#widget-panel #agent-connection{font-size:9px}#widget-panel .agent-state-filter{padding-inline:8px;gap:5px}}
-
-/* Reading has its own form layout, independent of shell setup controls. */
-#widget-panel #reading-feed-form{position:fixed;z-index:60;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:stretch;gap:14px;width:min(410px,calc(100% - 24px));max-height:calc(100% - 24px);margin:0;padding:18px;box-sizing:border-box;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid #d3bddb26;border-radius:16px;background:linear-gradient(140deg,#2d2b30fc,#211f25fc);color:#d9cce4;box-shadow:0 18px 48px #0007,inset 0 1px #ffffff08;backdrop-filter:blur(24px)}
-#widget-panel .reading-add-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;min-height:28px}
-#widget-panel .reading-add-heading strong{font-size:14px;line-height:22px;font-weight:500;letter-spacing:-.15px}
-#widget-panel #reading-feed-cancel{display:grid;place-items:center;flex:none;width:28px;height:28px;min-height:28px;padding:7px;border:1px solid transparent;border-radius:8px;background:transparent;color:#ac9db7}
-#widget-panel #reading-feed-cancel:hover{background:#ffffff08;color:#e1d4eb}
-#widget-panel #reading-feed-form svg{width:14px;height:14px;flex:none}
-#widget-panel #reading-feed-form .reading-add-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:3px;flex:none;margin:0;padding:3px;border:1px solid #ffffff08;border-radius:10px;background:#14121766}
-#widget-panel #reading-feed-form .reading-add-tabs>button{display:flex;align-items:center;justify-content:center;min-width:0;width:100%;height:30px;min-height:30px;margin:0;padding:0 6px;border:1px solid transparent;border-radius:7px;background:transparent;color:#a89ab3;font-size:10px;line-height:18px;font-weight:400;white-space:nowrap}
-#widget-panel #reading-feed-form .reading-add-tabs>button[aria-selected=true]{background:linear-gradient(#ffffff0c,#ffffff06);border-color:#ffffff0d;color:#e8dfef;box-shadow:inset 0 1px #ffffff06}
-#widget-panel .reading-add-field{display:flex;flex-direction:column;gap:8px;flex:none;min-width:0}
-#widget-panel #reading-feed-url,#widget-panel #reading-site-selector{box-sizing:border-box;width:100%;height:38px;min-height:38px;margin:0;padding:0 11px;border:1px solid #ffffff12;border-radius:9px;background:#15131966;color:#e4d8ed;font:inherit;font-size:11px;line-height:20px}
-#widget-panel #reading-feed-url::placeholder,#widget-panel #reading-site-selector::placeholder{color:#8e829a}
-#widget-panel #reading-feed-url:focus,#widget-panel #reading-site-selector:focus{outline:1px solid #bca4d166;outline-offset:2px;border-color:#c3abd44d}
-#widget-panel #reading-feed-form small{display:block;font-size:10px;line-height:1.55;color:#a497af}
-#widget-panel #reading-site-options{flex:none;margin:0;padding:10px 0 0;border-top:1px solid #ffffff09}
-#widget-panel #reading-site-options summary{font-size:10px;line-height:18px;color:#bcadca;cursor:pointer}
-#widget-panel .reading-selector-field{display:flex;flex-direction:column;gap:7px;margin:10px 0 8px}
-#widget-panel .reading-selector-field label{font-size:10px;line-height:16px;color:#bcadca}.reading-selector-field label span{color:#8e829a}
-#widget-panel .reading-add-footer{display:flex;flex-direction:column;align-items:stretch;gap:10px;flex:none;margin:0;padding-top:12px;border-top:1px solid #ffffff09}
-#widget-panel #reading-feed-error{font-size:10px;line-height:16px;margin:0;color:#e1aaa8}
-#widget-panel #reading-feed-submit{display:inline-flex;align-items:center;justify-content:center;align-self:flex-end;gap:7px;width:auto;min-width:126px;height:34px;min-height:34px;margin:0;padding:0 13px;border:1px solid #d7c4e65c;border-radius:9px;background:linear-gradient(135deg,#d5c1e3,#bca3d0);box-shadow:inset 0 1px #ffffff40;color:#2e2236;font-size:11px;line-height:18px;font-weight:500;white-space:nowrap}
-#widget-panel #reading-feed-submit:disabled{opacity:.5;cursor:wait}
-@container open-sesame-widget (max-height:460px){#widget-panel #reading-feed-form{gap:11px;padding:14px}#widget-panel .reading-add-footer{padding-top:10px}}
-
-/* Roomier frames turn the plugin collection into a purposeful bento. */
-#widget-panel .plugin-destination,#widget-panel .plugin-overview{display:none}
-#widget-panel #pane-plugins[data-layout=wide] .plugins-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-#widget-panel #pane-plugins[data-layout=bento] .plugins-grid{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:12px}
-#widget-panel #pane-plugins[data-layout=bento] .plugins-grid[data-count="6"]{grid-template-columns:repeat(4,minmax(0,1fr))}
-#widget-panel #pane-plugins[data-layout=bento] .plugins-grid[data-count="6"] .plugin-card:is(:first-child,:last-child){grid-column:span 2}
-#widget-panel #pane-plugins[data-layout=bento] .plugins-grid[data-count="1"]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-#widget-panel #pane-plugins[data-layout=bento] .plugins-grid[data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
-#widget-panel #pane-plugins[data-layout=bento] .plugins-grid[data-count="3"]{grid-template-rows:minmax(0,1fr)}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card{--plugin-tint:178,153,202;position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto;align-items:start;align-content:stretch;gap:clamp(10px,1.2cqw,20px);padding:clamp(16px,1.6cqw,28px);border-radius:18px;overflow:hidden;background:radial-gradient(ellipse at 0 0,rgba(var(--plugin-tint),.09),transparent 70%),linear-gradient(145deg,#ffffff04,#ffffff01)}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card[data-plugin=spotify]{--plugin-tint:69,176,121}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card[data-plugin=apple]{--plugin-tint:235,105,145}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card[data-plugin=youtube]{--plugin-tint:236,105,105}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card[data-plugin=claude]{--plugin-tint:218,160,123}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card[data-plugin=rss]{--plugin-tint:213,171,116}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card:hover{border-color:rgba(var(--plugin-tint),.35);background:radial-gradient(ellipse at 0 0,rgba(var(--plugin-tint),.13),transparent 75%),linear-gradient(145deg,#ffffff06,#ffffff02)}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card>.plugin-logo{grid-row:1;grid-column:1;width:clamp(38px,4cqw,64px);height:clamp(38px,4cqw,64px);border-radius:14px;background:rgba(var(--plugin-tint),.06);border-color:rgba(var(--plugin-tint),.09)}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card>.plugin-logo img,#widget-panel #pane-plugins[data-layout=bento] .plugin-card>.plugin-logo svg{width:60%;height:60%}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-destination{display:block;grid-row:1;grid-column:2;justify-self:end;align-self:center;color:#a89ab5;font-size:10px;letter-spacing:.4px}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-copy{grid-column:1/-1;grid-row:2;gap:5px}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-copy strong{font-size:clamp(17px,1.6cqw,25px);font-weight:500;line-height:1.2;letter-spacing:-.5px}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-copy small{font-size:clamp(10px,.85cqw,13px);line-height:1.5;white-space:normal}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-overview{display:flex;grid-row:3;grid-column:1/-1;flex-direction:column;justify-content:space-between;gap:12px;align-self:stretch;height:100%;min-height:0;overflow:hidden}
-#widget-panel .plugin-description{display:block;max-width:48ch;color:#a799b4;font-size:clamp(10px,.8cqw,12px);line-height:1.65}
-#widget-panel .plugin-features{display:flex;gap:6px;flex-wrap:wrap;flex:none}
-#widget-panel .plugin-features>span{padding:4px 8px;border-radius:6px;border:1px solid #ffffff09;background:#ffffff03;color:#b8a9c5;font-size:9px;line-height:14px;white-space:nowrap}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-card-foot{grid-row:4;grid-column:1/-1;align-self:end;padding-top:12px}
-#widget-panel #pane-plugins[data-layout=bento] .plugin-state,#widget-panel #pane-plugins[data-layout=bento] .plugin-action{font-size:10px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-card{padding:14px;gap:9px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-card>.plugin-logo{width:36px;height:36px;border-radius:10px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-overview{gap:8px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-description{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex-shrink:0;line-height:1.5;font-size:10px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-features{margin-top:auto;gap:4px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-features>span{padding:3px 6px;font-size:8px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-copy strong{font-size:17px}
-#widget-panel #pane-plugins[data-layout=bento][data-density=compact] .plugin-copy small{font-size:10px}
+'use strict';
+(()=>{
+  const el=id=>document.getElementById(id),pane=el('pane-plugins'),M=OpenSesamePluginsModel;
+  let agents=null,error='',checking=false,page=0,capacity=6,selected=null,lastFocus=null,generation=0;
+  const context=()=>({music:window.OpenSesameMusicAuth?.snapshot()||{},desktop:!!window.openSesameBridge?.available,agents,error,feedCount:window.openSesameReading?.listFeeds().length||0,github:window.OpenSesameGitHubMonitor?.snapshot()||{},familiars:window.OpenSesameFamiliars?.snapshot()||{}});
+  function make(tag,cls,text){const n=document.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=text;return n;}
+  function mark(p){const n=make('span','plugin-logo');if(p.logo){const img=new Image();img.src='assets/plugins/'+p.logo+'.svg';img.alt='';img.width=img.height=26;n.append(img);}else n.innerHTML=icon(p.glyph);return n;}
+  const features={'task-manager':['Lists & priorities','Due dates'],github:['Pull requests & issues','Workflow runs'],coven:['Familiar roster','Streaming chat'],spotify:['Songs & albums','Playlists'],apple:['MusicKit','In-app playback'],youtube:['Videos','Playlists'],claude:['Transcript Q&A','Local CLI'],codex:['Transcript Q&A','Local CLI'],rss:['RSS & Atom','Saved articles']};
+  function lifecycleStatus(p){return window.OpenSesameWidgetLifecycle?.status(p.id)||'active'}
+  function card(p,c){
+    const s=M.status(p,c),button=make('button','plugin-card');button.type='button';button.dataset.plugin=p.id;button.dataset.kind=p.kind;button.setAttribute('aria-label',p.name+' · '+lifecycleStatus(p)+' · '+s.label);
+    const copy=make('span','plugin-copy');copy.append(make('strong','',p.name),make('small','',p.description));
+    const destination=make('span','plugin-destination',({focus:'Agenda',media:'Media',projects:'Projects',console:'Console',reader:'Reader',live:'Live'})[p.page]||'Widgets');destination.setAttribute('aria-hidden','true');
+    const overview=make('span','plugin-overview'),tags=make('span','plugin-features');for(const feature of features[p.id]||[])tags.append(make('span','',feature));overview.append(make('span','plugin-description',p.detail),tags);
+    const footer=make('span','plugin-card-foot'),status=make('span','plugin-state',lifecycleStatus(p)==='active'?'Active · '+s.label:lifecycleStatus(p)==='inactive'?'Inactive':'Available to install');status.dataset.tone=s.tone;footer.append(status,make('span','plugin-action',s.action+' ›'));
+    button.append(mark(p),destination,copy,overview,footer);button.addEventListener('click',()=>show(p,button));return button;
+  }
+  function render(){
+    const c=context(),shown=M.filter(M.catalog,el('plugins-search').value,el('plugins-category').value,false,c).filter(p=>el('plugins-connected').getAttribute('aria-pressed')!=='true'||lifecycleStatus(p)==='active'),pages=Math.max(1,Math.ceil(shown.length/capacity));page=Math.min(page,pages-1);
+    const focused=document.activeElement?.dataset.plugin,visible=shown.slice(page*capacity,(page+1)*capacity);el('plugins-grid').dataset.count=visible.length;el('plugins-grid').replaceChildren(...visible.map(p=>card(p,c)));if(focused)pane.querySelector('[data-plugin="'+focused+'"]')?.focus({preventScroll:true});
+    el('plugins-empty').hidden=shown.length>0;el('plugins-grid').hidden=!shown.length;el('plugins-count').textContent=shown.length+' widget'+(shown.length===1?'':'s');el('plugins-page').textContent=(page+1)+' / '+pages;el('plugins-prev').disabled=page===0;el('plugins-next').disabled=page>=pages-1;el('plugins-pages').hidden=pages===1;
+    el('plugins-refresh').disabled=checking;el('plugins-refresh').classList.toggle('is-refreshing',checking);
+    el('plugins-desktop-state').textContent=c.desktop?'Desktop connected':'Bring your Mac along';el('plugins-desktop-copy').textContent=c.desktop?'Local agents are available to check.':'Build the macOS companion to use local agents.';el('plugins-desktop-action').textContent=c.desktop?'Agents':'Get Mac source';
+    el('plugins-status').textContent=error||'';el('plugins-status').hidden=!error;
+    if(selected)drawDetail();
+  }
+  function close(focus=true){el('plugin-detail').hidden=true;selected=null;if(focus){const target=lastFocus?.dataset.plugin?pane.querySelector('[data-plugin="'+lastFocus.dataset.plugin+'"]'):lastFocus;(target?.isConnected?target:el('plugins-search')).focus({preventScroll:true});}}
+  function show(p,source){selected=p;lastFocus=source;drawDetail();el('plugin-detail').hidden=false;el('plugin-detail-close').focus({preventScroll:true});}
+  function drawDetail(){
+    const p=selected,c=context(),s=M.status(p,c),setup=M.setup(p,c);
+    el('plugin-detail-logo').replaceChildren(mark(p));el('plugin-detail-title').textContent=p.name;el('plugin-detail-state').textContent=lifecycleStatus(p)+' · '+s.label;el('plugin-detail-state').dataset.tone=s.tone;
+    el('plugin-detail-copy').textContent=p.description||p.detail;el('plugin-detail-access').textContent=p.access;el('plugin-detail-note').textContent=setup.note;
+    el('plugin-detail-steps').replaceChildren(...setup.steps.map(text=>make('li','',text)));el('plugin-detail-repair').textContent=setup.repair;
+    const lifecycle=lifecycleStatus(p),controls=el('plugin-lifecycle');controls.replaceChildren();
+    const management=make('details','plugin-manage'),manageLabel=make('summary','','Manage widget');management.append(manageLabel);if(lifecycle==='active')controls.append(management);
+    const addControl=(label,value)=>{const b=make('button','plugin-secondary',label);b.type='button';b.disabled=!!window.OpenSesameWidgetLifecycle?.error;b.onclick=()=>{try{window.OpenSesameWidgetLifecycle.set(p.id,value);el('plugin-lifecycle').querySelector('button')?.focus({preventScroll:true})}catch(e){toast(e.message)}};(lifecycle==='active'?management:controls).append(b)};
+    if(lifecycle==='uninstalled')addControl('Install widget','active');else{addControl(lifecycle==='active'?'Deactivate widget':'Activate widget',lifecycle==='active'?'inactive':'active');addControl('Uninstall widget','uninstalled')}
+    if(window.OpenSesameWidgetLifecycle?.error)controls.append(make('p','',window.OpenSesameWidgetLifecycle?.error?'Saved widget states need recovery; original data is preserved.':lifecycle==='uninstalled'?'Not installed. Settings and saved content are kept.':lifecycle==='inactive'?'Inactive. Settings and saved content are kept.':'Active. Account connection is managed separately.'));
+    el('plugin-detail-main').textContent=p.kind==='workspace'?'Open '+p.name:p.kind==='task-manager'?'Open in Projects':p.kind==='github'?(window.OpenSesamePageWidgets?.list().some(x=>x.id==='builtin-github')?'Open in Projects':'Add to Projects'):p.kind==='familiars'?'Connect Coven':p.kind==='music'?(c.music[p.id]?.supported===false?'View account requirements':s.action+' account'):p.kind==='feeds'?'Add a feed':c.desktop&&agents?.[p.id]?'Use in Live':'Check again';
+    el('plugin-detail-main').hidden=lifecycle!=='active'||['agent','familiars','github'].includes(p.kind)&&!c.desktop;el('plugin-detail-main').disabled=checking||lifecycle!=='active';
+    el('plugin-detail-open').hidden=['github','workspace','task-manager'].includes(p.kind);el('plugin-detail-open').textContent=p.kind==='workspace'?'Open '+p.name:p.kind==='task-manager'?'Open in Projects':p.kind==='github'?'Open monitor':p.kind==='music'?'Open in Media':p.kind==='feeds'?'Open Reader':p.kind==='familiars'?'Open Familiars':'View agents';
+    el('plugin-detail-open').disabled=lifecycle!=='active';if(lifecycle!=='active')el('plugin-detail-open').hidden=true;
+    el('plugin-detail-note').hidden=p.kind==='workspace'||p.kind==='task-manager';
+    el('plugin-detail-docs').hidden=!p.docs;if(p.docs)el('plugin-detail-docs').href=p.docs;el('plugin-detail-download').hidden=!['agent','familiars','github'].includes(p.kind)||c.desktop;
+  }
+  async function refresh(){if(checking)return;const token=++generation;error='';if(!openSesameBridge.available){agents=null;render();return;}checking=true;render();try{const result=await openSesameBridge.request('live.agents');if(token!==generation)return;if(!result||typeof result.claude!=='boolean'||typeof result.codex!=='boolean')throw Error('Update the desktop companion, then check again.');agents={claude:result.claude,codex:result.codex};}catch(e){if(token===generation){agents=null;error='Could not check local agents. Reopen the desktop companion, then refresh.';}}finally{if(token===generation){checking=false;render();}}}
+  el('plugin-detail-close').addEventListener('click',()=>close());el('plugin-detail-main').addEventListener('click',()=>{const p=selected;if(p.kind==='workspace'){close(false);changeScenario(p.scenario);if(p.collection)el('projects-'+p.collection)?.click();}else if(p.kind==='task-manager'){close(false);window.OpenSesamePageWidgets?.open('builtin-task-manager');}else if(p.kind==='github'){close(false);window.OpenSesameGitHubMonitor?.open(lastFocus);}else if(p.kind==='familiars'){close(false);changeScenario('familiars');window.OpenSesameFamiliars?.connect();}else if(p.kind==='music'){close(false);window.OpenSesameMusicAuth.openFor(p.id,{host:pane,returnFocus:()=>pane.querySelector('[data-plugin="'+p.id+'"]')});}else if(p.kind==='feeds'){close(false);changeScenario('reading');el('reading-follow-new').click();}else if(openSesameBridge.available&&agents?.[p.id]){close(false);changeScenario('audio');el('live-agent').value=p.id;el('live-agent').dispatchEvent(new Event('change',{bubbles:true}));el('capture-input').focus();}else refresh();});
+  el('plugin-detail-open').addEventListener('click',()=>{const p=selected;close(false);if(p.kind==='workspace'){changeScenario(p.scenario);if(p.collection)el('projects-'+p.collection)?.click();}else if(p.kind==='task-manager')window.OpenSesamePageWidgets?.open('builtin-task-manager');else if(p.kind==='github')window.OpenSesameGitHubMonitor?.open(lastFocus);else if(p.kind==='music'){changeScenario(p.id==='youtube'?'youtube':'music');if(p.id!=='youtube')OpenSesameMusic.choose(p.id);}else changeScenario(p.kind==='feeds'?'reading':p.kind==='familiars'?'familiars':'agent-monitor');});
+  el('plugins-desktop-action').addEventListener('click',()=>{if(openSesameBridge.available)changeScenario('agent-monitor');else{el('plugins-desktop-download').click();}});
+  el('plugins-refresh').addEventListener('click',refresh);el('plugins-search').addEventListener('input',()=>{page=0;render();});el('plugins-category').addEventListener('change',()=>{page=0;render();});el('plugins-connected').addEventListener('click',()=>{const b=el('plugins-connected');b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');page=0;render();});el('plugins-reset').addEventListener('click',()=>{el('plugins-search').value='';el('plugins-category').value='all';el('plugins-connected').setAttribute('aria-pressed','false');page=0;render();});
+  el('plugins-prev').addEventListener('click',()=>{page--;render();});el('plugins-next').addEventListener('click',()=>{page++;render();});
+  document.addEventListener('pointerdown',e=>{if(selected&&!el('plugin-detail').contains(e.target)&&!e.target.closest('[data-plugin]'))close(false);});
+  document.addEventListener('keydown',e=>{if(!selected)return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();close();}if(e.key==='Tab'){const nodes=[...el('plugin-detail').querySelectorAll('button,a')].filter(n=>!n.hidden&&!n.disabled&&n.getClientRects().length);if(e.shiftKey&&document.activeElement===nodes[0]){e.preventDefault();nodes.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===nodes.at(-1)){e.preventDefault();nodes[0].focus();}}},true);
+  function fit(){
+    if(pane.hidden)return;const area=el('plugins-results'),wide=area.clientWidth>=1000&&area.clientHeight>=460,columns=area.clientWidth>=760?3:2;
+    const next=wide?6:Math.max(columns,Math.min(6,Math.floor((area.clientHeight||240)/92)*columns)),layout=wide?'bento':columns===3?'wide':'compact';
+    pane.dataset.layout=layout;pane.dataset.density=area.clientHeight<580?'compact':'comfortable';if(next!==capacity){capacity=next;page=0;render();}
+  }
+  new ResizeObserver(fit).observe(el('plugins-results'));window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario==='plugins'){render();fit();if(agents===null)refresh();}else close(false);});window.addEventListener('open-sesame-github-changed',render);window.addEventListener('open-sesame-music-account-changed',render);window.addEventListener('open-sesame-familiars-changed',render);window.addEventListener('open-sesame-desktop-ready',refresh);window.addEventListener('open-sesame-desktop-disconnected',()=>{generation++;checking=false;agents=null;error='';render();});
+  window.addEventListener('open-sesame-widgets-changed',render);
+  window.OpenSesamePlugins={refresh};render();
+})();

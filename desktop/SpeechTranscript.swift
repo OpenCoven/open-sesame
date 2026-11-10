@@ -3,21 +3,24 @@ import Foundation
 // Recognition may return only the newest utterance after a pause. Timed results
 // replace their matching audio span; untimed partials replace only the open tail.
 struct OpenSesameSpeechTranscript {
+    struct Word { var text: String; var start: Double; var end: Double }
+    var words: [Word] { chunks.flatMap(\.words) }
     private struct Chunk {
         var text: String
         var start: Double?
         var end: Double?
         var sealed: Bool
+        var words: [Word]
     }
     private var chunks: [Chunk] = []
     var text: String { chunks.map(\.text).joined(separator: "\n") }
 
-    mutating func update(_ value: String, start: Double?, end: Double?, sealed: Bool) -> String {
+    mutating func update(_ value: String, start: Double?, end: Double?, sealed: Bool, words: [Word] = []) -> String {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return text }
         let start = start.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
         let end = end.flatMap { $0.isFinite && $0 >= (start ?? 0) ? $0 : nil }
-        let next = Chunk(text: value, start: start, end: end, sealed: sealed)
+        let next = Chunk(text: value, start: start, end: end, sealed: sealed, words: words.filter { $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.end >= $0.start })
         guard let last = chunks.last else { chunks.append(next); return text }
         if let start {
             // A cumulative/corrected result can cover several earlier utterances.

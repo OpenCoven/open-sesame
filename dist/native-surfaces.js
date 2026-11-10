@@ -62,11 +62,13 @@
     if(data.event==='webview.youtube'){
       record.snapshot=data.payload.snapshot||{};const callbacks=record.events;
       if(data.payload.type==='ready')callbacks?.onReady?.();else if(data.payload.type==='error')callbacks?.onError?.({data:data.payload.code});else callbacks?.onStateChange?.();
-    }else if(data.event==='webview.error')toast(data.message);
+    }else if(data.event==='webview.popout'){record.poppedOut=data.active===true;window.dispatchEvent(new Event('open-sesame-media-popout-changed'))}else if(data.event==='webview.error')toast(data.message);
   });
   for(const event of ['resize','open-sesame-layout','open-sesame-view-changed','open-sesame-rails-changed'])window.addEventListener(event,schedule);
   document.addEventListener('visibilitychange',schedule);document.addEventListener('scroll',schedule,true);
   new MutationObserver(schedule).observe(document.getElementById('widget-panel'),{attributes:true,childList:true,subtree:true,attributeFilter:['hidden','class','style','open']});
   window.addEventListener('pagehide',()=>{for(const record of [...records.values()])remove(record)});
-  window.OpenSesameNativeSurfaces={bookmark,youtube,sync:schedule};
+  async function popoutYouTube(){const record=records.get('youtube');if(!record)throw Error('Load a YouTube video first.');await request(record.poppedOut?'webview.dock':'webview.popout',record)}
+  async function popoutMusic(url){const record={id:'media-pip-'+(++sequence),generation:'player-'+Date.now().toString(36)};await request('webview.open',record,{url});await request('webview.popout',record)}
+  window.OpenSesameNativeSurfaces={bookmark,youtube,sync:schedule,popoutYouTube,popoutMusic,get youtubePoppedOut(){return records.get('youtube')?.poppedOut===true}};
 })();

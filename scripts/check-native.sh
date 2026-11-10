@@ -36,3 +36,9 @@ xcrun swiftc -o "$open_sesame_check/terminal-clipboard-tests" "$open_sesame_root
 
 xcrun swiftc -o "$open_sesame_check/image-export-tests" "$open_sesame_root/desktop/ImageExport.swift" "$open_sesame_root/desktop/tests/ImageExportTests.swift" -framework AppKit
 "$open_sesame_check/image-export-tests"
+
+xcrun swiftc -o "$open_sesame_check/speaker-diarization-tests" "$open_sesame_root/desktop/SpeakerDiarization.swift" "$open_sesame_root/desktop/tests/SpeakerDiarizationTests.swift" -framework AppKit -framework AVFoundation
+"$open_sesame_check/speaker-diarization-tests" "$(command -v python3)"
+
+xcrun swiftc -o "$open_sesame_check/local-media-player-tests" "$open_sesame_root/desktop/EmbeddedWebSurface.swift" "$open_sesame_root/desktop/LocalMediaPlayers.swift" "$open_sesame_root/desktop/tests/LocalMediaPlayersTests.swift" -framework AppKit -framework WebKit
+"$open_sesame_check/local-media-player-tests"

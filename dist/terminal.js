@@ -132,6 +132,13 @@
   };
   window.openSesameTerminalScreens=()=>Object.fromEntries([...mounted.values()].filter(r=>r.live&&r.term).map(r=>{const b=r.term.buffer.active;return [r.backendId,Array.from({length:Math.min(12,b.length)},(_,i)=>b.getLine(Math.max(0,b.length-12)+i)?.translateToString(true)||'').join('\n').slice(-8192)]}));
   window.openSesameAttachTerminal=async command=>{const p=makePane();p.mode='local';p.host='';p.user='';p.cwd='';p.launcher='bash';p.name='Agent terminal';p.task=command;commit(p);changeScenario('terminal');await connect(p,command)};
+  window.openSesameNewAgentTerminal=async({provider,cwd=''}={})=>{
+    const command={codex:'codex',claude:'claude',coven:'coven code',gemini:'gemini',aider:'aider',opencode:'opencode'}[provider];
+    if(!command||typeof cwd!=='string'||cwd.length>4096||/\0|[\r\n]/.test(cwd))throw Error('Choose a recognized local agent.');
+    if(window.OpenSesameWidgetLifecycle?.isActive('shells')===false)throw Error('Activate Shells in Widgets first.');
+    projectScope='all';const p=makePane();Object.assign(p,{mode:'local',host:'',user:'',cwd,launcher:'bash',name:provider+' · new session',task:command});commit(p);changeScenario('terminal');
+    if(!await connect(p,command))throw Error('The new agent shell could not open.');return true;
+  };
   function move(delta){const shown=visible();if(shown.length)select(shown[(shown.findIndex(p=>p.id===selected)+delta+shown.length)%shown.length].id)}
   function makePane(){const existing=current(),ssh=existing?.mode==='ssh';let number=panes.length+1;while(panes.some(p=>p.name==='Shell '+number))number++;return {id:newId(),name:'Shell '+number,launcher:'shell',mode:ssh?'ssh':'local',projectId:['all','inbox'].includes(projectScope)?'':projectScope,cwd:ssh?existing.cwd:'',host:ssh?existing.host:'',user:ssh?existing.user:'',url:''}}
   function commit(p){const index=panes.findIndex(n=>n.id===p.id);if(index<0)panes.push(p);else panes[index]=p;if(projectScope!=='all'&&p.projectId!==(projectScope==='inbox'?'':projectScope))switchProject(p.projectId||'inbox');selected=p.id;railPage=Math.floor(visible().findIndex(n=>n.id===p.id)/railCapacity);save()}
