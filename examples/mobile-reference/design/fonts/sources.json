@@ -1,0 +1,50 @@
+[
+  {
+    "family": "EB Garamond",
+    "style": "italic",
+    "weight": "400",
+    "file": "EBGaramond-italic-400.woff",
+    "source": "https://fonts.gstatic.com/s/ebgaramond/v33/SlGFmQSNjdsmc35JDF1K5GRwUjcdlttVFm-rI7e8QI96.ttf",
+    "sha256": "9d2ca86044b885d085059c7e3bed21d6e31456a81a47761e7ade8cd390ebe71d"
+  },
+  {
+    "family": "EB Garamond",
+    "style": "normal",
+    "weight": "400",
+    "file": "EBGaramond-normal-400.woff",
+    "source": "https://fonts.gstatic.com/s/ebgaramond/v33/SlGDmQSNjdsmc35JDF1K5E55YMjF_7DPuGi-6_RUAw.ttf",
+    "sha256": "934aa932b4bc1a75d883f7c3d4d5bbc8278e5e7fcc96d5440bbffd61050cf958"
+  },
+  {
+    "family": "Inter",
+    "style": "normal",
+    "weight": "300",
+    "file": "Inter-normal-300.woff",
+    "source": "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuOKfMZg.ttf",
+    "sha256": "d0f4bc7faca468376e3db9b5e57afcdc2192134c9ac82a9511f32767b56853a4"
+  },
+  {
+    "family": "Inter",
+    "style": "normal",
+    "weight": "400",
+    "file": "Inter-normal-400.woff",
+    "source": "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf",
+    "sha256": "1b08e7fc267a5c7e1d614100f604b83e7e8a0be241f0f288faa2b3ac93a683ba"
+  },
+  {
+    "family": "Inter",
+    "style": "normal",
+    "weight": "500",
+    "file": "Inter-normal-500.woff",
+    "source": "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf",
+    "sha256": "8c883f63b2c4157d997319f2c8bc6995ed4357ef371940d31ca159004a4aae63"
+  },
+  {
+    "family": "Inter",
+    "style": "normal",
+    "weight": "600",
+    "file": "Inter-normal-600.woff",
+    "source": "https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf",
+    "sha256": "e7a1aaf7eda9f2fad4131725fa556265ec75ca7b2d756260173a040363e8d4f7"
+  }
+]

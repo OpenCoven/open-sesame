@@ -1,0 +1,80 @@
+{
+  "version": "0.3.0",
+  "standaloneSha256": "f9fbd88673b3cdfc754540ad864fd58c34b47498bbae95c8e5d0555fb7de281a",
+  "sourceZipSha256": "5d4fc2401534ddf2350edc529c874bc26bdcaa695c1c66e3509fb38fe7d60274",
+  "brandCommit": "798e2f5f2f1a69f5d156ccc0a9aafc4f7da55fc8",
+  "files": {
+    "README.md": {
+      "sha256": "800991e64b1d08a6d6d7cef3285704c83dbc6719910c9e16b1df566f79d59ebb",
+      "bytes": 7875
+    },
+    "VERIFICATION.md": {
+      "sha256": "b79247f7bcf5645557e8377f37f2c635142aea03b2990bcdd1a854e15576b189",
+      "bytes": 5760
+    },
+    "package.json": {
+      "sha256": "ed6aceb7ff243f4371acdb683739c5ce09ce1f175d00e83aeb97f772d946d44c",
+      "bytes": 280
+    },
+    "design/luxe.css": {
+      "sha256": "5b5b576beb97bafe79f88181bfbfbbc00adceccf90faa4ac0859c97de7024f77",
+      "bytes": 21743
+    },
+    "dist/index.html": {
+      "sha256": "f9fbd88673b3cdfc754540ad864fd58c34b47498bbae95c8e5d0555fb7de281a",
+      "bytes": 453875
+    },
+    "scripts/apply-theme.mjs": {
+      "sha256": "22a6d001ae1243a473091235077c38393451d265c4b96284e6766258520886d7",
+      "bytes": 1768
+    },
+    "scripts/check.mjs": {
+      "sha256": "f0ce89891b6923cd60ee6fcb33764832d48ad9977be6dd447d37697d66f2ec3b",
+      "bytes": 5382
+    },
+    "design/brand/PROVENANCE.md": {
+      "sha256": "214f668efa2406fd96bcc9120d82259a32224ae04c69c274fe865166a542491f",
+      "bytes": 1182
+    },
+    "design/brand/mark.svg": {
+      "sha256": "3cc1d06c3f957221760984937715f6cde38ac9f69cfa1eb18041c4cbd935c078",
+      "bytes": 1492
+    },
+    "design/fonts/sources.json": {
+      "sha256": "9a20889930fcb25dcb46d11250cb9606d00626ed1a661634136c8f0e197d8dac",
+      "bytes": 1849
+    },
+    "design/fonts/inter-OFL.txt": {
+      "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+      "bytes": 4377
+    },
+    "design/fonts/Inter-normal-400.woff": {
+      "sha256": "ad453bce5beaebf22107eff91cc3218b90cf92fa8f9308a8e73b81bb310bc48b",
+      "bytes": 41820
+    },
+    "design/fonts/ebgaramond-OFL.txt": {
+      "sha256": "0985066662eb755ed3683ae5482a81a9195b49ce3f7e165cc2388b3dbece7dd7",
+      "bytes": 4398
+    },
+    "design/fonts/Inter-normal-600.woff": {
+      "sha256": "80b5e85cd7090cfefc31f10b2e6955a02887cc0661925ef1f922ea8d17d2511b",
+      "bytes": 43132
+    },
+    "design/fonts/Inter-normal-300.woff": {
+      "sha256": "841f044591e3632afff4e0dade49bcef4afa461d0715127e4db469d7cba74399",
+      "bytes": 42544
+    },
+    "design/fonts/EBGaramond-italic-400.woff": {
+      "sha256": "7b3ddcc2ef4f6f98780f57afa0d5be2ea066fb7e15abc747b4d525aa62543fa1",
+      "bytes": 50484
+    },
+    "design/fonts/Inter-normal-500.woff": {
+      "sha256": "f4404f45f2df17f1c461ef15252b737caf28a4168dadf9072fd9c895a8e99da1",
+      "bytes": 42852
+    },
+    "design/fonts/EBGaramond-normal-400.woff": {
+      "sha256": "4adf7f04630f483148068b37a1cc8bd879c2da6cd3dc682e1fa2acc7f46d753b",
+      "bytes": 50016
+    }
+  }
+}

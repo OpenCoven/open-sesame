@@ -6,6 +6,7 @@ This map follows the current source layout. Run commands from the repository roo
 
 | Surface | Entrypoints | Boundary |
 | --- | --- | --- |
+| Mobile design reference | [Preserved specimen](../examples/mobile-reference/README.md), [qualification guide](mobile-reference.md) | Offline scripted demo; excluded from production entrypoints and native resources; original model checks and byte parity run through [check-mobile-reference.mjs](../scripts/check-mobile-reference.mjs) |
 | Browser workspace | [dist/index.html](../dist/index.html), [app.js](../dist/app.js) | Ordered deferred scripts share globals and the DOM; this is authored source, without a framework build step |
 | Renderer RPC | [bridge.js](../dist/bridge.js) | Request IDs, pending replies, timeouts and native events; a browser flag or dormant WebSocket fallback does not enable a machine host |
 | Native host | [OpenSesame.swift](../desktop/OpenSesame.swift), [Authentication.swift](../desktop/Authentication.swift) | Login gates widget/bridge startup; trusted main-frame file origin and per-method checks gate requests |
