@@ -1,0 +1,47 @@
+# Proposed mobile capability and state contract
+
+This contract accompanies [ADR 001](adr-001-mobile-host.md). It specifies future behavior; no capability here is implemented or device-qualified by this documentation. [Canonical owners](source-inventory.md) remain authoritative. Track three independent facts: account session validity, host-supported operations, and companion peer/grant/connection state. A single `connected` flag cannot represent all three. Installation/activation is separate again: an installed widget may be unavailable or disconnected without losing its content/configuration.
+
+## Capability matrix
+
+“Available” below means the intended post-qualification state with all stated prerequisites, not current support. Local workspace access follows the ADR's verified, unexpired account policy. A signed-in account never grants a companion operation.
+
+| Surface | Local iOS/iPadOS milestone | Connected milestone | Denial/retention behavior |
+| --- | --- | --- | --- |
+| Today, notes/bookmarks/tasks and Projects | Available offline while unlocked after #37/#39 durable-write qualification; existing IDs, search, edit, completion and project links. | Same local owner; sync is not included. | Failed writes report unsaved state and retain draft; no false save acknowledgement or replacement with demo records. |
+| Focus plan/session | Available after #41 persistence and suspension/restart recovery. | No companion needed. | Stale clock/deadline recovery is explicit; no guaranteed background execution or notification claim. |
+| Widget catalog, installation, tool configuration and local saved data | Available for supported local components, with existing active/inactive/uninstalled lifecycle. | Network/provider operations separately require actual support and authority. | Unsupported operations show unavailable with reason; deactivation retires pending results and preserves content. A definition cannot grant methods. |
+| Account sign-in | Native public-client PKCE and verified session/Keychain adaptation under #38. | Independent of pairing or provider sign-in. | Expired/revoked account locks protected UI/work and preserves local data; transient offline status cannot unlock it. |
+| Familiar roster, conversation history and drafts | Disconnected; keep local drafts and label any retained snapshot stale. No fabricated identities/replies. | Available only after #42/#43 validate canonical peer, identity, history binding and current read authority. | Missing authority blocks fresh reads; cached history is dated/read-only and subject to explicit retention policy. Never display a cached roster as live. |
+| Familiar send/stream/cancel | Unavailable without the reviewed companion adapter. | Read-only execution first; explicit Send with exact familiar/conversation/session/revision and operation authorization, correlated events and authoritative terminal/receipt evidence. | Uncertain outcome enters reconciling; no automatic resend. Cancel is best effort until the authoritative host confirms it. Draft/text survives interruption. |
+| Full-access replies, identity/avatar mutation and permission answers | Unavailable. | Unavailable until separately reviewed request-bound approval and current-state validation exist for the selected transport. | Account login, prior pairing, widget installation and renderer permission fields confer no approval; revoked or stale proposals cannot be replayed. |
+| PTY/SSH, process control, host filesystem and computer actions | Unavailable; do not bundle or invoke the Mac Python/CLI service. | Excluded from the initial connected-familiar milestone. Any later remote operation needs its own bounded capability review. | Phone UI never advertises machine access from login or a native flag. No fallback to arbitrary RPC. |
+| Screen/system audio capture, Protected Share, desktop windows and native media accounts | Mac implementations are unavailable on iOS. | Companion pairing does not port these host features. | Imports, microphone, photos, notifications or media integrations require individual mobile adapters, permission handling and device/provider tests; browser preview is insufficient. |
+| Provider-backed widget reads and embedded web content | Unavailable unless the specific browser/native path is implemented and qualified; previously saved data can remain local. | Existing provider authorization is checked independently of companion authority. | Show disconnected/stale/error without token disclosure; external content has no privileged bridge. |
+| Android | Unavailable; minimum OS, host and package undecided. | Unavailable until separately implemented/qualified. | No Android support label from CSS, SDK types or portable verification. |
+
+## Connection and authority states
+
+These are UI projections of authoritative state, not a new permission/grant database. Network loss does not revoke a grant; network recovery cannot clear revocation. Capabilities and observations include owner/peer identity, generation/revision and freshness, so a delayed response from another connection cannot overwrite current state. Exact wire fields and storage are #42 design work, not a new protocol defined here.
+
+| State | Meaning and observable behavior | Allowed next action |
+| --- | --- | --- |
+| Available | Host supports the operation, account is valid where required, widget active, and required peer/grant/operation checks are current. | Enable only that operation. Server/native receiver still revalidates each request. |
+| Unavailable | Host lacks a required implementation or current operation is outside scope; includes mobile machine controls and unimplemented transport. | Explain the unsupported capability. Never offer login/pairing as a cure for missing implementation. |
+| Disconnected | Supported connection has no authenticated live channel (not paired, offline, host asleep or connection lost). | Preserve draft; explicitly connect to the configured peer. No implicit enrollment, endpoint substitution or automatic send. Local unlocked workspace still works. |
+| Stale | Retained roster/history/provider observation lacks current revision/freshness or belongs to a retired connection generation. | Label cached content and time; disable dependent sends/approvals and refresh from the authoritative owner. Do not promote delayed events to current state. |
+| Reconciling | Authenticated connection is recovering current grants, history and the outcome of an interrupted operation. A successful socket connection alone is insufficient. | Query original request/run receipt and canonical conversation revision; preserve pending input, block duplicate send and approval until resolved. Missing/expired receipt remains uncertain and requires explicit recovery, not retry under a new ID. |
+| Revoked | Authoritative account/device/grant state denies access, or peer/key/policy binding no longer matches. This is distinct from a network error. | Retire live channels, pending callbacks and approval UI; keep drafts/local workspace subject to account lock. Require explicit authorized recovery or re-pairing; never silently recreate trust or fall back to bearer/login authority. |
+
+Initial host boot starts unavailable/disconnected until capabilities and account state are established; widget or renderer preferences cannot advance it. Foreground/network recovery goes through connecting/authenticating and then reconciling where needed. Only fresh identity/authority and operation evidence yield available. Timeout/lost channel yields disconnected with affected data stale; explicit revocation overrides any cached success. A failed account refresh after expiry locks the workspace even if a companion socket is still reachable.
+
+## Acceptance scenarios for implementation
+
+Use these as a source-review checklist now and behavior tests in #38/#42/#44. They are not claims of executed mobile coverage.
+
+- With a verified unexpired account but no companion/network, capture/edit/complete/project-link and Focus recovery work locally; Console clearly remains disconnected.
+- With a native flag, signed-in account or installed widget but unsupported method, the native receiver refuses machine/companion work. A subframe, remote page, changed origin or unknown parameter cannot inherit authority.
+- During a send, lose network or background/terminate the renderer; restore the same draft, request and canonical conversation binding, reconcile authoritative outcome and prevent duplicate execution. A lost Stop response does not claim cancellation.
+- Change familiar/session/revision, deactivate the widget, sign out, or revoke the grant while results/approvals are pending; retire old generations and deny delayed mutations. Reconnect cannot resurrect a revoked grant or consume an old approval.
+- Deny local-network access, fail storage, corrupt a migration, or fill receipt capacity; surface the distinct problem, preserve recoverable content and refuse unsafe fallback. Never equate a permission denial with “no devices found” or a write error with success.
+- Keep local tests, hosted CI, compilation, fixture rendering, real-device accessibility/lifecycle, live-provider results and release evidence separate, pinned to the actual source/package. No one class closes another's gate.
