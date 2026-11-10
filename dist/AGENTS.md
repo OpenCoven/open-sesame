@@ -25,3 +25,5 @@ The checked-in create-markdown runtime comes from the [vendored tokenizer](../ve
 [mobile-shell.js](mobile-shell.js) owns responsive presentation over mounted panes; [mobile-model.js](mobile-model.js) derives Today from existing state. Keep native macOS modes excluded and preserve saved activity keys, capture ownership and page-widget identities. See the [mobile contract](../docs/mobile-shell.md); reference typography/mark and device qualification remain separate gates.
 
 Narrow mobile Projects uses the existing `libraryOpen` flag and [Projects owner](projects-overview.js) `closeDetails()` transition for collection/detail navigation. Keep save veto and focus return intact; do not add parallel item selection or persistence state in the mobile shell.
+
+Mobile Today task actions and Reader links call canonical owners. Familiar initial seals derive only from canonical IDs/display names, preserve custom avatar images and are decorative, never presence or permission. Keep the projection model loaded before familiar rendering; mobile CSS/roster orientation must restore desktop behavior when its scope ends.

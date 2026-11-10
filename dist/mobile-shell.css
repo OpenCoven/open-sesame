@@ -80,3 +80,116 @@ html.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded #widget-pane
  .open-sesame-mobile #widget-anchor #widget-panel #pane-plugins:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
  .open-sesame-mobile #widget-anchor #widget-panel #pane-plugins .plugins-results{min-height:180px;flex-shrink:0}
 }
+
+/* v0.3 presentation port from the supplied artifact f9fbd886: scoped product aliases only. */
+@font-face{font-family:"Open Sesame Mobile Serif";src:url("assets/mobile/eb-garamond-italic.ttf?v=bba2c4499c93") format("truetype");font-style:italic;font-weight:400 800;font-display:swap}
+html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-paper:#f0ede7;--mobile-accent:#cbbfdb;--mobile-line:#303034;--mobile-violet:#8e3dff}
+.open-sesame-mobile #widget-panel>.mobile-header{padding-inline:14px;min-height:64px;box-sizing:border-box}
+.open-sesame-mobile .mobile-header strong{font-size:1.625rem;letter-spacing:-.03em}
+.open-sesame-mobile .mobile-brand svg{width:25px;height:25px}
+.open-sesame-mobile #widget-panel .mobile-header button{font-size:.75rem}
+.open-sesame-mobile .mobile-today{padding:16px 14px 28px}
+.open-sesame-mobile .mobile-greeting{position:relative;margin:0 0 24px}
+.open-sesame-mobile .mobile-greeting-meta{display:flex;justify-content:space-between;gap:12px;margin:0 0 18px;font-size:.625rem;line-height:1.7;letter-spacing:.13em;text-transform:uppercase;color:#a8a4af}
+.open-sesame-mobile .mobile-greeting-meta>span:last-child{color:#b6a1c6}
+.open-sesame-mobile .mobile-greeting h1{font:400 2.8125rem/1.02 "Open Sesame Mobile Serif",Georgia,serif;letter-spacing:-.025em;margin:0;padding-right:45px;overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-greeting h1>span,.open-sesame-mobile .mobile-greeting h1>em{display:block}
+.open-sesame-mobile .mobile-greeting h1>em{color:var(--mobile-accent);font-weight:400}
+.open-sesame-mobile .mobile-doorway{position:absolute;right:0;top:42px;color:#776483;pointer-events:none}
+.open-sesame-mobile .mobile-doorway svg{width:42px;height:64px;stroke-width:.85}
+.open-sesame-mobile .mobile-aperture{fill:#b7a0c8;stroke:none}
+.open-sesame-mobile #widget-panel .mobile-capture-entry{display:flex;align-items:center;gap:12px;min-height:56px;width:100%;padding:10px 14px;background:#18171b;border:1px solid #38343d;border-left-color:#765294;border-radius:12px;color:var(--mobile-paper);font:inherit;font-size:.8125rem;text-align:left}
+.open-sesame-mobile .mobile-capture-entry svg{width:20px;height:20px;flex:none;color:#c5a3eb}
+.open-sesame-mobile .mobile-section-title{font-size:.8125rem;font-weight:500;line-height:1.5;margin:28px 0 12px}
+.open-sesame-mobile .mobile-today-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,7.5rem),1fr));gap:12px}
+.open-sesame-mobile #widget-panel .mobile-today-cards>.mobile-card{position:relative;min-height:176px;padding:16px;border-radius:14px;border-color:#353239;gap:14px;justify-content:space-between}
+.open-sesame-mobile .mobile-today-cards>.mobile-card>strong{font-family:"Open Sesame Mobile Sans",system-ui,sans-serif;font-size:.625rem;line-height:1.7;font-weight:400;letter-spacing:.08em;text-transform:uppercase}
+.open-sesame-mobile .mobile-focus-card>span{font-size:2.5rem;font-weight:300;line-height:1.2;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.open-sesame-mobile #widget-panel .mobile-today-cards>.mobile-note-card{background:#ddd6e1;color:#302637;border-color:#ddd6e1}
+.open-sesame-mobile .mobile-note-card>span{font-family:"Open Sesame Mobile Serif",Georgia,serif;font-style:italic;font-size:1.4375rem;line-height:1.08;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden}
+.open-sesame-mobile .mobile-note-card>small{font-size:.625rem;color:#5d5266;line-height:1.5}
+.open-sesame-mobile .mobile-note-card:after{content:'';position:absolute;top:21px;right:17px;width:4px;height:4px;border:1px solid #807087;transform:rotate(45deg);pointer-events:none}
+.open-sesame-mobile .mobile-note-card>strong{padding-right:10px}
+.open-sesame-mobile #widget-panel .mobile-summary-link{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:50px;padding:10px 0;margin-top:20px;border:0;border-bottom:1px solid var(--mobile-line);border-radius:0;background:transparent}
+.open-sesame-mobile .mobile-summary-link>strong{font-family:inherit;font-size:.8125rem;line-height:1.5;font-weight:500}
+.open-sesame-mobile .mobile-summary-link>span{font-size:.6875rem;line-height:1.6;color:#c1bdc7;text-align:right}
+.open-sesame-mobile .mobile-task-row{display:flex;gap:8px;align-items:center;min-height:75px;border-bottom:1px solid var(--mobile-line)}
+.open-sesame-mobile #widget-panel .mobile-task-check{display:grid;place-items:center;flex:none;width:38px;min-height:48px;background:none;border:0;color:#81798c}
+.open-sesame-mobile .mobile-task-check svg{width:18px;height:18px;border:1px solid currentColor;border-radius:50%;box-sizing:border-box;padding:3px}
+.open-sesame-mobile .mobile-task-check svg path{visibility:hidden}
+.open-sesame-mobile #widget-panel .mobile-task-open{flex:1;min-width:0;min-height:60px;padding:12px 0;background:none;border:0;color:var(--mobile-paper);text-align:left;font:inherit}
+.open-sesame-mobile .mobile-task-open>span{display:block;font-size:.8125rem;line-height:1.65;overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-task-open>small{display:block;margin-top:5px;font-size:.625rem;line-height:1.6;letter-spacing:.08em;text-transform:uppercase;color:#a8a4af}
+.open-sesame-mobile #widget-panel .mobile-familiar-entry{display:flex;align-items:center;gap:16px;width:100%;min-height:80px;padding:16px 13px;margin:26px 0 0;text-align:left;border:1px solid #403747;border-left-color:#87679e;border-radius:14px;background:#19151e;color:var(--mobile-paper)}
+.open-sesame-mobile .mobile-familiar-entry strong{display:block;font:400 1.25rem/1.2 "Open Sesame Mobile Serif",Georgia,serif}
+.open-sesame-mobile .mobile-familiar-entry small{display:block;font-size:.625rem;line-height:1.7;margin-top:5px;color:#c1bdc7}
+.open-sesame-mobile .mobile-familiar-seal{display:grid;place-items:center;position:relative;flex:none;width:38px;height:42px;border:1px solid #8b729d;border-radius:50% 50% 42% 42%;font:italic 1.625rem/1 "Open Sesame Mobile Serif",Georgia,serif;color:#d9c8e8}
+.open-sesame-mobile [data-seal-shape=square]{border-radius:8px;border-color:#85889a;color:#c3c6d4}
+.open-sesame-mobile [data-seal-shape=circle]{border-radius:50%;border-color:#9a8b78;color:#d3c3ac}
+.open-sesame-mobile .mobile-familiar-seal:after{content:'';position:absolute;bottom:-3px;left:calc(50% - 2px);width:4px;height:4px;border:1px solid currentColor;background:var(--mobile-base);transform:rotate(45deg)}
+.open-sesame-mobile #widget-panel .mobile-navigation button{position:relative;border-radius:0;color:#a6a0ae}
+.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{border-color:transparent;background:transparent;color:#e3d8ef}
+.open-sesame-mobile .mobile-navigation [aria-current=page]:before{content:'';position:absolute;top:0;left:calc(50% - 3.5px);width:7px;height:3px;background:var(--mobile-violet)}
+.open-sesame-mobile .mobile-navigation svg:has(use){fill:currentColor;stroke:none}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar:not(:has(img)){position:relative;display:grid;place-items:center;flex:none;border:1px solid #8b729d;border-radius:50% 50% 42% 42%;font-size:0;color:#d9c8e8;background:transparent}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar:not(:has(img))>svg{display:none}
+.open-sesame-mobile .familiar-avatar:not(:has(img)):before{content:attr(data-initial);font:italic 1.125rem/1 "Open Sesame Mobile Serif",Georgia,serif}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar[data-seal-shape=square]:not(:has(img)){border-radius:8px;border-color:#85889a;color:#c3c6d4}
+.open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar[data-seal-shape=circle]:not(:has(img)){border-radius:50%;border-color:#9a8b78;color:#d3c3ac}
+.open-sesame-mobile #widget-panel :is(.familiar-welcome>strong,.plugin-copy>strong){font-family:"Open Sesame Mobile Serif",Georgia,serif;font-weight:400}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-clock-row{border:0;background:transparent;padding:12px 0}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-clock-face{position:relative;border:1px solid #443a4b;border-radius:50%;aspect-ratio:1;width:min(100%,235px);height:auto;justify-self:center;align-self:center}
+.open-sesame-mobile .focus-clock-face:before{content:'';position:absolute;top:-3px;left:calc(50% - 3px);width:6px;height:6px;background:var(--mobile-base);border:1px solid #c9b4dd;transform:rotate(45deg);pointer-events:none}
+@media(max-width:360px){.open-sesame-mobile .mobile-header strong{font-size:1.4375rem}.open-sesame-mobile .mobile-greeting h1{font-size:2.5625rem}.open-sesame-mobile #widget-panel .mobile-today-cards>.mobile-card{min-height:165px;padding:13px}}
+@media(forced-colors:active){
+ .open-sesame-mobile #widget-panel :is(.mobile-note-card,.mobile-familiar-entry){background:Canvas;color:CanvasText;border-color:CanvasText}
+ .open-sesame-mobile .mobile-note-card>small,.open-sesame-mobile .mobile-summary-link>span,.open-sesame-mobile .mobile-familiar-entry small{color:CanvasText}
+ .open-sesame-mobile .mobile-navigation [aria-current=page]:before{background:Highlight}
+ .open-sesame-mobile .mobile-doorway{color:GrayText}.open-sesame-mobile .mobile-aperture{fill:none}
+ .open-sesame-mobile #widget-panel .familiar-avatar,.open-sesame-mobile .mobile-familiar-seal{color:CanvasText;border-color:CanvasText}
+}
+.open-sesame-mobile #widget-anchor #widget-panel .mobile-summary-link{border:0;border-bottom:1px solid var(--mobile-line);border-radius:0;background:transparent}
+.open-sesame-mobile #widget-anchor #widget-panel .mobile-capture-entry{justify-content:flex-start}
+.open-sesame-mobile .mobile-focus-card{container-type:inline-size}
+.open-sesame-mobile .mobile-focus-card>span{font-size:min(2.5rem,35cqw);white-space:nowrap}
+.open-sesame-mobile .mobile-focus-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;font-size:.625rem;line-height:1.6;color:#a8a4af}
+.open-sesame-mobile .mobile-focus-footer>span{max-width:85px}
+.open-sesame-mobile .mobile-focus-footer i{display:grid;place-items:center;flex:none;width:28px;height:28px;border:1px solid #5b5067;border-radius:50%}
+.open-sesame-mobile .mobile-focus-footer svg{width:12px;height:12px}
+.open-sesame-mobile .mobile-focus-footer>span{font-size:inherit;line-height:inherit}
+.open-sesame-mobile .mobile-brand-period{color:var(--mobile-violet)}
+.familiar-intro-seal{display:none}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #familiars-workspace{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto minmax(0,1fr);gap:12px}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiars-workspace.rail-collapsed{grid-template-rows:minmax(0,1fr)}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-rail:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,36%);grid-template-rows:auto auto;gap:8px;padding:0 0 10px;border-right:0;border-bottom:1px solid var(--mobile-line);max-height:145px}
+ .open-sesame-mobile #widget-panel #familiar-rail>header{grid-column:1;grid-row:1;min-width:0}
+ .open-sesame-mobile #widget-panel #familiar-search{grid-column:2;grid-row:1;min-width:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-list{display:flex;flex-direction:row;grid-column:1/-1;grid-row:2;gap:8px;min-height:61px;max-height:74px;overflow-x:auto;overflow-y:hidden}
+ .open-sesame-mobile #widget-panel #familiar-list:empty{display:none!important}
+ .open-sesame-mobile #widget-panel #familiar-roster-empty{grid-column:1/-1;grid-row:2;margin:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-list>.familiar-row{flex:0 0 auto;min-width:120px;max-width:190px;min-height:61px;border-radius:10px;padding:9px;gap:10px}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-list>.familiar-row[aria-selected=true]{background:#241b2c;border-color:#9273aa;box-shadow:none}
+ .open-sesame-mobile #widget-panel #familiar-rail-resize{display:none!important}
+ .open-sesame-mobile #widget-panel #familiar-thread{width:100%;min-width:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-thread-header{flex-wrap:nowrap}
+ .open-sesame-mobile #widget-anchor #widget-panel #familiar-thread-header>div{flex-basis:auto;min-width:0}
+ .open-sesame-mobile #widget-panel #familiar-compose{width:100%;min-width:0;box-sizing:border-box}
+ .open-sesame-mobile #widget-panel #familiar-chat-empty{align-items:center;text-align:center}
+ .open-sesame-mobile #widget-panel .familiar-intro-seal:not([hidden]){display:grid;width:52px;height:60px;font-size:2.3125rem;margin:16px auto 22px}
+ .open-sesame-mobile #widget-panel #familiar-chat-empty>i{display:none}
+ .open-sesame-mobile #widget-panel #familiar-chat-empty>strong{font:400 2.125rem/1.1 "Open Sesame Mobile Serif",Georgia,serif}
+}
+@media(max-width:600px) and (max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #familiars-workspace:not(.rail-collapsed){grid-template-rows:minmax(0,1fr)}
+ .open-sesame-mobile #widget-panel #familiars-workspace:not(.rail-collapsed)>#familiar-thread{display:none}
+ .open-sesame-mobile #widget-panel #familiar-rail:not([hidden]){max-height:none;min-height:0;overflow:auto}
+}
+.open-sesame-mobile .mobile-greeting-meta{flex-wrap:wrap}
+.open-sesame-mobile .mobile-doorway{top:auto;bottom:0}
+
+/* Allow enlarged text and font fallback to wrap the header without covering Capture. */
+.open-sesame-mobile #widget-panel>.mobile-header{flex-wrap:wrap;padding-block:8px}
+.open-sesame-mobile .mobile-brand{flex:1 1 180px}
+.open-sesame-mobile .mobile-brand strong{min-width:0;overflow-wrap:anywhere}
+.open-sesame-mobile #widget-panel .mobile-header button{flex:none}

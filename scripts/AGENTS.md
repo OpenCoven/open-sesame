@@ -17,3 +17,5 @@ Markdown tokenizer changes require [check-markdown-redos.mjs](check-markdown-red
 The optional [mobile browser fixture](fixtures/mobile-browser.mjs) blocks external requests and qualifies the authored renderer with synthetic items in Chromium/WebKit. It requires an owned loopback static server and must not be used as device or native acceptance; see the [mobile check contract](../docs/mobile-shell.md#checks).
 
 [Mobile transport lifecycle](fixtures/mobile-transport.mjs) substitutes only the test transport while retaining real xterm/Coven client/UI owners; [mobile pane layout](fixtures/mobile-pane-layout.mjs) checks narrow Projects editing/Back and large text. Both use the same owned loopback fixture server and must remain explicitly synthetic. Do not turn their in-memory responses into production capability or identity state.
+
+[Mobile visual checks](fixtures/mobile-visual.mjs) compare reference-derived presentation with real production models and poisoned prototype storage. Keep prototype content confined to fixtures and the independently owned reference; do not weaken real-client/navigation assertions to obtain a visual pass.

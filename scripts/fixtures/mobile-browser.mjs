@@ -36,7 +36,7 @@ for(const [name,type] of Object.entries({chromium,webkit})){
    items=[{id:'fixture-note',kind:'note',text:'Literal <img src=x onerror=alert(1)>',updatedAt:1},{id:'fixture-task',kind:'task',text:'Task',done:false},{id:'fixture-bookmark',kind:'bookmark',text:'Read',url:'https://example.org',readingLater:true}];saveItems();
    focusRemaining=123;renderFocus();
   });
-  await page.waitForFunction(()=>document.querySelector('.mobile-card').textContent.includes('Literal <img'));
+  await page.waitForFunction(()=>document.querySelector('.mobile-note-card').textContent.includes('Literal <img'));
   assert.equal(await page.locator('.mobile-card img').count(),0);
   assert.match(await page.locator('.mobile-today').innerText(),/1 open · 0 completed/);
   assert.match(await page.locator('.mobile-today').innerText(),/1 saved for later/);

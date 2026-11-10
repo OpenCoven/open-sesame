@@ -76,4 +76,4 @@ For a focused JavaScript check, run `node scripts/check-NAME.mjs`. For a focused
 
 ## Shared mobile presentation
 
-[Mobile shell](../dist/mobile-shell.js), [projection model](../dist/mobile-model.js) and [scoped CSS](../dist/mobile-shell.css) reuse the existing renderer owners. See the [ownership and acceptance contract](mobile-shell.md), [projection checks](../scripts/check-mobile-shell.mjs) and [optional browser fixture](../scripts/fixtures/mobile-browser.mjs).
+[Mobile shell](../dist/mobile-shell.js), [projection model](../dist/mobile-model.js) and [scoped CSS](../dist/mobile-shell.css) reuse the existing renderer owners. See the [ownership and acceptance contract](mobile-shell.md), [projection checks](../scripts/check-mobile-shell.mjs) and [optional browser fixture](../scripts/fixtures/mobile-browser.mjs) and [reference presentation fixture](../scripts/fixtures/mobile-visual.mjs).

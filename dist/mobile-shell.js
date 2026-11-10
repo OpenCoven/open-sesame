@@ -12,18 +12,27 @@
   const lockup=make('span','mobile-brand'),mark=document.createElementNS('http://www.w3.org/2000/svg','svg');
   mark.setAttribute('viewBox','0 0 212 212');mark.setAttribute('aria-hidden','true');
   mark.innerHTML='<use href="assets/mobile/opencoven-mark.svg?v=3cc1d06c3f95#mark"/>';
-  lockup.append(mark,brand);header.append(lockup,capture);
+  const period=make('span','mobile-brand-period','.');period.setAttribute('aria-hidden','true');brand.append(period);lockup.append(mark,brand);header.append(lockup,capture);
   const home=make('section','mobile-today');home.id='mobile-today';home.tabIndex=-1;home.setAttribute('aria-label','Today');
-  const heading=make('h1','','Today'),intro=make('p','','A little room for what matters.'),cards=make('div','mobile-today-cards');home.append(heading,intro,cards);
+  const greeting=make('header','mobile-greeting'),meta=make('p','mobile-greeting-meta'),date=make('span'),maker=make('span','','OpenCoven');meta.append(date,maker);
+  const heading=make('h1'),line=make('span','','Your space,'),accent=make('em','','within reach.');heading.append(line,accent);
+  const doorway=make('span','mobile-doorway');doorway.setAttribute('aria-hidden','true');
+  doorway.innerHTML='<svg viewBox="0 0 64 84" fill="none" stroke="currentColor"><path d="M10 78V35a22 22 0 0 1 44 0v43M18 78V36a14 14 0 0 1 28 0v42M5 78h54"/><path class="mobile-aperture" d="m32 38 4 6-4 6-4-6z"/></svg>';
+  greeting.append(meta,heading,doorway);
+  const homeCapture=make('button','mobile-capture-entry');homeCapture.type='button';homeCapture.setAttribute('aria-haspopup','dialog');homeCapture.innerHTML=icon('plus');homeCapture.append(make('span','','Capture a thought…'));homeCapture.addEventListener('click',openCapture);
+  const essentials=make('h2','mobile-section-title','Your essentials'),cards=make('div','mobile-today-cards');home.append(greeting,homeCapture,essentials,cards);
   function card(label,action){const b=make('button','mobile-card'),title=make('strong','',label),detail=make('span','');b.type='button';b.append(title,detail);b.addEventListener('click',action);cards.append(b);return {button:b,title,detail}}
-  const note=card('Latest note',()=>{const n=source().latest;if(n&&navigate('projects')){el('projects-note').click();openItem(n.id)}});
-  const tasks=card('Tasks',()=>{if(navigate('projects'))el('projects-task').click()});
-  const focus=card('Focus',()=>{if(navigate('focus'))panel.querySelector('button[data-focus-view=agenda]').click()});
-  const reader=card('Reading',()=>{if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');const later=panel.querySelector('[data-reading-scope=later]');later.click();sync();later.focus({preventScroll:true})});
+  const focus=card('Focus',()=>{if(navigate('focus'))panel.querySelector('button[data-focus-view=agenda]').click()});focus.button.classList.add('mobile-focus-card');const focusFooter=make('small','mobile-focus-footer'),focusHint=make('span'),focusGlyph=make('i');focusFooter.append(focusHint,focusGlyph);focus.button.append(focusFooter);
+  const note=card('Latest note',()=>{const n=source().latest;if(!n){openCapture({currentTarget:note.button});return}if(navigate('projects')){el('projects-note').click();openItem(n.id)}});note.button.classList.add('mobile-note-card');
+  const noteProject=make('small','');note.button.append(noteProject);
+  const tasks=card('Tasks',()=>{if(navigate('projects'))el('projects-task').click()});tasks.button.classList.add('mobile-summary-link');
+  const taskSection=make('section','mobile-task-section'),taskList=make('div','mobile-task-list');taskSection.setAttribute('aria-label','Today’s tasks');taskSection.append(tasks.button,taskList);home.append(taskSection);
+  const familiar=make('button','mobile-familiar-entry'),familiarSeal=make('span','mobile-familiar-seal'),familiarCopy=make('span'),familiarTitle=make('strong','','A familiar, by your side.'),familiarStatus=make('small');familiar.type='button';familiarSeal.setAttribute('aria-hidden','true');familiarCopy.append(familiarTitle,familiarStatus);familiar.append(familiarSeal,familiarCopy);familiar.addEventListener('click',()=>{if(navigate('console')){el('agents-familiars').click();el('agents-familiars').focus({preventScroll:true})}});home.append(familiar);
+  const reader=card('Reading',()=>{if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');const later=panel.querySelector('[data-reading-scope=later]');later.click();window.openSesameReading?.openSaved(source().reading.links?.[0]?.id);sync();later.focus({preventScroll:true})});reader.button.classList.add('mobile-summary-link','mobile-reading-link');home.append(reader.button);
   const nav=make('nav','mobile-navigation');nav.setAttribute('aria-label','Mobile destinations');
   const buttons=new Map();
   for(const [id,label,glyph] of [['today','Today','compass'],['projects','Projects','items'],['widgets','Widgets','plugins'],['focus','Focus','focus'],['console','Console','terminal']]){
-    const b=make('button','');b.type='button';b.innerHTML=icon(glyph);b.append(make('span','',label));b.dataset.mobileDestination=id;b.addEventListener('click',()=>navigate(id));nav.append(b);buttons.set(id,b);
+    const b=make('button','');b.type='button';b.innerHTML=id==='console'?mark.outerHTML:icon(glyph);b.append(make('span','',label));b.dataset.mobileDestination=id;b.addEventListener('click',()=>navigate(id));nav.append(b);buttons.set(id,b);
   }
   panel.prepend(header);panel.append(home,nav);
   const itemsBack=make('button','mobile-items-back','Back to items');itemsBack.id='mobile-items-back';itemsBack.type='button';itemsBack.hidden=true;
@@ -32,11 +41,26 @@
   });
   el('note-detail').prepend(itemsBack);
   function source(){return M.today({items:items.filter(n=>inProject(n)),workflow:OpenSesameItemWorkflow,focus:{remaining:focusRemaining,running:focusRunning},reading:window.openSesameReading?.summary()||{count:0}})}
+  let taskSignature='';
   function updateToday(){
-    const data=source();note.detail.textContent=data.latest?thoughtTitle(data.latest):'Your next thought starts here.';note.button.disabled=!data.latest;
+    const data=source();date.textContent=new Intl.DateTimeFormat(undefined,{weekday:'long',month:'short',day:'numeric'}).format(new Date());
+    note.detail.textContent=data.latest?(OpenSesameItemWorkflow.excerpt(data.latest.body)||thoughtTitle(data.latest)):'What’s on your mind?';note.button.disabled=false;note.button.setAttribute('aria-label',data.latest?'Latest note: '+thoughtTitle(data.latest):'Capture your first note');noteProject.textContent=data.latest?projectName(data.latest.projectId):'Your next idea';
     tasks.detail.textContent=data.tasks.open+' open · '+data.tasks.done+' completed';
-    focus.detail.textContent=(data.focus.running?'In progress · ':'Ready · ')+time(data.focus.remaining);
-    reader.detail.textContent=data.reading.count+' saved for later · Open Reader';
+    focus.detail.textContent=time(data.focus.remaining);focusHint.textContent=data.focus.running?'In your own rhythm':'Make space to begin';focusGlyph.innerHTML=icon(data.focus.running?'pause':'play');focus.button.setAttribute('aria-label','Focus · '+(data.focus.running?'In progress · ':'Ready · ')+time(data.focus.remaining));
+    reader.detail.textContent=data.reading.count+' saved for later'+(data.reading.links?.[0]?' · '+data.reading.links[0].title:' · Open Reader');
+    const f=window.OpenSesameFamiliars?.snapshot(),selected=f?.connected?f.selected:null,seal=M.seal(selected);
+    familiarSeal.textContent=seal.initial||'◇';familiarSeal.dataset.sealShape=seal.shape;familiarStatus.textContent=selected?selected.displayName+' · Open conversation':f?.connected?'Choose a familiar':'Desktop not connected';
+    const signature=JSON.stringify(data.tasks.entries.map(n=>[n.id,thoughtTitle(n),n.projectId]));
+    if(signature!==taskSignature){
+      const focused=taskList.contains(document.activeElement);taskSignature=signature;taskList.replaceChildren();
+      for(const n of data.tasks.entries){
+        const row=make('div','mobile-task-row'),check=make('button','mobile-task-check'),open=make('button','mobile-task-open'),title=make('span','',thoughtTitle(n)),project=make('small','',projectName(n.projectId));
+        check.type=open.type='button';check.setAttribute('aria-label','Complete task: '+thoughtTitle(n));check.setAttribute('aria-pressed','false');check.innerHTML=icon('check');
+        check.addEventListener('click',()=>{const current=items.find(item=>item.id===n.id);if(current)setItemStatus(current,'done')});
+        open.addEventListener('click',()=>{if(navigate('projects')){el('projects-task').click();openItem(n.id)}});open.append(title,project);row.append(check,open);taskList.append(row);
+      }
+      if(focused)tasks.button.focus({preventScroll:true});
+    }
   }
   // Remember actual nodes and scroll offsets; switching never clones or reparents a pane.
   const positions=new Map();let current=null;
@@ -48,8 +72,8 @@
     sync();for(const [node,top,left] of positions.get(id)||[]){node.scrollTop=top;node.scrollLeft=left}
     buttons.get(id)?.focus({preventScroll:true});return true;
   }
-  function openCapture(){previousFocus=capture;window.OpenSesameLauncher.open();sync()}
-  function captureClosed(){sync();if(active)(previousFocus?.isConnected?previousFocus:capture).focus({preventScroll:true});previousFocus=null}
+  function openCapture(event){previousFocus=event?.currentTarget||capture;window.OpenSesameLauncher.open();sync()}
+  function captureClosed(){sync();if(active)(previousFocus?.isConnected&&previousFocus.getClientRects().length?previousFocus:capture).focus({preventScroll:true});previousFocus=null}
   capture.addEventListener('click',openCapture);
   function sync(){
     const next=query.matches&&!window.__OPEN_SESAME_NATIVE__;
@@ -63,12 +87,14 @@
         if(!inertBefore.has(n))inertBefore.set(n,n.inert);n.inert=true;
       }
     }else{for(const [n,inert] of inertBefore)n.inert=inert;inertBefore.clear()}
-    capture.setAttribute('aria-expanded',String(!!modal));
+    capture.setAttribute('aria-expanded',String(!!modal));homeCapture.setAttribute('aria-expanded',String(!!modal));
     current=today?'today':M.destination(state.scenario);
     for(const [id,b] of buttons){if(id===current)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
     const narrowDetail=active&&innerWidth<=600&&state.scenario==='items'&&!window.OpenSesamePageWidgets?.active&&libraryOpen&&!!currentItem();
     root.classList.toggle('mobile-project-detail',narrowDetail);itemsBack.hidden=!narrowDetail;
     if(narrowDetail)itemsBack.textContent='Back to '+({note:'notes',task:'tasks',bookmark:'bookmarks'})[itemKind(currentItem())];
+    if(state.scenario==='familiars')window.OpenSesameRails?.apply('familiars',{defaultOpen:!(active&&innerWidth<=600&&innerHeight<=420)});
+    el('familiar-list').setAttribute('aria-orientation',active&&innerWidth<=600?'horizontal':'vertical');
     if(active)updateToday();
   }
   function schedule(){if(!scheduled)scheduled=requestAnimationFrame(()=>{scheduled=0;sync()})}
@@ -78,8 +104,8 @@
     const nodes=[...footer.querySelectorAll('button,input,textarea,select,[tabindex="0"]')].filter(n=>!n.disabled&&n.getClientRects().length);
     if(!nodes.length)return;const first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
   });
-  for(const event of ['open-sesame-layout','open-sesame-items-changed','open-sesame-projects-changed','open-sesame-reading-changed','open-sesame-focus-tick'])window.addEventListener(event,schedule);
-  window.addEventListener('open-sesame-view-changed',()=>{today=false;sync()});
+  for(const event of ['open-sesame-layout','open-sesame-items-changed','open-sesame-projects-changed','open-sesame-reading-changed','open-sesame-focus-tick','open-sesame-familiars-changed'])window.addEventListener(event,schedule);
+  window.addEventListener('open-sesame-view-changed',()=>{const fromHome=home.contains(document.activeElement);today=false;sync();if(active&&fromHome)(buttons.get(M.destination(state.scenario))||capture).focus({preventScroll:true})});
   query.addEventListener('change',()=>{sync();viewport()});window.addEventListener('resize',viewport);window.visualViewport?.addEventListener('resize',viewport);window.visualViewport?.addEventListener('scroll',viewport);
   window.OpenSesameMobile={navigate,openCapture,captureClosed,get active(){return active}};
   sync();viewport();

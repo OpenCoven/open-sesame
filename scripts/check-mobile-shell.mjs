@@ -14,3 +14,11 @@ assert.equal(result.latest.id,'old');assert.equal(result.tasks.open,0);assert.eq
 assert.equal(M.today({items:[],workflow:W,focus:{},reading:{count:0}}).latest,null);
 for(const [scenario,destination] of [['items','projects'],['plugins','widgets'],['focus','focus'],['terminal','console'],['familiars','console'],['computer-agent','console'],['reading','today'],['music','today']])assert.equal(M.destination(scenario),destination);
 console.log('Mobile Today derives live canonical items, archive semantics, focus and reading without prototype persistence.');
+const seal=M.seal({id:'real-id',displayName:'Zoë Marin'});
+assert.equal(seal.initial,'Z');assert(['shield','square','circle'].includes(seal.shape));
+assert.equal(M.seal({id:'real-id',displayName:'Another name'}).shape,seal.shape,'Decorative shape derives from canonical ID, never names or demo fixtures');
+assert.equal(M.seal({id:'unicode',displayName:'👩🏽‍💻 helper'}).initial,'👩🏽‍💻');
+assert.equal(M.seal(null).initial,'');
+const projected=M.today({items,workflow:W,focus:{},reading:{count:0}});assert.deepEqual(Array.from(projected.tasks.entries),[],'Completed tasks never remain actionable in Today');
+
+const html=fs.readFileSync('dist/index.html','utf8');assert(html.includes('mobile-model.js')&&html.indexOf('mobile-model.js')<html.indexOf('familiars.js'),'Presentation projection must load before familiar rendering consumes it');

@@ -14,8 +14,8 @@ function fixtureBridge(){
   if(method==='terminal.close'){terminals.delete(params.id);return Promise.resolve(true)}
   if(['terminal.resize','terminal.input','coven.permissions.cancel'].includes(method))return Promise.resolve(true);
   if(method==='coven.status')return Promise.resolve({available:true,transport:'cli',sdkHealth:'ok',version:'Synthetic fixture'});
-  if(method==='coven.familiars')return Promise.resolve([{id:'fixture',name:'fixture',displayName:'Fixture familiar',description:'Synthetic lifecycle fixture · no provider',workspace:'/fixture',emoji:'◇'}]);
-  if(method==='coven.open')return Promise.resolve(JSON.parse(JSON.stringify(conversation)));
+  if(method==='coven.familiars')return Promise.resolve([{id:'fixture',name:'fixture',displayName:'Fixture familiar',description:'Synthetic lifecycle fixture · no provider',workspace:'/fixture',emoji:'◇'},{id:'fixture-two',name:'second-fixture',displayName:'Zoë Marin',description:'Second synthetic identity',workspace:'/fixture',avatarUrl:document.createElement('canvas').toDataURL()}]);
+  if(method==='coven.open')return Promise.resolve(JSON.parse(JSON.stringify(params.familiarId==='fixture'?conversation:{...conversation,familiarId:params.familiarId,conversationId:'fixture-conversation-two',sessionId:'fixture-session-two',messages:[]})));
   if(method==='coven.send')return new Promise(resolve=>turns.set(params.runId,{params,resolve}));
   if(method==='coven.cancel'){const turn=turns.get(params.runId);if(turn){turn.resolve({runId:params.runId,events:[]});turns.delete(params.runId)}return Promise.resolve(true)}
   return Promise.reject(Error('Unavailable in deterministic transport fixture: '+method));
@@ -64,7 +64,7 @@ for(const [name,type]of Object.entries({chromium,webkit})){
   const calls=await page.evaluate(()=>__mobileTransportFixture.calls);
   assert.equal(calls.filter(c=>c.method==='coven.send').length,1);assert.equal(calls.filter(c=>c.method==='coven.open').length,1);assert.equal(calls.filter(c=>c.method==='coven.cancel').length,0);
   assert.match(await page.locator('#familiar-messages').innerText(),/Streaming while hidden/);
-  for(const [width,height]of [[320,640],[844,390],[390,844]]){
+  for(const [width,height]of [[320,640],[568,320],[844,390],[390,844]]){
    await page.setViewportSize({width,height});
    await page.locator('#familiar-message').fill('Next-turn draft while reply runs');
    await page.locator('#familiar-stop').click({trial:true,timeout:2000});
@@ -73,6 +73,16 @@ for(const [name,type]of Object.entries({chromium,webkit})){
   await page.evaluate(run=>__mobileTransportFixture.finish(run),run);await page.waitForFunction(()=>!OpenSesameCovenClient.busy);
   await page.waitForFunction(()=>document.getElementById('familiar-messages').textContent.includes('Finished synthetic reply'));
   assert.equal(await page.locator('#familiar-message').inputValue(),'Next-turn draft while reply runs');
+  const send=await page.locator('#familiar-send').boundingBox(),panel=await page.locator('#widget-panel').boundingBox();assert(send.x+send.width<=panel.x+panel.width-10,'Composer Send fits the phone content width');
+  assert.equal(await page.locator('#familiar-list').getAttribute('aria-orientation'),'horizontal');
+  assert.equal(await page.locator('#familiar-tab-fixture .familiar-avatar').getAttribute('data-initial'),'F');
+  const seal=await page.locator('#familiar-tab-fixture .familiar-avatar').evaluate(n=>({shape:n.dataset.sealShape,radius:getComputedStyle(n).borderTopLeftRadius}));
+  assert.equal(seal.radius,{shield:'50%',square:'8px',circle:'50%'}[seal.shape],'Canonical seal shape reaches the rendered avatar');
+  await page.locator('#familiar-tab-fixture').focus();await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(()=>OpenSesameFamiliars.snapshot().selected?.id==='fixture-two'&&document.getElementById('familiar-name').textContent==='Zoë Marin');
+  await page.locator('.familiar-intro-seal').waitFor({state:'visible'});
+  assert.equal(await page.locator('#familiar-tab-fixture-two .familiar-avatar img').count(),1,'Canonical custom avatar remains displayed');
+  assert.equal(await page.locator('.familiar-intro-seal').innerText(),'Z','Seal comes from the canonical display name, never a demo identity');
   assert.deepEqual(errors,[]);
   if(output){await fs.mkdir(output,{recursive:true});await page.screenshot({path:path.join(output,`transport-${name}.png`)})}
   receipts.push({browser:name,terminal:{sameSession:true,sameNode:true,opens:1,unintendedInput:0,closes:0},chat:{sameThread:true,sameHistoryNodes:true,sends:1,reopens:0,cancels:0,hiddenStream:true,nextDraft:true,scrollAnchor:true}});
