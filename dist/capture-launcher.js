@@ -30,8 +30,8 @@
     window.openSesameCapture?.hide();active=false;lastGeometry='';document.body.classList.remove('capture-launcher-open');
     bar.hidden=true;el('capture-launcher-exit').hidden=true;footer.removeAttribute('role');footer.removeAttribute('aria-modal');footer.setAttribute('aria-label','Quick capture');
     if(previous){state.size=previous.size;el('capture-type').value=previous.type;el('capture-input').placeholder=previous.placeholder;if(previous.label)el('capture-input').setAttribute('aria-label',previous.label);else el('capture-input').removeAttribute('aria-label')}
-    state.expanded=!!expand;previous=null;render();renderDraft();
-    if(state.expanded)el('capture-input').focus({preventScroll:true});
+    state.expanded=window.OpenSesameMobile?.active?true:!!expand;previous=null;render();renderDraft();
+    if(window.OpenSesameMobile?.active)window.OpenSesameMobile.captureClosed();else if(state.expanded)el('capture-input').focus({preventScroll:true});
   }
   function toggle(){active?close():open()}
   el('capture-launcher-open').addEventListener('click',open);

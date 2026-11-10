@@ -73,3 +73,7 @@ For a focused JavaScript check, run `node scripts/check-NAME.mjs`. For a focused
 `npm run check` includes the documentation navigation check. Run `npm run verify` for Mac scope or `npm run verify -- --portable` for explicit portable scope. Run only one verifier per worktree and freeze source during a run; the final fingerprint must match. See [development workflow](development-workflow.md#implement--verify--review) for evidence, and the actual [CI workflow](../.github/workflows/verify.yml) for selected versions and trigger conditions.
 
 [build-desktop-source.py](../scripts/build-desktop-source.py) writes the reproducible source archive, including the lockfile and versioned hooks; [build-macos.sh](../desktop/build-macos.sh) replaces the development bundle under `build/` without launching it. `npm run dev:macos` additionally opens that bundle. [The public auth build](../web/auth-entrypoint/build.mjs) writes only its dedicated generated web output. None of these commands installs to Applications, publishes a release, configures a domain or proves live acceptance. Follow the user's actual delivery authority.
+
+## Shared mobile presentation
+
+[Mobile shell](../dist/mobile-shell.js), [projection model](../dist/mobile-model.js) and [scoped CSS](../dist/mobile-shell.css) reuse the existing renderer owners. See the [ownership and acceptance contract](mobile-shell.md), [projection checks](../scripts/check-mobile-shell.mjs) and [optional browser fixture](../scripts/fixtures/mobile-browser.mjs).

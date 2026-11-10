@@ -1,0 +1,47 @@
+/* Mobile presentation tokens are scoped here; canonical desktop branding stays with flat-theme. */
+.mobile-header[hidden],.mobile-navigation[hidden],.mobile-today[hidden]{display:none!important}
+html.open-sesame-mobile{--mobile-paper:#eee9df;--mobile-accent:#c7b9dc;--mobile-base:#19191d;--mobile-raised:#222227;--mobile-line:#414047;--mobile-height:100dvh;--mobile-top:0px;background:var(--mobile-base);color:var(--mobile-paper)}
+.open-sesame-mobile body{margin:0;overflow:hidden}
+.open-sesame-mobile :is(.app-header,.sidebar,.workspace-heading,.preview-toolbar,.preview-footer,.bottom-bar,.wallpaper,.mac-menubar,.desktop-composition,.desktop-file,.desktop-dock,.exit-present,#menu-trigger,#compact-widget){display:none!important}
+.open-sesame-mobile :is(.app-body,.workspace,.preview-well,.desktop-frame,.desktop-viewport,.desktop){position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;transform:none!important;box-shadow:none!important;overflow:hidden!important}
+.open-sesame-mobile #widget-anchor.expanded{position:fixed!important;inset:var(--mobile-top) 0 auto!important;width:100%!important;height:var(--mobile-height)!important;transform:none!important;transition:none!important;border-radius:0!important}
+.open-sesame-mobile #widget-anchor:before,.open-sesame-mobile #widget-anchor:after{display:none!important}
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{display:flex!important;flex-direction:column;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;box-sizing:border-box;border:0;border-radius:0!important;padding:env(safe-area-inset-top) max(12px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px,env(safe-area-inset-left));background:var(--mobile-base);color:var(--mobile-paper);overflow:hidden;gap:8px}
+.open-sesame-mobile #widget-panel>.panel-top,.open-sesame-mobile #widget-panel>.application-toolbar,.open-sesame-mobile #frame-resize-layer{display:none!important}
+.open-sesame-mobile #widget-panel>.mobile-header{order:-2;display:flex;justify-content:space-between;align-items:center;flex:none;min-height:56px;gap:12px;border-bottom:1px solid var(--mobile-line)}
+.open-sesame-mobile .mobile-header strong{font-family:Georgia,serif;font-size:1.4rem;font-weight:500}
+.open-sesame-mobile #widget-panel :is(.mobile-header button,.mobile-navigation button,.mobile-card){color:var(--mobile-paper);background:transparent;border:1px solid var(--mobile-line);border-radius:8px;min-height:44px;white-space:normal;font:inherit}
+.open-sesame-mobile #widget-panel .mobile-header button{padding:8px 12px}
+.open-sesame-mobile #widget-panel>.mobile-navigation{order:20;flex:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;border-top:1px solid var(--mobile-line);padding-block:6px}
+.open-sesame-mobile #widget-panel .mobile-navigation button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 1px;border-color:transparent;font-size:.75rem;overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-navigation svg{width:20px;height:20px}
+.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{color:var(--mobile-accent);border-color:var(--mobile-line);background:var(--mobile-raised)}
+.open-sesame-mobile .mobile-today{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 2px 24px}
+.open-sesame-mobile .mobile-today h1{font:400 2.7rem/1.15 Georgia,serif;margin:0 0 8px}
+.open-sesame-mobile .mobile-today>p{font-size:1rem;line-height:1.6;margin:0 0 24px;color:#c4bec8}
+.open-sesame-mobile .mobile-today-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}
+.open-sesame-mobile #widget-panel .mobile-card{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:20px;text-align:left;background:var(--mobile-raised);overflow-wrap:anywhere}
+.open-sesame-mobile .mobile-card strong{font:400 1.5rem/1.2 Georgia,serif}
+.open-sesame-mobile .mobile-card span{font-size:1rem;line-height:1.5}
+.open-sesame-mobile #widget-panel button:focus-visible{outline:2px solid var(--mobile-accent);outline-offset:-2px}
+.open-sesame-mobile #widget-panel>.widget-capture-footer{flex:none;order:10;max-height:35%;overflow:auto}
+.open-sesame-mobile.mobile-today-open #widget-panel>:is(.widget-pane,#agents-workspace,#lockin-workspace,.widget-capture-footer){display:none!important}
+.open-sesame-mobile #widget-panel>:is(.widget-pane,#agents-workspace,#lockin-workspace){flex:1;min-height:0;max-height:none;min-width:0;width:100%;grid-column:auto;grid-row:auto}
+.open-sesame-mobile #widget-panel :is(.console-toolbar,.projects-toolbar,.focus-top){flex-wrap:wrap;height:auto;min-height:44px}
+.open-sesame-mobile #widget-panel :is(.console-mode-tabs,.projects-mode-tabs,.agents-mode-tabs,.focus-view-tabs){max-width:100%;overflow-x:auto;min-height:44px}
+.open-sesame-mobile #widget-panel :is(input,textarea,select){font-size:1rem}
+.open-sesame-mobile #widget-panel :is(.console-mode-tabs,.projects-mode-tabs,.agents-mode-tabs,.focus-view-tabs) button{min-height:44px}
+.open-sesame-mobile.mobile-capture-open #widget-panel>.widget-capture-footer{display:flex!important;flex-direction:column;position:absolute!important;inset:0!important;z-index:60;width:100%!important;height:100%!important;max-height:none!important;padding: max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));box-sizing:border-box;overflow:auto;background:var(--mobile-base)}
+.open-sesame-mobile.mobile-capture-open #capture-input{max-height:35dvh!important;min-height:44px}
+.open-sesame-mobile.mobile-capture-open #capture-form{flex:none;min-width:0}
+.open-sesame-mobile.mobile-capture-open #launcher-statusbar{margin-top:auto;flex-wrap:wrap;gap:8px}
+.open-sesame-mobile.mobile-capture-open #launcher-statusbar button{min-height:44px}
+.open-sesame-mobile.mobile-capture-open .launcher-keys{display:none}
+@media(prefers-reduced-motion:reduce){.open-sesame-mobile *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+@media(forced-colors:active){.open-sesame-mobile #widget-panel,.open-sesame-mobile #widget-panel .mobile-card{background:Canvas;color:CanvasText}.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{color:Highlight;border-color:Highlight}.open-sesame-mobile #widget-panel button:focus-visible{outline-color:Highlight}}
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{transform:none!important;--expanded-scale:1}
+.open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{display:flex!important}
+.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded{max-height:none!important;top:var(--mobile-top)!important}
+.open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{height:auto!important;flex:1;overflow:auto;min-height:100px}
+html.open-sesame-mobile body.capture-launcher-open #widget-anchor.expanded{inset:var(--mobile-top) 0 auto!important;width:100%!important;height:var(--mobile-height)!important;max-height:none!important;transform:none!important}
+html.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded #widget-panel>.widget-capture-footer{display:flex!important}

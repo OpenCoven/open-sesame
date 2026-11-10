@@ -24,3 +24,5 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 [Archived documents](archive/) preserve original conclusions and failures. In particular, [the November 8 work narrative](archive/2026-11-08-work-tracking-history.md) contains old branch/owner/status snapshots. Mutable task claims, remote snapshots and machine-specific receipts live under the common Git directory, outside the source package. Use the [current-state lookup](work-tracking.md#find-current-work) before acting on any historical continuation.
 
 Local tests, hosted checks, rendered browser observations, installed native operation, real providers, merge, release and deployment are distinct evidence. A historical host blocker can explain an old gap; it cannot prove that the current machine is still blocked. Verify the required prerequisite in the current session.
+
+[Shared mobile renderer](mobile-shell.md) documents navigation, Today projections, capture ownership and the pending reference/device gates.
