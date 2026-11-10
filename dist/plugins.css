@@ -190,5 +190,5 @@
 #widget-panel .plugin-detail .plugin-primary{min-height:36px;background:#c1b6d0;border:0;color:#211d29}
 #widget-panel .plugin-detail .plugin-secondary{min-height:32px;background:#ffffff03;border-color:#ffffff0c}
 #widget-panel .plugin-detail #plugin-detail-download{font-size:10px}
-#widget-panel .plugins-grid:has(>.plugin-card:only-child){grid-template-columns:minmax(0,420px);grid-template-rows:minmax(180px,240px);grid-auto-rows:240px;align-content:start}
-#widget-panel .plugin-card[data-kind=workspace] .plugin-description{display:none}
+#widget-panel #pane-plugins[data-layout] #plugins-grid[data-count="1"]{grid-template-columns:minmax(0,420px);grid-template-rows:minmax(180px,240px);grid-auto-rows:240px;align-content:start}
+#widget-panel #pane-plugins[data-layout] .plugin-card[data-kind=workspace] .plugin-description{display:none}
