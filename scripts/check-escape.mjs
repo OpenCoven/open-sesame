@@ -16,3 +16,9 @@ ctx.state.expanded=false;assert.equal(listener(event()),false);ctx.state.expande
 const terminal=fs.readFileSync('dist/terminal.js','utf8');let keyHook;const term={attachCustomKeyEventHandler:fn=>keyHook=fn};vm.runInNewContext(terminal.match(/term\.attachCustomKeyEventHandler\([^;]+;/)[0],{term,window});assert.equal(keyHook(event()),false);assert.equal(keyHook(event({key:'a'})),true);
 const swift=fs.readFileSync('desktop/OpenSesame.swift','utf8');assert.ok(swift.includes('event.keyCode == 53')&&swift.includes('self.panel.isKeyWindow')&&swift.includes('self.panel.attachedSheet == nil')&&swift.includes('window.OpenSesameEscape?.native()'));
 console.log('Escape collapses focused input/terminal/browser contexts, preserves modifier and IME keys, defers to dialogs/menus/resize, consumes xterm Escape, and routes native child views through the trusted dismissal stack. OS event delivery remains a native acceptance check.');
+
+let focusExits=0;window.OpenSesameContentFocus={active:true,exit(){focusExits++;this.active=false}};const collapsedBeforeFocus=collapsed;
+assert.equal(listener(event({type:'keyup'})),false);assert.equal(focusExits,0);
+assert.equal(listener(event({type:'keydown'})),true);assert.equal(focusExits,1);assert.equal(collapsed,collapsedBeforeFocus,'Escape restores content before collapsing the app');
+assert.equal(listener(event({type:'keyup'})),false);assert.equal(collapsed,collapsedBeforeFocus,'A retargeted terminal keyup cannot dismiss a second layer');
+console.log('Content-focus Escape priority and terminal keyup retargeting preserve the next dismissal layer.');

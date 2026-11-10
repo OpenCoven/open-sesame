@@ -2,11 +2,13 @@
 (()=>{
   const el=id=>document.getElementById(id);
   function handle(event){
+    if(event.type&&event.type!=='keydown')return false;
     if(event.key!=='Escape'||event.defaultPrevented||event.isComposing||event.keyCode===229||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey)return false;
     if(document.querySelector('dialog[open]')||window.OpenSesameFrame?.dragging)return false;
     if(!el('capture-url-row').hidden){event.preventDefault();event.stopImmediatePropagation();closeUrlEditor();el('attach-link').focus({preventScroll:true});return true}
     // Local menus/dialogs receive Escape before this final window-level fallback.
     if([...document.querySelectorAll('[role=dialog],[role=menu],[role=listbox]')].some(node=>!node.hidden&&node.getClientRects().length))return false;
+    if(window.OpenSesameContentFocus?.active){event.preventDefault();event.stopImmediatePropagation();window.OpenSesameContentFocus.exit();return true}
     if(!state.expanded&&!window.OpenSesameLauncher?.active)return false;
     event.preventDefault();event.stopImmediatePropagation();void window.OpenSesameWindow?.collapse({focus:true});return true;
   }

@@ -2,7 +2,7 @@
 (()=>{
   const el=id=>document.getElementById(id),controls=el('compact-media-controls');let busy=false;
   function target(){
-    const candidates=[window.OpenSesameMusic,window.OpenSesameYouTube,window.OpenSesameLocalMedia].filter(p=>typeof p?.snapshot==='function');
+    const candidates=[[window.OpenSesameMusic,window.OpenSesameMusic?.service],[window.OpenSesameYouTube,'youtube'],[window.OpenSesameLocalMedia,'local-media']].filter(([p,id])=>typeof p?.snapshot==='function'&&window.OpenSesameWidgetLifecycle?.isActive(id)!==false).map(([p])=>p);
     return candidates.find(p=>p.snapshot().playing)||candidates.find(p=>p.snapshot().loaded)||null;
   }
   function geometry(){const capturing=typeof audioSession!=='undefined'&&(audioSession.active||audioSession.starting||audioSession.stopping),active=!capturing&&state.layout==='notch'&&(target()?.snapshot().loaded||['music','youtube','media'].includes(state.scenario)),ratio=Number(state.ratio)||8,width=Math.max(Number(state.width)||280,active?Math.max(360,72*ratio):0);return {width:Math.round(width),height:Math.round(width/ratio)}}
