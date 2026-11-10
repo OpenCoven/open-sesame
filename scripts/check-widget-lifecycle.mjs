@@ -7,7 +7,7 @@ function load(storage=new Map(),fail=false){
  vm.runInNewContext(source,ctx);return {api:ctx.window.OpenSesameWidgetLifecycle,events,ctx};
 }
 const storage=new Map(),{api,events,ctx}=load(storage);
-assert.equal(api.status('rss'),'uninstalled');assert.equal(api.status('github'),'uninstalled');assert.equal(ctx.document.documentElement.dataset.widgetRss,'off');
+assert.equal(api.status('image-generation'),'uninstalled');assert.equal(api.status('rss'),'uninstalled');assert.equal(api.status('github'),'uninstalled');assert.equal(ctx.document.documentElement.dataset.widgetRss,'off');
 const catalogContext={window:{}};vm.runInNewContext(fs.readFileSync('dist/plugins-model.js','utf8'),catalogContext);
 for(const {id} of catalogContext.window.OpenSesamePluginsModel.catalog){
  api.set(id,'active');assert(api.isActive(id));api.set(id,'inactive');assert.equal(api.status(id),'inactive');assert.equal(load(storage).api.status(id),'inactive');api.set(id,'uninstalled');assert.equal(api.isActive(id),false);assert.equal(events.at(-1).id,id);

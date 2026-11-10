@@ -5,6 +5,7 @@
 from controller import Controller
 from computer_controls import control as computer_control
 from computer_agent import ComputerAgent
+from image_generation import ImageGeneration
 from live_agents import LiveAgents, agent_status
 from process_workspace import History
 from agent_monitor import terminal_target, enrich_snapshot, snapshot as agent_snapshot, control_process as agent_control
@@ -228,10 +229,34 @@ class Bridge:
         self.github_slot = threading.BoundedSemaphore(1)
         self.computer = ComputerAgent(emit, native=native_permissions, familiars=self.coven.familiars)
         self.computer_slot = threading.BoundedSemaphore(1)
+        self.images = ImageGeneration()
+        self.image_slot = threading.BoundedSemaphore(1)
 
     def handle(self, message):
         request_id = message.get('requestId')
         method = message.get('method', '')
+        if isinstance(method, str) and method.startswith('image.'):
+            params = message.get('params', {})
+            fields = {'image.status': set(), 'image.generate': {'id', 'prompt', 'shape'}, 'image.cancel': {'id'}}
+            if not self.native_permissions or method not in fields or not isinstance(params, dict) or set(params) != fields[method]:
+                self.emit({'requestId': request_id, 'error': 'Unsupported image request.'}); return
+            if method == 'image.cancel':
+                if not isinstance(params['id'], str): self.emit({'requestId': request_id, 'error': 'Invalid image identity.'}); return
+                self.emit({'requestId': request_id, 'result': self.images.cancel(params['id'])}); return
+            if not self.image_slot.acquire(blocking=False):
+                self.emit({'requestId': request_id, 'error': 'An image request is already in progress.'}); return
+            def image_request():
+                try:
+                    result = self.images.status() if method == 'image.status' else self.images.generate(params)
+                    self.emit({'requestId': request_id, 'result': result})
+                except ValueError as error: self.emit({'requestId': request_id, 'error': str(error)[:300]})
+                except Exception: self.emit({'requestId': request_id, 'error': 'Image generation could not finish. Your prompt is kept.'})
+                finally:
+                    self.image_slot.release()
+                    with self.coven_threads_lock: self.coven_threads.discard(threading.current_thread())
+            thread = threading.Thread(target=image_request, daemon=True)
+            with self.coven_threads_lock: self.coven_threads.add(thread)
+            thread.start(); return
         if isinstance(method, str) and (method.startswith('native.computer.') or method in ('computer.status', 'computer.cancel', 'computer.login')):
             params = message.get('params', {})
             allowed = {'computer.status': {'provider', 'driver', 'familiarId'}, 'computer.cancel': {'runId'}, 'computer.login': {'provider'}, 'native.computer.cancel': {'session'}, 'native.computer.prepare': {'prompt', 'history', 'provider', 'driver', 'familiarId'}, 'native.computer.finish': {'token', 'approved', 'session'}, 'native.computer.reply': {'id', 'runId', 'session', 'reply'}}
@@ -437,6 +462,7 @@ class Bridge:
         return True
 
     def close(self):
+        self.images.close()
         self.computer.close()
         self.github.close()
         self.coven.close()

@@ -42,6 +42,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var shortcut: GlobalShortcut?
     var screenNotes = OpenSesameScreenNotes()
     var computerAgent = OpenSesameComputerAgent()
+    var imageSaveBusy = false
     var trackingNativeMenus = Set<ObjectIdentifier>()
     var pendingLauncher = false
     var dockedScreenID: NSNumber?
@@ -756,7 +757,20 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             }
             return
         }
-        let allowed = ["computer.login", "github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "agents.control", "agents.terminal", "agents.history.clear", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
+        if method == "image.save" {
+            guard !imageSaveBusy else { respond(requestId, error: "Finish the current image save first."); return }
+            guard Set(params.keys) == ["image"], let data = OpenSesameImageExport.png(params["image"]) else { respond(requestId, error: "Choose a valid generated PNG under 8 MiB."); return }
+            let picker = NSSavePanel(); picker.allowedFileTypes = ["png"]; picker.canCreateDirectories = true; picker.nameFieldStringValue = "Open Sesame Image.png"
+            imageSaveBusy = true
+            picker.begin { [weak self] response in
+                self?.imageSaveBusy = false
+                guard let self, self.authentication.authenticated, response == .OK, let url = picker.url else { self?.respond(requestId, result: ["saved": false]); return }
+                do { try data.write(to: url, options: .atomic); self.respond(requestId, result: ["saved": true]) }
+                catch { self.respond(requestId, error: "Could not save the PNG. Choose another location.") }
+            }
+            return
+        }
+        let allowed = ["image.status", "image.generate", "image.cancel", "computer.login", "github.status", "github.add", "github.remove", "github.snapshot", "coven.status", "coven.familiars", "coven.avatar.set", "coven.command", "coven.open", "coven.send", "coven.cancel", "computer.control", "system.info", "agents.snapshot", "agents.control", "agents.terminal", "agents.history.clear", "live.agents", "live.ask", "terminal.open", "terminal.input", "terminal.resize", "terminal.close", "feeds.fetch", "reading.fetch", "reading.pdf", "controller.start", "controller.stop", "controller.status", "controller.poll", "controller.ack"]
         guard allowed.contains(method), let input = input, bridge?.isRunning == true else { respond(requestId, error: "The desktop terminal bridge is unavailable."); return }
         do { var data = try JSONSerialization.data(withJSONObject: body); data.append(10); try input.write(contentsOf: data) } catch { respond(requestId, error: "Could not reach the desktop terminal bridge.") }
     }
