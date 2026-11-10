@@ -193,3 +193,8 @@ html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-p
 .open-sesame-mobile .mobile-brand{flex:1 1 180px}
 .open-sesame-mobile .mobile-brand strong{min-width:0;overflow-wrap:anywhere}
 .open-sesame-mobile #widget-panel .mobile-header button{flex:none}
+
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{min-height:14rem;flex-shrink:0}
+}
