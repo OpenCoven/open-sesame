@@ -69,7 +69,7 @@ The UI says **Widgets**, **Console**, **Live**, **Projects** and **Focus**. Exis
 
 ## Verification and delivery route
 
-Mobile architecture work starts in [docs/mobile](mobile/README.md): the [proposed host ADR](mobile/adr-001-mobile-host.md), [source/transport ownership inventory](mobile/source-inventory.md) and [capability-state contract](mobile/capabilities.md). These are design contracts pending ratification, not an iOS/Android host or replacement state/identity implementation. Validate their local navigation with `npm run check:docs` and inspect their source-backed claims during review.
+Mobile architecture work starts in [docs/mobile](mobile/README.md): the [ratified host ADR](mobile/adr-001-mobile-host.md), [source/transport ownership inventory](mobile/source-inventory.md) and [capability-state contract](mobile/capabilities.md). These are ratified design contracts with separate implementation/delivery gates, not an iOS/Android host or replacement state/identity implementation. Validate their local navigation with `npm run check:docs` and inspect their source-backed claims during review.
 
 For a focused JavaScript check, run `node scripts/check-NAME.mjs`. For a focused Python module, use its discoverable file pattern, for example `python3 -B -m unittest discover -s desktop/tests -p 'test_github_monitor.py' -v`. Native Swift test scripts compile synthetic checks; they do not require an actual provider login. [scripts/AGENTS.md](../scripts/AGENTS.md) describes discovery and the bounded runner. [desktop/AGENTS.md](../desktop/AGENTS.md) describes the native boundary and prerequisites.
 
