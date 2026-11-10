@@ -51,3 +51,32 @@ html.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded #widget-pane
 .open-sesame-mobile #widget-anchor.expanded #widget-panel{font-family:"Open Sesame Mobile Sans",system-ui,sans-serif}
 .open-sesame-mobile .mobile-brand{display:flex;align-items:center;gap:8px;min-width:0}
 .open-sesame-mobile .mobile-brand svg{width:28px;height:28px;flex:none;fill:currentColor}
+
+.mobile-items-back[hidden]{display:none!important}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{display:grid;grid-template-columns:minmax(0,1fr)!important;gap:0}
+ .open-sesame-mobile:not(.mobile-project-detail) #widget-panel #note-detail{display:none!important}
+ .open-sesame-mobile.mobile-project-detail #widget-panel #items-sidebar{display:none!important}
+ .open-sesame-mobile #widget-panel #note-detail{min-width:0;width:100%;border:0;padding-inline:0}
+ .open-sesame-mobile #widget-panel #detail-width-toggle{display:none!important}
+ .open-sesame-mobile #widget-panel .mobile-items-back{display:block;flex:none;align-self:flex-start;min-height:44px;padding:8px 12px;font:inherit;color:var(--mobile-paper);border:1px solid var(--mobile-line);border-radius:8px;background:var(--mobile-raised)}
+}
+
+@media(max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-items:not(.page-widget-open) .items-workspace{min-height:220px;flex-shrink:0}
+}
+.open-sesame-mobile #widget-anchor #widget-panel :is(#md-preview-content,#md-preview-content .cm-preview,#md-source-panel #detail-body){font-size:1rem;line-height:1.6}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel .detail-topline{height:auto;min-height:44px;max-height:none}
+ .open-sesame-mobile #widget-anchor #widget-panel #detail-title{height:auto;min-height:44px;max-height:none;line-height:1.4}
+}
+@media(max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-focus:not(.page-widget-open):not([data-focus-view=calendar]){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-focus:not(.page-widget-open) .focus-clock-row{min-height:180px;flex-shrink:0}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-focus>.focus-top{flex-shrink:0}
+}
+@media(max-height:420px){
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-plugins:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+ .open-sesame-mobile #widget-anchor #widget-panel #pane-plugins .plugins-results{min-height:180px;flex-shrink:0}
+}

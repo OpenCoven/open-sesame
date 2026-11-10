@@ -8,7 +8,7 @@
   let lastKind='note';
   function collection(kind){
     if(window.OpenSesameNotes?.finish(false)===false)return false;
-    lastKind=kind;libraryOpen=true;detailFullWidth=false;itemsArchive=false;libraryQuery='';itemsSearchOpen=false;el('library-search').value='';expandedCategories.clear();
+    lastKind=kind;libraryOpen=!(window.OpenSesameMobile?.active&&innerWidth<=600);detailFullWidth=false;itemsArchive=false;libraryQuery='';itemsSearchOpen=false;el('library-search').value='';expandedCategories.clear();
     selectCollection(kind);render();return true;
   }
   const buttons=groups.map(([kind,title,symbol])=>{
@@ -33,6 +33,10 @@
     count.textContent=String(total);count.setAttribute('aria-label',title+': '+total);
   }
   function show(){collection(lastKind)}
+  function closeDetails(){
+    if(window.OpenSesameNotes?.finish(false)===false)return false;
+    libraryOpen=false;detailFullWidth=false;selectedItemId='';render();return true;
+  }
   window.addEventListener('open-sesame-home',event=>{if(event.detail==='items')show()});
-  window.OpenSesameProjects={sync,show,normalize,leave(){},flatCollections:true,get selected(){return lastKind}};collection('note');
+  window.OpenSesameProjects={sync,show,closeDetails,normalize,leave(){},flatCollections:true,get selected(){return lastKind}};collection('note');
 })();

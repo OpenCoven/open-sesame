@@ -26,6 +26,11 @@
     const b=make('button','');b.type='button';b.innerHTML=icon(glyph);b.append(make('span','',label));b.dataset.mobileDestination=id;b.addEventListener('click',()=>navigate(id));nav.append(b);buttons.set(id,b);
   }
   panel.prepend(header);panel.append(home,nav);
+  const itemsBack=make('button','mobile-items-back','Back to items');itemsBack.id='mobile-items-back';itemsBack.type='button';itemsBack.hidden=true;
+  itemsBack.addEventListener('click',()=>{
+    if(window.OpenSesameProjects.closeDetails()){sync();el('capture-list').focus({preventScroll:true})}
+  });
+  el('note-detail').prepend(itemsBack);
   function source(){return M.today({items:items.filter(n=>inProject(n)),workflow:OpenSesameItemWorkflow,focus:{remaining:focusRemaining,running:focusRunning},reading:window.openSesameReading?.summary()||{count:0}})}
   function updateToday(){
     const data=source();note.detail.textContent=data.latest?thoughtTitle(data.latest):'Your next thought starts here.';note.button.disabled=!data.latest;
@@ -61,6 +66,9 @@
     capture.setAttribute('aria-expanded',String(!!modal));
     current=today?'today':M.destination(state.scenario);
     for(const [id,b] of buttons){if(id===current)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
+    const narrowDetail=active&&innerWidth<=600&&state.scenario==='items'&&!window.OpenSesamePageWidgets?.active&&libraryOpen&&!!currentItem();
+    root.classList.toggle('mobile-project-detail',narrowDetail);itemsBack.hidden=!narrowDetail;
+    if(narrowDetail)itemsBack.textContent='Back to '+({note:'notes',task:'tasks',bookmark:'bookmarks'})[itemKind(currentItem())];
     if(active)updateToday();
   }
   function schedule(){if(!scheduled)scheduled=requestAnimationFrame(()=>{scheduled=0;sync()})}
