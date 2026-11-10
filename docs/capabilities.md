@@ -2,7 +2,7 @@
 
 This matrix distinguishes implemented surfaces from evidence of operation. Use the [current-state lookup](work-tracking.md#find-current-work) to find exact source and check receipts. This table describes source contracts, not a live survey of the current machine or account. Historical browser reviews do not establish native or physical-device acceptance.
 
-iOS/iPadOS and Android support are not implemented or qualified in this baseline. The [proposed mobile host ADR](mobile/adr-001-mobile-host.md) separates the local workspace from connected familiars, records pending ratification and links the [future capability/state contract](mobile/capabilities.md). It changes no existing Mac or HTTP-preview authority.
+iOS/iPadOS and Android support are not implemented or qualified in this baseline. The [ratified mobile host ADR](mobile/adr-001-mobile-host.md) separates the local workspace from connected familiars, records the approved direction and remaining implementation gates and links the [future capability/state contract](mobile/capabilities.md). It changes no existing Mac or HTTP-preview authority.
 
 | Surface | Implementation | Current acceptance boundary |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
-# Proposed mobile capability and state contract
+# Mobile capability and state contract
 
-This contract accompanies [ADR 001](adr-001-mobile-host.md). It specifies future behavior; no capability here is implemented or device-qualified by this documentation. [Canonical owners](source-inventory.md) remain authoritative. Track three independent facts: account session validity, host-supported operations, and companion peer/grant/connection state. A single `connected` flag cannot represent all three. Installation/activation is separate again: an installed widget may be unavailable or disconnected without losing its content/configuration.
+This contract accompanies the [ratified ADR 001](adr-001-mobile-host.md#approval-record). It specifies future behavior; no capability here is implemented or device-qualified by this documentation. [Canonical owners](source-inventory.md) remain authoritative. Track three independent facts: account session validity, host-supported operations, and companion peer/grant/connection state. A single `connected` flag cannot represent all three. Installation/activation is separate again: an installed widget may be unavailable or disconnected without losing its content/configuration.
 
 ## Capability matrix
 
