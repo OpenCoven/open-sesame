@@ -6,7 +6,7 @@ private final class EmbeddedWebViewport: NSView {
 }
 
 // External pages have their own WKWebView configuration, without the app bridge.
-final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSWindowDelegate {
     let id: String
     let view: WKWebView
     private let viewport = EmbeddedWebViewport(frame: .zero)
@@ -14,6 +14,12 @@ final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     private let emit: ([String: Any]) -> Void
     private var generation = ""
     private var loadedURL: URL?
+    private var playerWindow: NSWindow?
+    private var orphaned = false
+    private var lastFrame: [String: Any]?
+    var onClosed: (() -> Void)?
+    var isPoppedOut: Bool { playerWindow != nil }
+    var mediaProvider: String? { id == "youtube" ? "youtube" : loadedURL?.host == "open.spotify.com" ? "spotify" : loadedURL?.host == "embed.music.apple.com" ? "apple" : nil }
     private let identity = URL(string: "https://\((Bundle.main.bundleIdentifier ?? "com.perch.widgetstudio").lowercased())/")!
 
     init(id: String, parent: WKWebView, assets: URL, emit: @escaping ([String: Any]) -> Void) {
@@ -84,8 +90,10 @@ final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WK
     }
 
     func frame(_ params: [String: Any]) throws {
+        lastFrame = params
         guard let parent = viewport.superview else { return }
         let layout = try Self.layout(params, bounds: parent.bounds, flipped: parent.isFlipped)
+        if isPoppedOut { viewport.isHidden = true; return }
         viewport.isHidden = params["visible"] as? Bool != true || layout.viewport.isEmpty || (id == "youtube" && (layout.content.width < 200 || layout.content.height < 200))
         if !layout.viewport.isEmpty { viewport.frame = layout.viewport; view.frame = layout.content }
     }
@@ -129,7 +137,40 @@ final class EmbeddedWebSurface: NSObject, WKNavigationDelegate, WKUIDelegate, WK
         return nil
     }
 
-    func close() { view.stopLoading(); view.configuration.userContentController.removeScriptMessageHandler(forName: "youtubePlayer"); viewport.removeFromSuperview() }
+    static func mediaURL(_ value: Any?) -> URL? {
+        guard let url = pageURL(value), url.scheme == "https", url.port == nil else { return nil }
+        if url.host == "open.spotify.com", url.path.range(of: "^/embed/(track|album|playlist|artist|episode|show)/[A-Za-z0-9]{22}$", options: .regularExpression) != nil { return url }
+        if url.host == "embed.music.apple.com", url.path.range(of: "^/[A-Za-z]{2}/(album|playlist|song|music-video|station)/[^/]+(/[A-Za-z0-9.-]+)?$", options: .regularExpression) != nil { return url }
+        return nil
+    }
+    func popOut() throws {
+        guard id == "youtube" || id.hasPrefix("media-pip-") else { throw SurfaceError.invalidCommand }
+        if let playerWindow { playerWindow.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect: NSRect(x: 180, y: 180, width: 560, height: 350), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+        window.title = id == "youtube" ? "Open Sesame — YouTube" : "Open Sesame — Media player"
+        window.isReleasedWhenClosed = false; window.level = .floating; window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.contentMinSize = NSSize(width: 300, height: 200); window.appearance = NSAppearance(named: .darkAqua)
+        window.delegate = self; viewport.isHidden = true; view.removeFromSuperview(); view.autoresizingMask = [.width, .height]; window.contentView = view
+        playerWindow = window; window.makeKeyAndOrderFront(nil)
+        emit(["event": "webview.popout", "id": id, "generation": generation, "active": true])
+    }
+    func orphan() { orphaned = true; viewport.removeFromSuperview() }
+    func dock() {
+        guard let window = playerWindow else { return }
+        playerWindow = nil; window.delegate = nil; window.contentView = NSView(); window.close()
+        view.autoresizingMask = []; viewport.addSubview(view)
+        if let lastFrame { try? frame(lastFrame) }
+        emit(["event": "webview.popout", "id": id, "generation": generation, "active": false])
+    }
+    func windowWillClose(_ notification: Notification) {
+        let window = playerWindow; playerWindow = nil; window?.delegate = nil
+        if orphaned { close(); onClosed?() }
+        else { window?.contentView = NSView(); view.autoresizingMask = []; viewport.addSubview(view); if let lastFrame { try? frame(lastFrame) }; emit(["event": "webview.popout", "id": id, "generation": generation, "active": false]) }
+    }
+    func close() {
+        let window = playerWindow; playerWindow = nil; window?.delegate = nil; window?.close()
+        view.stopLoading(); view.configuration.userContentController.removeScriptMessageHandler(forName: "youtubePlayer"); view.removeFromSuperview(); viewport.removeFromSuperview()
+    }
     func matches(_ token: Any?) -> Bool { token as? String == generation }
     enum SurfaceError: LocalizedError {
         case invalidURL, invalidFrame, invalidCommand

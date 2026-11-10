@@ -58,6 +58,23 @@ class AgentMonitorTests(unittest.TestCase):
 '''
         self.assertEqual({a['pid'] for a in parse_processes(rows, 501)}, {11,12,13})
 
+    def test_native_same_provider_subagents_survive_wrapper_deduplication(self):
+        rows = '10 1 501 S 0 100 01:00 codex\n11 10 501 S 0 100 00:50 bash\n12 11 501 R 1 100 00:40 codex\n13 12 501 S 0 100 00:30 claude\n14 1 502 R 0 100 00:10 codex'
+        agents = {row['pid']: row for row in parse_processes(rows, 501)}
+        self.assertEqual(set(agents), {10, 12, 13})
+        self.assertIsNone(agents[10]['parentAgentPid'])
+        self.assertEqual(agents[12]['parentAgentPid'], 10)
+        self.assertEqual(agents[13]['parentAgentPid'], 12)
+        self.assertEqual(agents[10]['childAgentCount'], 1)
+        self.assertNotIn('bash', json.dumps(agents))
+
+    def test_javascript_agent_children_are_not_treated_as_binary_wrappers(self):
+        script = 'node /usr/lib/@google/gemini-cli/dist/index.js'
+        rows = f'10 1 501 S 0 100 01:00 {script}\n11 10 501 S 0 100 00:10 {script}'
+        agents = {row['pid']: row for row in parse_processes(rows, 501)}
+        self.assertEqual(set(agents), {10, 11})
+        self.assertEqual(agents[11]['parentAgentPid'], 10)
+
     def test_elapsed_formats(self):
         self.assertEqual(elapsed_seconds('2-03:04:05'), 183845)
         self.assertEqual(elapsed_seconds('12:10'), 730)

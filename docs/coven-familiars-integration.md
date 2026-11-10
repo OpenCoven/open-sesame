@@ -121,3 +121,9 @@ This development session verified the installed CLI, installed engine, running d
 ## Questions from quick capture
 
 With Coven Familiars active and connected, type a question in the bottom capture field and press Tab to open it as a draft with your default familiar. The bookmark-shaped control beside a familiar’s conversation sets that familiar as the default. The first successful route chooses a default if none is saved. Include `@Nova` or another exact familiar name to choose a recipient for one question; Enter also opens an explicitly tagged question. Routing opens the conversation and prepares the draft; use Send to run it. Existing familiar drafts and concurrent capture edits are kept, and an unknown or ambiguous tag leaves the question in capture. Shell-bound capture retains normal Tab completion instead of routing to a familiar.
+
+## Provider recovery
+
+The conversation header keeps identity and provider controls in one compact row. Check provider setup runs `/coven doctor` as a local, read-only check and displays only allowlisted readiness labels. Raw diagnostics, credentials and private paths are not rendered. A generic failed Coven Code request consults bounded local diagnostics; when provider sign-in is missing, it points to `coven auth login` in Terminal while preserving the conversation, session and messages. It never retries a provider turn, changes an existing chat’s harness or signs in automatically.
+
+When those diagnostics confirm missing Coven Code credentials, Sign in to Coven opens `coven auth login` in a new embedded shell only after that explicit click. Provider credentials remain with Coven. This action starts sign-in, not a model turn; reopening a chat or checking readiness does not start sign-in.

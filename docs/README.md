@@ -28,3 +28,5 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 Local tests, hosted checks, rendered browser observations, installed native operation, real providers, merge, release and deployment are distinct evidence. A historical host blocker can explain an old gap; it cannot prove that the current machine is still blocked. Verify the required prerequisite in the current session.
 
 [Shared mobile renderer](mobile-shell.md) documents navigation, Today projections, capture ownership and the pending reference/device gates.
+
+[Local speaker labels](speaker-diarization.md) explains opt-in NeMo setup, timestamp alignment, anonymous names, responsive Stop and private temporary-audio cleanup.

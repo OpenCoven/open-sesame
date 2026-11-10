@@ -2,7 +2,7 @@
 (()=>{
   const commands=[
     ['/help','Show chat commands','Chat'],['/find','Search this conversation','Chat'],['/copy','Copy this conversation as Markdown','Chat'],['/stop','Stop the current reply','Chat'],['/refresh','Reconnect and keep this persistent conversation','Chat'],
-    ['/coven help','Show available Coven commands','Coven'],['/coven status','Show local Coven health and counts','Coven'],['/coven sessions','List this familiar’s workspace sessions','Coven'],['/coven familiars','Show your familiar roster','Coven'],['/coven skills','List installed Coven skills','Coven']
+    ['/coven doctor','Check provider sign-in and local setup without sending a prompt','Coven'],['/coven help','Show available Coven commands','Coven'],['/coven status','Show local Coven health and counts','Coven'],['/coven sessions','List this familiar’s workspace sessions','Coven'],['/coven familiars','Show your familiar roster','Coven'],['/coven skills','List installed Coven skills','Coven']
   ].map(([name,description,group])=>Object.freeze({name,description,group}));
   function parse(value){
     const text=value.trim();if(!text.startsWith('/')||text.startsWith('//'))return null;

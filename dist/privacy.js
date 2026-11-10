@@ -17,6 +17,7 @@
     el('share-privacy-start').hidden=running||action==='start';el('share-privacy-start').disabled=!status.available||!status.displays.length||Boolean(action);
     el('share-privacy-stop').hidden=!running&&action!=='start';el('share-privacy-stop').disabled=action==='stop';el('share-privacy-stop').textContent=status.active?'Stop share window':'Cancel preparation';
     el('share-privacy-show').hidden=!status.windowOpen;el('share-privacy-show').disabled=Boolean(action);
+    el('share-privacy-fullscreen').hidden=!status.windowOpen;el('share-privacy-fullscreen').disabled=Boolean(action);el('share-privacy-fullscreen').textContent=status.fullscreen?'Exit full screen':'Full screen';
     for(const id of ['privacy-hide','panel-privacy']){const button=el(id);button.setAttribute('aria-pressed',String(status.active===true));button.title=status.active?'Protected Share window ready · share that window in Meet':'Screen-share privacy · Option Shift P'}
   }
   async function refresh(){if(!native)return;try{apply(await bridge().request('privacy.status'))}catch{status={...status,available:false,active:false,starting:false,windowOpen:false,error:'Desktop privacy controls are unavailable. Reopen the app before sharing.'};paint()}}
@@ -30,7 +31,7 @@
   dialog.addEventListener('close',()=>window.OpenSesameNativeSurfaces?.sync());
   ['privacy-hide','panel-privacy'].forEach(id=>el(id).addEventListener('click',show));
   ['share-privacy-close','share-privacy-done'].forEach(id=>el(id).addEventListener('click',()=>dialog.close()));
-  el('share-privacy-start').addEventListener('click',()=>run('privacy.start'));el('share-privacy-stop').addEventListener('click',()=>run('privacy.stop'));el('share-privacy-show').addEventListener('click',()=>run('privacy.show'));
+  el('share-privacy-start').addEventListener('click',()=>run('privacy.start'));el('share-privacy-stop').addEventListener('click',()=>run('privacy.stop'));el('share-privacy-show').addEventListener('click',()=>run('privacy.show'));el('share-privacy-fullscreen').addEventListener('click',()=>run('privacy.fullscreen'));
   document.addEventListener('keydown',event=>{if(event.altKey&&event.shiftKey&&event.code==='KeyP'){event.preventDefault();dialog.open?dialog.close():show()}});
   window.addEventListener('open-sesame-desktop-event',event=>{if(event.detail?.event==='privacy.changed')apply(event.detail.status)});
   window.addEventListener('open-sesame-desktop-disconnected',()=>{serial++;action='';status={...status,available:false,active:false,starting:false,windowOpen:false,error:'Desktop connection closed. Do not share an entire screen.'};paint()});

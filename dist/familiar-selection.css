@@ -29,3 +29,20 @@
 #widget-anchor #widget-panel #familiars-workspace.rail-collapsed #familiar-rail-resize:after{background:var(--line)}
 #widget-anchor #widget-panel #familiars-workspace.rail-collapse-ready #familiar-rail-resize:after{background:var(--accent);width:2px}
 #widget-anchor #widget-panel #familiars-workspace.rail-resizing{user-select:none;cursor:col-resize}
+
+/* One quiet identity row; controls keep their accessible names. */
+#widget-anchor #widget-panel #familiar-thread-header{box-sizing:border-box;height:36px;min-height:36px;padding:0 0 5px;gap:5px;flex-wrap:nowrap;border-bottom-color:#ffffff08}
+#widget-anchor #widget-panel #familiar-thread-header>div{flex:1 1 auto;min-width:0;gap:0}
+#widget-anchor #widget-panel #familiar-name{font-size:13px;font-weight:450;letter-spacing:-.15px;line-height:28px}
+#widget-anchor #widget-panel #familiar-workspace{display:none}
+#widget-anchor #widget-panel #familiar-thread-header>button{display:grid;place-items:center;flex:none;width:28px;height:28px;min-height:28px;padding:6px;border-color:transparent;background:transparent;border-radius:7px}
+#widget-anchor #widget-panel #familiar-thread-header #familiar-avatar-edit{width:28px;height:28px;padding:3px;background:none}
+#widget-anchor #widget-panel #familiar-harness-row{flex:0 0 88px;min-width:0;max-width:88px}
+#widget-anchor #widget-panel #familiar-harness{width:100%;min-width:0;max-width:88px;border:0;background-color:transparent;color:var(--ink-muted);font-size:10px}
+#widget-anchor #widget-panel #familiar-harness:hover{background-color:var(--surface-hover)}
+#widget-anchor #widget-panel .familiar-error-actions{display:flex;gap:6px;flex-wrap:wrap}
+#widget-anchor #widget-panel .familiar-error-actions button{padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface-raised);color:var(--ink-secondary);font-size:11px}
+
+@container familiar-chat (max-width:300px){#widget-anchor #widget-panel #familiar-thread-header{gap:3px}#widget-anchor #widget-panel #familiar-thread-header>button{width:24px;height:24px;min-height:24px;padding:4px}#widget-anchor #widget-panel #familiar-harness-row{flex-basis:64px;max-width:64px}#widget-anchor #widget-panel #familiar-thread-header #familiar-avatar-edit{width:24px;height:24px;padding:2px}}
+
+#widget-panel .familiar-provider-login{margin-top:10px;padding:7px 11px;min-height:30px;border:1px solid var(--line);border-radius:7px;background:var(--surface-selected);color:var(--ink-primary);font-size:11px}

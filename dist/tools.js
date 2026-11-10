@@ -16,7 +16,8 @@
   const dialog = node('dialog');
   dialog.className = 'tools-dialog';
   dialog.setAttribute('aria-label', 'Tools');
-  const head = node('header'), close = node('button', 'Close');
+  const head = node('header'), close = node('button', '×');
+  close.setAttribute('aria-label','Close tools');close.title='Close tools';
   close.type = 'button';
   close.onclick = () => dialog.close();
   head.append(node('h2', 'Tools'), close);
@@ -24,12 +25,12 @@
   const status = node('p');
   if (storageError) status.textContent = 'Saved tool data could not be read. Original storage is preserved; installation is disabled until it is recovered.';
   status.setAttribute('role', 'status');
-  const importLabel = node('label', 'Import tool JSON '), file = node('input');
+  const importLabel = node('label', 'Import a tool'), file = node('input');
   file.type = 'file';
   file.accept = '.json,application/json';
   importLabel.append(file);
   dialog.append(importLabel);
-  const starters = node('div');
+  const starters = node('details');starters.className='tools-starters';starters.append(node('summary','Create from a starter'));
   for (const slug of ['repository-summary', 'feed-headlines', 'meeting-notes']) {
     button(starters, slug.replaceAll('-', ' '), async () => {
       const current = ++importTicket;
@@ -45,9 +46,9 @@
   document.getElementById('widget-panel').append(dialog);
   const launch = node('button', 'Tools · Import or create');
   launch.type = 'button';
-  launch.className = 'tools-open';
+  launch.className = 'tools-open';launch.textContent='Tools';launch.setAttribute('aria-label','Tools · Import or create');launch.title='Import or create a tool';
   launch.onclick = () => { launch.focus({preventScroll:true}); open(); };
-  document.getElementById('pane-plugins').prepend(launch);
+  (document.getElementById('plugins-tools')||document.getElementById('pane-plugins')).append(launch);
 
   function invalidate() { ++ticket; }
   function persist(next, discardDraft) {

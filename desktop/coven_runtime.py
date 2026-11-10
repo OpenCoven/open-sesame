@@ -80,7 +80,7 @@ def terminate(process):
         process.wait(timeout=5)
 
 
-def execute(binary, args, *, cancel=None, timeout=READ_TIMEOUT, on_event=None, cwd=None):
+def execute(binary, args, *, cancel=None, timeout=READ_TIMEOUT, on_event=None, cwd=None, allow_failure=False):
     """Drain both pipes with bounded memory; cancellation reaps only this run's group."""
     with subprocess.Popen([binary, *args], cwd=cwd, env=environment(binary), stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
@@ -134,7 +134,7 @@ def execute(binary, args, *, cancel=None, timeout=READ_TIMEOUT, on_event=None, c
                     time.sleep(0.05)
                 if cancel and cancel.is_set():
                     raise ValueError('Reply stopped. Captured text is preserved.')
-                if process.returncode:
+                if process.returncode and not allow_failure:
                     diagnostic = stderr.decode(errors='replace').lower()
                     if any(word in diagnostic for word in ('authentication', 'unauthorized', 'sign in', 'login', 'api key')):
                         raise ValueError('Sign in to this familiar’s provider through Coven in your terminal, then try again.')
@@ -143,6 +143,27 @@ def execute(binary, args, *, cancel=None, timeout=READ_TIMEOUT, on_event=None, c
         finally:
             # Descendant processes may still hold pipes or outlive their launcher.
             terminate(process)
+
+
+
+def provider_failure(binary, harness, original, *, cancel=None, cwd=None):
+    """Classify a failed request with read-only diagnostics; never echo provider output."""
+    if harness != 'coven-code' or 'Check its provider setup with coven doctor' not in str(original):
+        return original
+    try:
+        report = read_json(binary, ['doctor', '--json'], cancel=cancel, timeout=5, cwd=cwd, allow_failure=True)
+        checks = report.get('checks', []) if isinstance(report, dict) else []
+        if not isinstance(checks, list): return original
+        missing = any(isinstance(row, dict) and row.get('id') == 'credentials:engine'
+                      and row.get('status') in ('warn', 'fail')
+                      and isinstance(row.get('message'), str)
+                      and row['message'].lower() in ('authentication not configured', 'not logged in')
+                      for row in checks)
+        if missing:
+            return ValueError('Coven Code has no provider sign-in. Run coven auth login in Terminal, then retry. Your conversation is preserved.')
+    except (ValueError, OSError):
+        pass
+    return original
 
 
 def read_json(binary, args, **kwargs):
@@ -418,12 +439,23 @@ class CovenRuntime:
             return value
 
     def command(self, params):
-        if not isinstance(params, dict) or set(params) != {'name', 'familiarId'} or params.get('name') not in ('status', 'sessions', 'familiars', 'skills'):
+        if not isinstance(params, dict) or set(params) != {'name', 'familiarId'} or params.get('name') not in ('status', 'sessions', 'familiars', 'skills', 'doctor'):
             raise ValueError('Choose a supported Coven command from /help.')
         name, fid = params['name'], identifier(params['familiarId'])
+        recovery = None
         folder = self._workspace(self._familiar(fid))
         binary = self.resolver()
-        if name == 'status':
+        if name == 'doctor':
+            value = read_json(binary, ['doctor', '--json'], cancel=self.shutdown, cwd=folder, allow_failure=True)
+            if not isinstance(value, dict) or not isinstance(value.get('checks'), list):
+                raise ValueError('Coven diagnostics are unavailable. Run coven doctor in Terminal.')
+            names = {'daemon': 'Coven service', 'engine': 'Coven Code engine', 'credentials:engine': 'Coven Code sign-in', 'credentials:codex': 'Codex sign-in', 'credentials:claude': 'Claude Code sign-in', 'familiars': 'Familiar roster'}
+            rows = [[names[row['id']], {'pass': 'Ready', 'warn': 'Needs attention', 'fail': 'Unavailable'}.get(row.get('status'), 'Unknown')]
+                    for row in value['checks'] if isinstance(row, dict) and row.get('id') in names]
+            rows.append(['Next step', 'Run coven auth login in Terminal if Coven Code sign-in needs attention.'])
+            columns = ['Check', 'Result']
+            if any(isinstance(row, dict) and row.get('id') == 'credentials:engine' and row.get('status') in ('warn', 'fail') and row.get('message') in ('authentication not configured', 'not logged in') for row in value['checks']): recovery = 'coven-auth'
+        elif name == 'status':
             value = read_json(binary, ['status', '--json'], cancel=self.shutdown, cwd=folder)
             if not isinstance(value, dict): raise ValueError('Coven returned an invalid status.')
             health, overview = value.get('health') or {}, value.get('overview') or {}
@@ -446,7 +478,7 @@ class CovenRuntime:
             else:
                 columns = ['Skill', 'Version']
                 rows = [[s.get('name') or s.get('id'), s.get('version')] for s in value if isinstance(s, dict)]
-        return {'familiarId': fid, 'name': name, 'columns': columns, 'rows': [[clip(str(cell) if type(cell) in (str, int) else '—', 160) for cell in row] for row in rows[:50]], 'truncated': len(rows) > 50}
+        return {'familiarId': fid, 'name': name, 'recovery': recovery, 'columns': columns, 'rows': [[clip(str(cell) if type(cell) in (str, int) else '—', 160) for cell in row] for row in rows[:50]], 'truncated': len(rows) > 50}
 
     def send(self, params, *, _approved_scope=None):
         allowed = {'runId', 'prompt', 'familiarId', 'sessionId', 'harness', 'conversationId', 'revision'}
@@ -576,6 +608,11 @@ class CovenRuntime:
                     value['status'] = 'ready'
                     return {'runId': run_id, 'events': events, 'sessionId': value['sessionId']}
                 except (Exception, KeyboardInterrupt) as error:
+                    if not cancel.is_set() and isinstance(error, ValueError):
+                        diagnosed = provider_failure(binary, harness, error, cancel=cancel, cwd=folder)
+                        if diagnosed is not error:
+                            value['status'] = 'error'; value['error'] = clip(str(diagnosed), 2048)
+                            raise diagnosed from None
                     value['status'] = 'stopped' if cancel.is_set() or isinstance(error, KeyboardInterrupt) else 'error'
                     value['error'] = clip(str(error), 2048)
                     raise

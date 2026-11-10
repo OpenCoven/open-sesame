@@ -38,11 +38,11 @@
     el('live-capture-help').textContent=!supported.available?supported.reason:output+' '+help;
     el('live-capture-help').hidden=!detailsOpen&&supported.available;
     helpToggle.setAttribute('aria-expanded',String(!el('live-capture-help').hidden));
-    el('live-capture-output-hint').textContent=record?'Audio file only':'Text only · audio not saved';
+    el('live-capture-output-hint').textContent=window.OpenSesameLiveCaptureModel.outputHint(record?'record':'transcribe',!!el('speaker-enabled')?.checked);
     el('live-capture-language-label').hidden=record;
     el('audio-start').disabled=running||!supported.available||!!window.OpenSesameLive?.busy;
     el('audio-start').textContent='Start';el('audio-start').title=record?'Start recording':'Start transcription';
-    el('audio-stop').textContent=audioSession.stopping?'Finishing…':window.OpenSesameLive?.demoRunning?'Stop demo':'Stop';
+    el('audio-stop').textContent=audioSession.stopping?(nativeStopPending||audioSession.recognizer?'Finish now':'Finishing…'):window.OpenSesameLive?.demoRunning?'Stop demo':'Stop';
     el('audio-start').setAttribute('aria-describedby','live-capture-help');
     el('live-transcript-view').hidden=record;el('live-questions-view').hidden=record||!audioSession.final.trim()&&!audioSession.interim.trim();result.hidden=!record;
     el('live-recording-heading').textContent=audioSession.active?'Recording audio…':audioSession.recordUrl?'Recording ready':'Your audio file';

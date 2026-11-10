@@ -10,3 +10,5 @@ SVG glyphs from [Simple Icons](https://github.com/simple-icons/simple-icons), di
 | claude.svg | https://github.com/simple-icons/simple-icons/blob/develop/icons/claude.svg | 1beee8612185a8fb0a23bcfd8c3ce9b6d86785a8 |
 | apple.svg | https://github.com/simple-icons/simple-icons/blob/develop/icons/apple.svg | de4b0d17b3335578db017fe2f6f803d417732906 |
 | openai.svg | https://github.com/simple-icons/simple-icons/blob/13.0.0/icons/openai.svg | ebbdab0ecf9c844b8c20d25e9115c06f9332d3c2 |
+| googlegemini.svg | https://github.com/simple-icons/simple-icons/blob/develop/icons/googlegemini.svg | 765adb0887e684492b7721b2d62635c11e99f7fd |
+| opencode.svg | https://github.com/simple-icons/simple-icons/blob/develop/icons/opencode.svg | 1e0da06f97930dd6aef3f5ed9f50363daf521aa1 |

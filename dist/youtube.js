@@ -56,7 +56,7 @@
   }
   function play(key){
     if(!ready||!queue)return;const index=queue.entries.findIndex(item=>item.key===key);if(index<0)return;
-    currentKey=key;try{player.loadPlaylist(queue.ids,index,0);el('local-media').pause();render()}catch{toast('The player is not ready. Try again in a moment.')}
+    currentKey=key;try{player.loadPlaylist(queue.ids,index,0);if(!window.OpenSesameMediaPopout?.localPip)el('local-media').pause();render()}catch{toast('The player is not ready. Try again in a moment.')}
   }
   function render(force=false){
     if(!source?.list||dragKey&&!force)return;adaptRail();
@@ -112,7 +112,7 @@
     clear();playlistFailed=false;retry.hidden=true;playlistQuery='';playlistSort='queue';el('youtube-queue-search').value='';window.dispatchEvent(new Event('open-sesame-youtube-start'));source=next;place(host);const token=generation;el('youtube-error').hidden=true;
     const frame=document.createElement('iframe');frame.id='youtube-player';frame.title='YouTube video player';frame.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';frame.allowFullscreen=true;frame.referrerPolicy='strict-origin-when-cross-origin';
     const url=new URL('https://www.youtube-nocookie.com/embed/'+(source.id||'videoseries'));url.searchParams.set('playsinline','1');url.searchParams.set('autoplay','0');url.searchParams.set('enablejsapi','1');if(location.origin!=='null')url.searchParams.set('origin',location.origin);if(source.list){url.searchParams.set('list',source.list);url.searchParams.set('listType','playlist')}if(source.start)url.searchParams.set('start',source.start);frame.src=window.__OPEN_SESAME_NATIVE__?'about:blank':url.href;frame.hidden=!!window.__OPEN_SESAME_NATIVE__;
-    el('youtube-stage').append(frame);el('youtube-empty').hidden=true;el('youtube-clear').hidden=false;el('youtube-external').hidden=false;el('youtube-external').href=source.url;el('youtube-workspace').classList.toggle('has-playlist',!!source.list);el('youtube-queue').hidden=!source.list;el('local-media').pause();
+    el('youtube-stage').append(frame);el('youtube-empty').hidden=true;el('youtube-clear').hidden=false;el('youtube-external').hidden=false;el('youtube-external').href=source.url;el('youtube-workspace').classList.toggle('has-playlist',!!source.list);el('youtube-queue').hidden=!source.list;if(!window.OpenSesameMediaPopout?.localPip)el('local-media').pause();
     try{localStorage.setItem('open-sesame-youtube-v1',el('youtube-url').value.trim())}catch{}
     sourceHint();
     const cached=source.list?saved[source.list]:null;if(Array.isArray(cached?.ids)){queue=new Queue(cached.ids,cached.order);currentKey=queue.entries[0]?.key||''}

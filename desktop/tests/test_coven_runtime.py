@@ -195,6 +195,23 @@ class CovenRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, message): self.runtime.send(self.input(prompt=prompt))
             self.assertEqual(self.runtime.open('nova')['status'], 'error')
 
+    def test_doctor_only_returns_allowlisted_readiness_and_never_runs_a_prompt(self):
+        result = self.runtime.command({'name': 'doctor', 'familiarId': 'nova'})
+        self.assertIn(['Coven Code sign-in', 'Needs attention'], result['rows'])
+        self.assertEqual(result['recovery'], 'coven-auth')
+        self.assertNotIn('fixture-private-token', json.dumps(result))
+        self.assertEqual(self.calls(), [])
+
+    def test_generic_engine_failure_uses_safe_read_only_provider_diagnosis(self):
+        with self.assertRaisesRegex(ValueError, 'coven auth login'):
+            self.runtime.send(self.input(prompt='provider-not-configured'))
+        state = self.runtime.open('nova')
+        self.assertEqual(state['status'], 'error')
+        self.assertIsNotNone(state['sessionId'])
+        self.assertEqual(state['messages'][0]['text'], 'provider-not-configured')
+        self.assertNotIn('fixture-private-token', state['error'])
+        self.assertEqual(len(self.calls()), 1, 'Diagnosis must never retry a provider turn')
+
     def test_provider_error_is_actionable_without_echoing_diagnostics(self):
         with self.assertRaisesRegex(ValueError, 'Sign in to this familiar'):
             self.runtime.send(self.input(prompt='provider-denied'))

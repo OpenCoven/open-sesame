@@ -15,6 +15,8 @@ if args == ['--version']:
     print('coven fixture 0.4.10')
 elif args == ['engine', 'status', '--json']:
     emit({'installed': not (root / 'engine-missing').exists()})
+elif args == ['doctor', '--json']:
+    emit({'checks': [{'id': 'credentials:engine', 'status': 'warn', 'message': 'authentication not configured', 'private': 'fixture-private-token'}]})
 elif args == ['familiars', '--json']:
     print((root / 'roster.json').read_text())
 elif args == ['status', '--json']:
@@ -56,6 +58,8 @@ elif args and args[0] == 'run':
     if prompt == 'slow':
         emit({'type': 'assistant', 'session_id': sid, 'message': {'content': [{'type': 'text', 'text': 'Ready to wait'}]}})
         time.sleep(60)
+    if prompt == 'provider-not-configured':
+        print('opaque failure fixture-private-token', file=sys.stderr); sys.exit(1)
     if prompt == 'provider-denied':
         print('authentication required (fixture)', file=sys.stderr); sys.exit(2)
     text = 'Hello from ' + p.familiar

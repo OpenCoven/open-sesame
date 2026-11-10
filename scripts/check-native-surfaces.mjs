@@ -11,7 +11,7 @@ const elements=new Map(),element=id=>{if(!elements.has(id))elements.set(id,new S
 const win=new EventTarget(),doc=new EventTarget(),calls=[],messages=[];let overlays=[],next=0;
 doc.hidden=false;doc.getElementById=element;doc.querySelectorAll=()=>overlays;
 win.__OPEN_SESAME_NATIVE__=true;win.innerWidth=1000;win.innerHeight=700;
-const jobs=new Map(),context={window:win,document:doc,state:{expanded:true},getComputedStyle:()=>({visibility:'visible'}),openSesameBridge:{request:async(method,params)=>{calls.push({method,...params});return true}},toast:text=>messages.push(text),Date,ResizeObserver:class{observe(){}disconnect(){}},MutationObserver:class{observe(){}},requestAnimationFrame:fn=>{jobs.set(++next,fn);return next}};
+const jobs=new Map(),context={Event,window:win,document:doc,state:{expanded:true},getComputedStyle:()=>({visibility:'visible'}),openSesameBridge:{request:async(method,params)=>{calls.push({method,...params});return true}},toast:text=>messages.push(text),Date,ResizeObserver:class{observe(){}disconnect(){}},MutationObserver:class{observe(){}},requestAnimationFrame:fn=>{jobs.set(++next,fn);return next}};
 vm.runInNewContext(fs.readFileSync('dist/native-surfaces.js','utf8'),context);
 const flush=async()=>{await Promise.resolve();const pending=[...jobs.values()];jobs.clear();pending.forEach(fn=>fn());await Promise.resolve()};
 const api=win.OpenSesameNativeSurfaces;
@@ -41,6 +41,7 @@ event('stale','state',{time:999});assert.equal(player.getCurrentTime(),12);
 event(generation,'error',{},153);assert.equal(error,153);
 player.loadPlaylist(['TestVideo01'],0,2);assert.equal(calls.at(-1).action,'loadPlaylist');assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args)),[['TestVideo01'],0,2]);
 context.state.expanded=false;api.sync();await flush();assert.equal(calls.at(-1).visible,false);
+await api.popoutYouTube();assert.equal(calls.at(-1).method,'webview.popout');win.dispatchEvent(Object.assign(new Event('open-sesame-desktop-event'),{detail:{event:'webview.popout',id:'youtube',generation,active:true}}));assert.equal(api.youtubePoppedOut,true);await api.popoutYouTube();assert.equal(calls.at(-1).method,'webview.dock');await api.popoutMusic('https://open.spotify.com/embed/track/1234567890123456789012');assert.equal(calls.at(-1).method,'webview.popout');assert.match(calls.at(-1).id,/^media-pip-/);
 player.destroy();assert.equal(calls.at(-1).method,'webview.close');
 event(generation,'ready');assert.equal(ready,1,'Closed players ignore late native events');
 

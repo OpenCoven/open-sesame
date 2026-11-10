@@ -2,6 +2,11 @@
 (() => {
   const el = id => document.getElementById(id), lifecycle = window.OpenSesameWidgetLifecycle;
   const active = id => lifecycle.isActive(id);
+  const inactive=document.createElement('section');inactive.id='transcribe-inactive';inactive.hidden=true;
+  const inactiveTitle=document.createElement('strong'),inactiveCopy=document.createElement('p'),activate=document.createElement('button');
+  inactiveTitle.textContent='Start a live transcript';inactiveCopy.textContent='Activate Transcribe to choose an audio source. Recording starts only when you press Start.';
+  activate.type='button';activate.textContent='Activate Transcribe';activate.addEventListener('click',()=>{try{lifecycle.set('transcribe','active');el('audio-source').focus({preventScroll:true})}catch(error){toast(error.message)}});
+  inactive.append(inactiveTitle,inactiveCopy,activate);el('pane-audio').prepend(inactive);
   const surfaces = {
     focus:()=>active('agenda'), media:()=>active('local-media'),
     music:()=>['spotify','apple','youtube'].some(active), youtube:()=>active('youtube'),
@@ -50,6 +55,8 @@
       el('plugins-desktop-action').hidden=openSesameBridge.available&&!active('processes');
       const capture = el('live-capture');
       if (capture) capture.hidden = !active('transcribe');
+      inactive.hidden=active('transcribe');el('live-workspace').hidden=!active('transcribe');
+      if(!active('transcribe')){el('live-options').hidden=true;el('live-settings').setAttribute('aria-expanded','false')}
       const page = Object.entries(pages).find(([,views])=>views.includes(state.scenario))?.[0];
       if (!surfaces[state.scenario]?.() && !window.OpenSesamePageWidgets?.active) {
         const widget = (window.OpenSesamePageWidgets?.list?.()||window.OpenSesameTools?.list()||[]).find(widget=>widget.page===page);

@@ -30,6 +30,7 @@ def provider(command):
     if not parts:
         return None
     executable = pathlib.PurePath(parts[0]).name
+    if executable == 'coven-code': return 'coven'
     if executable in PROVIDERS:
         return executable
     if re.fullmatch(r'python(?:\d+(?:\.\d+)*)?', executable):
@@ -60,7 +61,7 @@ def elapsed_seconds(value):
 
 
 def parse_processes(output, uid):
-    processes, found = {}, {}
+    processes, found, launchers, native_agents = {}, {}, set(), set()
     for line in output.splitlines():
         fields = line.strip().split(None, 7)
         if len(fields) != 8:
@@ -75,6 +76,10 @@ def parse_processes(output, uid):
             continue
         processes[pid] = ppid
         name = provider(command)
+        try: executable = pathlib.PurePath(shlex.split(command)[0]).name
+        except (ValueError, IndexError): executable = ''
+        if executable in ('node', 'nodejs', 'bun', 'coven'): launchers.add(pid)
+        if executable in (*PROVIDERS, 'coven-code'): native_agents.add(pid)
         if not name:
             continue
         state = {'R': 'running', 'S': 'sleeping', 'I': 'sleeping',
@@ -91,11 +96,19 @@ def parse_processes(output, uid):
         parent, visited = processes.get(pid), {pid}
         while parent and parent not in visited:
             visited.add(parent)
-            if parent in found and found[parent]['provider'] == entry['provider']:
+            if pid in native_agents and parent in launchers and parent in found and found[parent]['provider'] == entry['provider']:
                 wrappers.add(parent)
             parent = processes.get(parent)
-    return sorted((v for k, v in found.items() if k not in wrappers),
-                  key=lambda v: (v['name'], v['pid']))
+    retained = {pid: row for pid, row in found.items() if pid not in wrappers}
+    for pid, row in retained.items():
+        parent, visited = processes.get(pid), {pid}
+        while parent and parent not in visited and parent not in retained:
+            visited.add(parent); parent = processes.get(parent)
+        row['parentAgentPid'] = parent if parent in retained and parent not in visited else None
+        row['relationshipSource'] = 'process-ancestry'
+    for pid, row in retained.items():
+        row['childAgentCount'] = sum(child['parentAgentPid'] == pid for child in retained.values())
+    return sorted(retained.values(), key=lambda v: (v['name'], v['pid']))
 
 
 def snapshot():

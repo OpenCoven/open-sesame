@@ -2,6 +2,11 @@ import Foundation
 
 @main struct SpeechTranscriptTests {
     static func main() {
+        var timed = OpenSesameSpeechTranscript()
+        _ = timed.update("First", start: 0, end: 1, sealed: true, words: [.init(text: "First", start: 0, end: 1)])
+        _ = timed.update("Next", start: 2, end: 3, sealed: false, words: [.init(text: "Next", start: 2, end: 3)])
+        _ = timed.update("Next corrected", start: 2, end: 4, sealed: true, words: [.init(text: "Next", start: 2, end: 3), .init(text: "corrected", start: 3, end: 4)])
+        precondition(timed.words.map(\.text) == ["First", "Next", "corrected"], "Word timing corrections replace the matching utterance and retain completed words")
         var text = OpenSesameSpeechTranscript()
         precondition(text.update("First phrase", start: nil, end: nil, sealed: false) == "First phrase")
         precondition(text.update("First phrase.", start: 0.2, end: 2, sealed: true) == "First phrase.")

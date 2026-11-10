@@ -5,6 +5,9 @@ import ScreenCaptureKit
 
 @main struct ProtectedShareTests {
     static func main() {
+        precondition(OpenSesameShareSizing.pixels(source: NSSize(width: 3840, height: 2160), viewport: NSSize(width: 800, height: 600), scale: 2) == NSSize(width: 1600, height: 900))
+        precondition(OpenSesameShareSizing.pixels(source: NSSize(width: 3840, height: 2160), viewport: NSSize(width: 3840, height: 2160), scale: 2) == NSSize(width: 3840, height: 2160))
+        precondition(OpenSesameShareSizing.pixels(source: NSSize(width: 3840, height: 2160), viewport: .zero, scale: 2) == nil)
         var state = OpenSesameShareState()
         precondition(state.phase == .idle)
         precondition(!state.receive(0, complete: true), "Opening the app never starts capture or signals protection")
