@@ -11,7 +11,7 @@
     reading:()=>active('reader')||active('rss'), audio:()=>['transcribe','claude','codex'].some(active), plugins:()=>true
   };
   const pages = {focus:['focus'],media:['media','music','youtube'],projects:['items'],console:['terminal','familiars','agent-monitor','computer-agent','remote'],reader:['reading'],live:['audio'],widgets:['plugins']};
-  const imported = page => window.OpenSesameTools?.list().some(widget=>widget.page===page);
+  const imported = page => (window.OpenSesamePageWidgets?.list?.()||window.OpenSesameTools?.list()||[]).some(widget=>widget.page===page);
   const available = scenario => !!surfaces[scenario]?.() || Object.entries(pages).some(([page,views])=>views.includes(scenario)&&imported(page));
   function resolve(scenario) {
     if (available(scenario)) return scenario;
@@ -52,7 +52,7 @@
       if (capture) capture.hidden = !active('transcribe');
       const page = Object.entries(pages).find(([,views])=>views.includes(state.scenario))?.[0];
       if (!surfaces[state.scenario]?.() && !window.OpenSesamePageWidgets?.active) {
-        const widget = window.OpenSesameTools?.list().find(widget=>widget.page===page);
+        const widget = (window.OpenSesamePageWidgets?.list?.()||window.OpenSesameTools?.list()||[]).find(widget=>widget.page===page);
         if (widget) window.OpenSesamePageWidgets.open(widget.id);
       }
       const next = resolve(state.scenario);

@@ -1,7 +1,7 @@
 'use strict';
 /* Installation is independent of account connection and saved user content. */
 (()=>{
-  const key='open-sesame-widget-lifecycle-v2',legacyKey='open-sesame-widget-lifecycle-v1',ids=['github','coven','spotify','apple','youtube','claude','codex','rss','task-manager','agenda','local-media','shells','reader','transcribe','notes','bookmarks','processes','computer','desktops'];
+  const key='open-sesame-widget-lifecycle-v2',legacyKey='open-sesame-widget-lifecycle-v1',ids=['github','coven','spotify','apple','youtube','claude','codex','rss','task-manager','agenda','local-media','shells','reader','transcribe','notes','bookmarks','processes','computer','desktops','image-generation'];
   const defaults=['agenda','local-media','task-manager','shells'];
   let states={},error=false;
   function validate(value){if(!value||Array.isArray(value)||typeof value!=='object'||Object.entries(value).some(([id,s])=>!ids.includes(id)||!['active','inactive','uninstalled'].includes(s)))throw Error('Invalid widget states');return value}

@@ -26,8 +26,8 @@
   <link rel="stylesheet" href="studio-controls.css?v=ee9c3474b725">
   <link rel="stylesheet" href="focus-overview.css?v=19682a753f32">
   <script src="storage-migration.js?v=3ac2f2e93e7d" defer></script>
-  <script src="widget-lifecycle.js?v=1a70682c9415" defer></script>
-  <script src="bridge.js?v=5605fe532aa4" defer></script>
+  <script src="widget-lifecycle.js?v=15f3c5c4b577" defer></script>
+  <script src="bridge.js?v=6c968da74b35" defer></script>
   <script src="vendor/xterm.js?v=aeb9a81e0f69" defer></script>
   <script src="vendor/purify.min.js?v=4936212d7362" defer></script>
   <script src="vendor/marked.js?v=2ad334d25e99" defer></script>
@@ -103,10 +103,12 @@
   <link rel="stylesheet" href="screen-notes.css?v=7db8d82e2de7">
   <script src="screen-notes.js?v=186456b19116" defer></script>
   <script src="notes.js?v=5c98607c8aca" defer></script>
+  <script src="image-generation.js?v=cfed302e4ec8" defer></script>
+  <link rel="stylesheet" href="image-generation.css?v=343e8e289a01">
   <script src="task-manager-model.js?v=a1285e87b29f" defer></script>
   <script src="task-manager-store.js?v=5f3c6fc8ea34" defer></script>
   <script src="task-manager.js?v=add56d289c4d" defer></script>
-  <script src="window.js?v=70192ba1f10a" defer></script>
+  <script src="window.js?v=e5566efd972b" defer></script>
   <script src="capture-launcher.js?v=3ec6d558fa04" defer></script>
   <link rel="stylesheet" href="projects-overview.css?v=3a4c0c9c2404">
   <script src="projects-overview.js?v=e846e902a7c2" defer></script>
@@ -128,10 +130,10 @@
   <script src="live-settings.js?v=6ab0ee5b2ea7" defer></script>
   <link rel="stylesheet" href="task-manager.css?v=e52cf33ee3f7">
   <link rel="stylesheet" href="plugins.css?v=156f04ab5cc1">
-  <script src="plugins-model.js?v=e0918bee8918" defer></script>
+  <script src="plugins-model.js?v=2277f1477d74" defer></script>
   <script src="github-monitor-model.js?v=00dcb95e05ef" defer></script>
   <script src="github-monitor.js?v=20c57e4ecd80" defer></script>
-  <script src="plugins.js?v=f24d0b47d399" defer></script>
+  <script src="plugins.js?v=d07c107a3211" defer></script>
   <script src="audio-source-menu.js?v=a8c393cb4d28" defer></script>
   <link rel="stylesheet" href="live-capture.css?v=a10354d9a2bf">
   <script src="familiar-commands.js?v=32293b4a387c" defer></script>
@@ -163,7 +165,7 @@
 <script src="escape.js?v=a8cad8ce4aef" defer></script>
 <script src="familiar-rail-resize.js?v=07d83b0b3193" defer></script>
 <link rel="stylesheet" href="page-widgets.css?v=4e107e963478">
-<script src="page-widgets.js?v=d7855d72c33d" defer></script>
+<script src="page-widgets.js?v=89cbd40c66a1" defer></script>
 <link rel="stylesheet" href="application-polish.css?v=ef44de87ea9d">
 <script src="application-chrome.js?v=37899b02479c" defer></script>
 <link rel="stylesheet" href="process-workspace.css?v=29814f0e99eb">
@@ -172,7 +174,7 @@
 <script src="content-focus.js?v=cb019112af56" defer></script>
 <script src="rail-headings.js?v=f75817e085da" defer></script>
 <script src="familiar-capture.js?v=78e1e87daf27" defer></script>
-<script src="workspace-widgets.js?v=b3adc998eef5" defer></script>
+<script src="workspace-widgets.js?v=fccf2e77ac6c" defer></script>
 <link rel="stylesheet" href="mobile-shell.css?v=d424f4277a4b">
 <script src="mobile-shell.js?v=57713e8c7b37" defer></script>
 </head>
@@ -352,6 +354,7 @@
 <div class="plugins-bottom"><span id="plugins-count"></span><div id="plugins-pages" class="workspace-pagination" aria-label="Widget pages"><button id="plugins-prev" type="button" aria-label="Previous widgets page"><i data-icon="chevron"></i></button><span id="plugins-page"></span><button id="plugins-next" type="button" aria-label="Next widgets page"><i data-icon="chevron"></i></button></div></div>
 <div class="plugins-desktop"><span class="plugin-logo"><img src="assets/plugins/apple.svg" alt="" width="22" height="22"></span><div><strong id="plugins-desktop-state">Bring your Mac along</strong><small id="plugins-desktop-copy">Use local agents with the macOS companion.</small></div><button id="plugins-desktop-action" type="button">Get companion</button><a id="plugins-desktop-download" href="downloads/open-sesame-desktop-source.zip" download hidden>Download companion source</a></div><p id="plugins-status" role="status" hidden></p>
 <section id="plugin-detail" class="plugin-detail" role="dialog" aria-labelledby="plugin-detail-title" hidden><header><div id="plugin-detail-logo"></div><h3 id="plugin-detail-title"></h3><button id="plugin-detail-close" type="button" aria-label="Close widget details"><i data-icon="close"></i></button></header><span id="plugin-detail-state" class="plugin-state"></span><p id="plugin-detail-copy"></p><div class="plugin-access"><strong>What it can access</strong><p id="plugin-detail-access"></p></div><p id="plugin-detail-note"></p><div class="plugin-setup"><strong>Set up this widget</strong><ol id="plugin-detail-steps"></ol><details><summary>If it does not connect</summary><p id="plugin-detail-repair"></p></details></div><div id="plugin-lifecycle" class="plugin-lifecycle" role="group" aria-label="Widget installation"></div><button id="plugin-detail-main" class="plugin-primary" type="button"></button><button id="plugin-detail-open" class="plugin-secondary" type="button"></button><a id="plugin-detail-download" href="downloads/open-sesame-desktop-source.zip" download>Get macOS companion source <i data-icon="download"></i></a><a id="plugin-detail-docs" target="_blank" rel="noopener noreferrer">Setup guide <i data-icon="open-view"></i></a></section>
+<section id="image-generation" aria-label="Image Studio" hidden><header class="image-heading"><div><h2>Image Studio</h2><p>A thought, a scene, a little imagination.</p></div><button id="image-save" type="button" disabled>Save PNG</button></header><div><p id="image-account">Connect your ChatGPT account through Codex.</p><div class="image-account-actions"><button id="image-connect" type="button">Connect ChatGPT</button><button id="image-refresh" type="button">Refresh connection</button></div></div><form id="image-form"><label for="image-prompt">Describe your image</label><textarea id="image-prompt" maxlength="4000" placeholder="A quiet reading room at dusk, warm lamplight, soft watercolor…" required></textarea><label for="image-shape">Shape<select id="image-shape"><option value="square">Square</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label><div class="image-actions"><button id="image-stop" type="button" hidden>Stop</button><button id="image-generate" type="submit" disabled>Generate image</button></div></form><p id="image-status" role="status" aria-live="polite">Your prompt stays here until you choose Generate.</p><div class="image-canvas"><p id="image-empty">Describe something you would like to see. Your image will appear here.</p><img id="image-preview" alt="Generated image preview" hidden></div><footer>Uses your ChatGPT account through the official Codex CLI. Account limits apply. Save a PNG to keep your image; prompts are saved on this device.</footer></section>
 <section id="task-manager" aria-label="Task Manager" hidden><header class="task-manager-heading"><div><strong>Task Manager</strong><small>A little clarity for what comes next.</small></div><button id="task-manager-new-list" type="button">New list</button></header><form id="task-manager-list-form" hidden><label class="sr-only" for="task-manager-list-name">List name</label><input id="task-manager-list-name" maxlength="40" placeholder="List name" required><button type="submit">Create list</button><button id="task-manager-list-cancel" type="button">Cancel</button></form><form id="task-manager-form" novalidate><label class="sr-only" for="task-manager-title">Task title</label><input id="task-manager-title" maxlength="200" placeholder="What needs to happen?" required autocomplete="off"><label class="sr-only" for="task-manager-project">Task list</label><select id="task-manager-project"><option value="">Inbox</option></select><label class="sr-only" for="task-manager-priority">Task priority</label><select id="task-manager-priority"><option value="normal">Normal priority</option><option value="high">High priority</option><option value="low">Low priority</option></select><label class="sr-only" for="task-manager-due">Due date</label><input id="task-manager-due" type="date" aria-label="Due date"><button id="task-manager-submit" type="submit">Add task</button><button id="task-manager-cancel" type="button" hidden>Cancel edit</button></form><p id="task-manager-error" role="alert" hidden></p><div class="task-manager-filters"><label class="sr-only" for="task-manager-search">Search tasks</label><input id="task-manager-search" type="search" placeholder="Search tasks…" maxlength="200"><label class="sr-only" for="task-manager-list">Filter by list</label><select id="task-manager-list"><option value="all">All lists</option><option value="">Inbox</option></select><label class="sr-only" for="task-manager-status-filter">Task status</label><select id="task-manager-status-filter"><option value="open">Open tasks</option><option value="completed">Completed</option><option value="all">All tasks</option></select><label class="sr-only" for="task-manager-priority-filter">Filter by priority</label><select id="task-manager-priority-filter"><option value="all">All priorities</option><option value="high">High priority</option><option value="normal">Normal priority</option><option value="low">Low priority</option></select><label class="sr-only" for="task-manager-sort">Sort tasks</label><select id="task-manager-sort"><option value="due">Due date</option><option value="priority">Priority</option><option value="newest">Newest</option><option value="title">Title A–Z</option></select></div><div class="task-manager-summary"><span><b id="task-manager-open-count">0</b>Open</span><span><b id="task-manager-due-count">0</b>Due or overdue</span><span><b id="task-manager-completed-count">0</b>Completed</span></div><ul id="task-manager-items" class="task-manager-items" aria-label="Tasks"></ul><p id="task-manager-empty">No tasks yet. Add your first task above.</p><nav id="task-manager-pages" class="task-manager-pages" aria-label="Task pages" hidden><button id="task-manager-prev" type="button" aria-label="Previous task page">Previous</button><span id="task-manager-page"></span><button id="task-manager-next" type="button" aria-label="Next task page">Next</button></nav><footer class="task-manager-foot">Saved on this device · Lists and tasks are shared with Projects.</footer></section>
 <section id="github-monitor" aria-label="GitHub project monitor" hidden>
 

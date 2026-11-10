@@ -14,6 +14,8 @@ For rendered layout, inspect [fixtures/widget-fit.html](fixtures/widget-fit.html
 
 Markdown tokenizer changes require [check-markdown-redos.mjs](check-markdown-redos.mjs): bounded source/runtime adversarial workers, syntax/render regressions and an exact temporary rebuild comparison. [build-markdown.mjs](build-markdown.mjs) accepts an optional output file so checks never rewrite tracked runtime assets. Keep upstream licenses/provenance and local patch notices aligned.
 
+[check-image-generation.mjs](check-image-generation.mjs) exercises explicit submit and delayed-response retirement. [CLI fixture tests](../desktop/tests/test_image_generation.py) exercise real bounded subprocess cleanup without calling a provider; [native PNG tests](../desktop/tests/ImageExportTests.swift) join check-native.sh. Keep actual subscription generation evidence separate.
+
 The optional [mobile browser fixture](fixtures/mobile-browser.mjs) blocks external requests and qualifies the authored renderer with synthetic items in Chromium/WebKit. It requires an owned loopback static server and must not be used as device or native acceptance; see the [mobile check contract](../docs/mobile-shell.md#checks).
 
 [Mobile transport lifecycle](fixtures/mobile-transport.mjs) substitutes only the test transport while retaining real xterm/Coven client/UI owners; [mobile pane layout](fixtures/mobile-pane-layout.mjs) checks narrow Projects editing/Back and large text. Both use the same owned loopback fixture server and must remain explicitly synthetic. Do not turn their in-memory responses into production capability or identity state.

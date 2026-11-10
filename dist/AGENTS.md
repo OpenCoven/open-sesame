@@ -22,6 +22,8 @@ The checked-in create-markdown runtime comes from the [vendored tokenizer](../ve
 
 [lockin.js](lockin.js) owns local-media play/seek; [media-transport.js](media-transport.js) adds shared volume, fullscreen and empty/drag hints to the same bar and video element; native controls are reserved for fullscreen. Keep live/unknown-duration seek disabled and preserve queue/file ownership in [lockin.js](lockin.js). Process presentation disclosures in [agent-monitor.js](agent-monitor.js) must preserve identity-bound native controls and explicit stop confirmation.
 
+[Image Studio](../docs/image-generation.md) uses the optional installation lifecycle and Media page adapter. Only explicit Generate sends a prompt; retire pending requests when hidden, deactivated or transferred. Keep prompt/shape drafts local and preview pixels out of shared workspace snapshots. Provider sign-in and export remain native operations.
+
 [mobile-shell.js](mobile-shell.js) owns responsive presentation over mounted panes; [mobile-model.js](mobile-model.js) derives Today from existing state. Keep native macOS modes excluded and preserve saved activity keys, capture ownership and page-widget identities. See the [mobile contract](../docs/mobile-shell.md); reference typography/mark and device qualification remain separate gates.
 
 Narrow mobile Projects uses the existing `libraryOpen` flag and [Projects owner](projects-overview.js) `closeDetails()` transition for collection/detail navigation. Keep save veto and focus return intact; do not add parallel item selection or persistence state in the mobile shell.

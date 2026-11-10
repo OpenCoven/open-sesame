@@ -138,12 +138,12 @@ def reap(process):
     return helpers
 
 
-def invoke(command, data, directory, env, cancelled):
+def invoke(command, data, directory, env, cancelled, timeout_seconds=85):
     """Bounded duplex pipes; no blocked stdin, leaked children or unbounded diagnostics."""
     if not hasattr(os,'waitid') or not hasattr(os,'WNOWAIT'): raise ValueError('CLI process ownership requires non-reaping wait support.')
     if cancelled(): raise ValueError('Task stopped. No pending action was executed.')
     process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=directory,env=env,start_new_session=True)
-    output=bytearray(); count=0; position=0; deadline=time.monotonic()+85; finished=False
+    output=bytearray(); count=0; position=0; deadline=time.monotonic()+timeout_seconds; finished=False
     try:
         with selectors.DefaultSelector() as selector:
             for pipe in [process.stdout,process.stderr]: os.set_blocking(pipe.fileno(),False);selector.register(pipe,selectors.EVENT_READ)

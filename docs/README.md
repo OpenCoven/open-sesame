@@ -7,6 +7,7 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 | Area | Read first | Related implementation notes |
 | --- | --- | --- |
 | Tools and integrations | [Tool creation and submissions](tools.md), [GitHub monitor](github-monitor-widget.md) | [Optional widgets and lifecycle controls](widget-lifecycle.md), [Page tabs and application workspace](widget-pages-and-application.md), [connection setup](desktop-polish-plan.md#plugin-setup-and-private-configuration) |
+| Image generation | [Image Studio](image-generation.md) | ChatGPT sign-in, explicit generation, previews and native PNG export |
 | To-do tasks | [Task Manager](task-manager.md) | Shared Projects lists, priorities, due dates and recoverable completion |
 | Capture and launcher | [Command palette](command-palette.md), [widget/launcher lifecycle](widget-launcher-fit.md) | [Desktop interaction polish](desktop-interaction-polish.md) covers shell routing, playlists and Escape |
 | Embedded computer agent | [Task, account and permission setup](embedded-computer-agent.md) | Bundled Coven engine, native action boundary and separate device/provider gates |

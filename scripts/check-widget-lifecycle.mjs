@@ -7,7 +7,7 @@ function load(storage=new Map(),fail=false){
  vm.runInNewContext(source,ctx);return {api:ctx.window.OpenSesameWidgetLifecycle,events,ctx};
 }
 const storage=new Map(),{api,events,ctx}=load(storage);
-assert.deepEqual(JSON.parse(JSON.stringify(api.defaults)),['agenda','local-media','task-manager','shells']);for(const id of api.ids)assert.equal(api.isActive(id),api.defaults.includes(id),'Fresh default '+id);assert.equal(api.status('reader'),'uninstalled');assert.equal(api.status('transcribe'),'uninstalled');assert.equal(api.status('rss'),'uninstalled');assert.equal(api.status('github'),'uninstalled');assert.equal(ctx.document.documentElement.dataset.widgetRss,'off');
+assert.deepEqual(JSON.parse(JSON.stringify(api.defaults)),['agenda','local-media','task-manager','shells']);for(const id of api.ids)assert.equal(api.isActive(id),api.defaults.includes(id),'Fresh default '+id);assert.equal(api.status('reader'),'uninstalled');assert.equal(api.status('transcribe'),'uninstalled');assert.equal(api.status('image-generation'),'uninstalled');assert.equal(api.status('rss'),'uninstalled');assert.equal(api.status('github'),'uninstalled');assert.equal(ctx.document.documentElement.dataset.widgetRss,'off');
 const catalogContext={window:{}};vm.runInNewContext(fs.readFileSync('dist/plugins-model.js','utf8'),catalogContext);
 for(const {id} of catalogContext.window.OpenSesamePluginsModel.catalog){
  api.set(id,'active');assert(api.isActive(id));api.set(id,'inactive');assert.equal(api.status(id),'inactive');assert.equal(load(storage).api.status(id),'inactive');api.set(id,'uninstalled');assert.equal(api.isActive(id),false);assert.equal(events.at(-1).id,id);
@@ -30,3 +30,4 @@ console.log('Catalog coverage and floating-document state synchronization retire
 
 const oldState='{"spotify":"active","coven":"inactive","rss":"uninstalled"}',oldStore=new Map([['open-sesame-widget-lifecycle-v1',oldState]]),upgraded=load(oldStore).api;
 assert(upgraded.isActive('spotify'));assert(!upgraded.isActive('coven'));assert(upgraded.isActive('agenda'));upgraded.set('reader','active');assert.equal(oldStore.get('open-sesame-widget-lifecycle-v1'),oldState,'The older app lifecycle remains readable after new core widgets are activated');assert(oldStore.has(key));console.log('Versioned core-widget migration retains explicit choices and leaves the older app configuration intact.');
+for(const state of ['active','inactive','uninstalled']){const prior=JSON.stringify({'image-generation':state}),saved=new Map([['open-sesame-widget-lifecycle-v1',prior]]),next=load(saved).api;assert.equal(next.status('image-generation'),state);assert(!next.error);assert.equal(saved.get('open-sesame-widget-lifecycle-v1'),prior)}
