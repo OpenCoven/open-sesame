@@ -222,3 +222,68 @@ html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-p
 .open-sesame-mobile #widget-anchor #widget-panel .page-widget-host-toolbar :is(#reading-collections,#lockin-tabs,[role=tablist]) [role=tab]{font-size:.875rem!important;min-height:44px!important;height:auto!important;max-height:none!important}
 
 .open-sesame-mobile #widget-anchor #widget-panel .page-widget-host-toolbar [role=tablist]{height:auto!important;min-height:48px!important}
+
+/* Calendar controls and its editor use the available mobile viewport. */
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus>.focus-top{overflow:visible;max-height:none;height:auto!important}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-calendar-header{flex-wrap:wrap;flex:1 1 100%;min-width:0;max-width:100%}
+.open-sesame-mobile #widget-panel .focus-calendar-header>strong{white-space:normal;flex:1 1 100%;font-size:1rem}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus :is(.focus-calendar-modes,.focus-calendar-nav)>button,.open-sesame-mobile #widget-anchor #widget-panel #focus-calendar-add{min-width:44px;min-height:44px;height:auto!important;font-size:.875rem!important}
+.open-sesame-mobile #widget-panel .focus-calendar-nav{flex-wrap:wrap}
+.open-sesame-mobile #widget-anchor #widget-panel #focus-calendar-editor{position:fixed;inset:var(--mobile-top) 0 auto!important;width:100%;height:var(--mobile-height);max-height:var(--mobile-height);box-sizing:border-box;overflow:auto;z-index:65;padding:16px;gap:12px;background:var(--mobile-base)}
+.open-sesame-mobile #widget-panel .focus-calendar-fields{flex-direction:column;align-items:stretch}
+.open-sesame-mobile #widget-panel #focus-calendar-editor :is(label,small){font-size:.875rem;line-height:1.5}
+.open-sesame-mobile #widget-panel #focus-calendar-editor input{font-size:1rem;min-height:44px;box-sizing:border-box;min-width:0;max-width:100%}
+.open-sesame-mobile #widget-panel #focus-calendar-editor :is(header,footer){flex-wrap:wrap}
+.open-sesame-mobile #widget-panel #focus-calendar-editor button{min-height:44px;font-size:.875rem}
+/* Native dialog ownership stays in Tools; only its mobile dimensions and typography change. */
+.open-sesame-mobile #widget-anchor #widget-panel .tools-dialog{box-sizing:border-box;width:calc(100% - 24px);max-height:calc(var(--mobile-height) - 24px);font-size:1rem;padding:16px}
+.open-sesame-mobile #widget-panel .tools-dialog :is(button,summary,label,p,small){font-size:.875rem;line-height:1.5;overflow-wrap:anywhere}
+.open-sesame-mobile #widget-panel .tools-dialog :is(button,summary){min-height:44px;max-width:100%;white-space:normal}
+.open-sesame-mobile #widget-panel .tools-dialog header{flex-wrap:wrap}
+.open-sesame-mobile #widget-panel .tools-dialog :is(input,textarea){max-width:100%}
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #reading-workspace{display:grid;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto minmax(0,1fr);gap:8px}
+ .open-sesame-mobile #widget-anchor #widget-panel #reading-rail{max-height:none;min-height:0;width:100%;border:0;padding:0}
+ .open-sesame-mobile #widget-panel #reading-list{display:flex;overflow-x:auto;overflow-y:hidden;gap:8px;flex:none;min-height:44px}
+ .open-sesame-mobile #widget-panel #reading-list>button{flex:0 0 180px;min-height:44px}
+ .open-sesame-mobile #widget-panel #reading-detail{min-width:0;width:100%}
+}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-article{font-size:1rem;line-height:1.6}
+
+.open-sesame-mobile #widget-panel .tools-dialog h2{font-size:1.5rem}
+
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus>.focus-top{flex-wrap:wrap!important}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus .focus-calendar-header{height:auto!important;width:100%;margin:0!important}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-focus[data-focus-view=calendar]:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+.open-sesame-mobile #widget-anchor #widget-panel #focus-calendar{flex:none;min-height:16rem}
+.open-sesame-mobile #widget-panel #focus-calendar-grid{flex:none;min-height:20rem;grid-template-rows:1.5rem repeat(6,minmax(3rem,1fr))}
+.open-sesame-mobile #widget-panel #focus-calendar-grid[data-mode=week]{min-height:10rem;grid-template-rows:1.5rem minmax(5rem,1fr)}
+.open-sesame-mobile #widget-panel .focus-calendar-weekday{font-size:.625rem}
+.open-sesame-mobile #widget-panel .focus-calendar-cell>button{font-size:.875rem;min-height:32px}
+.open-sesame-mobile #widget-panel #focus-calendar-day{flex:none;min-height:14rem}
+.open-sesame-mobile #widget-panel .focus-calendar-event{height:auto;min-height:44px;flex-wrap:wrap}
+.open-sesame-mobile #widget-panel .focus-calendar-event :is(time,strong,small){font-size:.875rem;white-space:normal}
+
+.open-sesame-mobile #widget-anchor #widget-panel #pane-reading:not(.page-widget-open){overflow-y:auto!important;overscroll-behavior:contain}
+.open-sesame-mobile #widget-anchor #widget-panel #pane-reading:not(.page-widget-open) #reading-workspace{min-height:22rem;flex-shrink:0}
+.open-sesame-mobile:not(.mobile-capture-open) #widget-panel:has(#pane-reading:not([hidden]))>.widget-capture-footer{display:none!important}
+
+.open-sesame-mobile #widget-anchor #widget-panel #reading-toolbar{height:auto;min-height:44px;flex-wrap:wrap;flex:none}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-collections{height:auto!important;min-height:48px!important;max-width:100%;overflow-x:auto}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-collections>button{font-size:.875rem!important;min-height:44px!important;height:auto!important}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-title{font-size:1.25rem;line-height:1.3;overflow-wrap:anywhere}
+.open-sesame-mobile #widget-panel :is(.reading-item-copy>span,.reading-item-copy>small,.reading-meta){font-size:.875rem;line-height:1.5}
+.open-sesame-mobile #widget-panel .reading-reader-top{flex-wrap:wrap}
+.open-sesame-mobile #widget-panel .reading-article-actions{max-width:100%;flex-wrap:wrap}
+.open-sesame-mobile #widget-anchor #widget-panel .reading-article-actions :is(button,a){min-height:44px;min-width:44px;height:auto}
+
+.open-sesame-mobile #widget-anchor #widget-panel #reading-list .reading-item-copy :is(span,small){font-size:.875rem!important;line-height:1.5!important;max-height:none}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-list>button{height:auto!important;min-height:4.5rem;max-height:none!important}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-pages{min-height:44px;height:auto;flex:none;font-size:.875rem}
+.open-sesame-mobile #widget-anchor #widget-panel #reading-pages button{height:auto;min-width:44px;min-height:44px}
+
+@media(max-width:600px){
+ .open-sesame-mobile #widget-anchor #widget-panel #reading-list{flex-direction:row;height:5rem!important;max-height:5rem;align-items:stretch}
+}
+
+.open-sesame-mobile #widget-panel #focus-calendar-editor header strong{font-size:1.25rem}

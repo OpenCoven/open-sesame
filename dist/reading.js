@@ -61,7 +61,7 @@
   }
   function merge(feed,parsed){feed.title=parsed.title;feed.updatedAt=Date.now();const fresh=new Set(parsed.entries.map(e=>e.id));entries=[...parsed.entries.filter(e=>!flags(e).deleted),...entries.filter(e=>!fresh.has(e.id))];if(entries.length>MAX_ENTRIES){const keep=entries.filter(e=>flags(e).later),rest=entries.filter(e=>!flags(e).later);entries=[...keep,...rest].slice(0,MAX_ENTRIES)}save()}
   function pageCapacity(count){
-    const rail=el('reading-pages').parentElement,height=Math.max(0,(rail.clientHeight||362)-el('reading-collection-name').parentElement.offsetHeight-6),row=railRowHeight(rail,true),gap=4,pager=32;
+    const rail=el('reading-pages').parentElement,height=Math.max(0,(rail.clientHeight||362)-el('reading-collection-name').parentElement.offsetHeight-6),row=Math.max(railRowHeight(rail,true),el('reading-list').querySelector('button')?.getBoundingClientRect().height||0),gap=4,pager=Math.max(32,el('reading-pages').offsetHeight);
     const all=Math.max(1,Math.floor((height+gap)/(row+gap)));
     return count>all?Math.max(1,Math.floor((height-pager+gap)/(row+gap))):all;
   }

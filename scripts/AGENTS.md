@@ -21,3 +21,5 @@ The optional [mobile browser fixture](fixtures/mobile-browser.mjs) blocks extern
 [Mobile visual checks](fixtures/mobile-visual.mjs) compare reference-derived presentation with real production models and poisoned prototype storage. Keep prototype content confined to fixtures and the independently owned reference; do not weaken real-client/navigation assertions to obtain a visual pass.
 
 [Mobile installed forms](fixtures/mobile-forms.mjs) exercise real page adapters, configuration persistence and canonical local note/task writes. Respect item limits by archiving fixture notes through their owner. In mobile Task Manager, the page view owns scrolling; retain a real nonzero page scroll and exact return-position assertion rather than assuming a nested list scrolls.
+
+[Mobile built-in interiors](fixtures/mobile-interiors.mjs) exercise scheduling, editor Tab containment, cached Reader pagination/scroll and Tools install/dismissal using real owners and blocked external requests. Keep original failures, independent per-area results and explicit font/pointer/focus checks; do not replace canonical writes with DOM-only stubs.

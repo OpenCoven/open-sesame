@@ -29,3 +29,5 @@ Narrow mobile Projects uses the existing `libraryOpen` flag and [Projects owner]
 Mobile Today task actions and Reader links call canonical owners. Familiar initial seals derive only from canonical IDs/display names, preserve custom avatar images and are decorative, never presence or permission. Keep the projection model loaded before familiar rendering; mobile CSS/roster orientation must restore desktop behavior when its scope ends.
 
 Mobile Task Manager keeps its form and task list in the installed page view’s scrolling flow, so enlarged controls cannot collapse the list. Preserve the native desktop list layout and the page scroll anchor during destination changes.
+
+Mobile Calendar and Reader styling retains their existing data, scheduling, pagination and article-scroll owners. Tools restores focus on dialog close, after native modal dismissal; an explicit installed-page route suppresses that restoration. Keep viewport-only presentation scoped to the mobile shell.
