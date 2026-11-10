@@ -15,6 +15,7 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 | Window and display | [Display following](notch-display-follow.md), [display pinning and shared Spotify](display-pinning-and-spotify.md) | [Desktop setup and smoke pass](../desktop/README.md) |
 | Screen, voice and audio | [Screen notes and capture](screen-notes-and-capture.md), [Protected Share](protected-share.md) | [System audio and media](system-audio-and-media.md), [transcription startup repair](system-audio-transcription.md) |
 | Authentication | [Native login contract](workos-login.md), [public HTTPS login handoff](../web/auth-entrypoint/README.md) | Public deployment and saved provider settings require their own live evidence |
+| Mobile proposal | [Host ADR and approval status](mobile/adr-001-mobile-host.md), [mobile index](mobile/README.md) | [Canonical source/transport inventory](mobile/source-inventory.md), [capability and recovery states](mobile/capabilities.md); device support is not yet qualified |
 | Remote desktops | [VNC connection types, lifecycle and checks](vnc-desktops.md) | [Controller setup](../desktop/controller-setup.md) covers a separate optional message receiver |
 | Message controllers | [Controller setup](../desktop/controller-setup.md) | [Capability boundaries](capabilities.md) distinguish optional adapters from qualified providers |
 
