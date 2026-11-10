@@ -13,7 +13,7 @@
     const destination=make('span','plugin-destination',({focus:'Agenda',media:'Media',projects:'Projects',console:'Console',reader:'Reader',live:'Live'})[p.page]||'Widgets');destination.setAttribute('aria-hidden','true');
     const overview=make('span','plugin-overview'),tags=make('span','plugin-features');for(const feature of features[p.id]||[])tags.append(make('span','',feature));overview.append(make('span','plugin-description',p.detail),tags);
     const footer=make('span','plugin-card-foot'),status=make('span','plugin-state',lifecycleStatus(p)==='active'?'Active · '+s.label:lifecycleStatus(p)==='inactive'?'Inactive':'Available to install');status.dataset.tone=s.tone;footer.append(status,make('span','plugin-action',s.action+' ›'));
-    button.append(mark(p),destination,copy,overview,footer);button.addEventListener('click',()=>show(p,button));return button;
+    button.append(mark(p),destination,copy,overview,footer);button.addEventListener('click',async ()=>show(p,button));return button;
   }
   function render(){
     const c=context(),shown=M.filter(M.catalog,el('plugins-search').value,el('plugins-category').value,false,c).filter(p=>el('plugins-connected').getAttribute('aria-pressed')!=='true'||lifecycleStatus(p)==='active'),pages=Math.max(1,Math.ceil(shown.length/capacity));page=Math.min(page,pages-1);
@@ -33,7 +33,7 @@
     el('plugin-detail-steps').replaceChildren(...setup.steps.map(text=>make('li','',text)));el('plugin-detail-repair').textContent=setup.repair;
     const lifecycle=lifecycleStatus(p),controls=el('plugin-lifecycle');controls.replaceChildren();
     const management=make('details','plugin-manage'),manageLabel=make('summary','','Manage widget');management.append(manageLabel);if(lifecycle==='active')controls.append(management);
-    const addControl=(label,value)=>{const b=make('button','plugin-secondary',label);b.type='button';b.disabled=!!window.OpenSesameWidgetLifecycle?.error;b.onclick=()=>{try{window.OpenSesameWidgetLifecycle.set(p.id,value);el('plugin-lifecycle').querySelector('button')?.focus({preventScroll:true})}catch(e){toast(e.message)}};(lifecycle==='active'?management:controls).append(b)};
+    const addControl=(label,value)=>{const b=make('button','plugin-secondary',label);b.type='button';b.disabled=!!window.OpenSesameWidgetLifecycle?.error;b.onclick=async()=>{try{await window.OpenSesameWidgetLifecycle.set(p.id,value);el('plugin-lifecycle').querySelector('button')?.focus({preventScroll:true})}catch(e){toast(e.message)}};(lifecycle==='active'?management:controls).append(b)};
     if(lifecycle==='uninstalled')addControl('Install widget','active');else{addControl(lifecycle==='active'?'Deactivate widget':'Activate widget',lifecycle==='active'?'inactive':'active');addControl('Uninstall widget','uninstalled')}
     if(window.OpenSesameWidgetLifecycle?.error)controls.append(make('p','',window.OpenSesameWidgetLifecycle?.error?'Saved widget states need recovery; original data is preserved.':lifecycle==='uninstalled'?'Not installed. Settings and saved content are kept.':lifecycle==='inactive'?'Inactive. Settings and saved content are kept.':'Active. Account connection is managed separately.'));
     el('plugin-detail-main').textContent=p.kind==='workspace'?'Open '+p.name:p.kind==='image-generation'?'Open in Media':p.kind==='task-manager'?'Open in Projects':p.kind==='github'?(window.OpenSesamePageWidgets?.list().some(x=>x.id==='builtin-github')?'Open in Projects':'Add to Projects'):p.kind==='familiars'?'Connect Coven':p.kind==='music'?(c.music[p.id]?.supported===false?'View account requirements':s.action+' account'):p.kind==='feeds'?'Add a feed':c.desktop&&agents?.[p.id]?'Use in Live':'Check again';
@@ -56,7 +56,7 @@
     const next=wide?6:Math.max(columns,Math.min(6,Math.floor((area.clientHeight||240)/92)*columns)),layout=wide?'bento':columns===3?'wide':'compact';
     pane.dataset.layout=layout;pane.dataset.density=area.clientHeight<580?'compact':'comfortable';if(next!==capacity){capacity=next;page=0;render();}
   }
-  new ResizeObserver(fit).observe(el('plugins-results'));window.addEventListener('open-sesame-view-changed',()=>{if(state.scenario==='plugins'){render();fit();if(agents===null)refresh();}else close(false);});window.addEventListener('open-sesame-github-changed',render);window.addEventListener('open-sesame-music-account-changed',render);window.addEventListener('open-sesame-familiars-changed',render);window.addEventListener('open-sesame-desktop-ready',refresh);window.addEventListener('open-sesame-desktop-disconnected',()=>{generation++;checking=false;agents=null;error='';render();});
+  new ResizeObserver(fit).observe(el('plugins-results'));window.addEventListener('open-sesame-view-changed',async ()=>{if(state.scenario==='plugins'){render();fit();if(agents===null)refresh();}else close(false);});window.addEventListener('open-sesame-github-changed',render);window.addEventListener('open-sesame-music-account-changed',render);window.addEventListener('open-sesame-familiars-changed',render);window.addEventListener('open-sesame-desktop-ready',refresh);window.addEventListener('open-sesame-desktop-disconnected',async ()=>{generation++;checking=false;agents=null;error='';render();});
   window.addEventListener('open-sesame-widgets-changed',render);
   window.OpenSesamePlugins={refresh};render();
 })();

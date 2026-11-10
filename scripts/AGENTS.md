@@ -14,6 +14,9 @@ For rendered layout, inspect [fixtures/widget-fit.html](fixtures/widget-fit.html
 
 Markdown tokenizer changes require [check-markdown-redos.mjs](check-markdown-redos.mjs): bounded source/runtime adversarial workers, syntax/render regressions and an exact temporary rebuild comparison. [build-markdown.mjs](build-markdown.mjs) accepts an optional output file so checks never rewrite tracked runtime assets. Keep upstream licenses/provenance and local patch notices aligned.
 
+[Workspace storage checks](../docs/workspace-storage.md#verification-and-limits) exercise asynchronous commits and existing canonical-owner rollback assertions. The two optional workspace browser fixtures own their loopback servers and isolated IndexedDB contexts; preserve real transaction races, downloaded bytes and application-level delayed/quota/restart checks. Await command completion in fixtures instead of weakening failed-write or navigation assertions. Native/device acceptance remains separate.
+
+
 [check-image-generation.mjs](check-image-generation.mjs) exercises explicit submit and delayed-response retirement. [CLI fixture tests](../desktop/tests/test_image_generation.py) exercise real bounded subprocess cleanup without calling a provider; [native PNG tests](../desktop/tests/ImageExportTests.swift) join check-native.sh. Keep actual subscription generation evidence separate.
 
 The optional [mobile browser fixture](fixtures/mobile-browser.mjs) blocks external requests and qualifies the authored renderer with synthetic items in Chromium/WebKit. It requires an owned loopback static server and must not be used as device or native acceptance; see the [mobile check contract](../docs/mobile-shell.md#checks).
@@ -27,5 +30,8 @@ The optional [mobile browser fixture](fixtures/mobile-browser.mjs) blocks extern
 [Mobile built-in interiors](fixtures/mobile-interiors.mjs) exercise scheduling, editor Tab containment, cached Reader pagination/scroll and Tools install/dismissal using real owners and blocked external requests. Keep original failures, independent per-area results and explicit font/pointer/focus checks; do not replace canonical writes with DOM-only stubs.
 
 [review-content-focus.mjs](review-content-focus.mjs) renders the authored interface with disposable synthetic host, clipboard, terminal, reading and familiar state. It checks retained content and interactions across view changes; it does not type into a real shell, read the user clipboard or send a model prompt. Keep these limits explicit when reporting its evidence.
+
+[prepare-ios.py](prepare-ios.py) verifies the existing pinned SDK before compiling for the selected iOS SDK and prepares task-owned authored asset copies. [check-mobile-native.sh](check-mobile-native.sh) joins Mac verification with real SQLite/receiving/clock/file tests. Simulator tests and hardware protection/account/File-sharing acceptance remain separate; retain skipped physical gates explicitly.
+
 
 The workspace recovery review also exercises opt-in speaker UI and responsive Stop using synthetic native events. Real NeMo inference uses a separate ignored Python environment and generated local multi-voice audio; never install its ML dependencies into the verifier’s default Python or record a user microphone to make an automated check pass.

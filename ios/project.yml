@@ -1,0 +1,77 @@
+name: OpenSesameMobile
+options:
+  deploymentTarget:
+    iOS: '18.0'
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    TARGETED_DEVICE_FAMILY: '1,2'
+    PRODUCT_BUNDLE_IDENTIFIER: computer.opensesame.mobile.development
+    MARKETING_VERSION: '0.1.0'
+    CURRENT_PROJECT_VERSION: 1
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_INCLUDE_PATHS: '$(SRCROOT)/../build/workos-mobile-$(PLATFORM_NAME)'
+    LIBRARY_SEARCH_PATHS: '$(SRCROOT)/../build/workos-mobile-$(PLATFORM_NAME)'
+    OTHER_LDFLAGS: '$(inherited) -lWorkOS -lsqlite3'
+targets:
+  OpenSesameMobile:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - ../desktop/Authentication.swift
+      - path: ../build/ios-assets/dist
+        type: folder
+        buildPhase: resources
+      - path: ../build/ios-assets/workspace-keys.json
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Open Sesame
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        CFBundleURLTypes:
+          - CFBundleURLName: computer.opensesame.mobile.auth
+            CFBundleURLSchemes: [opensesame]
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: false
+        SUPPORTS_MACCATALYST: false
+        ENABLE_USER_SCRIPT_SANDBOXING: true
+  MobileIntegrationTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/MobileIntegrationTests.swift
+    dependencies:
+      - target: OpenSesameMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: computer.opensesame.mobile.development.tests
+        GENERATE_INFOPLIST_FILE: true
+  MobileGateUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: OpenSesameMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: computer.opensesame.mobile.development.uitests
+        GENERATE_INFOPLIST_FILE: true
+schemes:
+  OpenSesameMobile:
+    build:
+      targets:
+        OpenSesameMobile: all
+        MobileGateUITests: [test]
+        MobileIntegrationTests: [test]
+    test:
+      targets: [MobileIntegrationTests, MobileGateUITests]

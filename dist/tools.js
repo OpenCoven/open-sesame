@@ -5,7 +5,7 @@
   const accessNames = {'github.summary': 'Read connected GitHub repositories', 'feeds.headlines': 'Read saved feed headlines', 'note.save': 'Save notes to Projects', navigate: 'Open workspace views', 'link.open': 'Open web links'};
   const accessText = definition => definition.capabilities.map(name => accessNames[name]).join(', ') || 'None';
   let installed = [], ticket = 0, storageError = false, importTicket = 0, returnFocus = null;
-  try { installed = M.restore(JSON.parse(localStorage.getItem(key) || '[]')); }
+  try { installed = M.restore(JSON.parse((window.OpenSesameWorkspaceData||localStorage).getItem(key) || '[]')); }
   catch { storageError = true; } // Keep unreadable storage intact for recovery.
 
   const node = (tag, text) => {
@@ -51,9 +51,9 @@
   (document.getElementById('plugins-tools')||document.getElementById('pane-plugins')).append(launch);
 
   function invalidate() { ++ticket; }
-  function persist(next, discardDraft) {
+  async function persist(next, discardDraft) {
     if (storageError) throw Error('Saved tool data needs recovery; it has been preserved.');
-    localStorage.setItem(key, JSON.stringify(next));
+    await (window.OpenSesameWorkspaceData||localStorage).setItem(key, JSON.stringify(next));
     installed = next;
     if (discardDraft) drafts.delete(discardDraft);
     invalidate();
@@ -129,8 +129,8 @@
     }
     const controls = node('div'); controls.className = 'tool-actions'; host.append(controls);
     if (live) {
-      button(controls, 'Save configuration', () => {
-        persist(installed.map(x => x.id === instance.id ? {...x, config: {...fields}} : x));
+      button(controls, 'Save configuration', async () => {
+        await persist(installed.map(x => x.id === instance.id ? {...x, config: {...fields}} : x));
         report('Configuration saved.');
       });
       if (d.source) button(controls, d.source.operation === 'feeds.headlines' ? 'Load saved headlines' : 'Load live data', async () => {
@@ -148,7 +148,7 @@
       });
     }
     for (const a of d.actions) {
-      const b = button(controls, a.label, () => { if (scope()) action(a, fields); });
+      const b = button(controls, a.label, async () => { if (scope()) await action(a, fields); });
       b.disabled = !live;
     }
   }
@@ -170,7 +170,7 @@
     }
     fail('This source is not supported.');
   }
-  function action(a, fields) {
+  async function action(a, fields) {
     if (a.operation === 'navigate') { dialog.close(); changeScenario(a.value); }
     else if (a.operation === 'link.open') {
       if (M.safeUrl(a.value)) window.open(a.value, '_blank', 'noopener,noreferrer');
@@ -182,13 +182,13 @@
       const title = multiline ? lines[0].trim() || 'Untitled note' : '';
       const item = {id: newId(), kind: 'note', text: multiline ? title : text, title, body: multiline ? lines.slice(1).join('\n').trim() : '', url: '', done: false, projectId: ''};
       items.push(item);
-      if (!saveItems()) { items.pop(); fail('Could not save. Your draft is still available.'); }
+      if (!(await saveItems())) { items.pop(); fail('Could not save. Your draft is still available.'); }
       renderItems();
       report('Note saved.');
     } else fail('This action is not supported.');
   }
-  function replaceInstance(old, definition) {
-    persist(installed.map(x => x.id === old.id ? M.replace(x, definition) : x), old.id);
+  async function replaceInstance(old, definition) {
+    await persist(installed.map(x => x.id === old.id ? M.replace(x, definition) : x), old.id);
     stage.replaceChildren();
     draw();
   }
@@ -199,17 +199,17 @@
     stage.append(node('h3', 'Fixture preview · actions disabled'), view);
     renderTool(view, temp, d.fixtures);
     drafts.delete(temp.id);
-    button(stage, 'Install as a new instance', () => {
+    button(stage, 'Install as a new instance', async () => {
       if (installed.length >= 100) fail('Remove an instance before installing another tool.');
       const instance = M.instance(d);
-      persist([...installed, instance]);
+      await persist([...installed, instance]);
       stage.replaceChildren();
       draw();
       report('Installed in ' + M.pages[M.page(d)] + ' as a new tab.');
     });
-    for (const old of installed.filter(x => x.definition.id === d.id)) button(stage, 'Replace ' + old.definition.name, () => {
+    for (const old of installed.filter(x => x.definition.id === d.id)) button(stage, 'Replace ' + old.definition.name, async () => {
       const message = 'Replace this tool definition and retain saved configuration? Access: ' + accessText(d) + '. Unsaved edits for this instance will be discarded.';
-      if (confirm(message)) replaceInstance(old, d);
+      if (confirm(message)) await replaceInstance(old, d);
     });
     button(stage, 'Export definition', () => exportTool(d));
     status.textContent = 'Validated. Preview uses sample data only.';
@@ -233,10 +233,10 @@
     for (const x of installed) {
       const details = node('details'), summary = node('summary', x.definition.name + (x.active === false ? ' · Inactive' : ' · Active')), view = node('article');
       details.append(summary, view);
-      const openButton = button(details, 'Open in ' + M.pages[M.page(x.definition)], () => { dialog.close(); window.OpenSesamePageWidgets?.open(x.id); });
+      const openButton = button(details, 'Open in ' + M.pages[M.page(x.definition)], async () => { dialog.close(); window.OpenSesamePageWidgets?.open(x.id); });
       openButton.disabled = x.active === false;
-      button(details, x.active === false ? 'Activate widget' : 'Deactivate widget', () => {
-        persist(installed.map(v => v.id === x.id ? {...v, active: v.active === false} : v));
+      button(details, x.active === false ? 'Activate widget' : 'Deactivate widget', async () => {
+        await persist(installed.map(v => v.id === x.id ? {...v, active: v.active === false} : v));
         draw();
         const current = [...collection.querySelectorAll('details')].find(n => n.dataset.instance === x.id);
         if (current) current.open = true;
@@ -247,19 +247,19 @@
         if (details.open && x.active !== false) renderTool(view, x, x.definition.fixtures, true);
       };
       button(details, 'Export definition', () => exportTool(x.definition));
-      if (x.previous) button(details, 'Roll back definition', () => {
+      if (x.previous) button(details, 'Roll back definition', async () => {
         if (confirm('Restore the previous definition? Access: ' + accessText(x.previous) + '. Unsaved edits will be discarded.')) replaceInstance(x, x.previous);
       });
-      button(details, 'Uninstall widget', () => {
+      button(details, 'Uninstall widget', async () => {
         if (!confirm('Uninstall this widget? Its configuration and unsaved widget draft will be removed. Saved Projects content is kept. Export its definition first if you want to reinstall it.')) return;
-        persist(installed.filter(v => v.id !== x.id));
+        await persist(installed.filter(v => v.id !== x.id));
         drafts.delete(x.id);
         draw();
       });
       details.dataset.instance = x.id;
       details.open = !!x.pinned;
-      if (x.definition.presentations.includes('card')) button(details, x.pinned ? 'Unpin card' : 'Pin card', () => {
-        persist(installed.map(v => v.id === x.id ? {...v, pinned: !v.pinned} : v));
+      if (x.definition.presentations.includes('card')) button(details, x.pinned ? 'Unpin card' : 'Pin card', async () => {
+        await persist(installed.map(v => v.id === x.id ? {...v, pinned: !v.pinned} : v));
         draw();
       });
       collection.append(details);
@@ -287,11 +287,12 @@
   dialog.addEventListener('keydown', event => event.stopPropagation());
   const closed = () => { invalidate(); ++importTicket; if (returnFocus && state.expanded && state.scenario === 'plugins') { const target = returnFocus.isConnected && returnFocus.getClientRects?.().length ? returnFocus : launch; target.focus({preventScroll:true}); } returnFocus = null; };
   dialog.addEventListener('close', closed);
-  dialog.addEventListener('cancel', () => { invalidate(); ++importTicket; });
-  window.addEventListener('open-sesame-view-changed', () => { if (state.scenario !== 'plugins' && dialog.open) dialog.close(); });
-  window.addEventListener('open-sesame-layout', () => { if (!state.expanded && dialog.open) dialog.close(); });
+  dialog.addEventListener('cancel', closed);
+  window.addEventListener('open-sesame-view-changed', async () => { if (state.scenario !== 'plugins' && dialog.open) dialog.close(); });
+  window.addEventListener('open-sesame-layout', async () => { if (!state.expanded && dialog.open) dialog.close(); });
   // A floating browser workspace shares storage but has a separate script lifetime.
   window.addEventListener('storage', event => {
+    if (window.OpenSesameWorkspaceData) return; // Revision-aware generations own this scene.
     if (event.key !== key && event.key !== null) return;
     invalidate();
     try {
