@@ -30,3 +30,6 @@ xcrun swiftc -o "$open_sesame_check/computer-pointer-tests" "$open_sesame_root/d
 
 xcrun swiftc -o "$open_sesame_check/speech-transcript-tests" "$open_sesame_root/desktop/SpeechTranscript.swift" "$open_sesame_root/desktop/tests/SpeechTranscriptTests.swift"
 "$open_sesame_check/speech-transcript-tests"
+
+xcrun swiftc -o "$open_sesame_check/terminal-clipboard-tests" "$open_sesame_root/desktop/TerminalClipboard.swift" "$open_sesame_root/desktop/tests/TerminalClipboardTests.swift" -framework AppKit
+"$open_sesame_check/terminal-clipboard-tests"

@@ -16,7 +16,7 @@
   try{if(JSON.parse(localStorage.getItem('open-sesame-builtin-widgets-v1')||'[]').includes('github'))builtins=['github']}catch{}
   const make=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const currentPage=()=>({focus:'focus',music:'media',youtube:'media',media:'media',items:'projects',familiars:'console','agent-monitor':'console','computer-agent':'console',terminal:'console',remote:'console',reading:'reader',audio:'live',plugins:'widgets'})[state.scenario];
-  function list(){return [...window.OpenSesameTools.list(),...((window.OpenSesameWidgetLifecycle ? window.OpenSesameWidgetLifecycle.isActive('github') : builtins.includes('github'))?[{id:'builtin-github',name:'GitHub',page:'projects',builtin:true}]:[]),...(window.OpenSesameWidgetLifecycle?.isActive('task-manager')?[{id:'builtin-task-manager',name:'Task Manager',page:'projects',builtin:true}]:[])]}
+  function list(){return [...window.OpenSesameTools.list(),...((window.OpenSesameWidgetLifecycle ? window.OpenSesameWidgetLifecycle.isActive('github') : builtins.includes('github'))?[{id:'builtin-github',name:'GitHub',page:'projects',builtin:true}]:[]),...(window.OpenSesameWidgetLifecycle?.isActive('task-manager')?[{id:'builtin-task-manager',name:'Tasks',page:'projects',builtin:true}]:[])]}
   function save(){try{localStorage.setItem('open-sesame-page-tabs-v1',JSON.stringify(selected))}catch{}}
   function revealSelected(c){
     const selected=c.tabs.querySelector('[aria-selected="true"]');

@@ -38,26 +38,29 @@
 #widget-panel .application-identity img{width:23px;height:23px;border-radius:6px;flex:none}
 #widget-panel .application-identity strong{font-size:12px;font-weight:500;white-space:nowrap}
 #widget-panel .application-page{color:var(--ink-muted);font-size:11px;padding-left:10px;border-left:1px solid var(--line);white-space:nowrap}
-#widget-panel.application-layout>.panel-top{inset:58px auto 14px 10px;--activity-rail-width:144px;width:144px;border-color:var(--line);padding-right:10px}
-#widget-panel.application-layout #activity-menu.widget-tabs{width:144px!important;padding:0;gap:5px;align-items:stretch}
+#widget-panel.application-layout>.panel-top{inset:58px auto 14px 10px;--activity-rail-width:144px;width:154px;box-sizing:border-box;border-color:var(--line);padding-right:10px}
+#widget-panel.application-layout #activity-menu.widget-tabs{width:100%!important;padding:0;gap:5px;align-items:stretch}
 #widget-panel.application-layout #activity-menu.widget-tabs>button{width:100%;max-width:none;justify-content:flex-start;gap:11px;height:36px;min-height:36px;max-height:36px;flex-basis:36px;padding:8px 10px!important;font-size:12px;border-radius:7px}
 #widget-panel.application-layout #activity-menu.widget-tabs>button i{display:flex!important}
 #widget-panel.application-layout #activity-menu.widget-tabs>button[aria-selected=true]{box-shadow:none;border-color:#423c4a}
-#widget-panel.application-layout>.panel-top>#widget-options-toggle{margin-top:auto}
-#widget-panel .workspace-window-controls.application-controls{flex-direction:row;margin:0;gap:5px}
-#widget-panel .workspace-window-controls.application-controls button{width:auto;min-width:30px;min-height:30px;height:30px;padding:6px 8px}
-#widget-panel .workspace-window-controls.application-controls button span{display:inline}
+#widget-panel.application-layout>.panel-top>#widget-options-toggle{margin-top:auto;align-self:stretch;width:100%;min-width:0;display:flex;align-items:center;justify-content:flex-start;padding:8px 10px;border-radius:7px}
+#widget-panel .workspace-window-controls.application-controls{flex-direction:row;margin:0;gap:4px}
+#widget-panel .workspace-window-controls.application-controls button{width:32px;min-width:32px;height:32px;min-height:32px;padding:8px;border-radius:7px;border-color:transparent;background:transparent;color:var(--ink-muted)}
+#widget-panel .workspace-window-controls.application-controls button:hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-panel .workspace-window-controls.application-controls button[aria-pressed=true]{background:#ffffff08;color:var(--ink-primary);border-color:transparent}
+#widget-panel .workspace-window-controls.application-controls button span{display:none}
 #widget-panel .workspace-window-controls.application-controls button.application-only{display:flex}
 #widget-panel.application-layout #widget-options{left:58px;bottom:10px}
 @media(max-width:900px){
  .open-sesame-edge-to-edge #widget-anchor.expanded #widget-panel.widget-panel.application-layout{padding-left:64px;padding-right:12px}
- #widget-panel.application-layout>.panel-top{--activity-rail-width:38px;width:38px;left:8px;padding-right:7px}
- #widget-panel.application-layout #activity-menu.widget-tabs{width:38px!important;align-items:center}
- #widget-panel.application-layout #activity-menu.widget-tabs>button{width:34px;min-width:34px;justify-content:center;padding:8px!important;gap:0}
+ #widget-panel.application-layout>.panel-top{--activity-rail-width:38px;width:46px;left:8px;padding-right:7px}
+ #widget-panel.application-layout #activity-menu.widget-tabs{width:100%!important;align-items:stretch}
+ #widget-panel.application-layout #activity-menu.widget-tabs>button{width:100%;min-width:0;justify-content:center;padding:8px!important;gap:0}
+ #widget-panel.application-layout>.panel-top>#widget-options-toggle{justify-content:center;padding:8px}
  #widget-panel.application-layout #activity-menu.widget-tabs>button>span:not(.live-tab-dot){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
  #widget-panel .workspace-window-controls.application-controls button span{display:none}
 }
-@media(max-width:540px){#widget-panel.application-layout>.application-toolbar{padding:0 10px;gap:8px}#widget-panel .application-page{display:none}#widget-panel .application-identity{gap:7px}#widget-panel .application-identity strong{font-size:11px}#widget-panel .workspace-window-controls.application-controls{gap:2px}#widget-panel .workspace-window-controls.application-controls button{padding:6px;min-width:28px}#widget-panel #reading-feed-form{padding:16px;gap:15px}#widget-panel #reading-feed-form .reading-add-tabs>button{padding:4px 7px;font-size:10px}}
+@media(max-width:540px){#widget-panel.application-layout>.application-toolbar{padding:0 10px;gap:8px}#widget-panel .application-page{display:none}#widget-panel .application-identity{gap:7px}#widget-panel .application-identity strong{font-size:11px}#widget-panel .workspace-window-controls.application-controls{gap:2px}#widget-panel .workspace-window-controls.application-controls button{width:30px;min-width:30px;height:30px;min-height:30px;padding:7px}#widget-panel #reading-feed-form{padding:16px;gap:15px}#widget-panel #reading-feed-form .reading-add-tabs>button{padding:4px 7px;font-size:10px}}
 @media(prefers-reduced-motion:reduce){#widget-panel *{scroll-behavior:auto!important;transition:none!important}}
 @media(forced-colors:active){#widget-panel :is(button[aria-selected=true],button[aria-pressed=true]){border-color:Highlight!important;color:Highlight!important}}
 
