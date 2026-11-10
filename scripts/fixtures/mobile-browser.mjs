@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {chromium,webkit} from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {checkMobilePreservation} from './mobile-preservation.mjs';
 const origin=process.env.SESAME_FIXTURE_ORIGIN||'http://127.0.0.1:4196';
 const output=process.env.SESAME_FIXTURE_OUTPUT;
 const receipts=[];
@@ -50,6 +51,8 @@ for(const [name,type] of Object.entries({chromium,webkit})){
   await page.setViewportSize({width:390,height:360});await page.locator('#launcher-return').click();
   await page.setViewportSize({width:320,height:640});await page.evaluate(()=>document.documentElement.style.fontSize='32px');
   const large=await page.locator('.mobile-navigation').boundingBox();assert(large.y+large.height<=641);
+  await page.evaluate(()=>document.documentElement.style.fontSize='');
+  receipts.push({browser:name,preservation:await checkMobilePreservation(page)});
   await page.setViewportSize({width:1280,height:800});await page.waitForFunction(()=>!OpenSesameMobile.active);
   assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('open-sesame-mobile')),false);
   assert.deepEqual(errors,[]);

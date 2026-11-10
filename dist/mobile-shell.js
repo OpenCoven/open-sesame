@@ -12,10 +12,10 @@
   const home=make('section','mobile-today');home.id='mobile-today';home.tabIndex=-1;home.setAttribute('aria-label','Today');
   const heading=make('h1','','Today'),intro=make('p','','A little room for what matters.'),cards=make('div','mobile-today-cards');home.append(heading,intro,cards);
   function card(label,action){const b=make('button','mobile-card'),title=make('strong','',label),detail=make('span','');b.type='button';b.append(title,detail);b.addEventListener('click',action);cards.append(b);return {button:b,title,detail}}
-  const note=card('Latest note',()=>{const n=source().latest;if(n){navigate('projects');openItem(n.id)}});
-  const tasks=card('Tasks',()=>navigate('projects'));
-  const focus=card('Focus',()=>navigate('focus'));
-  const reader=card('Reading',()=>{today=false;changeScenario('reading');sync()});
+  const note=card('Latest note',()=>{const n=source().latest;if(n&&navigate('projects')){el('projects-note').click();openItem(n.id)}});
+  const tasks=card('Tasks',()=>{if(navigate('projects'))el('projects-task').click()});
+  const focus=card('Focus',()=>{if(navigate('focus'))panel.querySelector('button[data-focus-view=agenda]').click()});
+  const reader=card('Reading',()=>{if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');panel.querySelector('[data-reading-scope=later]').click();sync()});
   const nav=make('nav','mobile-navigation');nav.setAttribute('aria-label','Mobile destinations');
   const buttons=new Map();
   for(const [id,label,glyph] of [['today','Today','compass'],['projects','Projects','items'],['widgets','Widgets','plugins'],['focus','Focus','focus'],['console','Console','terminal']]){
@@ -33,11 +33,11 @@
   const positions=new Map();let current=null;
   function remember(){if(!current)return;positions.set(current,[...panel.querySelectorAll('.widget-pane, .widget-pane *')].filter(n=>n.scrollTop||n.scrollLeft).map(n=>[n,n.scrollTop,n.scrollLeft]))}
   function navigate(id){
-    if(!active)return;if(window.OpenSesameNotes?.finish(false)===false)return;
+    if(!active||window.OpenSesameNotes?.finish(false)===false)return false;
     remember();today=id==='today';
     if(!today)changeScenario(({projects:'items',widgets:'plugins',focus:'focus',console:'agents'})[id]);
     sync();for(const [node,top,left] of positions.get(id)||[]){node.scrollTop=top;node.scrollLeft=left}
-    buttons.get(id)?.focus({preventScroll:true});
+    buttons.get(id)?.focus({preventScroll:true});return true;
   }
   function openCapture(){previousFocus=capture;window.OpenSesameLauncher.open();sync()}
   function captureClosed(){sync();if(active)(previousFocus?.isConnected?previousFocus:capture).focus({preventScroll:true});previousFocus=null}
