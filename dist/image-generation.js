@@ -17,7 +17,7 @@
     el('image-connect').disabled=!on||!native()||!!running||checking;el('image-refresh').disabled=!on||!native()||!!running||checking;
     prompt.disabled=!!running;shape.disabled=!!running;
     el('image-account').textContent=!native()?'Open the Mac app to connect ChatGPT.':configured?'ChatGPT connected through Codex':'Connect your ChatGPT account through Codex.';
-    el('image-connect').textContent=configured?'Manage ChatGPT sign-in':'Connect ChatGPT';
+    el('image-connect').textContent=configured?'Check ChatGPT sign-in':'Connect ChatGPT';
   }
   function stop(){
     const id=running;serial++;running=null;checking=false;
