@@ -15,6 +15,10 @@ for(const [name,type] of Object.entries({chromium,webkit})){
   await page.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
   await page.goto(origin+'/dist/index.html');
   await page.waitForFunction(()=>window.OpenSesameMobile?.active);
+  assert.equal(await page.evaluate(async()=>{
+   const serif=await document.fonts.load('16px "Open Sesame Mobile Serif"'),sans=await document.fonts.load('16px "Open Sesame Mobile Sans"');
+   return serif.length===1&&sans.length===1&&serif[0].status==='loaded'&&sans[0].status==='loaded';
+  }),true,'Bundled fonts load without external services');
   for(const [width,height] of [[320,640],[390,844],[768,1024],[1024,768],[844,390]]){
    await page.setViewportSize({width,height});
    await page.waitForFunction(()=>Math.abs(document.getElementById('widget-panel').getBoundingClientRect().width-innerWidth)<1);
@@ -51,6 +55,9 @@ for(const [name,type] of Object.entries({chromium,webkit})){
   await page.setViewportSize({width:390,height:360});await page.locator('#launcher-return').click();
   await page.setViewportSize({width:320,height:640});await page.evaluate(()=>document.documentElement.style.fontSize='32px');
   const large=await page.locator('.mobile-navigation').boundingBox();assert(large.y+large.height<=641);
+  assert.equal(await page.locator('.mobile-navigation').evaluate(nav=>[...nav.querySelectorAll('button')].every(b=>{const text=b.querySelector('span').getBoundingClientRect(),r=b.getBoundingClientRect();return text.left>=r.left&&text.right<=r.right+1})),true,'Large-text destination labels fit their controls');
+  assert.equal(await page.locator('.mobile-navigation').evaluate(nav=>[...nav.querySelectorAll('button span')].every(n=>(()=>{const range=document.createRange();range.selectNodeContents(n);return new Set([...range.getClientRects()].map(r=>Math.round(r.top))).size===1})())),true,'Large-text destination names remain whole on reflowed rows');
+  const largeCapture=await page.locator('#mobile-capture').boundingBox();assert(largeCapture.x>=0&&largeCapture.x+largeCapture.width<=321,'Large-text Capture remains within the viewport');
   await page.evaluate(()=>document.documentElement.style.fontSize='');
   receipts.push({browser:name,preservation:await checkMobilePreservation(page)});
   await page.setViewportSize({width:1280,height:800});await page.waitForFunction(()=>!OpenSesameMobile.active);

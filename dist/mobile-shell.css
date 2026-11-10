@@ -1,3 +1,5 @@
+@font-face{font-family:"Open Sesame Mobile Serif";src:url("assets/mobile/eb-garamond.ttf?v=ef9512f92f6d") format("truetype");font-style:normal;font-weight:400 800;font-display:swap}
+@font-face{font-family:"Open Sesame Mobile Sans";src:url("assets/mobile/inter.ttf?v=29160a80ff49") format("truetype");font-style:normal;font-weight:100 900;font-display:swap}
 /* Mobile presentation tokens are scoped here; canonical desktop branding stays with flat-theme. */
 .mobile-header[hidden],.mobile-navigation[hidden],.mobile-today[hidden]{display:none!important}
 html.open-sesame-mobile{--mobile-paper:#eee9df;--mobile-accent:#c7b9dc;--mobile-base:#19191d;--mobile-raised:#222227;--mobile-line:#414047;--mobile-height:100dvh;--mobile-top:0px;background:var(--mobile-base);color:var(--mobile-paper)}
@@ -9,19 +11,19 @@ html.open-sesame-mobile{--mobile-paper:#eee9df;--mobile-accent:#c7b9dc;--mobile-
 .open-sesame-mobile #widget-anchor.expanded #widget-panel{display:flex!important;flex-direction:column;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;box-sizing:border-box;border:0;border-radius:0!important;padding:env(safe-area-inset-top) max(12px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(12px,env(safe-area-inset-left));background:var(--mobile-base);color:var(--mobile-paper);overflow:hidden;gap:8px}
 .open-sesame-mobile #widget-panel>.panel-top,.open-sesame-mobile #widget-panel>.application-toolbar,.open-sesame-mobile #frame-resize-layer{display:none!important}
 .open-sesame-mobile #widget-panel>.mobile-header{order:-2;display:flex;justify-content:space-between;align-items:center;flex:none;min-height:56px;gap:12px;border-bottom:1px solid var(--mobile-line)}
-.open-sesame-mobile .mobile-header strong{font-family:Georgia,serif;font-size:1.4rem;font-weight:500}
+.open-sesame-mobile .mobile-header strong{font-family:"Open Sesame Mobile Serif",Georgia,serif;font-size:1.4rem;font-weight:500}
 .open-sesame-mobile #widget-panel :is(.mobile-header button,.mobile-navigation button,.mobile-card){color:var(--mobile-paper);background:transparent;border:1px solid var(--mobile-line);border-radius:8px;min-height:44px;white-space:normal;font:inherit}
 .open-sesame-mobile #widget-panel .mobile-header button{padding:8px 12px}
-.open-sesame-mobile #widget-panel>.mobile-navigation{order:20;flex:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;border-top:1px solid var(--mobile-line);padding-block:6px}
+.open-sesame-mobile #widget-panel>.mobile-navigation{order:20;flex:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,3.5rem),1fr));gap:2px;border-top:1px solid var(--mobile-line);padding-block:6px}
 .open-sesame-mobile #widget-panel .mobile-navigation button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px 1px;border-color:transparent;font-size:.75rem;overflow-wrap:anywhere}
 .open-sesame-mobile .mobile-navigation svg{width:20px;height:20px}
 .open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{color:var(--mobile-accent);border-color:var(--mobile-line);background:var(--mobile-raised)}
 .open-sesame-mobile .mobile-today{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 2px 24px}
-.open-sesame-mobile .mobile-today h1{font:400 2.7rem/1.15 Georgia,serif;margin:0 0 8px}
+.open-sesame-mobile .mobile-today h1{font:400 2.7rem/1.15 "Open Sesame Mobile Serif",Georgia,serif;margin:0 0 8px}
 .open-sesame-mobile .mobile-today>p{font-size:1rem;line-height:1.6;margin:0 0 24px;color:#c4bec8}
 .open-sesame-mobile .mobile-today-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}
 .open-sesame-mobile #widget-panel .mobile-card{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:20px;text-align:left;background:var(--mobile-raised);overflow-wrap:anywhere}
-.open-sesame-mobile .mobile-card strong{font:400 1.5rem/1.2 Georgia,serif}
+.open-sesame-mobile .mobile-card strong{font:400 1.5rem/1.2 "Open Sesame Mobile Serif",Georgia,serif}
 .open-sesame-mobile .mobile-card span{font-size:1rem;line-height:1.5}
 .open-sesame-mobile #widget-panel button:focus-visible{outline:2px solid var(--mobile-accent);outline-offset:-2px}
 .open-sesame-mobile #widget-panel>.widget-capture-footer{flex:none;order:10;max-height:35%;overflow:auto}
@@ -45,3 +47,7 @@ html.open-sesame-mobile{--mobile-paper:#eee9df;--mobile-accent:#c7b9dc;--mobile-
 .open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{height:auto!important;flex:1;overflow:auto;min-height:100px}
 html.open-sesame-mobile body.capture-launcher-open #widget-anchor.expanded{inset:var(--mobile-top) 0 auto!important;width:100%!important;height:var(--mobile-height)!important;max-height:none!important;transform:none!important}
 html.open-sesame-mobile.mobile-capture-open #widget-anchor.expanded #widget-panel>.widget-capture-footer{display:flex!important}
+
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{font-family:"Open Sesame Mobile Sans",system-ui,sans-serif}
+.open-sesame-mobile .mobile-brand{display:flex;align-items:center;gap:8px;min-width:0}
+.open-sesame-mobile .mobile-brand svg{width:28px;height:28px;flex:none;fill:currentColor}

@@ -8,14 +8,18 @@
   let active=false,today=true,previousExpanded=false,previousFocus=null,scheduled=0;
   const inertBefore=new Map();
   const header=make('header','mobile-header'),brand=make('strong','','Open Sesame'),capture=make('button','','Capture');
-  capture.type='button';capture.id='mobile-capture';capture.setAttribute('aria-haspopup','dialog');header.append(brand,capture);
+  capture.type='button';capture.id='mobile-capture';capture.setAttribute('aria-haspopup','dialog');
+  const lockup=make('span','mobile-brand'),mark=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  mark.setAttribute('viewBox','0 0 212 212');mark.setAttribute('aria-hidden','true');
+  mark.innerHTML='<use href="assets/mobile/opencoven-mark.svg?v=3cc1d06c3f95#mark"/>';
+  lockup.append(mark,brand);header.append(lockup,capture);
   const home=make('section','mobile-today');home.id='mobile-today';home.tabIndex=-1;home.setAttribute('aria-label','Today');
   const heading=make('h1','','Today'),intro=make('p','','A little room for what matters.'),cards=make('div','mobile-today-cards');home.append(heading,intro,cards);
   function card(label,action){const b=make('button','mobile-card'),title=make('strong','',label),detail=make('span','');b.type='button';b.append(title,detail);b.addEventListener('click',action);cards.append(b);return {button:b,title,detail}}
   const note=card('Latest note',()=>{const n=source().latest;if(n&&navigate('projects')){el('projects-note').click();openItem(n.id)}});
   const tasks=card('Tasks',()=>{if(navigate('projects'))el('projects-task').click()});
   const focus=card('Focus',()=>{if(navigate('focus'))panel.querySelector('button[data-focus-view=agenda]').click()});
-  const reader=card('Reading',()=>{if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');panel.querySelector('[data-reading-scope=later]').click();sync()});
+  const reader=card('Reading',()=>{if(window.OpenSesameNotes?.finish(false)===false)return;remember();today=false;changeScenario('reading');const later=panel.querySelector('[data-reading-scope=later]');later.click();sync();later.focus({preventScroll:true})});
   const nav=make('nav','mobile-navigation');nav.setAttribute('aria-label','Mobile destinations');
   const buttons=new Map();
   for(const [id,label,glyph] of [['today','Today','compass'],['projects','Projects','items'],['widgets','Widgets','plugins'],['focus','Focus','focus'],['console','Console','terminal']]){

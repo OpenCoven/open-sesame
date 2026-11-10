@@ -26,8 +26,10 @@ export async function checkMobilePreservation(page){
  await page.evaluate(()=>OpenSesamePageWidgets.open('builtin-task-manager'));
  assert.equal(await page.locator('#task-manager-title').inputValue(),'Keep this installed widget draft','Explicit native route preserves installed widget draft for reopening');
  await page.locator('[data-mobile-destination=today]').click();
- await page.locator('.mobile-card').filter({hasText:'Reading'}).click();
+ await page.locator('.mobile-card').filter({hasText:'Reading'}).focus();
+ await page.keyboard.press('Enter');
  assert.equal(await page.locator('[data-reading-scope=later]').getAttribute('aria-selected'),'true','Reading summary routes to canonical saved-for-later collection');
+ assert.equal(await page.evaluate(()=>document.getElementById('pane-reading').contains(document.activeElement)),true,'Keyboard routing moves focus into visible Reader');
  const definition=await page.request.get(new URL('/dist/tools/meeting-notes/tool.json',page.url()).href).then(r=>r.json());
  await page.evaluate(definition=>{
   const instance=OpenSesameToolsModel.instance({...definition,page:'focus'});instance.id='mobile-focus-notes';
