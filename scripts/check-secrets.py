@@ -1,13 +1,69 @@
 #!/usr/bin/env python3
 """Check staged paths and run Gitleaks against the staged diff without printing secrets."""
-import os
+import ipaddress
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+
+
+IP_LITERAL = re.compile(
+    rb'(?<![\w.:])(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F:.]*(?![\w.:])'
+    rb'|(?<![\w.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?!\w|\.\d)'
+)
+INTERNAL_HOST = re.compile(
+    rb'(?i)(?<![\w.-])(?:[a-z0-9][a-z0-9-]*\.)+(?:ts\.net|local|internal|lan)(?![\w-]|\.[\w-])'
+)
+LOCAL_HOME = re.compile(rb'/(?:Users|home)/([a-zA-Z0-9_.-]+)(?=/|\s|["\x27`]|$)')
+DOCUMENTATION_NETS = tuple(map(ipaddress.ip_network, (
+    '192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24', '2001:db8::/32', '3fff::/20',
+)))
+EXAMPLE_ACCOUNTS = {b'alice', b'example', b'runner', b'test', b'user', b'username'}
+
+
+def sensitive_address(literal):
+    try:
+        address = ipaddress.ip_address(literal.decode('ascii').rstrip('.'))
+    except ValueError:
+        return False
+    address = getattr(address, 'ipv4_mapped', None) or address
+    return not (
+        address.is_loopback or address.is_unspecified or
+        any(address in network for network in DOCUMENTATION_NETS)
+    )
+
+
+def added_lines(path):
+    diff = subprocess.check_output([
+        'git', 'diff', '--cached', '--unified=0', '--no-ext-diff', '--no-textconv',
+        '--no-renames', '--no-color', '--text', '--', ':(literal)' + path,
+    ])
+    in_hunk = False
+    for line in diff.split(b'\n'):
+        if line.startswith(b'@@ '):
+            in_hunk = True
+        elif in_hunk and line.startswith(b'+'):
+            yield line[1:]
+
+
+def privacy_finding(line):
+    if any(sensitive_address(match.group()) for match in IP_LITERAL.finditer(line)):
+        return 'network address'
+    for match in INTERNAL_HOST.finditer(line):
+        host = match.group().lower()
+        if host.split(b'.')[0] in {b'example', b'localhost'}:
+            continue
+        previous = line[match.start()-1:match.start()]
+        following = line[match.end():match.end()+1]
+        if host.endswith(b'.ts.net') or previous in (b'/', b'=', b'"', b"'", b'`') or following == b':':
+            return 'internal hostname'
+    if any(match.group(1).lower() not in EXAMPLE_ACCOUNTS for match in LOCAL_HOME.finditer(line)):
+        return 'local home path'
+    return None
 
 
 def main():
@@ -39,6 +95,15 @@ def main():
             if re.search(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\r\n]+[A-Za-z0-9+/=\r\n]{64,}-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----', data):
                 print('Secret check blocked: private key material in ' + repr(name), file=sys.stderr)
                 return 1
+            # Force Git to emit text even if attributes suppress its diff. Leave
+            # binary data to the existing scanner and the distribution audit.
+            if b'\0' in data:
+                continue
+            for line in added_lines(name):
+                finding = privacy_finding(line)
+                if finding:
+                    print('Privacy check blocked: ' + finding + ' in ' + repr(name), file=sys.stderr)
+                    return 1
         config = root / 'gitleaks.toml'
         config.write_text('[extend]\nuseDefault = true\n')
         ignore = root / 'empty-ignore'

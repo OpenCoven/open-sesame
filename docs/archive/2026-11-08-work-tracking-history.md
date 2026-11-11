@@ -46,7 +46,7 @@ Focused verification passed 30 Coven runtime cases, the real JS-to-Python fixtur
 ## Current task: reliable-development
 
 - Owner/session: `codex:01a1b24d-21e5-7f51-a48f-e3885980f516`.
-- Branch/worktree: `task/reliable-development`, `/Users/buns/Documents/GitHub/OpenCoven/open-sesame-reliable-development`.
+- Branch/worktree: `task/reliable-development`, `<workspace>/open-sesame-reliable-development`.
 - Original base: `ba07bb5f055c2d9292ab7fe30f059f549e2feae7`; tree `ee08cd7fc1176aba9f8fb007812f1f6e1c102066`. Earlier qualified bases remain in dated reports and refresh receipts. The current rebase base is `main` at `f46f7c2fffa586ff45c55a6db3217ee9cea4d8a6`, including the delivered login and flat UI changes. Exact task heads and fingerprints are indexed in the mutable task/audit records.
 - Scope: reproducible verification, demonstrated PTY failures, native build/runtime qualification, local planning/ownership, and guarded local retirement.
 - Dependencies: local Python/Node/Git, macOS and Xcode with Swift 6.2+ for native qualification; native GUI acceptance depends on a usable authenticated macOS user session. The user authorized committing, pushing and creating this PR on November 8; merge, release, deployment and remote deletion remain outside scope.
@@ -154,7 +154,7 @@ The next prioritized goal is to restore a usable macOS account/GUI session and c
 
 ## Continuation
 
-Resume `reliable-development` in `/Users/buns/Documents/GitHub/OpenCoven/open-sesame-reliable-development` on `task/reliable-development`, owned by `codex:01a1b24d-21e5-7f51-a48f-e3885980f516`. Read `AGENTS.md`, this ledger, and the common-Git task record. Refresh Git status, head/base, REST state, and saved verifier reports before running anything. Preserve all uncommitted implementation, the original checkout, release work, unreleased branches, and failure receipts. Finish the recorded next action if still pending; otherwise pursue the unmet native GUI lifecycle gate on a usable Mac session. Do not restart completed implementation or infer native/hosted acceptance from compilation or fixture checks. Keep the goal incomplete while the GUI gate remains unaccepted. The user authorized rebasing, committing, pushing and publishing this PR on November 8. The user subsequently authorized review and merge. Release, deployment and remote deletion are not authorized.
+Resume `reliable-development` in `<workspace>/open-sesame-reliable-development` on `task/reliable-development`, owned by `codex:01a1b24d-21e5-7f51-a48f-e3885980f516`. Read `AGENTS.md`, this ledger, and the common-Git task record. Refresh Git status, head/base, REST state, and saved verifier reports before running anything. Preserve all uncommitted implementation, the original checkout, release work, unreleased branches, and failure receipts. Finish the recorded next action if still pending; otherwise pursue the unmet native GUI lifecycle gate on a usable Mac session. Do not restart completed implementation or infer native/hosted acceptance from compilation or fixture checks. Keep the goal incomplete while the GUI gate remains unaccepted. The user authorized rebasing, committing, pushing and publishing this PR on November 8. The user subsequently authorized review and merge. Release, deployment and remote deletion are not authorized.
 
 ## Desktop UI and native Spotify task, November 8
 
@@ -212,7 +212,7 @@ User steering extends this same desktop build with a Raycast-style command palet
 
 ## Built-in VNC integration, November 8
 
-Task `vnc-integration-20261108`, owner `agent:vnc-session`, owns `codex/vnc-integration` in `/Users/buns/Documents/GitHub/OpenCoven/open-sesame-vnc`, based on `8239a5f365e958e5ce42fa33beb858298fa324fe`. Scope is bundled noVNC, authenticated native TCP transport, secure WebSocket gateways, preserved legacy web viewers, authentication/Keychain, manual clipboard, and session controls. Existing owners and PR #21 remain independent. No publication or installation authority has been inferred.
+Task `vnc-integration-20261108`, owner `agent:vnc-session`, owns `codex/vnc-integration` in `<workspace>/open-sesame-vnc`, based on `8239a5f365e958e5ce42fa33beb858298fa324fe`. Scope is bundled noVNC, authenticated native TCP transport, secure WebSocket gateways, preserved legacy web viewers, authentication/Keychain, manual clipboard, and session controls. Existing owners and PR #21 remain independent. No publication or installation authority has been inferred.
 
 Native socket tests preserve an actual 200,000-byte stream through asynchronous acknowledgments and check stale-token refusal and cleanup. Controller tests use mock RFB and distinguish socket readiness from RFB connection, gate view-only input and browser direct connections, and exercise focus and disconnect cleanup. Full verification receipts and remaining acceptance are recorded in the common-Git task record. Actual Chromium/noVNC RFB 3.8 handshake, raw framebuffer pixels, special-key messages and disconnect passed against a deterministic local WebSocket fixture. macOS Screen Sharing interoperability, secure gateway interoperability, installed layout, Keychain prompts, and hardware input remain separate acceptance gates until directly observed.
 
