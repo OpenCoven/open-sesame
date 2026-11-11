@@ -1,0 +1,26 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+
+const source=fs.readFileSync('dist/audio.js','utf8');
+const start=source.indexOf("$('transcript-download').addEventListener");
+assert.ok(start>=0,'Native Export must intercept the blob download link');
+const end=source.indexOf("$('transcript-copy').addEventListener",start);
+let click,prevented=0;const calls=[],messages=[];
+const context={window:{__OPEN_SESAME_NATIVE__:true},$:()=>({addEventListener:(_,fn)=>click=fn}),audioSession:{final:'Before the pause.\nAfter the pause.\nFinal marker.'},openSesameBridge:{request:async(method,params)=>{calls.push({method,params});return {saved:true}}},transcriptSavePending:false,toast:text=>messages.push(text)};
+vm.runInNewContext(source.slice(start,end),context);
+await click({preventDefault(){prevented++}});
+assert.equal(prevented,1);
+assert.equal(calls[0].method,'transcript.save');
+assert.equal(calls[0].params.text,context.audioSession.final);
+assert.equal(messages.at(-1),'Transcript saved.');
+context.window.OpenSesameSpeakers={exportText:()=> 'Speaker 1: Before the pause.\nSpeaker 2: After the pause.'};
+await click({preventDefault(){prevented++}});
+assert.equal(calls.at(-1).params.text,context.window.OpenSesameSpeakers.exportText());
+context.openSesameBridge.request=async()=>({saved:false});
+await click({preventDefault(){}});assert.match(messages.at(-1),/cancelled/i);
+context.openSesameBridge.request=async()=>{throw Error('Disk full')};
+await click({preventDefault(){}});assert.equal(messages.at(-1),'Disk full');
+context.window.__OPEN_SESAME_NATIVE__=false;
+await click({preventDefault(){throw Error('Browser download must remain available')}});
+console.log('Transcript native export retains full plain/speaker text, reports cancellation/errors, and preserves browser download.');
