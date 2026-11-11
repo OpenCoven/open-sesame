@@ -64,7 +64,7 @@ function beginSpeech(track){
   });
   audioSession.recognizer=recognition;audioSession.speechFailed=false;$('transcript-retry').hidden=true;recognition.start();
 }
-$('transcript-retry').addEventListener('click',()=>{if(!audioSession.active||audioSession.stopping)return;audioSession.recognizer?.abort();audioSession.recognizer=null;const interim=audioSession.interim.trim();if(interim)audioSession.final+=(audioSession.final?'\n':'')+interim;audioSession.interim='';beginSpeech(audioSession.mixed?.getAudioTracks()[0])});
+$('transcript-retry').addEventListener('click',async ()=>{if(!audioSession.active||audioSession.stopping)return;audioSession.recognizer?.abort();audioSession.recognizer=null;const interim=audioSession.interim.trim();if(interim)audioSession.final+=(audioSession.final?'\n':'')+interim;audioSession.interim='';beginSpeech(audioSession.mixed?.getAudioTracks()[0])});
 function startMeter(analyser){
   const samples=new Uint8Array(analyser.fftSize);
   const tick=()=>{if(!audioSession.active)return;analyser.getByteTimeDomainData(samples);let sum=0;for(const v of samples)sum+=((v-128)/128)**2;const level=Math.min(100,Math.round(Math.sqrt(sum/samples.length)*300));$('audio-meter-fill').style.width=level+'%';$('audio-meter').setAttribute('aria-valuenow',level);audioSession.meterFrame=requestAnimationFrame(tick)};tick();
@@ -107,7 +107,7 @@ function renderNativeInput(activity){
   const value=window.OpenSesameLiveCaptureModel.inputStatus($('audio-source').value,activity);
   if($('audio-status').textContent!==value)$('audio-status').textContent=value;
 }
-window.addEventListener('open-sesame-desktop-event',event=>{
+window.addEventListener('open-sesame-desktop-event',async event=>{
   const data=event.detail;
   if(nativeRecordingID && data.id===nativeRecordingID){
     if(data.event==='record.input')renderNativeInput(data.activity);
@@ -195,7 +195,7 @@ async function startAudio(){
       recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
       recorder.onstop=()=>{const blob=new Blob(chunks,{type:recorder.mimeType||'audio/webm'});if(recordingId!==recordingGeneration||!blob.size)return;if(audioSession.recordUrl)URL.revokeObjectURL(audioSession.recordUrl);audioSession.recordUrl=URL.createObjectURL(blob);$('audio-download').href=audioSession.recordUrl;$('audio-download').download='open-sesame-audio.'+(blob.type.includes('mp4')?'m4a':'webm');$('audio-download').hidden=false;window.OpenSesameLive?.update()};recorder.start(1000);
     }
-    audioSession.streams.forEach(s=>s.getTracks().forEach(t=>t.addEventListener('ended',()=>{if(audioSession.active)stopAudio('Audio source disconnected. Capture stopped.')})));
+    audioSession.streams.forEach(s=>s.getTracks().forEach(t=>t.addEventListener('ended',async ()=>{if(audioSession.active)stopAudio('Audio source disconnected. Capture stopped.')})));
     $('audio-status').textContent=keepAudio?'Recording':'Transcribing';
     setAudioControls();startMeter(analyser);
     if(wantSpeech)beginSpeech(destination.stream.getAudioTracks()[0]);else $('transcript-status').textContent=SpeechEngine?'Live transcription is off':'Live transcription unavailable in this browser.';
@@ -240,11 +240,11 @@ $('audio-start').addEventListener('click',startAudio);$('audio-stop').addEventLi
 $('audio-download').addEventListener('click',async event=>{if(!audioSession.nativeRecording)return;event.preventDefault();try{if(await openSesameBridge.request('record.save',{id:audioSession.nativeRecording}))toast('Audio saved.')}catch(error){toast(error.message||'Could not save audio.')}});
 $('transcript-clear').addEventListener('click',()=>{if(audioSession.active||audioSession.starting||audioSession.stopping)return;audioSession.final='';audioSession.interim='';renderTranscript()});
 $('transcript-copy').addEventListener('click',async()=>{const text=(window.OpenSesameSpeakers?.exportText()||audioSession.final).trim();if(!text)return;try{await navigator.clipboard.writeText(text);toast('Transcript copied.')}catch{toast('Use Export .txt to save the complete transcript.')}});
-$('transcript-note').addEventListener('click',()=>{
+$('transcript-note').addEventListener('click',async ()=>{
   if(!audioSession.final.trim())return;if(activeItems().length>=30||items.length>=300){toast('Make room in Projects to save this transcript.');return}
   const title=(window.OpenSesameLive?.isDemo()?'Demo transcript · ':'Transcript · ')+new Date().toLocaleDateString(undefined,{month:'short',day:'numeric'});
   const note={id:newId(),text:title,title,kind:'note',url:'',done:false,body:(window.OpenSesameSpeakers?.exportText()||audioSession.final).trim().slice(0,12000),projectId:$('capture-project').value==='__new'?'':$('capture-project').value};items.push(note);
-  if(!saveItems()){items.pop();return}selectedItemId=note.id;revealItem=true;if(projectFilter!=='all')projectFilter=note.projectId||'inbox';libraryOpen=true;categoryFilter='note';expandedCategories.add('note');changeScenario('items');toast('Transcript saved as a note.');
+  if(!(await saveItems())){items.pop();return}selectedItemId=note.id;revealItem=true;if(projectFilter!=='all')projectFilter=note.projectId||'inbox';libraryOpen=true;categoryFilter='note';expandedCategories.add('note');changeScenario('items');toast('Transcript saved as a note.');
 });
-window.addEventListener('pagehide',()=>{stopAudio('Stopped.',true);if(audioSession.recordUrl)URL.revokeObjectURL(audioSession.recordUrl);if(audioSession.textUrl)URL.revokeObjectURL(audioSession.textUrl)});
+window.addEventListener('pagehide',async ()=>{stopAudio('Stopped.',true);if(audioSession.recordUrl)URL.revokeObjectURL(audioSession.recordUrl);if(audioSession.textUrl)URL.revokeObjectURL(audioSession.textUrl)});
 audioSourceHelp();renderTranscript();

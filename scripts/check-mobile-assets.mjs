@@ -12,6 +12,7 @@ const mark=fs.readFileSync(root+'opencoven-mark.svg','utf8');assert.match(mark,/
 for(const file of ['EB-Garamond-OFL.txt','Inter-OFL.txt'])assert.match(fs.readFileSync(root+file,'utf8'),/SIL OPEN FONT LICENSE Version 1.1/i);
 const css=fs.readFileSync('dist/mobile-shell.css','utf8'),js=fs.readFileSync('dist/mobile-shell.js','utf8');
 for(const file of ['eb-garamond.ttf','eb-garamond-italic.ttf','inter.ttf'])assert(css.includes(file+'?v='+manifest.files[file].sha256.slice(0,12)),'Font URL content hash');
-assert(js.includes('opencoven-mark.svg?v='+manifest.files['opencoven-mark.svg'].sha256.slice(0,12)+'#mark'),'Mark URL content hash');
+const inline=js.match(/mark\.innerHTML=("(?:[^"\\]|\\.)*");/);assert(inline,'Inline crown for native file-origin rendering');
+assert.equal(JSON.parse(inline[1]),mark.match(/<svg[^>]*>(.*?)<\/svg>/s)[1].replace(' id="mark"',''),'Inline geometry must equal the pinned source without duplicate IDs');
 assert.match(css,/font-display:swap/);assert.match(css,/Open Sesame Mobile Serif[^}]+Georgia/);assert.match(css,/Open Sesame Mobile Sans[^}]+system-ui/);
 console.log('Pinned mobile crown/lotus geometry, font/license bytes, scoped fallback roles and content hashes pass.');

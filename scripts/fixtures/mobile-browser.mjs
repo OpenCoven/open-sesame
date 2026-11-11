@@ -11,11 +11,10 @@ for(const [name,type] of Object.entries({chromium,webkit})){
  const browser=await type.launch({headless:true});
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];
-  page.on('pageerror',e=>errors.push(e.message));
+  page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort());
   await page.goto(origin+'/dist/index.html');
-  await page.waitForFunction(()=>window.OpenSesameMobile?.active);
-  await page.evaluate(()=>{for(const id of ['notes','bookmarks','reader','coven','agenda','shells','task-manager'])OpenSesameWidgetLifecycle.set(id,'active')});
+  await page.waitForFunction(()=>window.OpenSesameMobile?.active&&window.OpenSesameWorkspaceBoot?.ready);await page.evaluate(async()=>{for(const id of ['notes','bookmarks','reader','rss','coven','agenda','shells','task-manager'])await OpenSesameWidgetLifecycle.set(id,'active')});
   assert.equal(await page.evaluate(async()=>{
    const serif=await document.fonts.load('16px "Open Sesame Mobile Serif"'),sans=await document.fonts.load('16px "Open Sesame Mobile Sans"');
    return serif.length===1&&sans.length===1&&serif[0].status==='loaded'&&sans[0].status==='loaded';
@@ -32,16 +31,16 @@ for(const [name,type] of Object.entries({chromium,webkit})){
    receipts.push({browser:name,width,height,destinations:5});
   }
   await page.setViewportSize({width:390,height:844});
-  await page.evaluate(()=>{
+  await page.evaluate(async()=>{
    window.__mobileNodes=['pane-items','pane-focus','agents-workspace','pane-familiars','pane-plugins'].map(id=>document.getElementById(id));
-   items=[{id:'fixture-note',kind:'note',text:'Literal <img src=x onerror=alert(1)>',updatedAt:1},{id:'fixture-task',kind:'task',text:'Task',done:false},{id:'fixture-bookmark',kind:'bookmark',text:'Read',url:'https://example.org',readingLater:true}];saveItems();
+   items=[{id:'fixture-note',kind:'note',text:'Literal <img src=x onerror=alert(1)>',updatedAt:1},{id:'fixture-task',kind:'task',text:'Task',done:false},{id:'fixture-bookmark',kind:'bookmark',text:'Read',url:'https://example.org',readingLater:true}];await saveItems();
    focusRemaining=123;renderFocus();
   });
   await page.waitForFunction(()=>document.querySelector('.mobile-note-card').textContent.includes('Literal <img'));
   assert.equal(await page.locator('.mobile-card img').count(),0);
   assert.match(await page.locator('.mobile-today').innerText(),/1 open · 0 completed/);
   assert.match(await page.locator('.mobile-today').innerText(),/1 saved for later/);
-  await page.evaluate(()=>{items[0].text='Edited note';items[1].done=true;saveItems()});
+  await page.evaluate(async()=>{items[0].text='Edited note';items[1].done=true;await saveItems()});
   await page.waitForFunction(()=>document.querySelector('.mobile-today').textContent.includes('Edited note'));
   assert.match(await page.locator('.mobile-today').innerText(),/0 open · 1 completed/);
   await page.locator('#mobile-capture').click();await page.locator('#capture-input').fill('A preserved draft');

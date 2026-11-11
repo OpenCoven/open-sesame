@@ -6,7 +6,7 @@ from distribution_safety import private_path, validate_dist
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / 'dist/downloads/open-sesame-desktop-source.zip'
-SOURCES = ('README.md', 'AGENTS.md', '.github', '.githooks', '.gitignore', 'package.json', 'package-lock.json', 'run-macos.sh', 'desktop', 'dist', 'docs', 'scripts', 'vendor-src', 'examples', 'web')
+SOURCES = ('README.md', 'AGENTS.md', '.github', '.githooks', '.gitignore', 'package.json', 'package-lock.json', 'run-macos.sh', 'desktop', 'ios', 'dist', 'docs', 'scripts', 'vendor-src', 'examples', 'web')
 
 
 def build():
@@ -19,7 +19,7 @@ def build():
             relative = candidate.relative_to(ROOT)
             if not candidate.is_file() or candidate.is_symlink() or candidate.name == '.DS_Store' or private_path(relative):
                 continue
-            if any(part in ('__pycache__', 'node_modules', 'downloads', '.openai', '.vercel') for part in relative.parts):
+            if any(part in ('__pycache__', 'node_modules', 'downloads', '.openai', '.vercel', 'OpenSesameMobile.xcodeproj') for part in relative.parts):
                 continue
             if candidate.suffix in ('.pyc', '.pyo'):
                 continue

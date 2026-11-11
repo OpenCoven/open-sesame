@@ -7,9 +7,9 @@
   const active=()=>window.OpenSesameWidgetLifecycle?.isActive('image-generation')&&visible()&&!host.hidden&&document.visibilityState!=='hidden';
   const native=()=>!!window.openSesameBridge?.available;
   const key='open-sesame-image-draft-v1';
-  try{const d=JSON.parse(localStorage.getItem(key)||'{}');if(typeof d.prompt==='string'&&d.prompt.length<=4000)prompt.value=d.prompt;if(['square','landscape','portrait'].includes(d.shape))shape.value=d.shape}catch{}
+  try{const d=JSON.parse((window.OpenSesameWorkspaceData||localStorage).getItem(key)||'{}');if(typeof d.prompt==='string'&&d.prompt.length<=4000)prompt.value=d.prompt;if(['square','landscape','portrait'].includes(d.shape))shape.value=d.shape}catch{}
   function message(text){el('image-status').textContent=text}
-  function saveDraft(){try{localStorage.setItem(key,JSON.stringify({prompt:prompt.value,shape:shape.value}))}catch{message('Could not save your draft. Keep this window open and free device storage.')}}
+  async function saveDraft(){try{await (window.OpenSesameWorkspaceData||localStorage).setItem(key,JSON.stringify({prompt:prompt.value,shape:shape.value}))}catch{message('Could not save your draft. Keep this window open and free device storage.')}}
   function update(){
     const on=active();host.setAttribute('aria-busy',String(!!running||checking));
     el('image-generate').disabled=!on||!native()||!configured||!!running||checking||saving||!prompt.value.trim();

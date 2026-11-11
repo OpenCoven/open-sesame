@@ -64,6 +64,7 @@ def main():
         check('embedded-engine-build', [sys.executable, '-B', 'scripts/build-coven-engine.py'], 600)
         check('embedded-engine-tests', ['cargo', 'test', '--release', '--locked', '--target-dir', str(ROOT / 'build/coven-engine-target'), '--manifest-path', 'desktop/engine/Cargo.toml'], 120)
         check('native-url', ['bash', 'scripts/check-native.sh'])
+        check('mobile-core', ['bash', 'scripts/check-mobile-native.sh'], 120)
         check('native-authentication', ['bash', 'scripts/check-authentication.sh'], 180)
         check('native-screen-notes', ['bash', 'scripts/check-screen-notes.sh'], 120)
         if check('macos-build', ['bash', 'desktop/build-macos.sh'], 180):

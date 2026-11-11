@@ -17,3 +17,5 @@ tokens.json
 client_secret*.json
 service-account*.json
 music-auth-config.local.js
+
+/ios/OpenSesameMobile.xcodeproj/

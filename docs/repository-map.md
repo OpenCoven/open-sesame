@@ -6,6 +6,7 @@ This map follows the current source layout. Run commands from the repository roo
 
 | Surface | Entrypoints | Boundary |
 | --- | --- | --- |
+| Workspace persistence | [Storage contract](workspace-storage.md), [model](../dist/workspace-storage-model.js), [bootstrap](../dist/workspace-bootstrap.js) | Hydrate before defaults; acknowledgment/revision/recovery beneath canonical owners; native adapter remains gated |
 | Browser workspace | [dist/index.html](../dist/index.html), [app.js](../dist/app.js) | Ordered deferred scripts share globals and the DOM; this is authored source, without a framework build step |
 | Renderer RPC | [bridge.js](../dist/bridge.js) | Request IDs, pending replies, timeouts and native events; a browser flag or dormant WebSocket fallback does not enable a machine host |
 | Native host | [OpenSesame.swift](../desktop/OpenSesame.swift), [Authentication.swift](../desktop/Authentication.swift) | Login gates widget/bridge startup; trusted main-frame file origin and per-method checks gate requests |
@@ -84,6 +85,15 @@ For a focused JavaScript check, run `node scripts/check-NAME.mjs`. For a focused
 ## Content focus, terminal clipboard and recipient routing
 
 Shared presentation uses [content-focus.js](../dist/content-focus.js), [content-focus.css](../dist/content-focus.css) and [rail-headings.js](../dist/rail-headings.js); active native surfaces are gated by [workspace-widgets.js](../dist/workspace-widgets.js). [terminal-clipboard.js](../dist/terminal-clipboard.js) pairs explicit copy/paste with [TerminalClipboard.swift](../desktop/TerminalClipboard.swift) and [private-pasteboard native tests](../desktop/tests/TerminalClipboardTests.swift). Default and tagged question routing uses [familiar-routing-model.js](../dist/familiar-routing-model.js), [familiar-capture.js](../dist/familiar-capture.js) and [recipient regressions](../scripts/check-familiar-routing.mjs). [The rendered review](../scripts/review-content-focus.mjs) exercises the combined workspace behavior with disposable synthetic state.
+
+## Shared mobile presentation
+
+[Mobile shell](../dist/mobile-shell.js), [projection model](../dist/mobile-model.js) and [scoped CSS](../dist/mobile-shell.css) reuse the existing renderer owners. See the [ownership and acceptance contract](mobile-shell.md), [projection checks](../scripts/check-mobile-shell.mjs) and [optional browser fixture](../scripts/fixtures/mobile-browser.mjs) [reference presentation fixture](../scripts/fixtures/mobile-visual.mjs) and [installed form fixture](../scripts/fixtures/mobile-forms.mjs) and [built-in interiors](../scripts/fixtures/mobile-interiors.mjs).
+
+## iOS and iPadOS host
+
+[ios/README.md](../ios/README.md) maps the native candidate, [receiving policy](../ios/Sources/MobileBoundary.swift), [SQLite generations](../ios/Sources/WorkspaceStore.swift), [file operations](../ios/Sources/MobileFiles.swift), [session clock](../ios/Sources/MobileSessionClock.swift), [project specification](../ios/project.yml) and [native checks](../scripts/check-mobile-native.sh). Keep simulator, installed-device and live-account evidence separate.
+
 
 [Workspace recovery review](../scripts/review-workspace-recovery.mjs) exercises inactive playlist callbacks, explicit transcription activation, compact Familiar controls and the Widgets/Tools flows with a synthetic host. It does not send a provider prompt, capture audio or signal a real agent.
 

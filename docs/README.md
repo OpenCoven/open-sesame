@@ -2,10 +2,13 @@
 
 Start with the [repository map](repository-map.md) to locate code and checks. The [capability matrix](capabilities.md) describes implemented behavior and acceptance limits. The [development workflow](development-workflow.md) describes ownership, verification and delivery. The [work ledger](work-tracking.md) explains how to obtain current task state; its older narratives are historical evidence, not current assignments.
 
+The [iOS/iPadOS local host candidate](../ios/README.md) documents native storage, sign-in, lifecycle/file boundaries, reproducible builds and the remaining device acceptance gates.
+
 ## Feature contracts and change guides
 
 | Area | Read first | Related implementation notes |
 | --- | --- | --- |
+| Workspace persistence | [Canonical storage and recovery](workspace-storage.md) | [Migration/acknowledgment model](../dist/workspace-storage-model.js); native/device gates remain separate |
 | Tools and integrations | [Tool creation and submissions](tools.md), [GitHub monitor](github-monitor-widget.md) | [Optional widgets and lifecycle controls](widget-lifecycle.md), [Page tabs and application workspace](widget-pages-and-application.md), [connection setup](desktop-polish-plan.md#plugin-setup-and-private-configuration) |
 | Image generation | [Image Studio](image-generation.md) | ChatGPT sign-in, explicit generation, previews and native PNG export |
 | To-do tasks | [Task Manager](task-manager.md) | Shared Projects lists, priorities, due dates and recoverable completion |
@@ -28,5 +31,6 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 Local tests, hosted checks, rendered browser observations, installed native operation, real providers, merge, release and deployment are distinct evidence. A historical host blocker can explain an old gap; it cannot prove that the current machine is still blocked. Verify the required prerequisite in the current session.
 
 [Shared mobile renderer](mobile-shell.md) documents navigation, Today projections, capture ownership and the pending reference/device gates.
+
 
 [Local speaker labels](speaker-diarization.md) explains opt-in NeMo setup, timestamp alignment, anonymous names, responsive Stop and private temporary-audio cleanup.

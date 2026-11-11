@@ -25,25 +25,25 @@
     if(preview)renderPreview();else detailEditor.layoutNow();
     if(focus)$(preview?'md-preview-stage':'detail-body').focus({preventScroll:true});
   }
-  function finish(focus=true){
+  async function finish(focus=true){
     if(mode==='source'){
       const item=currentItem();
       if(item && item.id===identity){
         item.body=detailEditor.get();
-        if(!saveItems()){toast('Could not save this note. Your edits are still open.');return false}
+        if(!(await saveItems())){toast('Could not save this note. Your edits are still open.');return false}
       }
     }
     view('preview',focus);return true;
   }
-  $('md-edit').addEventListener('click',()=>view('source',true));
-  $('md-save').addEventListener('click',()=>finish());
-  $('md-preview-stage').addEventListener('dblclick',e=>{
+  $('md-edit').addEventListener('click',async ()=>view('source',true));
+  $('md-save').addEventListener('click',async ()=>finish());
+  $('md-preview-stage').addEventListener('dblclick',async e=>{
     if(!e.target.closest('a,button,input')){e.preventDefault();view('source',true)}
   });
-  $('md-preview-stage').addEventListener('keydown',e=>{
+  $('md-preview-stage').addEventListener('keydown',async e=>{
     if(e.target===e.currentTarget && (e.key==='Enter'||e.key==='F2')){e.preventDefault();view('source',true)}
   });
-  $('md-source-panel').addEventListener('keydown',e=>{
+  $('md-source-panel').addEventListener('keydown',async e=>{
     if(((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s')||e.key==='Escape'){
       e.preventDefault();e.stopPropagation();finish();
     }
@@ -57,10 +57,10 @@
     else result='['+text.replace(/\]/g,'\\]')+'](https://example.com)';
     if(['heading','list','code'].includes(kind))result='\n'+result+'\n';detailEditor.replaceSelection(result);renderPreview();
   }
-  document.querySelectorAll('[data-md-format]').forEach(b=>{b.addEventListener('pointerdown',e=>e.preventDefault());b.addEventListener('click',()=>format(b.dataset.mdFormat))});
-  $('detail-body').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&['b','i'].includes(e.key.toLowerCase())){e.preventDefault();format(e.key.toLowerCase()==='b'?'bold':'italic')}});
-  $('md-page-prev').addEventListener('click',()=>{page--;layout()});$('md-page-next').addEventListener('click',()=>{page++;layout()});
-  $('md-preview-stage').addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();page+=e.key==='ArrowLeft'?-1:1;layout()}});
+  document.querySelectorAll('[data-md-format]').forEach(b=>{b.addEventListener('pointerdown',async e=>e.preventDefault());b.addEventListener('click',async ()=>format(b.dataset.mdFormat))});
+  $('detail-body').addEventListener('keydown',async e=>{if((e.metaKey||e.ctrlKey)&&['b','i'].includes(e.key.toLowerCase())){e.preventDefault();format(e.key.toLowerCase()==='b'?'bold':'italic')}});
+  $('md-page-prev').addEventListener('click',async ()=>{page--;layout()});$('md-page-next').addEventListener('click',async ()=>{page++;layout()});
+  $('md-preview-stage').addEventListener('keydown',async e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();page+=e.key==='ArrowLeft'?-1:1;layout()}});
   new ResizeObserver(layout).observe($('md-preview-stage'));window.addEventListener('open-sesame-layout',layout);
-  window.OpenSesameNotes={update(id){if(identity!==id){identity=id;revision=null;page=0;mode='preview'}view(mode)},finish,layout};const initial=currentItem();if(initial)window.OpenSesameNotes.update(initial.id,initial.body||'');
+  window.OpenSesameNotes={recover(value){const item=currentItem();if(!item||item.id!==value.id)return;item.body=value.body;item.title=value.title;item.text=value.title;detailEditor.set(value.body);$('detail-title').value=value.title;identity=item.id;view('source');$('detail-save-status').textContent='Recovered edit — not saved';},update(id){if(identity!==id){identity=id;revision=null;page=0;mode='preview'}view(mode)},finish,layout};const initial=currentItem();if(initial)window.OpenSesameNotes.update(initial.id,initial.body||'');
 })();

@@ -1,6 +1,6 @@
 # Shared mobile renderer
 
-[Issue #36](https://github.com/OpenCoven/open-sesame/issues/36) adds responsive presentation to the existing authored renderer. It does not establish an iOS/Android host or a desktop connection. The authenticated macOS host keeps its existing compact and detached behavior; the mobile shell activates only in a non-native renderer at viewport widths through 1024 CSS pixels. The sign-in-only HTTP development preview is unchanged. Use the isolated browser fixture for local layout qualification.
+[Issue #36](https://github.com/OpenCoven/open-sesame/issues/36) adds responsive presentation to the existing authored renderer. It does not establish an iOS/Android host or a desktop connection. The authenticated macOS host keeps its existing compact and detached behavior; the mobile shell activates in a non-native renderer at viewport widths through 1024 CSS pixels, or in the explicitly selected iOS host at phone/tablet widths. The sign-in-only HTTP development preview is unchanged. Use the isolated browser fixture for local layout qualification.
 
 ## Owners and navigation
 
