@@ -10,17 +10,21 @@ Replace the macOS-only Swift host and the Python bridge with a single Tauri 2 ap
 
 | Question | Decision |
 | --- | --- |
-| Platforms | macOS, Windows, Linux desktop. iOS/iPadOS stays on ADR 001. Android stays deferred. |
-| Host | Tauri 2 with a Rust backend. No Python and no Swift at runtime. |
+| Platforms | macOS, Windows, Linux desktop. iOS/iPadOS is a Tauri 2 iOS target of the same app, decided in #35 on 12 November 2026 and recorded in [ADR 002](../../mobile/adr-002-mobile-host.md); it is built in the mobile epic #33 after the desktop walking skeleton and is outside this design's first release. Android stays deferred. |
+| Host | Tauri 2 with a Rust backend. No Python and no Swift at runtime on desktop. |
 | Rollout | One cutover on one branch. The Swift host and Python bridge are deleted in the same change. No period of parallel support. |
 | Existing data | None is carried over. The only current user starts with a clean workspace. |
 | Feature bar | Core features only (listed below). Everything else rejects with a fixed "unavailable" error. |
 | Login | Kept. WorkOS AuthKit with PKCE through the system browser, because distribution is planned. |
 | Packaging | Local `tauri build` output per OS. Installers, signing, notarization and auto-update are out of scope. |
 
+## Mobile host decision
+
+Val decided in #35 on 12 November 2026 that the iPhone and iPad app is a Tauri 2 iOS target of this application, sharing the Rust core, request gate, storage and sign-in logic, with Swift only inside a first-party Tauri mobile plugin for the system authentication session and the Keychain. The decision is conditional: #38 starts with a spike that builds the walking skeleton for the iOS simulator and proves the navigation block, the main-frame-only gate and a Keychain round trip, and a failed spike returns the decision to the ADR 001 Swift host. [ADR 002](../../mobile/adr-002-mobile-host.md) supersedes ADR 001 and keeps its still-valid requirements. For this design it means the credential store and storage interfaces in the core must not assume a desktop operating system, and the "no Swift at runtime" entry in the table above describes the desktop builds only.
+
 ## What stays, what goes
 
-Kept unchanged: `dist/` (apart from the transport branch in `dist/bridge.js`), `web/auth-entrypoint/`, `vendor-src/` and `dist/vendor/`, the widget checks under `scripts/check-*.mjs` that do not read host source, and the mobile documents under `docs/mobile/`. `vendor-src/workos-ios` stays because ADR 001 depends on it.
+Kept unchanged: `dist/` (apart from the transport branch in `dist/bridge.js`), `web/auth-entrypoint/`, `vendor-src/` and `dist/vendor/`, the widget checks under `scripts/check-*.mjs` that do not read host source, and the mobile documents under `docs/mobile/`. `vendor-src/workos-ios` stays: the login task confirms its endpoints against that source, and the ADR 001 fallback named in ADR 002 depends on it.
 
 Removed at cutover: every `desktop/*.swift` file and every `desktop/*.py` file except `desktop/dev_server.py` (the browser preview behind `npm run dev`, which is a development tool and not part of the app), `desktop/tests/`, `desktop/engine/`, `desktop/build-macos.sh`, `run-macos.sh`, `desktop/photon-controller.mjs`, `examples/coven_familiars.py`, and the scripts that only build or check those (`scripts/build-workos-sdk.py`, `scripts/build-coven-engine.py`, `scripts/build-app-icon.py`, `scripts/check-app-icon.py`, `scripts/check-process-package.py`, `scripts/check-native.sh`, `scripts/check-authentication.sh`, `scripts/check-screen-notes.sh`, `scripts/check-vnc-native.sh`). Git history keeps all of it.
 
