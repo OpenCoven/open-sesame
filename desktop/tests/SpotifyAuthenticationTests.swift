@@ -15,6 +15,8 @@ import CryptoKit
         precondition(OpenSesameSpotify.effectiveClientID("invalid") == OpenSesameSpotify.defaultClientID)
         precondition(OpenSesameSpotify.effectiveClientID(String(repeating: "b", count: 32)) == String(repeating: "b", count: 32), "Existing explicit public-client overrides are preserved")
         precondition(Set(OpenSesameSpotify.scopes.split(separator: " ")) == Set(["user-read-private", "user-library-read", "playlist-read-private", "playlist-read-collaborative"]))
+        precondition(OpenSesameSpotify.artwork([["url": "https://i.scdn.co/image/cover"]]) == "https://i.scdn.co/image/cover")
+        for unsafe in ["http://i.scdn.co/image/cover", "https://i.scdn.co.evil.example/image", "https://user@i.scdn.co/image", "https://example.com/cover", "javascript:alert(1)"] { precondition(OpenSesameSpotify.artwork([["url": unsafe]]) == "") }
         let id = "0123456789ABCDEFGHIJKL"
         let page = try OpenSesameSpotify.libraryPage(["items": [["track": ["id": id, "name": "Song", "artists": [["name": "Artist"]]]], ["track": NSNull()]], "next": "https://untrusted.example"], kind: "tracks", offset: 0)
         let songs = page["items"] as! [[String: Any]]

@@ -15,3 +15,9 @@ Native regression checks exercise pin priority, temporary unavailability, orderi
 After connecting in Media → Music → Spotify, Your library loads the account’s Liked Songs automatically. Choose Playlists to browse owned and followed playlists, including private and collaborative lists. Load more fetches the next page; selecting a song or playlist opens it in the existing Spotify player. Refresh retries a failed read. Empty libraries and provider failures have separate messages.
 
 Reconnect existing Spotify sessions to grant the read-only `user-library-read`, `playlist-read-private` and `playlist-read-collaborative` scopes alongside profile access. Native tokens remain inside the Mac host; only normalized library items reach the widget. Library data stays in memory and is retired on disconnect, account change, expiry or widget deactivation. Spotify’s embedded playback session remains separate from account library access. Synthetic checks do not establish live account or installed playback acceptance.
+
+## Library presentation and closed playback
+
+Connected Spotify uses the available music pane for song rows and playlist cards, with safe provider artwork and an initial when artwork is unavailable. Open link reveals the existing URL entry. Selecting an item mounts the existing provider player in a compact dock; no empty player stage occupies the library before selection. Pagination and account/widget retirement retain their existing owners.
+
+Closed playback retains the configured base height, bounded by110percent in geometry and rendered checks. Transport and volume share one row. `node scripts/review-music-library.mjs` exercises the actual authored renderer with a disposable synthetic account at wide, narrow and short sizes; it does not establish native OAuth or live Spotify playback.
