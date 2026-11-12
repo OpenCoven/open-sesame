@@ -1,3 +1,94 @@
+//! The wire protocol between the UI and the host.
+//!
+//! The envelope is the one `dist/bridge.js` already speaks: a request is
+//! `{requestId, method, params}`, a reply is `{requestId, result}` or `{requestId, error}`, and an
+//! event is any object with an `event` key. Only the transport underneath changes.
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use std::fmt;
+use std::sync::Arc;
+
+/// One request from the UI.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Request {
+    pub request_id: String,
+    pub method: String,
+    /// Named parameters. A request without `params` has none.
+    #[serde(default)]
+    pub params: Map<String, Value>,
+}
+
+/// The single reply to a [`Request`]: a result or an error message, never both.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reply {
+    request_id: String,
+    #[serde(flatten)]
+    outcome: Outcome,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Outcome {
+    Result(Value),
+    Error(String),
+}
+
+impl Reply {
+    pub fn ok(request_id: &str, result: Value) -> Reply {
+        Reply {
+            request_id: request_id.to_string(),
+            outcome: Outcome::Result(result),
+        }
+    }
+
+    pub fn err(request_id: &str, message: impl Into<String>) -> Reply {
+        Reply {
+            request_id: request_id.to_string(),
+            outcome: Outcome::Error(message.into()),
+        }
+    }
+
+    pub fn from_result(request_id: &str, result: BridgeResult) -> Reply {
+        match result {
+            Ok(value) => Reply::ok(request_id, value),
+            Err(BridgeError(message)) => Reply::err(request_id, message),
+        }
+    }
+}
+
+/// A failure the UI shows to the user as it is written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BridgeError(pub String);
+
+impl fmt::Display for BridgeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for BridgeError {}
+
+impl From<&str> for BridgeError {
+    fn from(message: &str) -> Self {
+        BridgeError(message.to_string())
+    }
+}
+
+impl From<String> for BridgeError {
+    fn from(message: String) -> Self {
+        BridgeError(message)
+    }
+}
+
+/// What a feature handler returns.
+pub type BridgeResult = Result<Value, BridgeError>;
+
+/// Sends an event to the UI. Every emitted value is an object with an `event` key.
+pub type Emit = Arc<dyn Fn(Value) + Send + Sync>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,7 +158,10 @@ mod tests {
             let object = value.as_object().unwrap();
             assert_eq!(object.len(), 2, "{value}");
             assert_eq!(object["requestId"], json!("a"));
-            assert!(object.contains_key("result") != object.contains_key("error"), "{value}");
+            assert!(
+                object.contains_key("result") != object.contains_key("error"),
+                "{value}"
+            );
         }
     }
 
