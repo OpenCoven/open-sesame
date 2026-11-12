@@ -1,0 +1,8 @@
+{
+  "name": "open-sesame-ios-host-spike",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Throwaway spike for issue #38: Tauri 2 iOS simulator build, navigation block, main-frame-only gate and Keychain round trip.",
+  "scripts": { "tauri": "tauri" },
+  "devDependencies": { "@tauri-apps/cli": "2.12.4" }
+}

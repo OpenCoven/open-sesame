@@ -1,0 +1,75 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Sesame iOS host spike</title>
+<body style="font: 16px -apple-system; padding: 48px 16px">
+<h1>iOS host spike</h1>
+<pre id="log">running…</pre>
+<script>
+const invoke = window.__TAURI_INTERNALS__.invoke;
+const rec = (key, value) => invoke('record', { key, value });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const log = (t) => { document.getElementById('log').textContent += '\n' + t; };
+
+async function probe(name) {
+  const out = { name, origin: location.origin, href: location.href };
+  out.hasInternals = typeof window.__TAURI_INTERNALS__;
+  try { out.parentInternals = typeof parent.__TAURI_INTERNALS__; } catch (e) { out.parentInternals = 'threw:' + e.name; }
+  out.hasWebkitIpc = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc);
+  try {
+    const r = await fetch('ipc://localhost/gated_echo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Tauri-Callback': '1', 'Tauri-Error': '2' },
+      body: JSON.stringify({ token: 'forged-fetch-' + name }),
+    });
+    out.fetch = r.status + ':' + (await r.text()).slice(0, 200);
+  } catch (e) { out.fetch = 'threw:' + e.message; }
+  try {
+    window.webkit.messageHandlers.ipc.postMessage(JSON.stringify({
+      cmd: 'gated_echo', callback: 1, error: 2, payload: { token: 'forged-post-' + name }, options: { headers: {} },
+    }));
+    out.post = 'sent';
+  } catch (e) { out.post = 'threw:' + e.message; }
+  try {
+    if (parent.__TAURI_INTERNALS__) out.viaParent = await parent.__TAURI_INTERNALS__.invoke('gated_echo', { token: 'via-parent-' + name });
+  } catch (e) { out.viaParent = 'threw:' + e.name; }
+  parent.postMessage({ spike: out }, '*');
+}
+
+function frame(name, sandbox) {
+  return new Promise((resolve) => {
+    const f = document.createElement('iframe');
+    if (sandbox) f.setAttribute('sandbox', sandbox);
+    f.srcdoc = '<script>(' + probe.toString() + ')(' + JSON.stringify(name) + ')<\/script>';
+    const onMessage = (e) => {
+      if (e.data && e.data.spike && e.data.spike.name === name) { window.removeEventListener('message', onMessage); resolve(e.data.spike); }
+    };
+    window.addEventListener('message', onMessage);
+    setTimeout(() => resolve({ name, timeout: true }), 5000);
+    document.body.appendChild(f);
+  });
+}
+
+(async () => {
+  await rec('boot', { href: location.href, origin: location.origin, ua: navigator.userAgent });
+  await rec('keychain', await invoke('keychain_roundtrip'));
+  log('keychain done');
+  await rec('main_frame_echo', await invoke('gated_echo', { token: 'main-frame' }));
+  await rec('frame_sandboxed', await frame('sandboxed', 'allow-scripts'));
+  await rec('frame_same_origin', await frame('same-origin', null));
+  log('frames done');
+
+  let opened = 'n/a';
+  try { const w = window.open('https://example.com/window-open'); opened = w ? 'returned a window' : 'null'; } catch (e) { opened = 'threw:' + e.name; }
+  const a = document.createElement('a'); a.href = 'https://example.com/blank-link'; a.target = '_blank'; document.body.appendChild(a); a.click();
+  const sub = document.createElement('iframe'); sub.src = 'https://example.com/subframe'; document.body.appendChild(sub);
+  await sleep(2500);
+  await rec('nav_new_window', { windowOpen: opened, hrefAfter: location.href });
+  location.href = 'https://example.com/top-level';
+  await sleep(3000);
+  await rec('nav_top_level', { hrefAfter: location.href, stillBundled: location.origin === 'tauri://localhost' });
+  await rec('done', true);
+  log('done');
+})().catch((e) => rec('error', String(e && e.stack || e)));
+</script>
+</body>
