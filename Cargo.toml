@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/core", "src-tauri"]
+# The embedded Coven engine keeps its own lockfile and build until the cutover removes it (#86).
+exclude = ["desktop/engine"]
 
 [workspace.package]
 edition = "2021"
