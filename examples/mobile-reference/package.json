@@ -1,0 +1,10 @@
+{
+  "name": "open-sesame-mobile-prototype",
+  "version": "0.3.0",
+  "private": true,
+  "description": "A dependency-free, local mobile interaction prototype for Open Sesame.",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "theme": "node scripts/apply-theme.mjs"
+  }
+}
