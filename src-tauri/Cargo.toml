@@ -1,0 +1,9 @@
+[package]
+name = "open-sesame"
+version = "0.1.0"
+description = "Open Sesame desktop application. The Tauri shell is added in issue #70."
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+open-sesame-core = { path = "../crates/core" }

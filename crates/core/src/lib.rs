@@ -1,0 +1,8 @@
+//! Open Sesame's headless core.
+//!
+//! Plain Rust with no Tauri dependency, so it builds and tests on macOS, Windows and Linux without
+//! a window. The application crate owns the window and passes each UI request through
+//! [`gate::dispatch`], which decides whether the request may run before any feature code does.
+
+pub mod gate;
+pub mod protocol;
