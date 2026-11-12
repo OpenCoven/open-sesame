@@ -1,40 +1,40 @@
 /* A quiet conversation frame, with commands beside the composer. */
 #widget-anchor #widget-panel #pane-familiars{gap:6px}
-#widget-anchor #widget-panel #familiar-connection{min-height:0;padding:8px 10px;margin:0;border:1px solid var(--line);border-radius:8px;background:var(--surface-raised)}
+#widget-anchor #widget-panel #familiar-connection{min-height:0;padding:8px 10px;margin:0;border:1px solid var(--line);border-radius:var(--radius-4);background:var(--surface-raised)}
 #widget-anchor #widget-panel #familiar-rail>.workspace-rail-heading{gap:6px;padding-right:0}
 #widget-anchor #widget-panel #familiar-rail>.workspace-rail-heading>span{flex:1;min-width:0}
-#widget-anchor #widget-panel #familiar-connect{display:grid;place-items:center;flex:none;width:24px;height:24px;min-height:24px;padding:5px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-muted);box-shadow:none}
+#widget-anchor #widget-panel #familiar-connect{display:grid;place-items:center;flex:none;width:24px;height:24px;min-height:24px;padding:5px;border:1px solid transparent;border-radius:var(--radius-3);background:transparent;color:var(--ink-muted);box-shadow:none}
 #widget-anchor #widget-panel #familiar-connect:hover{background:var(--surface-hover);color:var(--ink-primary);border-color:var(--line)}
 #widget-anchor #widget-panel #familiar-connect svg{width:13px;height:13px}
-#widget-anchor #widget-panel #familiar-thread-header{min-height:34px;padding:0 0 8px;gap:8px;border-bottom:1px solid var(--line)}
+
 #widget-anchor #widget-panel #familiar-thread-header>button:not(#familiar-avatar-edit){background:transparent;border-color:transparent;color:var(--ink-secondary)}
 #widget-anchor #widget-panel #familiar-thread-header>button:not(#familiar-avatar-edit):hover{background:var(--surface-hover);border-color:var(--line);color:var(--ink-primary)}
-#widget-anchor #widget-panel #familiar-name{font-size:13px;font-weight:500;letter-spacing:-.1px}
-#widget-anchor #widget-panel #familiar-workspace{font-size:9px;line-height:13px;color:var(--ink-muted)}
+
+#widget-anchor #widget-panel #familiar-workspace{line-height:13px;color:var(--ink-muted)}
 #widget-anchor #widget-panel .familiar-thread{gap:8px}
-#widget-anchor #widget-panel .familiar-message{padding:8px 0;margin:0;max-width:100%}
+#widget-anchor #widget-panel .familiar-message{max-width:100%}
 #widget-anchor #widget-panel .familiar-message.assistant{border:0;background:transparent;box-shadow:none}
-#widget-anchor #widget-panel .familiar-message-body{font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+#widget-anchor #widget-panel .familiar-message-body{overflow-wrap:anywhere}
 #widget-anchor #widget-panel .familiar-message-body>:first-child{margin-top:0}
 #widget-anchor #widget-panel .familiar-message-body>:last-child{margin-bottom:0}
-#widget-anchor #widget-panel #familiar-chat-error{padding:6px 9px;border-left:2px solid #716579;border-radius:2px;color:var(--ink-secondary);font-size:10px;background:var(--surface-raised)}
-#widget-anchor #widget-panel #familiar-compose{position:relative;gap:0;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface-raised);box-shadow:none}
-#widget-anchor #widget-panel #familiar-message{display:block;width:100%;min-height:40px;max-height:144px;height:40px;margin:0;padding:10px 12px;border:0;background:transparent;resize:none;overflow-y:auto;font-size:12px;line-height:20px;box-sizing:border-box}
-#widget-anchor #widget-panel #familiar-compose>div:not(.familiar-command-menu){padding:4px 7px 7px;min-height:34px;gap:6px}
-#widget-anchor #widget-panel #familiar-compose :is(#familiar-commands-toggle,#familiar-dictate){display:grid;place-items:center;flex:none;width:26px;height:26px;min-height:26px;padding:5px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-muted);font-size:15px}
+#widget-anchor #widget-panel #familiar-chat-error{padding:6px 9px;border-left:2px solid var(--mauve-7);border-radius:var(--radius-1);color:var(--ink-secondary);font-size:var(--text-caption);background:var(--surface-raised)}
+#widget-anchor #widget-panel #familiar-compose{position:relative;gap:0;padding:0;box-shadow:none}
+#widget-anchor #widget-panel #familiar-message{display:block;width:100%;min-height:40px;max-height:144px;height:40px;margin:0;border:0;background:transparent;resize:none;overflow-y:auto;box-sizing:border-box}
+#widget-anchor #widget-panel #familiar-compose>div:not(.familiar-command-menu){min-height:34px;}
+#widget-anchor #widget-panel #familiar-compose :is(#familiar-commands-toggle,#familiar-dictate){display:grid;place-items:center;flex:none;width:26px;height:26px;min-height:26px;padding:5px;border:1px solid transparent;border-radius:var(--radius-3);background:transparent;color:var(--ink-muted);font-size:var(--text-title)}
 #widget-anchor #widget-panel #familiar-compose :is(#familiar-commands-toggle,#familiar-dictate):hover,#widget-anchor #widget-panel #familiar-commands-toggle[aria-expanded=true]{background:var(--surface-hover);border-color:var(--line);color:var(--ink-primary)}
-#widget-anchor #widget-panel #familiar-chat-status{font-size:9px;line-height:14px;color:var(--ink-muted)}
-#widget-anchor #widget-panel #familiar-command-menu{position:absolute;z-index:60;left:0;bottom:calc(100% + 6px);display:flex;flex-direction:column;width:min(460px,100%);max-height:min(280px,40cqh);min-height:0;gap:2px;padding:5px;border:1px solid #3b3842;border-radius:10px;background:#1b1c20;box-shadow:0 8px 24px #0005;overflow-y:auto;overscroll-behavior:contain}
-#widget-anchor #widget-panel #familiar-command-menu>.familiar-command-choice{display:flex;align-items:center;justify-content:space-between;flex:none;gap:12px;width:100%;min-height:42px;padding:6px 8px;text-align:left;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--ink-secondary)}
-#widget-anchor #widget-panel #familiar-command-menu>.familiar-command-choice:is(:hover,[aria-selected=true]){background:var(--surface-selected);border-color:#453b50;color:var(--ink-primary)}
+#widget-anchor #widget-panel #familiar-chat-status{font-size:var(--text-caption);line-height:14px;color:var(--ink-muted)}
+#widget-anchor #widget-panel #familiar-command-menu{position:absolute;z-index:60;left:0;bottom:calc(100% + 6px);display:flex;flex-direction:column;width:min(460px,100%);max-height:min(280px,40cqh);min-height:0;gap:2px;padding:5px;border:1px solid var(--ash-8);border-radius:var(--radius-5);background:var(--ash-4);box-shadow:0 8px 24px var(--shade-4);overflow-y:auto;overscroll-behavior:contain}
+#widget-anchor #widget-panel #familiar-command-menu>.familiar-command-choice{display:flex;align-items:center;justify-content:space-between;flex:none;gap:12px;width:100%;min-height:42px;padding:6px 8px;text-align:left;border:1px solid transparent;border-radius:var(--radius-3);background:transparent;color:var(--ink-secondary)}
+#widget-anchor #widget-panel #familiar-command-menu>.familiar-command-choice:is(:hover,[aria-selected=true]){background:var(--surface-selected);border-color:var(--mauve-4);color:var(--ink-primary)}
 #widget-anchor #widget-panel .familiar-command-choice>span{display:flex;flex-direction:column;gap:2px;min-width:0}
-#widget-anchor #widget-panel .familiar-command-choice strong{font-size:11px;line-height:16px;font-weight:500}
-#widget-anchor #widget-panel .familiar-command-choice small{font-size:10px;line-height:14px;color:var(--ink-muted);white-space:normal}
-#widget-anchor #widget-panel .familiar-command-group{flex:none;font-size:9px}
-#widget-anchor #widget-panel .familiar-command-result{flex:0 1 auto;min-height:0;max-height:36cqh;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface-inset);overflow:auto}
-#widget-anchor #widget-panel .familiar-command-result>header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;font-size:11px}
-#widget-anchor #widget-panel .familiar-command-result>header>button{display:grid;place-items:center;width:24px;height:24px;min-height:24px;padding:3px;border:0;border-radius:5px;background:transparent;color:var(--ink-muted);font-size:18px}
-#widget-anchor #widget-panel .familiar-command-body{font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+#widget-anchor #widget-panel .familiar-command-choice strong{font-size:var(--text-caption);line-height:16px;font-weight:500}
+#widget-anchor #widget-panel .familiar-command-choice small{font-size:var(--text-caption);line-height:14px;color:var(--ink-muted);white-space:normal}
+#widget-anchor #widget-panel .familiar-command-group{flex:none;font-size:var(--text-caption)}
+#widget-anchor #widget-panel .familiar-command-result{flex:0 1 auto;min-height:0;max-height:36cqh;padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius-4);background:var(--surface-inset);overflow:auto}
+#widget-anchor #widget-panel .familiar-command-result>header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;font-size:var(--text-caption)}
+#widget-anchor #widget-panel .familiar-command-result>header>button{display:grid;place-items:center;width:24px;height:24px;min-height:24px;padding:3px;border:0;border-radius:var(--radius-2);background:transparent;color:var(--ink-muted);font-size:var(--text-heading)}
+#widget-anchor #widget-panel .familiar-command-body{font-size:var(--text-caption);line-height:1.6;overflow-wrap:anywhere}
 #widget-anchor #widget-panel .familiar-command-body table{width:100%;border-collapse:collapse;text-align:left}
-#widget-anchor #widget-panel .familiar-command-body :is(th,td){padding:5px 7px;border-bottom:1px solid var(--line);font-size:10px}
-@container open-sesame-widget (max-width:600px){#widget-anchor #widget-panel #familiar-chat-status{font-size:8px;line-height:12px}#widget-anchor #widget-panel .familiar-command-choice .familiar-command-group{display:none}#widget-anchor #widget-panel #familiar-thread-header{gap:5px}#widget-anchor #widget-panel #familiar-workspace{display:none}}
+#widget-anchor #widget-panel .familiar-command-body :is(th,td){padding:5px 7px;border-bottom:1px solid var(--line);font-size:var(--text-caption)}
+@container open-sesame-widget (max-width:600px){#widget-anchor #widget-panel #familiar-chat-status{font-size:var(--text-caption);line-height:14px}#widget-anchor #widget-panel .familiar-command-choice .familiar-command-group{display:none}}

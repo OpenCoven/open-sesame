@@ -48,7 +48,7 @@ For a support report, share only the plugin name, Open Sesame version, host type
 
 ## Flat dark UI polish
 
-The widget now uses a fixed, opaque charcoal base (`#101113`) with matching native and web surfaces. The native visual-effect view, glass RPC, opacity gestures, their JavaScript/model/CSS, view fades, and animated edge effects have been removed. Saved legacy opacity values are no longer read. The 16:9 geometry, resize-to-collapse and outside-click behavior, speech entry, and existing sessions keep their current contracts. The final palette is owned by `dist/flat-theme.css`.
+The widget now uses a fixed, opaque charcoal base (`#101113`) with matching native and web surfaces. The native visual-effect view, glass RPC, opacity gestures, their JavaScript/model/CSS, view fades, and animated edge effects have been removed. Saved legacy opacity values are no longer read. The 16:9 geometry, resize-to-collapse and outside-click behavior, speech entry, and existing sessions keep their current contracts. The final palette was owned by `dist/flat-theme.css` when this pass was delivered; values now live in `dist/design-tokens.css` under the [design system contract](design-system.md), and the theme sheet aliases them.
 
 | Improvement | Implemented behavior | Verification |
 | --- | --- | --- |

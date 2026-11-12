@@ -1,0 +1,57 @@
+/* Open Sesame design tokens: the single source of color, type, space, radius, elevation and motion.
+   Primitive ramps hold every permitted value; semantic tokens name the job a value does.
+   Surfaces reference semantic tokens. Change a look here, never by adding a later override sheet.
+   Contract and migration rules: docs/design-system.md. Ratchet: scripts/check-design-budget.mjs. */
+:root{
+  /* Ash: the charcoal neutral, faintly violet. 1–10 are surfaces and lines, 11–18 are ink. */
+  --ash-1:#0c0d0f;--ash-2:#101113;--ash-3:#17181c;--ash-4:#1c1c21;--ash-5:#202126;--ash-6:#26262c;--ash-7:#2b2b33;--ash-8:#35343c;--ash-9:#434149;--ash-10:#56545d;
+  --ash-11:#74717d;--ash-12:#8b8793;--ash-13:#a09ba8;--ash-14:#b8b4bf;--ash-15:#cfccd4;--ash-16:#e8e6ec;--ash-17:#f5f4f7;--ash-18:#ffffff;
+  /* Mauve: the neutral warmed toward the accent, for selection and quiet emphasis. */
+  --mauve-1:#26232d;--mauve-2:#312a3a;--mauve-3:#3b3245;--mauve-4:#453b50;--mauve-5:#51465f;--mauve-6:#635870;--mauve-7:#776c85;--mauve-8:#8c809a;--mauve-9:#a499b3;--mauve-10:#bdb2cb;--mauve-11:#d6cce3;--mauve-12:#e9e0f4;
+  /* Violet: the one accent. */
+  --violet-1:#503d66;--violet-2:#6d5886;--violet-3:#856f9e;--violet-4:#9d87b8;--violet-5:#b69fd1;--violet-6:#c6b8d9;--violet-7:#dac8f1;
+  /* Gold is the warm counter-accent of the emblem and icons; rose, green and blue report status. 1 deep fill, 2 indicator, 3 text on charcoal. */
+  --rose-1:#82414b;--rose-2:#cb8e98;--rose-3:#e4b1b9;
+  --gold-1:#7e5b35;--gold-2:#c89f74;--gold-3:#deba8f;
+  --green-1:#41684f;--green-2:#87b695;--green-3:#aacfb3;
+  --blue-1:#425f85;--blue-2:#82a4d0;--blue-3:#a8c3e7;
+  /* Veils: translucent layers for overlays whose backdrop varies. Tint lightens, shade darkens, the rest carry a hue. */
+  --tint-1:#ffffff04;--tint-2:#ffffff08;--tint-3:#ffffff0c;--tint-4:#ffffff12;--tint-5:#ffffff1a;--tint-6:#ffffff26;--tint-7:#ffffff33;--tint-8:#ffffff40;--tint-9:#ffffff54;--tint-10:#ffffff66;--tint-11:#ffffff80;--tint-12:#ffffff99;--tint-13:#ffffffcc;--tint-14:#ffffffe6;
+  --shade-1:#00000014;--shade-2:#00000026;--shade-3:#00000040;--shade-4:#00000059;--shade-5:#00000080;--shade-6:#000000b3;--shade-7:#000000e6;
+  --veil-violet-1:#c6b8d90a;--veil-violet-2:#c6b8d914;--veil-violet-3:#c6b8d91f;--veil-violet-4:#c6b8d933;--veil-violet-5:#c6b8d94d;--veil-violet-6:#c6b8d966;--veil-violet-7:#c6b8d980;--veil-violet-8:#c6b8d9b3;
+  --veil-rose-1:#cb8e982e;--veil-rose-2:#cb8e9859;--veil-gold-1:#c89f742e;--veil-gold-2:#c89f7459;--veil-green-1:#87b6952e;--veil-green-2:#87b69559;--veil-blue-1:#82a4d02e;--veil-blue-2:#82a4d059;
+
+  /* Semantic color. */
+  --surface-sunken:var(--ash-1);--surface-inset:var(--ash-1);--surface-base:var(--ash-2);--surface-raised:var(--ash-3);--surface-overlay:var(--ash-4);--surface-hover:var(--ash-5);--surface-selected:var(--mauve-1);
+  --line-subtle:var(--ash-5);--line:var(--ash-7);--line-strong:var(--ash-9);--line-accent:var(--mauve-4);
+  --ink-primary:var(--ash-16);--ink-secondary:var(--ash-14);--ink-muted:var(--ash-13);--ink-disabled:var(--ash-11);--ink-on-accent:var(--ash-2);
+  --accent:var(--violet-6);--accent-strong:var(--violet-7);--accent-quiet:var(--mauve-4);
+  --positive:var(--green-2);--caution:var(--gold-2);--critical:var(--rose-2);--info:var(--blue-2);
+
+  /* Type: 11px is the smallest text the interface sets. */
+  --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+  --text-caption:11px;--text-label:12px;--text-body:13px;--text-title:15px;--text-heading:18px;--text-display:24px;
+  --leading-tight:1.2;--leading-normal:1.45;--leading-reading:1.6;
+  --weight-regular:400;--weight-medium:500;--weight-semibold:600;
+  --tracking-caps:.06em;--tracking-tight:-.01em;
+
+  /* Space: a 4px rhythm with two half steps for dense controls. */
+  --space-1:2px;--space-2:4px;--space-3:6px;--space-4:8px;--space-5:12px;--space-6:16px;--space-7:20px;--space-8:24px;--space-9:32px;
+
+  /* Control heights: every button, tab, field and select sits on one of four. */
+  --control-xs:24px;--control-sm:28px;--control-md:32px;--control-lg:36px;
+
+  /* Radius: concentric from control to window. */
+  --radius-1:2px;--radius-2:4px;--radius-3:6px;--radius-4:8px;--radius-5:10px;--radius-6:12px;--radius-7:16px;--radius-8:20px;--radius-9:28px;--radius-full:999px;
+  /* The native window layer clips at 18px (desktop/OpenSesame.swift); surfaces that meet the window edge use this. */
+  --radius-window:18px;
+
+  /* Elevation: only floating layers cast a shadow. */
+  --shadow-overlay:0 12px 32px var(--shade-4),0 0 0 1px var(--line);
+  --shadow-window:0 16px 36px var(--shade-4);
+
+  /* Motion: three durations and one curve; ambient loops keep their own timing. */
+  --motion-fast:.12s;--motion-base:.16s;--motion-slow:.24s;
+  --ease-standard:cubic-bezier(.2,.8,.2,1);
+}

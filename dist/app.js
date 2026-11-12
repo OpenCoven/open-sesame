@@ -114,8 +114,13 @@ function render(){
   const height=Math.round(state.width/state.ratio);
   const expandedScale=1.2;
   const {width:panelWidth,height:panelHeight}=expandedFrame();
-  $('widget-anchor').className=`widget-anchor ${state.layout==='notch'?'notch-mode':'menu-mode'}${state.expanded?' expanded':''}${wide?' library-open':''}${state.playful?' playful-shape':''}${['focus','audio','terminal','remote','agent-monitor','computer-agent','familiars','reading','youtube','media'].includes(state.scenario)?' tall-panel':''}${state.scenario==='audio'?' audio-panel':''}${state.scenario==='focus'?' focus-panel':''}${terminalWide?' terminal-panel':''}${state.scenario==='terminal'?' terminal-active':''}${state.scenario==='familiars'?' familiars-active':''}${state.scenario==='computer-agent'?' computer-agent-active':''}${state.scenario==='reading'?' reading-active':''}${['youtube','media'].includes(state.scenario)?' lockin-player-active':''}`;
-  $('widget-anchor').style.setProperty('--notch-width',state.width+'px');$('widget-anchor').style.setProperty('--notch-height',height+'px');$('widget-anchor').style.setProperty('--panel-width',panelWidth+'px');$('widget-anchor').style.setProperty('--panel-height',panelHeight+'px');$('widget-anchor').style.setProperty('--expanded-scale',expandedScale);
+  const anchorNode=$('widget-anchor'),derivedClasses=['frame-full','items-overview','has-compact-media','compact-capturing','compact-recording','compact-playing'].filter(name=>anchorNode.classList.contains(name)).map(name=>' '+name).join('');
+  // Classes derived by other modules on every render are carried across: dropping and restoring them restyles the whole widget twice.
+  const anchorClass=`widget-anchor ${state.layout==='notch'?'notch-mode':'menu-mode'}${state.expanded?' expanded':''}${wide?' library-open':''}${state.playful?' playful-shape':''}${['focus','audio','terminal','remote','agent-monitor','computer-agent','familiars','reading','youtube','media'].includes(state.scenario)?' tall-panel':''}${state.scenario==='audio'?' audio-panel':''}${state.scenario==='focus'?' focus-panel':''}${terminalWide?' terminal-panel':''}${state.scenario==='terminal'?' terminal-active':''}${state.scenario==='familiars'?' familiars-active':''}${state.scenario==='computer-agent'?' computer-agent-active':''}${state.scenario==='reading'?' reading-active':''}${['youtube','media'].includes(state.scenario)?' lockin-player-active':''}${state.scenario==='media'?' media-active':''}`+derivedClasses;if(anchorNode.className!==anchorClass)anchorNode.className=anchorClass;
+  // An inherited custom property restyles every descendant when it changes. Write the value OpenSesameWindow.sync settles on
+  // for an edge-to-edge window, rather than 1.2 here and 1 a moment later; an unchanged value costs nothing.
+  const edgeToEdge=!!window.OpenSesameWindow?.detached||state.expanded&&state.size==='full';
+  anchorNode.style.setProperty('--notch-width',state.width+'px');anchorNode.style.setProperty('--notch-height',height+'px');anchorNode.style.setProperty('--panel-width',panelWidth+'px');anchorNode.style.setProperty('--panel-height',panelHeight+'px');anchorNode.style.setProperty('--expanded-scale',edgeToEdge?'1':expandedScale);
   $('widget-panel').hidden=!state.expanded;if(!state.expanded)closeUrlEditor();$('compact-widget').setAttribute('aria-expanded',state.expanded);$('compact-widget').tabIndex=state.expanded?-1:0;
   $('menu-trigger').hidden=state.layout!=='menu';$('menu-trigger').setAttribute('aria-expanded',state.expanded);
   $('notch-settings').hidden=state.layout!=='notch';$('menu-settings').hidden=state.layout!=='menu';$('geometry-tag').textContent=state.layout==='notch'?'NOTCH':'POPOVER';
@@ -288,7 +293,7 @@ function itemRow(n){
   const remove=document.createElement('button');remove.className='delete-thought';remove.innerHTML=icon('trash');remove.setAttribute('aria-label','Delete '+kind+': '+title);remove.addEventListener('click',()=>deleteItem(n.id));row.append(control,content,remove);return row;
 }
 function renderItemsPage(visible=filteredItems()){
-  const list=$('capture-list');if(!list.clientHeight)return;list.classList.remove('category-overview');window.OpenSesameItemViews?.sync();if(!libraryOpen&&itemsView!=='list'&&window.OpenSesameItemViews){OpenSesameItemViews.render(visible);return}list.dataset.view='list';list.setAttribute('role','list');list.replaceChildren();
+  const list=$('capture-list');if(list.closest('[hidden]')||!list.clientHeight)return;list.classList.remove('category-overview');window.OpenSesameItemViews?.sync();if(!libraryOpen&&itemsView!=='list'&&window.OpenSesameItemViews){OpenSesameItemViews.render(visible);return}list.dataset.view='list';list.setAttribute('role','list');list.replaceChildren();
   if(!libraryOpen&&categoryFilter==='all'&&!libraryQuery&&!expandedCategories.size&&!window.OpenSesameProjects?.flatCollections){
     list.classList.add('category-overview');
     for(const category of itemCategories){
@@ -352,7 +357,7 @@ function renderItems({detail=true}={}){
   window.OpenSesameItemViews?.sync();$('capture-list').setAttribute('aria-label',itemsArchive?'Archived items':'Saved items');$('library-toggle').setAttribute('aria-label','Collapse to Projects overview');$('library-toggle').title='Collapse to Projects overview';$('library-toggle').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14M7 15l5-5 5 5"/></svg>';
   $('project-rail').hidden=!libraryOpen;$('note-detail').hidden=!libraryOpen;syncDetailWidth();
   renderItemsPage(visible);
-  const count=scopedItemCount();$('capture-count').textContent=count+' item'+(count===1?'':'s');list.scrollTop=0;
+  const count=scopedItemCount();$('capture-count').textContent=count+' item'+(count===1?'':'s');if(!list.closest('[hidden]'))list.scrollTop=0;
   if(libraryOpen&&detail)renderDetail();if(state.scenario==='items')renderCompact();window.OpenSesameProjects?.sync();
 }
 function openItem(id){if(window.OpenSesameNotes?.finish(false)===false)return;selectedItemId=id;revealItem=true;const item=currentItem();if(item){categoryFilter=itemKind(item);itemsArchive=OpenSesameItemWorkflow.isArchived(item);expandedCategories.clear();expandedCategories.add(itemKind(item));}libraryOpen=true;render();$('detail-title').focus({preventScroll:true})}

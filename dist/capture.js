@@ -124,7 +124,7 @@
     const field=input();if(!field.offsetWidth||window.OpenSesameComposer?.full)return;
     const cap=Math.min(150,Math.max(72,el('widget-panel').clientHeight*.25));
     field.style.maxHeight=cap+'px';field.style.height='0px';
-    const wanted=Math.min(cap,Math.max(22,field.scrollHeight));field.style.height=wanted+'px';field.style.overflowY=field.scrollHeight>cap?'auto':'hidden';
+    const natural=field.scrollHeight,wanted=Math.min(cap,Math.max(22,natural));field.style.height=wanted+'px';field.style.overflowY=natural>cap?'auto':'hidden';
     field.closest('.widget-capture-footer').classList.toggle('capture-multiline',wanted>34);if(!menu().hidden){const previous=pageSize;measureMenu();if(previous!==pageSize){menuPage=active=0;renderMenu()}}
   })}
   function writeDraft(){if(!ready)return;if(window.OpenSesameShellInput?.active){window.OpenSesameShellInput.saveDraft();return}try{const value=input().value;if(!value&&!attachedUrl){localStorage.removeItem(DRAFT);return}localStorage.setItem(DRAFT,JSON.stringify({value,type:el('capture-type').value,projectId:el('capture-project').value,url:attachedUrl,ignored:ignoredInlineUrl}))}catch{}}

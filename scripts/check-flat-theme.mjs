@@ -7,7 +7,11 @@ assert.ok(html.lastIndexOf('flat-theme.css')>html.lastIndexOf('activity-rail.css
 assert.equal(swift.includes('NSVisualEffectView'),false);assert.equal(swift.includes('window.glass'),false);assert.equal(swift.includes('glassSavedLevel'),false);assert.equal(swift.includes('animator().alphaValue'),false);assert.ok(swift.includes('blue: 19.0/255, alpha: 1).cgColor'));assert.ok(swift.includes('surface.addSubview(web)'));
 assert.equal(fs.readFileSync('dist/app.js','utf8').includes('Alt-hold to adjust glass'),false);assert.equal(fs.readFileSync('dist/refinement.css','utf8').includes('open-sesame-view-arrive'),false);
 assert.equal(css.includes('linear-gradient('),false);assert.ok(css.includes('backdrop-filter:none'));assert.ok(css.includes('button{background-image:none!important}'));assert.ok(css.includes('outline:2px solid var(--accent)'));assert.ok(css.includes('button[aria-current=true]'));assert.ok(css.includes('prefers-reduced-motion'));assert.ok(css.includes('forced-colors'));assert.ok(css.includes(':disabled{opacity:1'));
-const colors=Object.fromEntries([...css.matchAll(/--([a-z-]+):#([0-9a-f]{6})(?=[;}])/g)].map(([,name,hex])=>[name,hex]));
+// The palette is defined once in the token sheet; the theme may alias it. Resolve each name to its final hex.
+const tokenCss=fs.readFileSync('dist/design-tokens.css','utf8'),defined=Object.fromEntries([...(tokenCss+css).matchAll(/--([a-z0-9-]+):([^;{}]+)(?=[;}])/g)].map(([,name,value])=>[name,value.trim()]));
+const resolveToken=(name,depth=0)=>{const value=defined[name],alias=value?.match(/^var\(--([a-z0-9-]+)\)$/);return alias&&depth<8?resolveToken(alias[1],depth+1):/^#[0-9a-f]{6}$/.test(value||'')?value.slice(1):undefined};
+const colors=Object.fromEntries(Object.keys(defined).map(name=>[name,resolveToken(name)]));
+assert.ok(html.indexOf('design-tokens.css')>0&&html.indexOf('design-tokens.css')<html.indexOf('style.css'),'Tokens load before every surface stylesheet');
 function luminance(hex){const values=hex.match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return .2126*values[0]+.7152*values[1]+.0722*values[2]}
 function contrast(a,b){const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
 for(const surface of ['surface-base','surface-inset','surface-raised','surface-hover','surface-selected']){assert.match(colors[surface],/^[a-f0-9]{6}$/);for(const ink of ['ink-primary','ink-secondary','ink-muted'])assert.ok(contrast(colors[ink],colors[surface])>=4.5,ink+' contrast on '+surface)}

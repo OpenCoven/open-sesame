@@ -40,7 +40,7 @@
     if(width<limits().min)window.OpenSesameRails.set('familiars',false);else{preferred=paint(width);save();window.OpenSesameRails.set('familiars',true)}paint();
   });
   window.addEventListener('blur',()=>finish(false));window.addEventListener('pagehide',()=>finish(false));
-  window.addEventListener('open-sesame-view-changed',()=>{finish(false);paint()});window.addEventListener('open-sesame-rails-changed',()=>paint(drag?.width));
+  window.addEventListener('open-sesame-view-changed',()=>{finish(false);if(!workspace.closest('[hidden]'))paint()});window.addEventListener('open-sesame-rails-changed',()=>paint(drag?.width));
   new ResizeObserver(()=>{if(drag)finish(false);paint()}).observe(workspace);
   paint();
 })();

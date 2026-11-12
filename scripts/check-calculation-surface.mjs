@@ -4,6 +4,7 @@ import vm from 'node:vm';
 const nodes=[],frames=new Map(),copied=[];let sequence=0,tick;
 class Node{
   constructor(){nodes.push(this);this.id='';this.value='';this.hidden=false;this.children=[];this.attrs={};this.handlers={};this.offsetWidth=0;this.style={};this.classList={add(){},toggle(){}};this.parentElement={classList:{add(){}}}}
+  closest(){return null}
   append(...n){this.children.push(...n)}after(){}setAttribute(k,v){this.attrs[k]=v}addEventListener(k,fn){this.handlers[k]=fn}querySelector(){return new Node()}
 }
 const get=id=>nodes.find(n=>n.id===id)||Object.assign(new Node(),{id});
