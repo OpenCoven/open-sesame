@@ -1,5 +1,13 @@
 # Open Sesame — mobile prototype
 
+<!-- open-sesame:repository-note:start -->
+
+## Status in this repository
+
+Repository note for [issue #34](https://github.com/OpenCoven/open-sesame/issues/34), added on 12 November 2026 after the desktop restart. This reference is the visual source of truth for the mobile app in [epic #33](https://github.com/OpenCoven/open-sesame/issues/33) and a candidate visual reference for the new desktop shell ([#76](https://github.com/OpenCoven/open-sesame/issues/76), [#77](https://github.com/OpenCoven/open-sesame/issues/77)), pending decision [#61](https://github.com/OpenCoven/open-sesame/issues/61). Its demo storage and scripted familiars are not production contracts: the `opensesame.mobile.prototype.v1` localStorage, sample fixtures and Kitty/Cody/Nova replies define no persistence, identity, sign-in, permission or familiar-session behaviour. Everything outside this delimited note is the supplied v0.3 text, which [the repository check](../../scripts/check-mobile-reference.mjs) verifies against [upstream-files.json](upstream-files.json); it describes the design session, so see [the qualification guide](../../docs/mobile-reference.md) for current repository evidence.
+
+<!-- open-sesame:repository-note:end -->
+
 An interactive, self-contained mobile web prototype for Val. Version 0.3, refined 9 November 2026. This is a proposed mobile experience informed by the current OpenCoven/open-sesame repository, not a native mobile implementation or an approved architecture change.
 
 ## Open it

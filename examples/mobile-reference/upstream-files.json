@@ -3,6 +3,7 @@
   "standaloneSha256": "f9fbd88673b3cdfc754540ad864fd58c34b47498bbae95c8e5d0555fb7de281a",
   "sourceZipSha256": "5d4fc2401534ddf2350edc529c874bc26bdcaa695c1c66e3509fb38fe7d60274",
   "brandCommit": "798e2f5f2f1a69f5d156ccc0a9aafc4f7da55fc8",
+  "repositoryNotes": ["README.md"],
   "files": {
     "README.md": {
       "sha256": "800991e64b1d08a6d6d7cef3285704c83dbc6719910c9e16b1df566f79d59ebb",
