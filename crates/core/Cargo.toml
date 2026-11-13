@@ -1,10 +1,17 @@
 [package]
 name = "open-sesame-core"
 version = "0.1.0"
-description = "Open Sesame's headless core: wire protocol and request gate. No Tauri dependency."
+description = "Open Sesame's headless core: wire protocol, request gate and sign-in logic. No Tauri dependency."
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+base64 = "0.22.1"
+ring = "0.17.14"
+
+[dev-dependencies]
+# Test-only: generates an ephemeral RSA key and signs fixture tokens. Never used to verify.
+rsa = { version = "0.9.8", features = ["sha2"] }
+rand = "0.8.5"
