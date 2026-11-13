@@ -87,16 +87,59 @@ fn main() -> ExitCode {
         // heartbeat <file>: writes a growing counter to the file until killed.
         Some("heartbeat") => {
             let file = rest.first().copied().unwrap_or_default();
-            let scratch = format!("{file}.next");
-            for beat in 1u64.. {
-                // Written beside the file and renamed over it, so the file always holds a whole
-                // number even if this process is killed mid-write.
-                if std::fs::write(&scratch, beat.to_string()).is_ok() {
-                    let _ = std::fs::rename(&scratch, file);
+            for count in 1u64.. {
+                beat(file, count);
+                sleep(Duration::from_millis(20));
+            }
+            0
+        }
+        // chatter <file>: as heartbeat, and prints a line with every beat. It ends by itself
+        // when nobody reads its output any more, or after ten seconds.
+        Some("chatter") => {
+            let file = rest.first().copied().unwrap_or_default();
+            let mut out = std::io::stdout();
+            for count in 1u64..=500 {
+                beat(file, count);
+                if writeln!(out, "chatter").and_then(|()| out.flush()).is_err() {
+                    break;
                 }
                 sleep(Duration::from_millis(20));
             }
             0
+        }
+        // escape-and-chatter <file>: starts a chatter child in a process group of its own, so it
+        // is outside this process's tree but still holds its output pipes, then sleeps.
+        #[cfg(unix)]
+        Some("escape-and-chatter") => {
+            use std::os::unix::process::CommandExt;
+            let file = rest.first().copied().unwrap_or_default();
+            let program = std::env::current_exe().expect("the fixture knows its own path");
+            let mut command = Command::new(program);
+            command.args(["chatter", file]).process_group(0);
+            match command.spawn() {
+                Ok(_) => {
+                    wait_for_first_beat(file);
+                    sleep(Duration::from_secs(30));
+                    0
+                }
+                Err(_) => 3,
+            }
+        }
+        // close-output <milliseconds> <code>: prints a line, closes both output streams, keeps
+        // running for that long, then exits with the code.
+        #[cfg(unix)]
+        Some("close-output") => {
+            use std::os::fd::{FromRawFd, OwnedFd};
+            println!("before closing");
+            let _ = std::io::stdout().flush();
+            // SAFETY: descriptors 1 and 2 are this process's own output streams, nothing uses
+            // them after this, and each is closed exactly once.
+            unsafe {
+                drop(OwnedFd::from_raw_fd(1));
+                drop(OwnedFd::from_raw_fd(2));
+            }
+            sleep(Duration::from_millis(number(&rest, 0) as u64));
+            number(&rest, 1) as u8
         }
         // spawn-child-and-sleep <file>: starts a heartbeat child, waits for its first beat,
         // prints its PID, then sleeps.
@@ -107,14 +150,7 @@ fn main() -> ExitCode {
             let program = std::env::current_exe().expect("the fixture knows its own path");
             match Command::new(program).args(["heartbeat", file]).spawn() {
                 Ok(child) => {
-                    // Wait for the child's first beat, so a test can tell a child that was
-                    // stopped from one that never ran.
-                    for _ in 0..500 {
-                        if std::fs::metadata(file).is_ok_and(|beat| beat.len() > 0) {
-                            break;
-                        }
-                        sleep(Duration::from_millis(10));
-                    }
+                    wait_for_first_beat(file);
                     println!("{}", child.id());
                     let _ = std::io::stdout().flush();
                     if mode == "spawn-child-and-sleep" {
@@ -131,6 +167,26 @@ fn main() -> ExitCode {
         }
     };
     ExitCode::from(code)
+}
+
+/// Writes the counter beside the file and renames it over the file, so the file always holds a
+/// whole number even if this process is killed mid-write.
+fn beat(file: &str, count: u64) {
+    let scratch = format!("{file}.next");
+    if std::fs::write(&scratch, count.to_string()).is_ok() {
+        let _ = std::fs::rename(&scratch, file);
+    }
+}
+
+/// Waits for a child's first beat, so a test can tell a child that was stopped from one that
+/// never ran.
+fn wait_for_first_beat(file: &str) {
+    for _ in 0..500 {
+        if std::fs::metadata(file).is_ok_and(|beat| beat.len() > 0) {
+            break;
+        }
+        sleep(Duration::from_millis(10));
+    }
 }
 
 fn number(rest: &[&str], index: usize) -> usize {

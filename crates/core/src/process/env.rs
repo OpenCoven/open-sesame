@@ -157,8 +157,19 @@ impl ShellEnv {
         }
     }
 
+    /// The value of a variable. On Windows the name is matched without regard to case, as the
+    /// system does: the search path is usually stored there as `Path`.
     pub fn get(&self, name: &str) -> Option<&str> {
-        self.vars.get(name).map(String::as_str)
+        if let Some(value) = self.vars.get(name) {
+            return Some(value);
+        }
+        if !cfg!(windows) {
+            return None;
+        }
+        self.vars
+            .iter()
+            .find(|(other, _)| other.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
     }
 
     pub fn vars(&self) -> &BTreeMap<String, String> {
@@ -254,5 +265,53 @@ impl StartupEnv {
     /// As [`StartupEnv::get`], with the capture supplied by the caller.
     pub fn get_or_capture(&self, capture: impl FnOnce() -> ShellEnv) -> &ShellEnv {
         self.0.get_or_init(capture)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{between, parse};
+
+    fn get<'a>(
+        vars: &'a std::collections::BTreeMap<String, String>,
+        name: &str,
+    ) -> Option<&'a str> {
+        vars.get(name).map(String::as_str)
+    }
+
+    #[test]
+    fn only_what_is_between_the_first_and_last_marker_is_read() {
+        assert_eq!(between(b"noise|M|A=1|M|tail", b"|M|"), Some(&b"A=1"[..]));
+        assert_eq!(
+            between(b"|M|A=|M|still inside|M|", b"|M|"),
+            Some(&b"A=|M|still inside"[..])
+        );
+        assert_eq!(between(b"|M||M|", b"|M|"), Some(&b""[..]));
+        assert_eq!(between(b"noise|M|A=1", b"|M|"), None);
+        assert_eq!(between(b"no marker at all", b"|M|"), None);
+        assert_eq!(between(b"", b"|M|"), None);
+    }
+
+    #[test]
+    fn nul_separated_entries_are_exact() {
+        let vars =
+            parse(b"A=1\0EQ=a=b=c\0MULTI=first\nSECOND=fake\n\0EMPTY=\0not a name=x\0NOVALUE\0");
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "EQ"), Some("a=b=c"));
+        assert_eq!(get(&vars, "MULTI"), Some("first\nSECOND=fake\n"));
+        assert_eq!(get(&vars, "EMPTY"), Some(""));
+        assert_eq!(vars.len(), 4);
+    }
+
+    /// The fallback for an `env` without `-0`, which no system these tests run on needs.
+    #[test]
+    fn newline_separated_entries_keep_continuation_lines() {
+        let vars = parse(b"ignored before the first name\nA=1\nMULTI=first\n  second line\n\nlast\nEQ=a=b=c\nEMPTY=\n");
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "MULTI"), Some("first\n  second line\n\nlast"));
+        assert_eq!(get(&vars, "EQ"), Some("a=b=c"));
+        assert_eq!(get(&vars, "EMPTY"), Some(""));
+        assert_eq!(vars.len(), 4);
+        assert!(parse(b"").is_empty());
     }
 }

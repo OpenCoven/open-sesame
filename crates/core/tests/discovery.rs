@@ -160,6 +160,31 @@ fn the_search_path_keeps_only_absolute_directories() {
     assert!(finder.known_dirs.iter().all(|dir| dir.is_absolute()));
 }
 
+/// Windows stores the search path as `Path` and matches variable names without regard to case.
+/// Elsewhere `Path` is a different variable and is not the search path.
+#[test]
+fn the_path_variable_is_matched_the_way_the_system_matches_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let tool = install(dir.path(), "tool");
+    let env = ShellEnv::from_vars(vars(&[
+        ("Path", dir.path().to_str().unwrap()),
+        ("PathExt", " ; ;"),
+    ]));
+    let mut finder = Search::from_env(&env);
+    finder.known_dirs.clear();
+    if cfg!(windows) {
+        assert_eq!(env.get("PATH"), dir.path().to_str());
+        assert_eq!(finder.path, [dir.path().to_path_buf()]);
+        // A `PATHEXT` that names no extension is not used: the usual ones are.
+        assert_eq!(finder.extensions, Search::default_extensions());
+        assert_eq!(finder.find("tool", None), Some(tool));
+    } else {
+        assert_eq!(env.get("PATH"), None);
+        assert!(finder.path.is_empty() && finder.extensions.is_empty());
+        assert_eq!(finder.find("tool", None), None);
+    }
+}
+
 #[test]
 fn the_environment_is_not_printed_when_debugged() {
     let env = ShellEnv::from_vars(vars(&[

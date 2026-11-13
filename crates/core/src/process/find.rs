@@ -29,14 +29,19 @@ impl Search {
                 path.push(dir);
             }
         }
-        let extensions = match env.get("PATHEXT") {
+        let mut extensions: Vec<String> = match env.get("PATHEXT") {
             Some(list) if cfg!(windows) => list
                 .split(';')
-                .filter(|ext| ext.starts_with('.'))
+                .map(str::trim)
+                .filter(|ext| ext.len() > 1 && ext.starts_with('.'))
                 .map(str::to_string)
                 .collect(),
-            _ => Self::default_extensions(),
+            _ => Vec::new(),
         };
+        if extensions.is_empty() {
+            // Not set, or set to nothing usable: without extensions no name would match.
+            extensions = Self::default_extensions();
+        }
         let home = env
             .get(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
             .map(PathBuf::from);

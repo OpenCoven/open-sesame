@@ -243,6 +243,57 @@ fn a_child_left_behind_by_a_finished_program_is_killed() {
     assert_stopped(&file);
 }
 
+/// A helper that left the process group cannot be killed, and here it keeps the output pipes and
+/// keeps printing. A run that was stopped still returns: it does not wait for the helper to go
+/// quiet. The run is cancelled when the helper's first line arrives, so the helper is known to
+/// be running and holding the pipes at that moment.
+#[cfg(unix)]
+#[test]
+fn a_writer_outside_the_tree_cannot_hold_a_stopped_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("beat");
+    let cancel = Cancel::new();
+    let mut request = fixture(&["escape-and-chatter", file.to_str().unwrap()]);
+    request.cancel = Some(cancel.clone());
+    let mut cancelled_at = None;
+    let mut on_line = |_: &str| {
+        cancelled_at.get_or_insert_with(|| {
+            cancel.cancel();
+            Instant::now()
+        });
+    };
+    assert_eq!(
+        run(request, Some(&mut on_line)).unwrap_err(),
+        RunError::Cancelled
+    );
+    let waited = cancelled_at.expect("the helper printed a line").elapsed();
+    assert!(waited < Duration::from_secs(3), "{waited:?}");
+    // The helper ends by itself once the run has stopped reading. Nothing is left behind.
+    assert_stopped(&file);
+}
+
+/// A program that closes both output streams and keeps running is still waited for, within the
+/// timeout, and what it printed first is kept.
+#[cfg(unix)]
+#[test]
+fn a_program_that_closes_its_output_is_still_waited_for() {
+    let started = Instant::now();
+    let output = ok(fixture(&["close-output", "400", "5"]));
+    assert!(started.elapsed() >= Duration::from_millis(400));
+    assert_eq!(output.status, Some(5));
+    assert_eq!(text(&output.stdout), "before closing\n");
+
+    let mut request = fixture(&["close-output", "30000", "5"]);
+    request.timeout = Duration::from_millis(300);
+    let started = Instant::now();
+    assert_eq!(run(request, None).unwrap_err(), RunError::Timeout);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
 #[test]
 fn runs_in_a_cwd_with_spaces_and_unicode() {
     let dir = tempfile::tempdir().unwrap();
@@ -348,6 +399,31 @@ fn a_panicking_callback_still_kills_the_tree() {
     }));
     assert!(result.is_err());
     assert_stopped(&file);
+}
+
+/// Arguments, environment values, input and output can hold secrets. Formatting a request or a
+/// result for a log or a panic message shows their sizes only.
+#[test]
+fn a_request_and_its_output_are_not_printed_when_debugged() {
+    let mut request = fixture(&["echo-args", "argument-that-must-not-print"]);
+    request.env = vec![("API_KEY".into(), "value-that-must-not-print".into())];
+    request.stdin = Some(b"must".to_vec());
+    let printed = format!("{request:?}");
+    assert!(
+        !printed.contains("must-not-print")
+            && !printed.contains("API_KEY")
+            && !printed.contains("109, 117, 115, 116")
+            && printed.contains("fixture_cli"),
+        "{printed}"
+    );
+    let output = ok(request);
+    assert!(text(&output.stdout).contains("argument-that-must-not-print"));
+    let printed = format!("{output:?}");
+    assert!(
+        !printed.contains("must-not-print") && !printed.contains("109, 117, 115, 116"),
+        "{printed}"
+    );
+    assert!(printed.contains("Some(0)"), "{printed}");
 }
 
 #[test]

@@ -9,7 +9,8 @@
 //!
 //! Known limit: on Unix a program that deliberately moves itself to another process group or
 //! session leaves the group and is not killed. Ordinary command-line tools and their helpers do
-//! not do this.
+//! not do this. If such a program also keeps the output pipes and keeps writing to them, the run
+//! ends with the timeout or the output cap instead of a result, and no later than that.
 //!
 //! [`ShellEnv`] captures the user's login-shell environment once at startup, because an app
 //! started from Finder or a desktop launcher does not inherit it, and [`Search`] finds a tool on
@@ -63,8 +64,9 @@ impl Cancel {
     }
 }
 
-/// What to run and its limits.
-#[derive(Clone, Debug)]
+/// What to run and its limits. `Debug` shows the sizes of the arguments, environment and input,
+/// never their contents, which can hold secrets.
+#[derive(Clone)]
 pub struct Run {
     /// A path, or a bare name for the operating system to look up. Prefer a path from [`Search`].
     pub program: PathBuf,
@@ -101,13 +103,42 @@ impl Run {
     }
 }
 
-/// What a finished program produced. A non-zero status is a result, not an error.
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl fmt::Debug for Run {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Run")
+            .field("program", &self.program)
+            .field("args", &self.args.len())
+            .field("cwd", &self.cwd)
+            .field("env", &self.env.len())
+            .field("clear_env", &self.clear_env)
+            .field("stdin_bytes", &self.stdin.as_ref().map(Vec::len))
+            .field("timeout", &self.timeout)
+            .field("max_output", &self.max_output)
+            .field("cancel", &self.cancel)
+            .finish()
+    }
+}
+
+/// What a finished program produced. A non-zero status is a result, not an error. `Debug` shows
+/// the status and the sizes of the two streams, never the output itself.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Output {
     /// The exit code, or `None` when the program was ended by a signal.
     pub status: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+}
+
+impl fmt::Debug for Output {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Output")
+            .field("status", &self.status)
+            .field("stdout_bytes", &self.stdout.len())
+            .field("stderr_bytes", &self.stderr.len())
+            .finish()
+    }
 }
 
 /// Why a run did not finish. `Display` is a plain sentence for the UI; the detail in `Io` is for
@@ -279,6 +310,7 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
     let mut ended: Option<Instant> = None; // when the program was first seen exited or stopped
     let mut swept = false; // whether the tree has been killed
     let mut quiet: Option<Instant> = None; // since when no output has arrived
+    let mut stopped: Option<Instant> = None; // when a reason to stop was first seen
     let mut wait = Duration::from_micros(200);
 
     let result = loop {
@@ -298,6 +330,11 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
             // read out. Output still arriving is never cut off; only silence ends the wait, and
             // it means something outside the tree holds the pipes.
             if swept && quiet.is_some_and(|since| since.elapsed() > DRAIN) {
+                break reason;
+            }
+            // A stopped run discards what arrives, so it does not wait for silence either:
+            // something outside the tree could keep writing for as long as it likes.
+            if reason.is_some() && stopped.get_or_insert_with(Instant::now).elapsed() > DRAIN {
                 break reason;
             }
         }
@@ -320,7 +357,10 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => {
+                // Both streams are closed and the program is still running. Nothing more will
+                // arrive on the channel, so wait here instead of spinning on it.
                 open = 0;
+                std::thread::sleep(tick);
                 continue;
             }
         };
