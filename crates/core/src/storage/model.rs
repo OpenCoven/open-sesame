@@ -76,8 +76,15 @@ pub struct Item {
     pub updated_at: i64,
 }
 
-/// What the UI sends to save an item. Without an `id` the core creates the item and assigns one;
-/// with an `id` it replaces every field of that item. Timestamps are never taken from the UI.
+/// What the UI sends to save an item. Without an `id` the core creates the item and assigns an
+/// ID. With an `id` the UI chose and no `expectedUpdatedAt`, the core creates the item under that
+/// ID; the same create sent again after a lost reply finds it and writes nothing, unless the item
+/// was deleted in between, when it is created again. An edit sends the item's `id` and the
+/// `updatedAt` it started from as `expectedUpdatedAt`, and replaces every field only while the
+/// stored item still has that `updatedAt`; see [`Storage::save_item`](super::Storage::save_item).
+/// After a lost reply the UI sends the same save again, or reloads, before any newer one: a
+/// different save from the same starting point is a conflict once the first has committed.
+/// Timestamps are never taken from the UI.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ItemDraft {
@@ -108,6 +115,10 @@ pub struct ItemDraft {
     pub read: bool,
     #[serde(default)]
     pub reading_later: bool,
+    /// The `updatedAt` of the copy the UI edited. Every edit sends it; the save is refused with a
+    /// conflict, changing nothing, if the stored row has changed since.
+    #[serde(default)]
+    pub expected_updated_at: Option<i64>,
 }
 
 impl ItemDraft {
@@ -164,6 +175,10 @@ pub struct ProjectDraft {
     pub name: String,
     #[serde(default)]
     pub root_path: String,
+    /// The `updatedAt` of the copy the UI edited. Every edit sends it; the save is refused with a
+    /// conflict, changing nothing, if the stored row has changed since.
+    #[serde(default)]
+    pub expected_updated_at: Option<i64>,
 }
 
 impl ProjectDraft {
@@ -219,6 +234,10 @@ pub struct FeedItemDraft {
     pub published_at: Option<i64>,
     #[serde(default)]
     pub read: bool,
+    /// The `updatedAt` of the copy the UI edited. Every edit sends it; the save is refused with a
+    /// conflict, changing nothing, if the stored row has changed since.
+    #[serde(default)]
+    pub expected_updated_at: Option<i64>,
 }
 
 impl FeedItemDraft {
@@ -298,6 +317,28 @@ pub(super) fn value_names_credential(value: &serde_json::Value) -> bool {
         serde_json::Value::Array(values) => values.iter().any(value_names_credential),
         _ => false,
     }
+}
+
+/// An ID the UI chose for a new row: a version 4 UUID in lower case with hyphens, as
+/// `crypto.randomUUID()` gives.
+pub(super) fn check_client_id(id: &str) -> Result<(), StorageError> {
+    if is_uuid_version(id, 4) {
+        Ok(())
+    } else {
+        Err(invalid("That ID is not valid."))
+    }
+}
+
+/// Whether an ID has the form of one the core assigns: a version 7 UUID in lower case with
+/// hyphens. A row with such an ID was created by the core, so if it is missing it was deleted.
+pub(super) fn assigned_by_core(id: &str) -> bool {
+    is_uuid_version(id, 7)
+}
+
+fn is_uuid_version(id: &str, version: usize) -> bool {
+    uuid::Uuid::parse_str(id).is_ok_and(|parsed| {
+        parsed.get_version_num() == version && parsed.hyphenated().to_string() == id
+    })
 }
 
 /// The name of a command-line tool whose path the user may override: a lower-case letter, then

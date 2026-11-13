@@ -1,7 +1,9 @@
 //! The operations on each table. Every statement is a fixed string with bound parameters.
 
+use super::commands::BAD_REQUEST;
 use super::model::{
-    check_cli_name, check_cli_path, check_setting_key, check_setting_value, check_widget_id,
+    assigned_by_core, check_cli_name, check_cli_path, check_client_id, check_setting_key,
+    check_setting_value, check_widget_id,
 };
 use super::{
     invalid, FeedItem, FeedItemDraft, Item, ItemDraft, ItemFilter, Kind, Priority, Project,
@@ -97,47 +99,123 @@ fn matches(needle: &Option<String>, fields: &[&str]) -> bool {
     }
 }
 
-/// The creation time of the row being replaced, and a modified time later than the one it had.
-/// Every change moves `updated_at` forward, even when the clock stood still or was set back, so a
-/// change can never hide behind an unchanged timestamp.
-fn times(
+/// What a save needs to know about one table.
+struct Rows {
+    /// Selects `created_at, updated_at` of the row whose ID is `?1`.
+    times: &'static str,
+    /// The message when an edit names a row that is gone.
+    missing: &'static str,
+    /// The message when an edit started from a copy that is no longer current.
+    changed: &'static str,
+}
+
+const ITEM_ROWS: Rows = Rows {
+    times: "SELECT created_at, updated_at FROM items WHERE id = ?1",
+    missing: "That item no longer exists.",
+    changed: "That item was changed after you opened it. Your changes were not saved.",
+};
+const PROJECT_ROWS: Rows = Rows {
+    times: "SELECT created_at, updated_at FROM projects WHERE id = ?1",
+    missing: "That project no longer exists.",
+    changed: "That project was changed after you opened it. Your changes were not saved.",
+};
+const FEED_ROWS: Rows = Rows {
+    times: "SELECT created_at, updated_at FROM feed_items WHERE id = ?1",
+    missing: "That saved article no longer exists.",
+    changed: "That saved article was changed after you opened it. Your changes were not saved.",
+};
+
+/// The row a save writes.
+enum Target {
+    /// Write the row with this ID and these times.
+    Write {
+        id: String,
+        created_at: i64,
+        updated_at: i64,
+    },
+    /// The row exists, and the save does not name its current `updated_at`. The save is refused
+    /// unless it would change nothing; see [`unchanged`].
+    Changed { id: String },
+}
+
+/// Decides which row a save writes. No save replaces a row blindly:
+///
+/// - With no `id`: a new row under a new ID.
+/// - With an `id` that has no row, and no `expectedUpdatedAt`: a new row under that ID, which the
+///   UI chose as a UUID v4. A missing UUID v7 is a row the core created and someone deleted, so
+///   it is "no longer exists", not a new row.
+/// - With an `id` whose row has `updated_at` equal to `expectedUpdatedAt`: that row, replaced.
+///   `created_at` is kept, and `updated_at` moves forward even when the clock stood still or was
+///   set back, so a change never hides behind an unchanged timestamp.
+/// - With an `id` that has a row, and no `expectedUpdatedAt` or a different one: refused as a
+///   conflict unless the save would change nothing. A create or an edit sent again after its
+///   reply was lost therefore succeeds without writing twice, while a different save from the
+///   same starting point is a conflict.
+/// - With `expectedUpdatedAt` and an `id` that has no row: "no longer exists", so an edit never
+///   brings back a deleted row.
+fn target(
     conn: &Connection,
-    sql: &str,
-    id: &str,
+    rows: &Rows,
+    id: Option<&str>,
+    expected: Option<i64>,
     now: i64,
-    missing: &str,
-) -> Result<(i64, i64), StorageError> {
-    let found: Option<(i64, i64)> = conn
-        .query_row(sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
+) -> Result<Target, StorageError> {
+    let Some(id) = id else {
+        if expected.is_some() {
+            return Err(invalid(BAD_REQUEST));
+        }
+        return Ok(Target::Write {
+            id: new_id(),
+            created_at: now,
+            updated_at: now,
+        });
+    };
+    let stored: Option<(i64, i64)> = conn
+        .query_row(rows.times, [id], |row| Ok((row.get(0)?, row.get(1)?)))
         .optional()?;
-    let (created, updated) = found.ok_or_else(|| StorageError::NotFound(missing.to_string()))?;
-    Ok((created, now.max(updated.saturating_add(1))))
+    match (stored, expected) {
+        (Some((created, updated)), Some(expected)) if updated == expected => Ok(Target::Write {
+            id: id.to_string(),
+            created_at: created,
+            updated_at: now.max(updated.saturating_add(1)),
+        }),
+        (Some(_), _) => Ok(Target::Changed { id: id.to_string() }),
+        (None, None) if !assigned_by_core(id) => {
+            check_client_id(id)?;
+            Ok(Target::Write {
+                id: id.to_string(),
+                created_at: now,
+                updated_at: now,
+            })
+        }
+        (None, _) => Err(StorageError::NotFound(rows.missing.to_string())),
+    }
+}
+
+/// A save that does not name the row's current `updated_at` succeeds only when the stored row
+/// already holds exactly what it sends, as when the same create or edit is sent again after its
+/// reply was lost. It then writes nothing and returns the stored row. Any other such save is a
+/// conflict.
+fn unchanged<T: PartialEq>(sent: T, stored: T, rows: &Rows) -> Result<T, StorageError> {
+    if sent == stored {
+        Ok(stored)
+    } else {
+        Err(StorageError::Conflict(rows.changed.to_string()))
+    }
 }
 
 impl Storage {
     // ---- Notes, tasks and bookmarks ----
 
-    /// Creates an item, or replaces every field of an existing one.
+    /// Creates an item, or replaces every field of an existing one. Which row is written, and
+    /// when a save is refused because the row changed after the UI read it, is decided by
+    /// [`target`].
     pub fn save_item(&self, draft: ItemDraft) -> Result<Item, StorageError> {
         draft.validate()?;
         self.write(|tx, now| {
-            if !draft.project_id.is_empty() {
-                let exists: Option<i64> =
-                    tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [&draft.project_id], |row| row.get(0)).optional()?;
-                if exists.is_none() {
-                    return Err(invalid("That project no longer exists."));
-                }
-            }
-            let (id, created_at, updated_at) = match &draft.id {
-                None => (new_id(), now, now),
-                Some(id) => {
-                    let sql = "SELECT created_at, updated_at FROM items WHERE id = ?1";
-                    let (created, updated) = times(tx, sql, id, now, "That item no longer exists.")?;
-                    (id.clone(), created, updated)
-                }
-            };
-            let item = Item {
-                id,
+            let target = target(tx, &ITEM_ROWS, draft.id.as_deref(), draft.expected_updated_at, now)?;
+            let mut item = Item {
+                id: String::new(),
                 kind: draft.kind,
                 text: draft.text,
                 title: draft.title,
@@ -151,9 +229,28 @@ impl Storage {
                 due_date: draft.due_date,
                 read: draft.read,
                 reading_later: draft.reading_later,
-                created_at,
-                updated_at,
+                created_at: 0,
+                updated_at: 0,
             };
+            match target {
+                Target::Write { id, created_at, updated_at } => {
+                    (item.id, item.created_at, item.updated_at) = (id, created_at, updated_at);
+                }
+                Target::Changed { id } => {
+                    let sql = format!("SELECT {ITEM_COLUMNS} FROM items WHERE id = ?1");
+                    let stored = tx.query_row(&sql, [&id], item_from)?;
+                    (item.id, item.created_at, item.updated_at) = (id, stored.created_at, stored.updated_at);
+                    return unchanged(item, stored, &ITEM_ROWS);
+                }
+            }
+            // Checked after the conflict decision, so a save refused as a conflict says so.
+            if !item.project_id.is_empty() {
+                let exists: Option<i64> =
+                    tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [&item.project_id], |row| row.get(0)).optional()?;
+                if exists.is_none() {
+                    return Err(invalid("That project no longer exists."));
+                }
+            }
             tx.execute(
                 "INSERT INTO items (id, kind, title, body, url, project_id, stage, previous_stage, done, priority, due_date, read, reading_later, created_at, updated_at, text)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
@@ -229,14 +326,22 @@ impl Storage {
         let name = draft.validate()?.to_string();
         let key = name.to_lowercase();
         self.write(|tx, now| {
-            let (id, created_at, updated_at) = match &draft.id {
-                None => (new_id(), now, now),
-                Some(id) => {
-                    let sql = "SELECT created_at, updated_at FROM projects WHERE id = ?1";
-                    let (created, updated) = times(tx, sql, id, now, "That project no longer exists.")?;
-                    (id.clone(), created, updated)
-                }
-            };
+            let (id, created_at, updated_at) =
+                match target(tx, &PROJECT_ROWS, draft.id.as_deref(), draft.expected_updated_at, now)? {
+                    Target::Write { id, created_at, updated_at } => (id, created_at, updated_at),
+                    Target::Changed { id } => {
+                        let sql = format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE id = ?1");
+                        let stored = tx.query_row(&sql, [&id], project_from)?;
+                        let sent = Project {
+                            id,
+                            name: name.clone(),
+                            root_path: draft.root_path.clone(),
+                            created_at: stored.created_at,
+                            updated_at: stored.updated_at,
+                        };
+                        return unchanged(sent, stored, &PROJECT_ROWS);
+                    }
+                };
             let taken: Option<i64> = tx
                 .query_row("SELECT 1 FROM projects WHERE name_key = ?1 AND id <> ?2", params![key, id], |row| row.get(0))
                 .optional()?;
@@ -295,25 +400,29 @@ impl Storage {
     pub fn save_feed_item(&self, draft: FeedItemDraft) -> Result<FeedItem, StorageError> {
         draft.validate()?;
         self.write(|tx, now| {
-            let (id, created_at, updated_at) = match &draft.id {
-                None => (new_id(), now, now),
-                Some(id) => {
-                    let sql = "SELECT created_at, updated_at FROM feed_items WHERE id = ?1";
-                    let (created, updated) = times(tx, sql, id, now, "That saved article no longer exists.")?;
-                    (id.clone(), created, updated)
-                }
-            };
-            let item = FeedItem {
-                id,
+            let target = target(tx, &FEED_ROWS, draft.id.as_deref(), draft.expected_updated_at, now)?;
+            let mut item = FeedItem {
+                id: String::new(),
                 title: draft.title,
                 url: draft.url,
                 body: draft.body,
                 source: draft.source,
                 published_at: draft.published_at,
                 read: draft.read,
-                created_at,
-                updated_at,
+                created_at: 0,
+                updated_at: 0,
             };
+            match target {
+                Target::Write { id, created_at, updated_at } => {
+                    (item.id, item.created_at, item.updated_at) = (id, created_at, updated_at);
+                }
+                Target::Changed { id } => {
+                    let sql = format!("SELECT {FEED_COLUMNS} FROM feed_items WHERE id = ?1");
+                    let stored = tx.query_row(&sql, [&id], feed_item_from)?;
+                    (item.id, item.created_at, item.updated_at) = (id, stored.created_at, stored.updated_at);
+                    return unchanged(item, stored, &FEED_ROWS);
+                }
+            }
             tx.execute(
                 "INSERT INTO feed_items (id, title, url, body, source, published_at, read, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)

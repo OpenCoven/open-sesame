@@ -80,6 +80,7 @@ fn note_create_edit_search_delete() {
     let later = rig.tick();
     let mut edit = note("Groceries for Friday", "Oat milk");
     edit.id = Some(created.id.clone());
+    edit.expected_updated_at = Some(created.updated_at);
     let edited = rig.db.save_item(edit).unwrap();
     assert_eq!(edited.id, created.id, "the ID is stable across edits");
     assert_eq!((edited.created_at, edited.updated_at), (T0, later));
@@ -125,7 +126,7 @@ fn task_create_edit_search_delete() {
     rig.tick();
     let edited = rig
         .db
-        .save_item(draft(json!({ "id": created.id, "kind": "task", "title": "File taxes", "priority": "low", "stage": "done", "previousStage": "active", "done": true })))
+        .save_item(draft(json!({ "id": created.id, "expectedUpdatedAt": created.updated_at, "kind": "task", "title": "File taxes", "priority": "low", "stage": "done", "previousStage": "active", "done": true })))
         .unwrap();
     assert_eq!(
         (
@@ -171,7 +172,7 @@ fn bookmark_create_edit_search_delete() {
     rig.tick();
     let edited = rig
         .db
-        .save_item(draft(json!({ "id": created.id, "kind": "bookmark", "title": "Tauri docs", "url": "https://v2.tauri.app/", "read": true })))
+        .save_item(draft(json!({ "id": created.id, "expectedUpdatedAt": created.updated_at, "kind": "bookmark", "title": "Tauri docs", "url": "https://v2.tauri.app/", "read": true })))
         .unwrap();
     assert_eq!(
         (edited.title.as_str(), edited.read, edited.reading_later),
@@ -235,7 +236,7 @@ fn an_item_keeps_its_text_and_needs_no_title() {
     let edited = rig
         .db
         .save_item(draft(
-            json!({ "id": capture.id, "kind": "note", "text": "short now" }),
+            json!({ "id": capture.id, "expectedUpdatedAt": capture.updated_at, "kind": "note", "text": "short now" }),
         ))
         .unwrap();
     assert_eq!(edited.text, "short now");
@@ -389,7 +390,7 @@ fn project_create_edit_search_delete() {
     let later = rig.tick();
     let edited = rig
         .db
-        .save_project(serde_json::from_value(json!({ "id": created.id, "name": "Open Sesame restart", "rootPath": "~/code/open-sesame" })).unwrap())
+        .save_project(serde_json::from_value(json!({ "id": created.id, "expectedUpdatedAt": created.updated_at, "name": "Open Sesame restart", "rootPath": "~/code/open-sesame" })).unwrap())
         .unwrap();
     assert_eq!(
         (edited.id.as_str(), edited.updated_at, edited.created_at),
@@ -432,7 +433,10 @@ fn project_names_are_unique_ignoring_case_and_bounded() {
         Err(StorageError::Invalid(_))
     ));
     // Renaming a project to its own name in another case is allowed.
-    let renamed = serde_json::from_value(json!({ "id": home.id, "name": "HOME" })).unwrap();
+    let renamed = serde_json::from_value(
+        json!({ "id": home.id, "expectedUpdatedAt": home.updated_at, "name": "HOME" }),
+    )
+    .unwrap();
     assert_eq!(rig.db.save_project(renamed).unwrap().name, "HOME");
     assert_eq!(rig.db.list_projects(None).unwrap().len(), 1);
 }
@@ -482,7 +486,7 @@ fn feed_item_create_edit_search_delete() {
     let later = rig.tick();
     let edited = rig
         .db
-        .save_feed_item(serde_json::from_value(json!({ "id": created.id, "title": "Rust 2.0 announced", "url": "https://example.com/rust", "read": true, "publishedAt": 1_799_000_000_000i64 })).unwrap())
+        .save_feed_item(serde_json::from_value(json!({ "id": created.id, "expectedUpdatedAt": created.updated_at, "title": "Rust 2.0 announced", "url": "https://example.com/rust", "read": true, "publishedAt": 1_799_000_000_000i64 })).unwrap())
         .unwrap();
     assert_eq!(
         (
@@ -529,6 +533,382 @@ fn feed_items_need_a_web_address() {
         Err(StorageError::Invalid(_))
     ));
     assert!(rig.db.list_feed_items(None).unwrap().is_empty());
+}
+
+// ---- Sending a save again, and edits from an out-of-date copy ----
+
+/// A UUID as `crypto.randomUUID()` in the UI makes one.
+const UI_ID: &str = "0b7c9f4e-2d1a-4c3b-9e8f-7a6b5c4d3e2f";
+
+fn project_draft(value: Value) -> ProjectDraft {
+    serde_json::from_value(value).unwrap()
+}
+
+fn feed_draft(value: Value) -> FeedItemDraft {
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn a_create_sent_again_under_the_uis_id_saves_one_row() {
+    let rig = rig();
+    let note = || draft(json!({ "id": UI_ID, "kind": "note", "text": "Call the plumber" }));
+    let first = rig.db.save_item(note()).unwrap();
+    assert_eq!(
+        (first.id.as_str(), first.created_at, first.updated_at),
+        (UI_ID, T0, T0)
+    );
+    rig.tick();
+    let again = rig.db.save_item(note()).unwrap();
+    assert_eq!(again, first, "the same create again reports the saved item");
+    assert_eq!(
+        find(&rig.db, json!({})),
+        [first],
+        "one item, unchanged, not two"
+    );
+
+    let project = || project_draft(json!({ "id": UI_ID, "name": "Home" }));
+    let first = rig.db.save_project(project()).unwrap();
+    let again = rig.db.save_project(project()).unwrap();
+    assert_eq!(again, first, "the same name under the same ID is no clash");
+    assert_eq!(rig.db.list_projects(None).unwrap(), [first]);
+
+    let article =
+        || feed_draft(json!({ "id": UI_ID, "title": "Story", "url": "https://example.com/a" }));
+    let first = rig.db.save_feed_item(article()).unwrap();
+    assert_eq!(rig.db.save_feed_item(article()).unwrap(), first);
+    assert_eq!(rig.db.list_feed_items(None).unwrap(), [first]);
+}
+
+#[test]
+fn a_create_sent_again_after_another_change_does_not_undo_it() {
+    let rig = rig();
+    let create = draft(json!({ "id": UI_ID, "kind": "note", "text": "Home" }));
+    // The create commits, but its reply is lost. An agent then edits the new item.
+    let created = rig.db.save_item(create.clone()).unwrap();
+    rig.tick();
+    let renamed = rig
+        .db
+        .save_item(draft(json!({
+            "id": UI_ID, "expectedUpdatedAt": created.updated_at, "kind": "note", "text": "House",
+        })))
+        .unwrap();
+    rig.tick();
+    assert_eq!(
+        rig.db.save_item(create),
+        Err(StorageError::Conflict(
+            "That item was changed after you opened it. Your changes were not saved.".into()
+        ))
+    );
+    assert_eq!(rig.db.get_item(UI_ID).unwrap(), Some(renamed));
+}
+
+#[test]
+fn a_save_without_expected_updated_at_never_replaces_a_row() {
+    let rig = rig();
+    let created = rig.db.save_item(note("Plan", "first draft")).unwrap();
+    rig.tick();
+    let unchecked = |body: &str| {
+        draft(json!({ "id": created.id, "kind": "note", "title": "Plan", "body": body }))
+    };
+    assert!(matches!(
+        rig.db.save_item(unchecked("overwritten")),
+        Err(StorageError::Conflict(_))
+    ));
+    assert_eq!(
+        rig.db.save_item(unchecked("first draft")).unwrap(),
+        created,
+        "a save that changes nothing is not a conflict, and writes nothing"
+    );
+    assert_eq!(rig.db.get_item(&created.id).unwrap(), Some(created));
+}
+
+#[test]
+fn a_deleted_row_the_core_created_is_not_brought_back() {
+    let rig = rig();
+    let item = rig.db.save_item(note("Gone", "soon")).unwrap();
+    let home = rig.db.save_project(project("Home")).unwrap();
+    let story = rig
+        .db
+        .save_feed_item(feed_item("Story", "https://example.com/a"))
+        .unwrap();
+    assert!(rig.db.delete_item(&item.id).unwrap());
+    assert!(rig.db.delete_project(&home.id).unwrap());
+    assert!(rig.db.delete_feed_item(&story.id).unwrap());
+    // A save naming the ID without expectedUpdatedAt, as a UI that forgot it would send.
+    let item_save = draft(json!({ "id": item.id, "kind": "note", "title": "Gone" }));
+    assert_eq!(
+        rig.db.save_item(item_save),
+        Err(StorageError::NotFound("That item no longer exists.".into()))
+    );
+    let project_save = project_draft(json!({ "id": home.id, "name": "Home" }));
+    assert_eq!(
+        rig.db.save_project(project_save),
+        Err(StorageError::NotFound(
+            "That project no longer exists.".into()
+        ))
+    );
+    let article_save =
+        feed_draft(json!({ "id": story.id, "title": "Story", "url": "https://example.com/a" }));
+    assert_eq!(
+        rig.db.save_feed_item(article_save),
+        Err(StorageError::NotFound(
+            "That saved article no longer exists.".into()
+        ))
+    );
+    assert_eq!(rig.db.get_item(&item.id).unwrap(), None);
+    assert_eq!(rig.db.get_project(&home.id).unwrap(), None);
+    assert_eq!(rig.db.get_feed_item(&story.id).unwrap(), None);
+}
+
+#[test]
+fn a_stale_edit_whose_project_was_deleted_is_a_conflict() {
+    let rig = rig();
+    let home = rig.db.save_project(project("Home")).unwrap();
+    let created = rig
+        .db
+        .save_item(draft(
+            json!({ "kind": "note", "title": "t", "projectId": home.id }),
+        ))
+        .unwrap();
+    rig.tick();
+    // Deleting the project moves the item to the inbox, which changes it.
+    assert!(rig.db.delete_project(&home.id).unwrap());
+    let stale = draft(json!({
+        "id": created.id, "expectedUpdatedAt": created.updated_at, "kind": "note",
+        "title": "edited", "projectId": home.id,
+    }));
+    assert!(matches!(
+        rig.db.save_item(stale),
+        Err(StorageError::Conflict(_))
+    ));
+}
+
+#[test]
+fn a_create_sent_again_through_the_command_saves_one_item() {
+    let db = Storage::open_in_memory().unwrap();
+    let params = json!({ "item": { "id": UI_ID, "kind": "task", "text": "Renew passport" } });
+    let first = call(&db, "items.save", params.clone()).unwrap();
+    let again = call(&db, "items.save", params).unwrap();
+    assert_eq!(first["item"]["id"], UI_ID);
+    assert_eq!(again["item"]["id"], UI_ID);
+    let listed = call(&db, "items.list", json!({})).unwrap();
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn an_id_chosen_by_the_ui_must_be_a_lower_case_uuid() {
+    let rig = rig();
+    let refused = StorageError::Invalid("That ID is not valid.".into());
+    for id in [
+        "",
+        "no-such-item",
+        "0B7C9F4E-2D1A-4C3B-9E8F-7A6B5C4D3E2F",
+        "0b7c9f4e2d1a4c3b9e8f7a6b5c4d3e2f",
+        "{0b7c9f4e-2d1a-4c3b-9e8f-7a6b5c4d3e2f}",
+        "urn:uuid:0b7c9f4e-2d1a-4c3b-9e8f-7a6b5c4d3e2f",
+        "00000000-0000-0000-0000-000000000000",
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    ] {
+        let item = draft(json!({ "id": id, "kind": "note", "text": "t" }));
+        assert_eq!(rig.db.save_item(item).unwrap_err(), refused, "item {id:?}");
+        let project = project_draft(json!({ "id": id, "name": "Home" }));
+        assert_eq!(
+            rig.db.save_project(project).unwrap_err(),
+            refused,
+            "project {id:?}"
+        );
+        let article = feed_draft(json!({ "id": id, "title": "t", "url": "https://example.com/" }));
+        assert_eq!(
+            rig.db.save_feed_item(article).unwrap_err(),
+            refused,
+            "article {id:?}"
+        );
+    }
+    assert!(find(&rig.db, json!({})).is_empty());
+    assert!(rig.db.list_projects(None).unwrap().is_empty());
+    assert!(rig.db.list_feed_items(None).unwrap().is_empty());
+}
+
+#[test]
+fn an_edit_from_an_out_of_date_copy_is_refused_and_changes_nothing() {
+    let rig = rig();
+    let created = rig.db.save_item(note("Plan", "first draft")).unwrap();
+    // Two writers start from the same copy, as the UI and an agent through #81 might.
+    let edit = |body: &str, expected: i64| {
+        draft(json!({
+            "id": created.id, "kind": "note", "title": "Plan", "body": body,
+            "expectedUpdatedAt": expected,
+        }))
+    };
+    rig.tick();
+    let first = rig
+        .db
+        .save_item(edit("from the agent", created.updated_at))
+        .unwrap();
+    assert_eq!(first.body, "from the agent");
+    rig.tick();
+    assert_eq!(
+        rig.db
+            .save_item(edit("from the window", created.updated_at))
+            .map_err(|error| error.to_string()),
+        Err("That item was changed after you opened it. Your changes were not saved.".into())
+    );
+    assert_eq!(
+        rig.db.get_item(&created.id).unwrap(),
+        Some(first.clone()),
+        "the other writer's change is kept"
+    );
+    let redone = rig
+        .db
+        .save_item(edit("from the window", first.updated_at))
+        .unwrap();
+    assert_eq!(
+        redone.body, "from the window",
+        "starting again from the current copy works"
+    );
+    assert!(redone.updated_at > first.updated_at);
+}
+
+#[test]
+fn an_edit_sent_again_after_its_reply_was_lost_succeeds_and_writes_nothing() {
+    let rig = rig();
+    let created = rig.db.save_item(note("Plan", "first draft")).unwrap();
+    let edit = draft(json!({
+        "id": created.id, "kind": "note", "title": "Plan", "body": "second draft",
+        "expectedUpdatedAt": created.updated_at,
+    }));
+    rig.tick();
+    let saved = rig.db.save_item(edit.clone()).unwrap();
+    rig.tick();
+    assert_eq!(
+        rig.db.save_item(edit).unwrap(),
+        saved,
+        "the same edit again reports the saved item"
+    );
+    assert_eq!(
+        rig.db.get_item(&created.id).unwrap(),
+        Some(saved),
+        "and leaves it as it was"
+    );
+}
+
+#[test]
+fn projects_and_saved_articles_refuse_edits_from_an_out_of_date_copy() {
+    let rig = rig();
+    let home = rig.db.save_project(project("Home")).unwrap();
+    let rename = |name: &str, expected: i64| {
+        project_draft(json!({ "id": home.id, "name": name, "expectedUpdatedAt": expected }))
+    };
+    rig.tick();
+    let renamed = rig
+        .db
+        .save_project(rename("House", home.updated_at))
+        .unwrap();
+    rig.tick();
+    assert_eq!(
+        rig.db.save_project(rename("Flat", home.updated_at)),
+        Err(StorageError::Conflict(
+            "That project was changed after you opened it. Your changes were not saved.".into()
+        ))
+    );
+    assert_eq!(
+        rig.db
+            .save_project(rename("House", home.updated_at))
+            .unwrap(),
+        renamed,
+        "the same rename again is not a conflict"
+    );
+    assert_eq!(rig.db.get_project(&home.id).unwrap(), Some(renamed));
+
+    let story = rig
+        .db
+        .save_feed_item(feed_item("Story", "https://example.com/a"))
+        .unwrap();
+    let mark = |read: bool, expected: i64| {
+        feed_draft(json!({
+            "id": story.id, "title": "Story", "url": "https://example.com/a",
+            "body": "<p>Body text</p>", "source": "Example Feed", "read": read,
+            "expectedUpdatedAt": expected,
+        }))
+    };
+    rig.tick();
+    let read = rig.db.save_feed_item(mark(true, story.updated_at)).unwrap();
+    rig.tick();
+    assert_eq!(
+        rig.db.save_feed_item(mark(false, story.updated_at)),
+        Err(StorageError::Conflict(
+            "That saved article was changed after you opened it. Your changes were not saved."
+                .into()
+        ))
+    );
+    assert_eq!(
+        rig.db.save_feed_item(mark(true, story.updated_at)).unwrap(),
+        read
+    );
+    assert_eq!(rig.db.get_feed_item(&story.id).unwrap(), Some(read));
+}
+
+#[test]
+fn an_edit_does_not_bring_back_a_deleted_row() {
+    let rig = rig();
+    let item = rig.db.save_item(note("Gone", "soon")).unwrap();
+    let home = rig.db.save_project(project("Home")).unwrap();
+    let story = rig
+        .db
+        .save_feed_item(feed_item("Story", "https://example.com/a"))
+        .unwrap();
+    assert!(rig.db.delete_item(&item.id).unwrap());
+    assert!(rig.db.delete_project(&home.id).unwrap());
+    assert!(rig.db.delete_feed_item(&story.id).unwrap());
+    let edited = rig.db.save_item(draft(json!({
+        "id": item.id, "kind": "note", "title": "Gone", "expectedUpdatedAt": item.updated_at,
+    })));
+    assert_eq!(
+        edited,
+        Err(StorageError::NotFound("That item no longer exists.".into()))
+    );
+    let renamed = rig.db.save_project(project_draft(json!({
+        "id": home.id, "name": "Home", "expectedUpdatedAt": home.updated_at,
+    })));
+    assert_eq!(
+        renamed,
+        Err(StorageError::NotFound(
+            "That project no longer exists.".into()
+        ))
+    );
+    let marked = rig.db.save_feed_item(feed_draft(json!({
+        "id": story.id, "title": "Story", "url": "https://example.com/a",
+        "expectedUpdatedAt": story.updated_at,
+    })));
+    assert_eq!(
+        marked,
+        Err(StorageError::NotFound(
+            "That saved article no longer exists.".into()
+        ))
+    );
+    assert_eq!(rig.db.get_item(&item.id).unwrap(), None);
+    assert_eq!(rig.db.get_project(&home.id).unwrap(), None);
+    assert_eq!(rig.db.get_feed_item(&story.id).unwrap(), None);
+}
+
+#[test]
+fn a_new_row_has_no_earlier_copy_to_check() {
+    let rig = rig();
+    let refused = StorageError::Invalid(commands::BAD_REQUEST.into());
+    let item = draft(json!({ "kind": "note", "text": "t", "expectedUpdatedAt": T0 }));
+    assert_eq!(rig.db.save_item(item).unwrap_err(), refused);
+    let item = draft(json!({
+        "kind": "note", "text": "t", "projectId": "no-such-project", "expectedUpdatedAt": T0,
+    }));
+    assert_eq!(rig.db.save_item(item).unwrap_err(), refused);
+    let project = project_draft(json!({ "name": "Home", "expectedUpdatedAt": T0 }));
+    assert_eq!(rig.db.save_project(project).unwrap_err(), refused);
+    let article =
+        feed_draft(json!({ "title": "t", "url": "https://example.com/", "expectedUpdatedAt": T0 }));
+    assert_eq!(rig.db.save_feed_item(article).unwrap_err(), refused);
+    assert!(rig.db.list_projects(None).unwrap().is_empty());
+    assert!(rig.db.list_feed_items(None).unwrap().is_empty());
+    assert!(find(&rig.db, json!({})).is_empty());
 }
 
 // ---- Settings and widget state ----
@@ -1103,17 +1483,20 @@ fn every_change_moves_the_modified_time_forward_whatever_the_clock_does() {
             json!({ "kind": "note", "title": "one", "projectId": home.id }),
         ))
         .unwrap();
-    let edit = |title: &str| {
-        draft(json!({ "id": created.id, "kind": "note", "title": title, "projectId": home.id }))
+    let edit = |title: &str, expected: i64| {
+        draft(json!({
+            "id": created.id, "expectedUpdatedAt": expected, "kind": "note", "title": title,
+            "projectId": home.id,
+        }))
     };
 
     // The clock has not moved since the item was created.
-    let same = rig.db.save_item(edit("two")).unwrap();
+    let same = rig.db.save_item(edit("two", created.updated_at)).unwrap();
     assert_eq!(same.updated_at, T0 + 1);
 
     // The clock is set back an hour.
     rig.time.store(T0 - 3_600_000, Ordering::SeqCst);
-    let back = rig.db.save_item(edit("three")).unwrap();
+    let back = rig.db.save_item(edit("three", same.updated_at)).unwrap();
     assert_eq!(back.updated_at, T0 + 2);
     assert_eq!(
         (back.id.as_str(), back.created_at),
@@ -1128,7 +1511,12 @@ fn every_change_moves_the_modified_time_forward_whatever_the_clock_does() {
     // Changes made by other writes follow the same rule.
     let renamed = rig
         .db
-        .save_project(serde_json::from_value(json!({ "id": home.id, "name": "House" })).unwrap())
+        .save_project(
+            serde_json::from_value(
+                json!({ "id": home.id, "expectedUpdatedAt": home.updated_at, "name": "House" }),
+            )
+            .unwrap(),
+        )
         .unwrap();
     assert_eq!((renamed.created_at, renamed.updated_at), (T0, T0 + 1));
     assert!(rig.db.delete_project(&home.id).unwrap());
@@ -1168,6 +1556,7 @@ fn a_failed_write_returns_an_error_and_changes_nothing() {
 
     let mut edit = note("changed", "changed");
     edit.id = Some(kept.id.clone());
+    edit.expected_updated_at = Some(kept.updated_at);
     assert!(matches!(
         rig.db.save_item(edit),
         Err(StorageError::Database(_))
@@ -1429,7 +1818,29 @@ fn command_failures_are_plain_messages() {
         json!({ "item": { "id": "missing", "kind": "note", "title": "t" } }),
     )
     .unwrap_err();
+    assert_eq!(error, "That ID is not valid.");
+    let error = call(
+        &db,
+        "items.save",
+        json!({ "item": { "id": UI_ID, "kind": "note", "title": "t", "expectedUpdatedAt": 1 } }),
+    )
+    .unwrap_err();
     assert_eq!(error, "That item no longer exists.");
+    let created = call(
+        &db,
+        "items.save",
+        json!({ "item": { "kind": "note", "title": "t" } }),
+    )
+    .unwrap();
+    let stale = json!({ "item": {
+        "id": created["item"]["id"], "kind": "note", "title": "changed",
+        "expectedUpdatedAt": created["item"]["updatedAt"].as_i64().unwrap() - 1,
+    } });
+    let error = call(&db, "items.save", stale).unwrap_err();
+    assert_eq!(
+        error,
+        "That item was changed after you opened it. Your changes were not saved."
+    );
 }
 
 /// Every command name is admitted by the gate, and the gate admits no other storage name.

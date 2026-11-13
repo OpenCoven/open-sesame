@@ -7,8 +7,12 @@
 //!
 //! Rules that must hold:
 //!
-//! - Every row has an ID the core assigns and never changes, and an `updated_at` the core sets on
-//!   every write. Sync is not built; these are what would make it possible later.
+//! - Every row has an ID that never changes, and an `updated_at` the core sets on every write.
+//!   The core assigns IDs as UUID v7; the UI may choose a UUID v4 for a row it creates, so that a
+//!   create sent again is not saved twice. Sync is not built; these are what would make it
+//!   possible later.
+//! - No save replaces a row blindly. An edit names the `updatedAt` it started from and is refused
+//!   with a conflict, changing nothing, if the row has changed since.
 //! - A write either commits or returns an error. Nothing reports success before the commit.
 //! - The schema only moves forward. A database written by a newer version is refused, untouched.
 //! - Tokens are never stored here. They belong in the operating system's credential store.
