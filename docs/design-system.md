@@ -94,9 +94,9 @@ Two stylesheets are held out of the codemod. [mobile-shell.css](../dist/mobile-s
 
 Every page must link the token sheet before any stylesheet that uses it. [sign-in.html](../dist/sign-in.html) and the two Reader review fixtures link subsets of the stylesheets, so they link `design-tokens.css` first; the codemod also holds any stylesheet that some page links without the token sheet, and the budget check fails if a page's stylesheets use a token that none of them defines. The sign-in page shares `app-version.css` with the workspace and rendered identically to main after this change.
 
-## State on this branch
+## Measurements before main integration
 
-Measured on `task/design-system-20261111` against main at `cbb8e9f`. The static figures come from the budget tool. The timings are means from the switch-cost tool on one development Mac; absolute values moved with machine load between sessions, so each range pairs main and this branch measured in the same session.
+The following figures were measured on `task/design-system-20261111` at `55653a3` against main at `cbb8e9f`, before integration with current main at `00ce209`. Integration-specific additions are tracked in `scripts/design-budget.json`. The static figures come from the budget tool. The timings are means from the switch-cost tool on one development Mac; absolute values moved with machine load between sessions, so each range pairs main and this branch measured in the same session.
 
 | Measure | Main | This branch |
 | --- | --- | --- |

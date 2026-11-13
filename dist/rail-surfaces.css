@@ -220,7 +220,7 @@
 .compact-media-controls button:disabled{opacity:.28;cursor:default}
 .compact-media-controls #compact-media-play{background:var(--tint-2);color:var(--mauve-12);width:27px}
 .compact-media-controls svg{width:12px;height:12px}
-.notch-mode.has-compact-media:not(.expanded) .compact-widget{padding:0 var(--compact-actions-width,92px) 0 13px;gap:6px}
+.notch-mode.has-compact-media:not(.expanded) .compact-widget{gap:6px}
 .notch-mode.has-compact-media:not(.expanded) .camera-dot,.notch-mode.has-compact-media:not(.expanded) .compact-right{display:none}
 .notch-mode.has-compact-media .compact-left{gap:7px;overflow:hidden}
 .notch-mode.has-compact-media .compact-left>svg{width:15px;height:15px;flex:none}

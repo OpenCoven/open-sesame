@@ -14,13 +14,14 @@
     if(!user.id)throw Error('Spotify could not verify this account.');
     return {name:user.display_name||user.id,accessToken:token.access_token,expiresAt:expiry(token.expires_in)};
   }
+  function spotifyArtwork(images){for(const image of Array.isArray(images)?images:[]){try{const u=new URL(image.url);if(u.href.length<=2048&&u.protocol==='https:'&&['i.scdn.co','mosaic.scdn.co'].includes(u.hostname)&&!u.username&&!u.password&&!u.port)return u.href}catch{}}return ''}
   async function spotifyLibrary(session,kind,offset=0){
     if(!session?.accessToken||session.expiresAt<=Date.now())throw Error('Authorization expired. Please reconnect.');
     if(!['tracks','playlists'].includes(kind)||!Number.isInteger(offset)||offset<0||offset>100000)throw Error('Invalid library page.');
     const data=await json('https://api.spotify.com/v1/me/'+kind+'?limit=50&offset='+offset,{headers:{Authorization:'Bearer '+session.accessToken},redirect:'error'});
     if(!Array.isArray(data.items))throw Error('Invalid library response.');
     const type=kind==='tracks'?'track':'playlist';
-    const items=data.items.slice(0,50).flatMap(entry=>{const item=kind==='tracks'?entry?.track:entry;if(!item||item.is_local||!item.name||!/^[a-zA-Z0-9]{22}$/.test(item.id))return [];return [{id:item.id,name:String(item.name).slice(0,500),detail:kind==='tracks'?(item.artists||[]).map(a=>String(a.name||'')).join(', ').slice(0,500):String(item.owner?.display_name||'').slice(0,500),url:'https://open.spotify.com/'+type+'/'+item.id}]});
+    const items=data.items.slice(0,50).flatMap(entry=>{const item=kind==='tracks'?entry?.track:entry;if(!item||item.is_local||!item.name||!/^[a-zA-Z0-9]{22}$/.test(item.id))return [];return [{id:item.id,name:String(item.name).slice(0,500),detail:kind==='tracks'?(item.artists||[]).map(a=>String(a.name||'')).join(', ').slice(0,500):String(item.owner?.display_name||'').slice(0,500),url:'https://open.spotify.com/'+type+'/'+item.id,image:spotifyArtwork(kind==='tracks'?item.album?.images:item.images)}]});
     return {items,nextOffset:data.next&&offset+50<=100000?offset+50:null};
   }
   function googleAuthorize(sdk,clientId){
