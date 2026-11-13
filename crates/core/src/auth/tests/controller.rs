@@ -246,6 +246,32 @@ fn sign_out_during_the_code_exchange_discards_the_result() {
     assert!(rig.store.signed_out());
 }
 
+/// The answer to a refresh that was in flight when the user signed out is discarded: no session
+/// comes back and the rotated token is not saved.
+#[test]
+fn sign_out_during_a_refresh_discards_the_result() {
+    let rig = rig();
+    rig.sign_in();
+    rig.advance(240);
+    let later = with(claims(), "exp", json!(NOW + 240 + 300));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&later), "refresh-two")));
+    let auth = rig.auth.clone();
+    *rig.api.during_call.lock().unwrap() = Some(Box::new(move || {
+        auth.sign_out();
+    }));
+    rig.auth.refresh();
+    assert_eq!(rig.api.refresh_calls.lock().unwrap().len(), 1);
+    assert!(signed_out(&rig));
+    assert_eq!(rig.store.saved(), None);
+    assert!(rig.store.signed_out());
+    assert_eq!(rig.message(), "Signed out on this computer.");
+    assert_eq!(rig.auth.next_refresh_in(), None);
+}
+
 #[test]
 fn failed_code_exchange_keeps_an_existing_credential() {
     let rig = rig();
@@ -309,6 +335,78 @@ fn restore_with_an_unreadable_store_reports_it() {
         rig.message(),
         "The saved sign-in could not be opened. Sign in again."
     );
+}
+
+/// The store is read without the state lock held. A credential read before a sign-out, a cancel
+/// or a shutdown is dropped, so it cannot sign the user back in afterwards.
+#[test]
+fn restore_drops_a_credential_read_before_a_sign_out_cancel_or_shutdown() {
+    type Interrupt = fn(&AuthController);
+    let interrupts: [(&str, Interrupt); 3] = [
+        ("sign-out", |auth| drop(auth.sign_out())),
+        ("cancel", AuthController::cancel),
+        ("shutdown", AuthController::shutdown),
+    ];
+    for (name, interrupt) in interrupts {
+        let rig = rig();
+        *rig.store.token.lock().unwrap() = Some("refresh-saved".into());
+        rig.api
+            .refreshes
+            .lock()
+            .unwrap()
+            .push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
+        let auth = rig.auth.clone();
+        *rig.store.during_load.lock().unwrap() = Some(Box::new(move || interrupt(&auth)));
+        rig.auth.restore();
+        assert!(signed_out(&rig), "{name}");
+        assert_eq!(rig.status()["busy"], json!(false), "{name}");
+        assert!(rig.api.refresh_calls.lock().unwrap().is_empty(), "{name}");
+        assert_eq!(rig.auth.next_refresh_in(), None, "{name}");
+        if name == "sign-out" {
+            assert_eq!(rig.store.saved(), None);
+            assert!(rig.store.signed_out());
+            assert_eq!(rig.message(), "Signed out on this computer.");
+        } else {
+            assert_eq!(
+                rig.store.saved().as_deref(),
+                Some("refresh-saved"),
+                "{name}"
+            );
+        }
+    }
+}
+
+/// A sign-in that completes while the store is being read is not replaced by the account whose
+/// credential was stored before it.
+#[test]
+fn restore_does_not_replace_a_sign_in_completed_while_the_store_was_read() {
+    let rig = rig();
+    *rig.store.token.lock().unwrap() = Some("refresh-earlier".into());
+    let mut earlier = tokens(
+        jwt(&with(claims(), "sub", json!("user_earlier"))),
+        "refresh-earlier-rotated",
+    );
+    earlier.user.id = "user_earlier".into();
+    earlier.user.email = "earlier@example.invalid".into();
+    rig.api.refreshes.lock().unwrap().push(Ok(earlier));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    let auth = rig.auth.clone();
+    *rig.store.during_load.lock().unwrap() = Some(Box::new(move || {
+        let url = auth.begin_sign_in().expect("begin sign-in");
+        let state = query_value(&url, "state").unwrap();
+        auth.complete_sign_in(&format!(
+            "opensesame://auth/callback?code=fixture-code&state={state}"
+        ));
+    }));
+    rig.auth.restore();
+    assert!(rig.auth.authenticated());
+    assert_eq!(rig.status()["email"], json!("fixture@example.invalid"));
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    assert!(rig.api.refresh_calls.lock().unwrap().is_empty());
 }
 
 #[test]

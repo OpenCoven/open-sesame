@@ -176,6 +176,9 @@ pub(super) struct FakeStore {
     pub fail_load: AtomicBool,
     pub fail_save: AtomicBool,
     pub fail_delete: AtomicBool,
+    /// Runs inside `load`, after the saved value has been read and before it is returned.
+    #[allow(clippy::type_complexity)]
+    pub during_load: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
 }
 
 impl FakeStore {
@@ -189,7 +192,11 @@ impl CredentialStore for FakeStore {
         if self.fail_load.load(Ordering::SeqCst) {
             return Err(AuthError::Store);
         }
-        Ok(self.saved())
+        let loaded = self.saved();
+        if let Some(hook) = self.during_load.lock().unwrap().as_ref() {
+            hook();
+        }
+        Ok(loaded)
     }
     fn save(&self, refresh_token: &str) -> Result<(), AuthError> {
         if self.fail_save.load(Ordering::SeqCst) {

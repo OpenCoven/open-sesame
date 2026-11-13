@@ -7,8 +7,9 @@
 //!
 //! Stale work is discarded with an epoch counter, as in the Swift host: starting a sign-in,
 //! cancelling, signing out and shutting down each advance it, and the result of a network call
-//! is applied only if the epoch is still the one the call started under. Network calls run
-//! without the state lock held, so the UI can read the status or cancel while one is in flight.
+//! or of reading the credential store is applied only if the epoch is still the one it started
+//! under. Both run without the state lock held, so the UI can read the status or cancel while
+//! one is in flight.
 
 use super::{
     authorization_code, authorize_url, generate_pkce, logout_url, verify_access_token, AuthError,
@@ -204,44 +205,72 @@ impl AuthController {
 
     /// At launch: signs in from the saved credential, unless the user signed out.
     pub fn restore(&self) {
-        let skip = self.lock().busy || self.parts.marker.signed_out();
-        if !skip {
-            match self.parts.store.load() {
-                Ok(Some(token)) if !token.is_empty() => {
-                    self.lock().saved = Some(token);
-                    return self.refresh();
-                }
-                Ok(_) => {}
-                Err(_) => self.lock().message = STORE_UNREADABLE,
+        let ticket = {
+            let state = self.lock();
+            (!state.busy).then_some(state.epoch)
+        };
+        let ticket = ticket.filter(|_| !self.parts.marker.signed_out());
+        let started = ticket.and_then(|ticket| {
+            // The store is read without the lock held, so what it returns is used only if no
+            // sign-in, cancel, sign-out or shutdown happened while it was being read. Otherwise
+            // a credential read before a sign-out would sign the user back in after it.
+            let loaded = self.parts.store.load();
+            let mut state = self.lock();
+            if state.epoch != ticket {
+                return None;
             }
-        }
+            match loaded {
+                Ok(Some(token)) if !token.is_empty() => {
+                    // A credential already held in memory is at least as new as the stored one.
+                    state.saved.get_or_insert(token);
+                    self.start_refresh(&mut state)
+                }
+                Ok(_) => None,
+                Err(_) => {
+                    if !state.busy {
+                        state.message = STORE_UNREADABLE;
+                    }
+                    None
+                }
+            }
+        });
         self.changed();
+        if let Some((ticket, token)) = started {
+            self.run_refresh(ticket, &token);
+        }
     }
 
     /// Exchanges the saved refresh token for a new session. Does nothing while busy or when no
     /// credential is held.
     pub fn refresh(&self) {
-        let (ticket, token) = {
-            let now = self.now();
-            let mut state = self.lock();
-            if state.busy {
-                return;
-            }
-            let Some(token) = state.saved.clone() else {
-                return;
-            };
-            state.busy = true;
-            state.restoring = true;
-            state.retry_at = None;
-            state.message = if state.authenticated(now) {
-                REFRESHING
-            } else {
-                RESTORING
-            };
-            (state.epoch, token)
+        let started = self.start_refresh(&mut self.lock());
+        if let Some((ticket, token)) = started {
+            self.changed();
+            self.run_refresh(ticket, &token);
+        }
+    }
+
+    /// Marks a refresh as in flight and returns its ticket and the token to send, unless the
+    /// controller is busy or holds no credential.
+    fn start_refresh(&self, state: &mut State) -> Option<(u64, String)> {
+        if state.busy {
+            return None;
+        }
+        let token = state.saved.clone()?;
+        state.busy = true;
+        state.restoring = true;
+        state.retry_at = None;
+        state.message = if state.authenticated(self.now()) {
+            REFRESHING
+        } else {
+            RESTORING
         };
-        self.changed();
-        match self.parts.api.refresh(&token) {
+        Some((state.epoch, token))
+    }
+
+    /// The network half of a refresh. Runs without the state lock held.
+    fn run_refresh(&self, ticket: u64, token: &str) {
+        match self.parts.api.refresh(token) {
             Ok(tokens) => self.accept(tokens, ticket, Phase::Refresh),
             Err(error) => self.failed(error, ticket, Phase::Refresh),
         }
