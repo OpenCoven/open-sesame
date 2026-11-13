@@ -190,6 +190,73 @@ fn bookmark_create_edit_search_delete() {
     assert_eq!(rig.db.get_item(&created.id).unwrap(), None);
 }
 
+/// The UI's own shape: a capture is all `text` with no title, and can be far longer than a title.
+#[test]
+fn an_item_keeps_its_text_and_needs_no_title() {
+    let rig = rig();
+    let long = "word ".repeat(MAX_TEXT_CHARS / 5);
+    assert_eq!(long.chars().count(), MAX_TEXT_CHARS);
+    let capture = rig
+        .db
+        .save_item(draft(json!({ "kind": "note", "text": long })))
+        .unwrap();
+    assert_eq!(
+        (capture.text.as_str(), capture.title.as_str()),
+        (long.as_str(), "")
+    );
+    assert_eq!(rig.db.get_item(&capture.id).unwrap(), Some(capture.clone()));
+
+    // The task manager writes the same wording to both fields.
+    let task = rig
+        .db
+        .save_item(draft(
+            json!({ "kind": "task", "text": "Call the plumber", "title": "Call the plumber" }),
+        ))
+        .unwrap();
+    assert_eq!(
+        (task.text.as_str(), task.title.as_str()),
+        ("Call the plumber", "Call the plumber")
+    );
+    // Read later saves a bookmark under the feed entry's title, which can be 300 characters.
+    let headline = "t".repeat(MAX_TITLE_CHARS);
+    let bookmark = json!({ "kind": "bookmark", "text": "https://example.com/a", "title": headline, "url": "https://example.com/a" });
+    assert!(rig.db.save_item(draft(bookmark)).is_ok());
+
+    // Search reaches the text, and an edit replaces it.
+    let found = find(&rig.db, json!({ "query": "WORD word" }));
+    assert_eq!(
+        found
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        [capture.id.as_str()]
+    );
+    rig.tick();
+    let edited = rig
+        .db
+        .save_item(draft(
+            json!({ "id": capture.id, "kind": "note", "text": "short now" }),
+        ))
+        .unwrap();
+    assert_eq!(edited.text, "short now");
+    assert!(find(&rig.db, json!({ "query": "word word" })).is_empty());
+
+    for bad in [
+        json!({ "kind": "note" }),
+        json!({ "kind": "note", "text": "", "title": "" }),
+        json!({ "kind": "note", "text": "x".repeat(MAX_TEXT_CHARS + 1) }),
+        json!({ "kind": "note", "text": "t", "title": "x".repeat(MAX_TITLE_CHARS + 1) }),
+        json!({ "kind": "task", "text": "t", "dueDate": "0000-01-01" }),
+    ] {
+        let result = rig.db.save_item(draft(bad.clone()));
+        assert!(
+            matches!(result, Err(StorageError::Invalid(_))),
+            "{result:?}"
+        );
+    }
+    assert_eq!(find(&rig.db, json!({})).len(), 3);
+}
+
 #[test]
 fn items_are_listed_newest_change_first_and_filtered_by_project() {
     let rig = rig();
@@ -1172,6 +1239,7 @@ fn commands_cover_every_item_type() {
     for key in [
         "id",
         "kind",
+        "text",
         "title",
         "body",
         "url",

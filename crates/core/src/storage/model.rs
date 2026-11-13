@@ -6,7 +6,10 @@
 use super::{invalid, StorageError};
 use serde::{Deserialize, Serialize};
 
-pub const MAX_TITLE_CHARS: usize = 200;
+/// The capture box in the UI takes this many characters.
+pub const MAX_TEXT_CHARS: usize = 20_000;
+/// The longest title any part of the UI writes: a saved feed entry's.
+pub const MAX_TITLE_CHARS: usize = 300;
 pub const MAX_FEED_TITLE_CHARS: usize = 300;
 pub const MAX_BODY_BYTES: usize = 262_144;
 pub const MAX_URL_BYTES: usize = 2048;
@@ -51,6 +54,10 @@ word_enum!(WidgetState { Active => "active", Inactive => "inactive", Uninstalled
 pub struct Item {
     pub id: String,
     pub kind: Kind,
+    /// What the user wrote: a whole capture, or a task's wording. The UI writes this for every
+    /// item and shows it wherever there is no title.
+    pub text: String,
+    /// Optional. Empty for a single-line note and for most bookmarks.
     pub title: String,
     pub body: String,
     pub url: String,
@@ -77,6 +84,9 @@ pub struct ItemDraft {
     #[serde(default)]
     pub id: Option<String>,
     pub kind: Kind,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
     pub title: String,
     #[serde(default)]
     pub body: String,
@@ -102,6 +112,10 @@ pub struct ItemDraft {
 
 impl ItemDraft {
     pub(super) fn validate(&self) -> Result<(), StorageError> {
+        if self.text.is_empty() && self.title.is_empty() {
+            return Err(invalid("An item needs some text."));
+        }
+        check_chars(&self.text, MAX_TEXT_CHARS, "That text is too long to save.")?;
         check_chars(&self.title, MAX_TITLE_CHARS, "That title is too long.")?;
         check_bytes(&self.body, MAX_BODY_BYTES, "That text is too long to save.")?;
         if self.url.is_empty() {
@@ -126,7 +140,7 @@ pub struct ItemFilter {
     pub kind: Option<Kind>,
     #[serde(default)]
     pub project_id: Option<String>,
-    /// Matches the title, body and web address, ignoring case.
+    /// Matches the text, title, body and web address, ignoring case.
     #[serde(default)]
     pub query: Option<String>,
 }
@@ -371,7 +385,7 @@ fn is_absolute(path: &str) -> bool {
     path.starts_with('/') || path.starts_with("~/") || path.starts_with("\\\\") || drive
 }
 
-/// `YYYY-MM-DD` naming a real calendar day.
+/// `YYYY-MM-DD` naming a real calendar day. The year 0000 is refused, as in the UI.
 fn is_date(text: &str) -> bool {
     let bytes = text.as_bytes();
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
@@ -388,6 +402,9 @@ fn is_date(text: &str) -> bool {
     else {
         return false;
     };
+    if year == 0 {
+        return false;
+    }
     let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
     let days = match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,

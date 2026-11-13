@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const ITEM_COLUMNS: &str = "id, kind, title, body, url, project_id, stage, previous_stage, done, priority, due_date, read, reading_later, created_at, updated_at";
+const ITEM_COLUMNS: &str = "id, kind, title, body, url, project_id, stage, previous_stage, done, priority, due_date, read, reading_later, created_at, updated_at, text";
 const PROJECT_COLUMNS: &str = "id, name, root_path, created_at, updated_at";
 const FEED_COLUMNS: &str =
     "id, title, url, body, source, published_at, read, created_at, updated_at";
@@ -53,6 +53,7 @@ fn item_from(row: &Row) -> rusqlite::Result<Item> {
         reading_later: row.get(12)?,
         created_at: row.get(13)?,
         updated_at: row.get(14)?,
+        text: row.get(15)?,
     })
 }
 
@@ -138,6 +139,7 @@ impl Storage {
             let item = Item {
                 id,
                 kind: draft.kind,
+                text: draft.text,
                 title: draft.title,
                 body: draft.body,
                 url: draft.url,
@@ -153,9 +155,9 @@ impl Storage {
                 updated_at,
             };
             tx.execute(
-                "INSERT INTO items (id, kind, title, body, url, project_id, stage, previous_stage, done, priority, due_date, read, reading_later, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-                 ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, title = excluded.title, body = excluded.body, url = excluded.url,
+                "INSERT INTO items (id, kind, title, body, url, project_id, stage, previous_stage, done, priority, due_date, read, reading_later, created_at, updated_at, text)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                 ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, title = excluded.title, text = excluded.text, body = excluded.body, url = excluded.url,
                      project_id = excluded.project_id, stage = excluded.stage, previous_stage = excluded.previous_stage, done = excluded.done,
                      priority = excluded.priority, due_date = excluded.due_date, read = excluded.read, reading_later = excluded.reading_later,
                      updated_at = excluded.updated_at",
@@ -175,6 +177,7 @@ impl Storage {
                     item.reading_later,
                     item.created_at,
                     item.updated_at,
+                    item.text,
                 ],
             )?;
             Ok(item)
@@ -205,7 +208,7 @@ impl Storage {
             let mut items = Vec::new();
             for item in rows {
                 let item = item?;
-                if matches(&needle, &[&item.title, &item.body, &item.url]) {
+                if matches(&needle, &[&item.text, &item.title, &item.body, &item.url]) {
                     items.push(item);
                 }
             }

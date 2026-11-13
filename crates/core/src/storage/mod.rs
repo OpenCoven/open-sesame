@@ -27,7 +27,7 @@ mod tests;
 
 pub use model::{
     FeedItem, FeedItemDraft, Item, ItemDraft, ItemFilter, Kind, Priority, Project, ProjectDraft,
-    Stage, WidgetState, MAX_BODY_BYTES, MAX_SETTING_BYTES, MAX_TITLE_CHARS,
+    Stage, WidgetState, MAX_BODY_BYTES, MAX_SETTING_BYTES, MAX_TEXT_CHARS, MAX_TITLE_CHARS,
 };
 pub use schema::SCHEMA_VERSION;
 

@@ -24,7 +24,8 @@ pub(super) const MIGRATIONS: &[&str] = &[
     CREATE TABLE items (
         id TEXT PRIMARY KEY NOT NULL,
         kind TEXT NOT NULL CHECK (kind IN ('note', 'task', 'bookmark')),
-        title TEXT NOT NULL,
+        text TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL DEFAULT '',
         body TEXT NOT NULL DEFAULT '',
         url TEXT NOT NULL DEFAULT '',
         project_id TEXT REFERENCES projects (id) ON DELETE SET NULL,
