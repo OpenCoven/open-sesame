@@ -2,36 +2,36 @@
 #widget-anchor #widget-panel #familiars-workspace.rail-collapsed{grid-template-columns:minmax(0,1fr);gap:0}
 #widget-anchor #widget-panel #familiar-rail-title{display:flex;align-items:center;min-width:0;flex:1}
 #widget-anchor #widget-panel #familiar-rail-title:has(#agents-rail-toggle)>span{display:none}
-#widget-anchor #widget-panel #familiar-rail-title>#agents-rail-toggle{display:flex;align-items:center;gap:6px;min-height:24px;height:24px;padding:0 2px;border:0;background:transparent;color:var(--ink-secondary);font-size:10px}
+#widget-anchor #widget-panel #familiar-rail-title>#agents-rail-toggle{display:flex;align-items:center;gap:6px;min-height:24px;height:24px;padding:0 2px;border:0;background:transparent;color:var(--ink-secondary);font-size:var(--text-caption)}
 #widget-anchor #widget-panel #familiar-rail-title>#agents-rail-toggle svg{width:12px;height:12px}
 #widget-anchor #widget-panel #familiar-thread{container-type:inline-size;container-name:familiar-chat;gap:10px}
-#widget-anchor #widget-panel #familiar-thread-header{padding:0 2px 9px;gap:8px;border-bottom:1px solid var(--line)}
-#widget-anchor #widget-panel #familiar-workspace{font-size:9px;letter-spacing:.1px}
+#widget-anchor #widget-panel #familiar-thread-header{border-bottom:1px solid var(--line)}
+#widget-anchor #widget-panel #familiar-workspace{font-size:var(--text-caption);letter-spacing:.1px}
 #widget-anchor #widget-panel #familiar-messages{padding:6px max(10px,calc((100% - 780px)/2)) 18px;scroll-padding-block:18px;scrollbar-gutter:stable}
 #widget-anchor #widget-panel .familiar-message{width:100%;padding:18px 2px;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 #widget-anchor #widget-panel .familiar-message+.familiar-message{margin-top:8px}
-#widget-anchor #widget-panel .familiar-message.user{width:fit-content;min-width:120px;max-width:min(90%,680px);margin-left:auto;padding:12px 16px;border:0;border-radius:14px 14px 4px 14px;background:var(--surface-raised);box-shadow:none}
+#widget-anchor #widget-panel .familiar-message.user{width:fit-content;min-width:120px;max-width:min(90%,680px);margin-left:auto;padding:12px 16px;border:0;border-radius:var(--radius-6) var(--radius-6) var(--radius-2) var(--radius-6);background:var(--surface-raised);box-shadow:none}
 #widget-anchor #widget-panel .familiar-message>header{margin-bottom:8px;gap:20px;min-height:18px}
-#widget-anchor #widget-panel .familiar-message>header small{font-size:10px;font-weight:500;letter-spacing:.1px;color:var(--ink-muted)}
-#widget-anchor #widget-panel .familiar-message>header button{height:22px;min-height:22px;padding:2px 5px;border:0;background:transparent;color:var(--ink-muted);font-size:9px}
+#widget-anchor #widget-panel .familiar-message>header small{font-size:var(--text-caption);font-weight:500;letter-spacing:.1px;color:var(--ink-muted)}
+#widget-anchor #widget-panel .familiar-message>header button{height:22px;min-height:22px;padding:2px 5px;border:0;background:transparent;color:var(--ink-muted);font-size:var(--text-caption)}
 #widget-anchor #widget-panel .familiar-message>header button:hover{background:var(--surface-hover);color:var(--ink-primary)}
-#widget-anchor #widget-panel .familiar-message-body{font-size:13px;line-height:1.75;color:var(--ink-primary)}
+#widget-anchor #widget-panel .familiar-message-body{font-size:var(--text-body);line-height:1.75;color:var(--ink-primary)}
 #widget-anchor #widget-panel .familiar-message-body :is(p,ul,ol){margin-bottom:12px}
-#widget-anchor #widget-panel .familiar-message-body :is(h1,h2,h3,h4){line-height:1.4;margin:20px 0 10px;font-size:14px;font-weight:550}
+#widget-anchor #widget-panel .familiar-message-body :is(h1,h2,h3,h4){line-height:1.4;margin:20px 0 10px;font-size:var(--text-body);font-weight:550}
 #widget-anchor #widget-panel .familiar-message-body :is(ul,ol){padding-left:22px}
 #widget-anchor #widget-panel .familiar-message-body li+li{margin-top:5px}
-#widget-anchor #widget-panel .familiar-message-body pre{padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-inset);font-size:11px;line-height:1.6;white-space:pre;overflow:auto}
-#widget-anchor #widget-panel .familiar-message-body table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;font-size:12px}
+#widget-anchor #widget-panel .familiar-message-body pre{padding:12px;border:1px solid var(--line);border-radius:var(--radius-4);background:var(--surface-inset);font-size:var(--text-caption);line-height:1.6;white-space:pre;overflow:auto}
+#widget-anchor #widget-panel .familiar-message-body table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;font-size:var(--text-label)}
 #widget-anchor #widget-panel .familiar-message-body :is(th,td){padding:7px 10px;border-bottom:1px solid var(--line);text-align:left}
 #widget-anchor #widget-panel .familiar-message-body blockquote{margin:12px 0;padding-left:14px;border-left:2px solid var(--line);color:var(--ink-secondary)}
-#widget-anchor #widget-panel #familiar-compose{width:min(100%,820px);align-self:center;flex-shrink:0;border:1px solid var(--line);background:var(--surface-raised);border-radius:12px}
-#widget-anchor #widget-panel #familiar-message{padding:12px 14px;font-size:13px;line-height:21px}
+#widget-anchor #widget-panel #familiar-compose{width:min(100%,820px);align-self:center;flex-shrink:0;border:1px solid var(--line);background:var(--surface-raised);border-radius:var(--radius-6)}
+#widget-anchor #widget-panel #familiar-message{padding:12px 14px;font-size:var(--text-body);line-height:21px}
 #widget-anchor #widget-panel #familiar-compose>div:not(.familiar-command-menu){gap:5px;padding:2px 8px 8px}
-#widget-anchor #widget-panel #familiar-access{flex:none;width:104px;min-height:25px;height:25px;margin:0;padding:3px 18px 3px 7px;background-color:transparent;border:1px solid transparent;border-radius:6px;color:var(--ink-secondary);font-size:10px}
+#widget-anchor #widget-panel #familiar-access{flex:none;width:104px;min-height:25px;height:25px;margin:0;padding:3px 18px 3px 7px;background-color:transparent;border:1px solid transparent;border-radius:var(--radius-3);color:var(--ink-secondary);font-size:var(--text-caption)}
 #widget-anchor #widget-panel #familiar-access:hover{background-color:var(--surface-hover);border-color:var(--line)}
 #widget-anchor #widget-panel #familiar-access:has(option[value=full]:checked){color:var(--ink-primary);background-color:var(--surface-selected)}
 #widget-anchor #widget-panel #familiar-chat-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-#widget-anchor #widget-panel #familiar-send{min-height:28px;padding:5px 10px;border-radius:7px}
-#widget-anchor #widget-panel .familiar-reply-indicator{padding:16px 2px;margin:0;font-size:11px;line-height:1.6;color:var(--ink-muted)}
+#widget-anchor #widget-panel #familiar-send{min-height:28px;padding:5px 10px;border-radius:var(--radius-3)}
+#widget-anchor #widget-panel .familiar-reply-indicator{padding:16px 2px;margin:0;font-size:var(--text-caption);line-height:1.6;color:var(--ink-muted)}
 #widget-anchor #widget-panel #familiar-chat-error,#widget-anchor #widget-panel #familiar-history-notice{width:min(100%,820px);align-self:center;box-sizing:border-box}
-@container familiar-chat (max-width:480px){#widget-anchor #widget-panel #familiar-messages{padding:2px 3px 12px}#widget-anchor #widget-panel .familiar-message-body{font-size:12px}#widget-anchor #widget-panel .familiar-message.user{max-width:95%;padding:10px 12px}#widget-anchor #widget-panel #familiar-chat-status{display:none}#widget-anchor #widget-panel #familiar-compose>div:not(.familiar-command-menu){gap:3px}#widget-anchor #widget-panel #familiar-send,#widget-anchor #widget-panel #familiar-stop{margin-left:auto}}
+@container familiar-chat (max-width:480px){#widget-anchor #widget-panel #familiar-messages{padding:2px 3px 12px}#widget-anchor #widget-panel .familiar-message-body{font-size:var(--text-label)}#widget-anchor #widget-panel .familiar-message.user{max-width:95%;padding:10px 12px}#widget-anchor #widget-panel #familiar-chat-status{display:none}#widget-anchor #widget-panel #familiar-compose>div:not(.familiar-command-menu){gap:3px}#widget-anchor #widget-panel #familiar-send,#widget-anchor #widget-panel #familiar-stop{margin-left:auto}}

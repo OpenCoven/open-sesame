@@ -1,0 +1,52 @@
+{
+  "note": "Ceilings for the authored cascade, measured by scripts/design-metrics.mjs and enforced by scripts/check-design-budget.mjs. Lower a ceiling whenever its measure falls; raise one only with a stated reason in the same reviewed change.",
+  "reasons": {
+    "stylesheetsLinked": "One above the pre-token baseline of 57: design-tokens.css is the token sheet itself.",
+    "cssBytes": "Above the pre-token baseline of 671727: a token reference is longer than the literal it replaces. Removing provably dead declarations recovered part of it; it falls further as override layers are retired.",
+    "rootHasSelectors": "Three remain from before this ratchet (PDF reader, launcher background, mobile reader); none may be added.",
+    "colorLiterals": "Counts two held stylesheets that keep literal values: mobile-shell.css (reference-exact, owned by the mobile tasks) and sign-in.css (the sign-in page migrates under its own review).",
+    "htmlBytes": "Above the pre-token baseline of 131970 by the token stylesheet link and one class on the Reader empty state, which lets it share the empty-state rule without an id raising that rule's specificity.",
+    "declarations": "The item card icon fix adds 2 from the pre-token baseline; current main integration at 00ce209 adds Spotify library presentation rules and raises the measure to 20343.",
+    "stylesheetsLinked": "Current main integration at 00ce209 adds music-library.css for the Spotify library surface.",
+    "cssBytes": "Current main integration at 00ce209 adds the Spotify library presentation rules and compact-player layout.",
+    "jsBytes": "Current main integration at 00ce209 adds Spotify library behavior and transcript export support.",
+    "htmlBytes": "Current main integration at 00ce209 adds Spotify library controls and updates the compact-player asset references.",
+    "important": "Current main integration at 00ce209 adds a scoped important display rule so the content-focused Spotify library can override its hidden state.",
+    "distinctFontSizes": "Current main integration at 00ce209 adds Spotify library typography; its smallest new text uses the 11px caption token."
+  },
+  "ceilings": {
+    "stylesheetsLinked": 59,
+    "scriptsLinked": 119,
+    "cssBytes": 667795,
+    "jsBytes": 949773,
+    "htmlBytes": 132393,
+    "declarations": 20343,
+    "important": 403,
+    "colorLiterals": 140,
+    "distinctColors": 120,
+    "distinctFontSizes": 58,
+    "fontSizesBelowFloor": 6,
+    "distinctRadii": 23,
+    "distinctDurations": 8,
+    "hasSelectors": 47,
+    "rootHasSelectors": 3
+  },
+  "interaction": {
+    "note": "Mean wall time of one surface switch including forced style and layout, from scripts/review-switch-cost.mjs --budget. One 60 Hz frame is 16.7 ms.",
+    "webkit": {
+      "meanSwitchMs": 16
+    },
+    "chromium": {
+      "meanSwitchMs": 12
+    }
+  },
+  "rendered": {
+    "note": "How layered the rendered interface is, from scripts/review-cascade-depth.mjs --budget: declarations that match a visible element and lose to another, at longhand level, across the 13 surfaces at 1180x740. Main at cbb8e9f measured 71976. scripts/review-primitives.mjs --strict separately requires that no stylesheet but the theme decides a property a primitive owns.",
+    "overriddenDeclarations": 27485,
+    "primitiveExceptions": {
+      "input-tools.css  #widget-panel textarea.syntax-input": "The composer hides its own text while the syntax overlay draws it.",
+      "familiar-selection.css  #widget-anchor #widget-panel #familiar-search": "Familiars chat is owned by familiars-modern-chat-20261111 and joins the field rule with that redesign.",
+      "launcher-palette.css  body.capture-launcher-open #widget-anchor #widget-panel #capture-commands": "In the launcher the command list is the body of the window, not a popover over it."
+    }
+  }
+}

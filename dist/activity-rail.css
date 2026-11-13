@@ -1,18 +1,18 @@
 /* Primary navigation stays beside the workspace, independent of each view's own rail. */
 #widget-anchor.expanded #widget-panel.widget-panel{--activity-rail-width:40px;--activity-rail-left:6px;padding: max(8px,env(safe-area-inset-top)) 12px max(8px,env(safe-area-inset-bottom)) 58px}
-#widget-panel>.panel-top{position:absolute;z-index:10;inset:8px auto 8px var(--activity-rail-left);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;width:var(--activity-rail-width);height:auto;min-height:0;gap:12px;margin:0;padding:0 6px 0 0;border:0;border-right:1px solid #ffffff09;background:transparent;box-sizing:content-box}
+#widget-panel>.panel-top{position:absolute;z-index:10;inset:8px auto 8px var(--activity-rail-left);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;width:var(--activity-rail-width);height:auto;min-height:0;gap:12px;margin:0;padding:0 6px 0 0;border:0;border-right:1px solid var(--tint-2);background:transparent;box-sizing:content-box}
 #widget-panel #activity-menu.widget-tabs{display:flex;flex-direction:column;align-items:center;flex:0 1 auto!important;width:var(--activity-rail-width)!important;min-width:0;min-height:0;height:auto;gap:5px;padding:1px 3px;margin:0;overflow-x:hidden;overflow-y:auto;scrollbar-width:none;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;box-sizing:border-box}
 #widget-panel #activity-menu::-webkit-scrollbar{display:none}
-#widget-panel #activity-menu.widget-tabs>button{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:center;flex:0 0 32px;width:32px;min-width:32px;height:32px;min-height:32px;max-height:32px;gap:0;padding:7px!important;border:1px solid transparent;border-radius:8px;background:transparent;color:#a99db5;box-shadow:none;outline-offset:-2px}
+#widget-panel #activity-menu.widget-tabs>button{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:center;flex:0 0 32px;width:32px;min-width:32px;height:32px;min-height:32px;max-height:32px;gap:0;padding:7px!important;border:1px solid transparent;border-radius:var(--radius-4);outline-offset:-2px;font-size:var(--text-caption);font-weight:450;line-height:14px;letter-spacing:.1px}
 #widget-panel #activity-menu.widget-tabs>button>i{display:flex;align-items:center;justify-content:center;width:16px;height:16px}
-#widget-panel #activity-menu.widget-tabs>button svg{display:block;width:16px;height:16px;opacity:1;stroke-width:1.65}
-#widget-panel #activity-menu.widget-tabs>button:hover{color:#eee5f5;border-color:#ffffff0c;background:#ffffff08}
-#widget-panel #activity-menu.widget-tabs>button[aria-selected=true]{color:#eadcf5;border-color:#c5a9dc28;background:linear-gradient(145deg,#c5a9dc1c,#c5a9dc0b);box-shadow:inset 2px 0 #c9b0df}
-#widget-panel #activity-menu.widget-tabs>button:focus-visible{outline:2px solid #d1b5e5}
+#widget-panel #activity-menu.widget-tabs>button svg{display:block;width:16px;height:16px;stroke-width:1.65}
+
+
+#widget-panel #activity-menu.widget-tabs>button:focus-visible{outline:2px solid var(--violet-6)}
 #widget-panel #activity-menu .live-tab-dot{position:absolute;top:5px;right:4px;margin:0}
-#widget-panel>.panel-top>#widget-options-toggle{margin-top:auto;flex:0 0 32px;width:32px;min-width:32px;height:32px;padding:7px;border-color:transparent;background:transparent;color:#a99db5}
-#widget-panel>.panel-top>#widget-options-toggle:hover,#widget-panel>.panel-top>#widget-options-toggle[aria-expanded=true]{background:#ffffff08;border-color:#ffffff0c;color:#eee5f5}
+#widget-panel>.panel-top>#widget-options-toggle{flex:0 0 32px;width:32px;min-width:32px;height:32px;padding:7px;border-color:transparent;background:transparent;color:var(--mauve-9)}
+#widget-panel>.panel-top>#widget-options-toggle:hover,#widget-panel>.panel-top>#widget-options-toggle[aria-expanded=true]{background:var(--tint-2);border-color:var(--tint-3);color:var(--mauve-12)}
 #widget-panel #widget-options{inset:auto auto 8px 58px;max-width:calc(100% - 70px);max-height:calc(100% - 16px);overflow-y:auto;overscroll-behavior:contain}
 /* The standalone launcher keeps its full-width search surface. */
 body.capture-launcher-open #widget-anchor.expanded #widget-panel.widget-panel{padding:0!important}
-@media(forced-colors:active){#widget-panel #activity-menu.widget-tabs>button[aria-selected=true]{border-color:Highlight;color:Highlight;box-shadow:none}}
+@media(forced-colors:active){}

@@ -1,29 +1,29 @@
 /* A playlist becomes a complete sheet when the player and rail cannot both fit. */
-#widget-anchor #widget-panel .youtube-workspace.playlist-overlay.playlist-open>.youtube-queue,#widget-anchor #widget-panel .media-workspace.rail-overlay:not(.rail-collapsed)>.media-queue{position:absolute;inset:0;width:100%;max-width:100%;height:100%;min-height:0;padding:12px;z-index:20;border:1px solid var(--line);border-radius:9px;background:#17181c;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;overflow:hidden}
-#widget-anchor #widget-panel .youtube-workspace.playlist-overlay.playlist-open>.youtube-queue-toggle{top:12px;right:12px;z-index:21;width:28px;height:28px;padding:6px;background:#202126;border:1px solid #39363f;border-radius:7px;opacity:1}
-#widget-anchor #widget-panel .youtube-workspace.playlist-overlay .youtube-queue-heading{padding-right:36px}
+#widget-anchor #widget-panel .youtube-workspace.playlist-overlay.playlist-open>.youtube-queue,#widget-anchor #widget-panel .media-workspace.rail-overlay:not(.rail-collapsed)>.media-queue{position:absolute;inset:0;width:100%;max-width:100%;height:100%;min-height:0;padding:12px;z-index:20;border:1px solid var(--line);border-radius:var(--radius-4);background:var(--ash-3);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;overflow:hidden}
+#widget-anchor #widget-panel .youtube-workspace.playlist-overlay.playlist-open>.youtube-queue-toggle{top:12px;right:12px;z-index:21;width:28px;height:28px;padding:6px;background:var(--ash-5);border:1px solid var(--ash-8);border-radius:var(--radius-3);opacity:1}
+
 #widget-anchor #widget-panel :is(#youtube-queue-list,#media-queue-list){flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 #widget-anchor #widget-panel .playlist-overlay :is(.youtube-queue-tools,.youtube-queue-pages),#widget-anchor #widget-panel .rail-overlay :is(.media-search,.workspace-pagination){flex:none}
 #widget-anchor #widget-panel .youtube-workspace.playlist-overlay{min-height:0}
-#widget-anchor #widget-panel #youtube-playlist-retry{flex:none;align-self:flex-start;min-height:28px;padding:5px 10px;border:1px solid #51465f;background:#26232d;border-radius:7px;color:#e8e6ec;font-size:11px}
+#widget-anchor #widget-panel #youtube-playlist-retry{flex:none;align-self:flex-start;min-height:28px;padding:5px 10px;border:1px solid var(--mauve-5);background:var(--mauve-1);border-radius:var(--radius-3);color:var(--ash-16);font-size:var(--text-caption)}
 #widget-anchor #widget-panel .media-overlay-close{display:none}
-#widget-anchor #widget-panel .rail-overlay .media-overlay-close{display:grid;place-items:center;position:absolute;right:10px;top:8px;width:28px;height:28px;padding:6px;background:#202126;border:1px solid #39363f;border-radius:7px;color:#e8e6ec}
+#widget-anchor #widget-panel .rail-overlay .media-overlay-close{display:grid;place-items:center;position:absolute;right:10px;top:8px;width:28px;height:28px;padding:6px;background:var(--ash-5);border:1px solid var(--ash-8);border-radius:var(--radius-3);color:var(--ash-16)}
 #widget-anchor #widget-panel .rail-overlay .media-queue>.workspace-rail-heading{padding-right:34px;min-height:28px;flex:none}
 /* Shell confirmation fits the existing compact row and keeps all actions visible. */
-#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm{inset:1px;display:grid;grid-template-columns:minmax(0,1fr) auto 22px 22px;gap:4px;padding:2px 5px;border:1px solid #51465f;border-radius:7px;background:#26232d;color:#e8e6ec;box-shadow:none;min-width:0;box-sizing:border-box;overflow:hidden}
+#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm{inset:1px;display:grid;grid-template-columns:minmax(0,1fr) auto 22px 22px;gap:4px;padding:2px 5px;border:1px solid var(--mauve-5);border-radius:var(--radius-3);background:var(--mauve-1);color:var(--ash-16);box-shadow:none;min-width:0;box-sizing:border-box;overflow:hidden}
 #widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm:before{display:none;animation:none}
-#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>span{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px;line-height:16px;font-weight:450}
-#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>small{font-size:10px;line-height:16px;min-width:14px;margin:0;color:#b8b4bf;opacity:1}
-#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>button{display:grid;place-items:center;width:22px;height:22px;min-width:22px;min-height:22px;max-height:22px;padding:4px;margin:0;border-radius:5px;background:#202126;border:1px solid #39363f;color:#e8e6ec;box-sizing:border-box}
+#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>span{min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-caption);line-height:16px;font-weight:450}
+#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>small{font-size:var(--text-caption);line-height:16px;min-width:14px;margin:0;color:var(--ash-14);opacity:1}
+#widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>button{display:grid;place-items:center;width:22px;height:22px;min-width:22px;min-height:22px;max-height:22px;padding:4px;margin:0;border-radius:var(--radius-2);background:var(--ash-5);border:1px solid var(--ash-8);color:var(--ash-16);box-sizing:border-box}
 #widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>button svg{display:block;width:12px;height:12px;max-width:100%;max-height:100%;stroke-width:1.7}
 #widget-anchor #widget-panel #terminal-pane-list .terminal-close-confirm>button:focus-visible{outline-offset:-2px}
 #widget-anchor #widget-panel #terminal-pane-list .terminal-pane-row.confirming>[role=tab],#widget-anchor #widget-panel #terminal-pane-list .terminal-pane-row.confirming>.terminal-pane-trash{visibility:hidden}
-#widget-anchor #widget-panel #media-dropzone{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;min-height:36px;padding:6px 9px;border:1px dashed #45414d;border-radius:8px;background:#17181c;color:#b8b4bf;font-size:11px;line-height:16px}
+#widget-anchor #widget-panel #media-dropzone{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;min-height:36px;padding:6px 9px;border:1px dashed var(--ash-9);border-radius:var(--radius-4);background:var(--ash-3);color:var(--ash-14);font-size:var(--text-caption);line-height:16px}
 #widget-anchor #widget-panel #media-dropzone>span{min-width:0;overflow-wrap:anywhere}
-#widget-anchor #widget-panel #media-dropzone #media-choose{flex:none;min-height:26px;height:26px;padding:4px 8px;background:#26232d;border:1px solid #51465f;border-radius:6px;color:#e8e6ec;font-size:11px;white-space:nowrap}
-#widget-anchor #widget-panel .media-drop-active #media-dropzone{background:#26232d;border-color:#b8a4cf;border-style:solid;color:#e8e6ec}
-#widget-anchor #widget-panel .media-drop-active #media-workspace{outline:1px solid #857493;outline-offset:-2px;border-radius:9px}
+#widget-anchor #widget-panel #media-dropzone #media-choose{flex:none;min-height:26px;height:26px;padding:4px 8px;background:var(--mauve-1);border:1px solid var(--mauve-5);border-radius:var(--radius-3);color:var(--ash-16);font-size:var(--text-caption);white-space:nowrap}
+#widget-anchor #widget-panel .media-drop-active #media-dropzone{background:var(--mauve-1);border-color:var(--violet-5);border-style:solid;color:var(--ash-16)}
+#widget-anchor #widget-panel .media-drop-active #media-workspace{outline:1px solid var(--violet-3);outline-offset:-2px;border-radius:var(--radius-4)}
 
 /* Toolbar placement keeps the toggle outside the native WKWebView hit region. */
-#widget-anchor #widget-panel #youtube-queue-toggle{position:static!important;inset:auto!important;transform:none;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:auto!important;min-width:30px;height:28px;min-height:28px;margin:0;padding:5px 7px;border:1px solid #39363f;border-radius:7px;background:#202126;color:#d6cddd;opacity:1;box-shadow:none;backdrop-filter:none}
-#widget-anchor #widget-panel #youtube-queue-toggle>span{font-size:10px;line-height:16px;font-variant-numeric:tabular-nums}
+#widget-anchor #widget-panel #youtube-queue-toggle{position:static!important;inset:auto!important;transform:none;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:auto!important;min-width:30px;height:28px;min-height:28px;margin:0;padding:5px 7px;border:1px solid var(--ash-8);border-radius:var(--radius-3);background:var(--ash-5);color:var(--mauve-11);opacity:1;box-shadow:none;backdrop-filter:none}
+#widget-anchor #widget-panel #youtube-queue-toggle>span{font-size:var(--text-caption);line-height:16px;font-variant-numeric:tabular-nums}

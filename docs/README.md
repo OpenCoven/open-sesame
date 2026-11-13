@@ -6,6 +6,7 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 
 | Area | Read first | Related implementation notes |
 | --- | --- | --- |
+| Visual design and performance budget | [Design system and cascade budget](design-system.md) | Tokens, selector rules, the rendered baseline and the surface-switch budget; [flat palette history](desktop-polish-plan.md#flat-dark-ui-polish) |
 | Tools and integrations | [Tool creation and submissions](tools.md), [GitHub monitor](github-monitor-widget.md) | [Optional widgets and lifecycle controls](widget-lifecycle.md), [Page tabs and application workspace](widget-pages-and-application.md), [connection setup](desktop-polish-plan.md#plugin-setup-and-private-configuration) |
 | Image generation | [Image Studio](image-generation.md) | ChatGPT sign-in, explicit generation, previews and native PNG export |
 | To-do tasks | [Task Manager](task-manager.md) | Shared Projects lists, priorities, due dates and recoverable completion |

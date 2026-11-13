@@ -1,83 +1,114 @@
 /* Final widget palette: opaque surfaces, restrained contrast, one interaction vocabulary. */
-.account-session{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:10px;margin-top:8px;border-top:1px solid var(--line);font-size:10px;color:var(--ink-secondary)}.account-session>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-session>button{flex:none;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised);color:var(--ink-primary);font:inherit}
+.account-session{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:10px;margin-top:8px;border-top:1px solid var(--line);font-size:var(--text-caption);color:var(--ink-secondary)}.account-session>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-session>button{flex:none;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-3);background:var(--surface-raised);color:var(--ink-primary);font:inherit}
 #widget-anchor{
-  --surface-base:#101113;--surface-inset:#0c0d0f;--surface-raised:#17181c;--surface-hover:#202126;--surface-selected:#26232d;
-  --ink-primary:#e8e6ec;--ink-secondary:#b8b4bf;--ink-muted:#a09ba8;--ink-disabled:#74717d;--line:#2b2b33;--accent:#c6b8d9;
+  --surface-base:var(--ash-2);--surface-inset:var(--ash-1);--surface-raised:var(--ash-3);--surface-hover:var(--ash-5);--surface-selected:var(--mauve-1);
+  --ink-primary:var(--ash-16);--ink-secondary:var(--ash-14);--ink-muted:var(--ash-13);--ink-disabled:var(--ash-11);--line:var(--ash-7);--accent:var(--violet-6);
   --workspace-line:var(--line);--workspace-ink:var(--ink-primary);--workspace-muted:var(--ink-secondary);--workspace-accent:var(--accent);--workspace-glass:var(--surface-raised);
   isolation:isolate;color-scheme:dark;color:var(--ink-primary);background:var(--surface-base);backdrop-filter:none;-webkit-backdrop-filter:none;opacity:1;animation:none;
-  box-shadow:inset 0 0 0 1px var(--line),0 16px 36px #00000059;
-  transition:width .22s cubic-bezier(.2,.8,.2,1),height .22s cubic-bezier(.2,.8,.2,1),border-radius .22s ease;
+  box-shadow:inset 0 0 0 1px var(--line),0 16px 36px var(--shade-4);
+  transition:width var(--motion-slow) cubic-bezier(.2,.8,.2,1),height var(--motion-slow) cubic-bezier(.2,.8,.2,1),border-radius var(--motion-slow) ease;
 }
-#widget-anchor.expanded{background:var(--surface-base);transition:width .22s cubic-bezier(.2,.8,.2,1),height .22s cubic-bezier(.2,.8,.2,1),border-radius .22s ease}
+#widget-anchor.expanded{background:var(--surface-base);transition:width var(--motion-slow) cubic-bezier(.2,.8,.2,1),height var(--motion-slow) cubic-bezier(.2,.8,.2,1),border-radius var(--motion-slow) ease}
 .native-desktop #widget-anchor,.native-desktop #widget-anchor.expanded{transition:none}
 #widget-anchor.expanded #widget-panel.widget-panel{background:var(--surface-base);color:var(--ink-primary);text-shadow:none;opacity:1;animation:none;-webkit-font-smoothing:antialiased}
 #widget-anchor.notch-mode:before,#widget-anchor.notch-mode:after{background:radial-gradient(circle at 0 100%,transparent 12px,var(--surface-base) 12.5px)}
-#widget-anchor #widget-panel{--ui-ink:var(--ink-primary);--ui-secondary:var(--ink-secondary);--ui-line:var(--line);--ui-hover:var(--surface-hover);--ui-selected:var(--surface-selected);--ui-focus:var(--accent);--rail-ink:var(--ink-primary);--rail-secondary:var(--ink-secondary);--rail-hover:var(--surface-hover);--rail-selected:var(--surface-selected);--rail-outline:#51465f;font-synthesis:none}
+#widget-anchor #widget-panel{--ui-ink:var(--ink-primary);--ui-secondary:var(--ink-secondary);--ui-line:var(--line);--ui-hover:var(--surface-hover);--ui-selected:var(--surface-selected);--ui-focus:var(--accent);--rail-ink:var(--ink-primary);--rail-secondary:var(--ink-secondary);--rail-hover:var(--surface-hover);--rail-selected:var(--surface-selected);--rail-outline:var(--mauve-5);font-synthesis:none}
 #widget-anchor #widget-panel *,#widget-anchor #widget-panel *:before,#widget-anchor #widget-panel *:after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 #widget-anchor #widget-panel button{background-image:none!important}
 #widget-anchor #widget-panel :is(#focus-overview,#projects-overview) :is(.focus-tile,.project-tile){background:var(--surface-raised);border-color:var(--line);box-shadow:none}
 #widget-anchor #widget-panel :is(#focus-overview,#projects-overview) :is(.bento-play,.bento-durations button,.project-preview-item){box-shadow:none;background-image:none}
 
 /* 1. Clear navigation: a filled selection and a fixed leading marker, with no glow. */
-#widget-anchor #widget-panel #activity-menu.widget-tabs>button,#widget-anchor #widget-panel #widget-options-toggle{color:var(--ink-secondary);background:var(--surface-base);border-color:transparent;box-shadow:none;transition:color .12s,background-color .12s,border-color .12s}
+#widget-anchor #widget-panel #activity-menu.widget-tabs>button,#widget-anchor #widget-panel #widget-options-toggle{color:var(--ink-secondary);background:var(--surface-base);border-color:transparent;box-shadow:none;transition:color var(--motion-fast),background-color var(--motion-fast),border-color var(--motion-fast)}
 #widget-anchor #widget-panel #activity-menu.widget-tabs>button:hover,#widget-anchor #widget-panel #widget-options-toggle:hover{background:var(--surface-hover);color:var(--ink-primary);border-color:var(--line)}
-#widget-anchor #widget-panel #activity-menu.widget-tabs>button[aria-selected=true],#widget-anchor #widget-panel #widget-options-toggle[aria-expanded=true]{background:var(--surface-selected);color:var(--ink-primary);border-color:#453b50;box-shadow:inset 2px 0 var(--accent)}
+#widget-anchor #widget-panel #activity-menu.widget-tabs>button[aria-selected=true],#widget-anchor #widget-panel #widget-options-toggle[aria-expanded=true]{background:var(--surface-selected);color:var(--ink-primary);border-color:var(--mauve-4);box-shadow:inset 2px 0 var(--accent)}
 #widget-anchor #widget-panel #activity-menu.widget-tabs>button svg{color:inherit;opacity:1}
-#widget-anchor #widget-panel :is(.lockin-tabs,.agents-mode-tabs,.reading-collections)>button{color:var(--ink-secondary);background:var(--surface-base);box-shadow:none;border-color:transparent}
-#widget-anchor #widget-panel :is(.lockin-tabs,.agents-mode-tabs,.reading-collections)>button[aria-selected=true]{background:var(--surface-selected);border-color:#453b50;color:var(--ink-primary);box-shadow:none}
-#widget-anchor #widget-panel :is(#terminal-pane-list .terminal-pane-row>[role=tab],#remote-rail-list .remote-machine-row>[role=tab],#familiar-list>.familiar-row,#reading-list>button){background:var(--surface-base);color:var(--ink-secondary);border-color:transparent;box-shadow:none}
-#widget-anchor #widget-panel :is(#terminal-pane-list .terminal-pane-row>[role=tab],#remote-rail-list .remote-machine-row>[role=tab],#familiar-list>.familiar-row,#reading-list>button):hover{background:var(--surface-hover);color:var(--ink-primary)}
-#widget-anchor #widget-panel :is(#terminal-pane-list .terminal-pane-row>[aria-selected=true],#remote-rail-list .remote-machine-row>[aria-selected=true],#familiar-list>.familiar-row[aria-selected=true],#reading-list>button[aria-current=true]){background:var(--surface-selected);border-color:#453b50;box-shadow:inset 2px 0 var(--accent);color:var(--ink-primary)}
+/* Segmented tabs: every horizontal tablist and the Live view switch are one strip. Vertical rails are rows, not tabs.
+   Geometry and states are set here only; surface stylesheets add placement (margin, flex, overflow), never box or color. */
+#widget-anchor #widget-panel :is([role=tablist]:not([aria-orientation=vertical]),.live-switch){display:flex;align-items:center;gap:2px;box-sizing:border-box;height:var(--control-md);min-height:var(--control-md);padding:3px;border:1px solid var(--line);border-radius:var(--radius-5);background:var(--surface-inset);box-shadow:none}
+#widget-anchor #widget-panel :is([role=tablist]:not([aria-orientation=vertical]),.live-switch)>button{appearance:none;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;gap:6px;height:var(--control-xs);min-height:var(--control-xs);margin:0;padding:0 10px;border:1px solid transparent;border-radius:var(--radius-3);background:transparent;box-shadow:none;color:var(--ink-secondary);font-family:inherit;font-size:var(--text-caption);font-weight:450;line-height:16px;text-align:center;white-space:nowrap;transition:color var(--motion-fast),background-color var(--motion-fast),border-color var(--motion-fast)}
+#widget-anchor #widget-panel :is([role=tablist]:not([aria-orientation=vertical]),.live-switch)>button:hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-anchor #widget-panel :is([role=tablist]:not([aria-orientation=vertical]),.live-switch)>button:is([aria-selected=true],[aria-pressed=true]){background:var(--surface-selected);border-color:var(--line-accent);color:var(--ink-primary)}
+@container open-sesame-widget (max-width:570px){#widget-anchor #widget-panel :is([role=tablist]:not([aria-orientation=vertical]),.live-switch)>button{padding-inline:6px}}
+/* Buttons. A button's surface, line, ink, radius and states are set here only; its own stylesheet sets size (a control
+   token) and placement. States are written once: they set three custom properties that every variant reads, so a variant
+   is one rule. New markup uses the class; the ids are buttons that predate it. A button joins a list in the same change
+   that deletes the declarations the list replaces, after a capture shows it. */
+#widget-anchor #widget-panel :is(button,summary):hover:not(:disabled){--button-ink:var(--ink-primary);--button-fill:var(--surface-hover)}
+#widget-anchor #widget-panel :is(button:is([aria-pressed=true],[aria-expanded=true]),details[open]>summary){--button-ink:var(--ink-primary);--button-fill:var(--surface-selected);--button-line:var(--line-accent)}
+#widget-anchor #widget-panel button:disabled{--button-ink:var(--ink-disabled)}
+/* Quiet button: no surface until hovered or pressed. Toolbar icons and low-emphasis actions. */
+#widget-anchor #widget-panel button:is(#capture-command-toggle,#capture-voice,#attach-link,#capture-expand,#agenda-capture-voice,#youtube-clear,#reading-add-feed,#reading-more,#reading-feeds-toggle,#reading-refresh,#reading-rail-toggle,#terminal-more,#remote-settings,#live-settings,#live-capture-help-toggle,#terminal-rail-add,#remote-rail-add,#focus-calendar-prev,#focus-calendar-next,#music-account-toggle,#item-search-toggle,#agent-refresh,#plugins-refresh,#plugins-prev,#plugins-next,#focus-page-prev,#focus-page-next,#youtube-queue-prev,#youtube-queue-next,#reading-feed-cancel,#screen-notes-close,#live-sample,#focus-calendar-today,#window-keep-open,#window-display,#window-dock,#window-maximize,.playlist-sheet-close,.ui-button-quiet),#widget-anchor #widget-panel :is(#youtube-form,#music-source-form,.focus-topic)>button{border:1px solid var(--button-line,transparent);border-radius:var(--radius-3);background:var(--button-fill,transparent);box-shadow:none;color:var(--button-ink,var(--ink-secondary))}
+/* Secondary button: a raised surface with a line. The default for an action. */
+#widget-anchor #widget-panel button:is(#github-monitor-refresh,#github-monitor-add,#focus-duration-open,#media-choose,#youtube-sort-toggle,#screen-notes-capture,#screen-notes-cancel,#screen-notes-import,#live-customize,#speaker-setup,#focus-next,#timer-reset,#computer-refresh,.tools-open,.ui-button),#widget-anchor #widget-panel :is(.agent-workspace-tools,.tools-starters)>button,#widget-anchor #widget-panel :is(.agent-more-filters,.agent-new-session,.agent-action-menu)>summary{border:1px solid var(--button-line,var(--line));border-radius:var(--radius-3);background:var(--button-fill,var(--surface-raised));box-shadow:none;color:var(--button-ink,var(--ink-secondary));font-size:var(--text-caption);font-weight:450}
+/* Accent button: the add action of a list or rail. An accent line and ink, no fill until hovered. */
+#widget-anchor #widget-panel button:is(#new-item,#media-file-open,#focus-calendar-add,.ui-button-accent){border:1px solid var(--button-line,var(--line-accent));border-radius:var(--radius-3);background:var(--button-fill,transparent);box-shadow:none;color:var(--button-ink,var(--accent))}
+/* A labelled button has one inline padding; an icon button is sized by its control token alone. */
+#widget-anchor #widget-panel button:is(#github-monitor-refresh,#github-monitor-add,#focus-duration-open,#media-choose,#youtube-sort-toggle,#screen-notes-capture,#screen-notes-cancel,#screen-notes-import,#live-customize,#speaker-setup,#focus-start,#reading-feed-submit,.tools-open,.ui-button,.ui-button-primary),#widget-anchor #widget-panel :is(.agent-workspace-tools,.tools-starters)>button,#widget-anchor #widget-panel :is(.agent-more-filters,.agent-new-session)>summary{padding-inline:10px}
+
+
+#widget-anchor #widget-panel :is(#terminal-pane-list .terminal-pane-row>[role=tab],#remote-rail-list .remote-machine-row>[role=tab],#familiar-list>.familiar-row,#reading-list>button,.ui-row){background:var(--surface-base);color:var(--ink-secondary);border-color:transparent;box-shadow:none}
+#widget-anchor #widget-panel :is(#terminal-pane-list .terminal-pane-row>[role=tab],#remote-rail-list .remote-machine-row>[role=tab],#familiar-list>.familiar-row,#reading-list>button,.ui-row):hover{background:var(--surface-hover);color:var(--ink-primary)}
+#widget-anchor #widget-panel :is(#terminal-pane-list .terminal-pane-row>[aria-selected=true],#remote-rail-list .remote-machine-row>[aria-selected=true],#familiar-list>.familiar-row[aria-selected=true],#reading-list>button[aria-current=true],.ui-row:is([aria-selected=true],[aria-current=true])){background:var(--surface-selected);border-color:var(--mauve-4);box-shadow:inset 2px 0 var(--accent);color:var(--ink-primary)}
 
 /* 2. Readable hierarchy: primary copy, secondary metadata, and a consistent quiet label. */
 #widget-anchor #widget-panel :is(.console-title,.terminal-pane-name,.familiar-row-copy strong,.reading-item-copy strong,.plugin-copy strong,.item-view-title,.thought-text){color:var(--ink-primary)}
-#widget-anchor #widget-panel :is(.reading-meta,.reading-item-copy>small,.familiar-row-copy small,.plugin-copy small,.thought-url,.item-table-copy>small,.agent-monitor-foot,#terminal-state,#familiar-workspace){color:var(--ink-secondary);font-size:10px;line-height:1.5}
-#widget-anchor #widget-panel :is(.workspace-rail-heading,.workspace-rail-count,.reading-rail-heading,#familiar-chat-status,#live-question-hint,#transcript-status){color:var(--ink-muted);font-size:10px;line-height:1.5}
+#widget-anchor #widget-panel :is(.reading-meta,.reading-item-copy>small,.familiar-row-copy small,.plugin-copy small,.thought-url,.item-table-copy>small,.agent-monitor-foot,#terminal-state,#familiar-workspace){color:var(--ink-secondary);font-size:var(--text-caption);line-height:1.5}
+#widget-anchor #widget-panel :is(.workspace-rail-heading,.workspace-rail-count,.reading-rail-heading,#familiar-chat-status,#live-question-hint,#transcript-status){color:var(--ink-muted);font-size:var(--text-caption);line-height:1.5}
 #widget-anchor #widget-panel :is(.reading-article,.github-readme,.familiar-message,.live-answer-body){color:var(--ink-primary)}
-#widget-anchor #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty)>i{color:var(--ink-muted);filter:none}
-#widget-anchor #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty)>strong{color:var(--ink-primary);font-weight:500}
-#widget-anchor #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty)>span{color:var(--ink-secondary);line-height:1.7}
+/* Stage empty states: one icon tone, one title and one body style on every surface. */
+#widget-anchor #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty,.agent-empty,.computer-empty,.detail-empty,.reading-empty)>i{color:var(--ink-muted);filter:none}
+#widget-anchor #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty,.agent-empty,.computer-empty,.detail-empty,.reading-empty)>strong{color:var(--ink-primary);font-weight:500}
+#widget-anchor #widget-panel :is(.terminal-empty,.remote-empty,.lockin-player-empty,.agent-empty,.computer-empty,.detail-empty,.reading-empty)>:is(span,p){color:var(--ink-secondary);line-height:1.7}
 #widget-anchor #widget-panel :is(input,textarea)::placeholder{color:var(--ink-muted);opacity:1}
 
 /* 3. Compact controls and solid surfaces use the same border, corner, and spacing rhythm. */
-#widget-anchor #widget-panel :is(.terminal-stage,.remote-stage,.lockin-player-stage,#media-stage,.music-provider-stage,.reading-article,.github-readme,.live-main,#live-recording-result){background:var(--surface-inset);border-color:var(--line);box-shadow:none}
+#widget-anchor #widget-panel :is(.terminal-stage,.remote-stage,.lockin-player-stage,#media-stage,.music-provider-stage,.reading-article,.github-readme,.live-main,#live-recording-result,.ui-panel){background:var(--surface-inset);border-color:var(--line);box-shadow:none}
 #widget-anchor #widget-panel #live-workspace>.live-main{background:var(--surface-inset);border-color:var(--line);box-shadow:none}
-#widget-anchor #widget-panel :is(.focus-tile,.project-tile,.item-glass-card,.item-board-lane,.agent-card,.plugin-card,.plugins-desktop){background:var(--surface-raised);border-color:var(--line);box-shadow:none}
+#widget-anchor #widget-panel :is(.focus-tile,.project-tile,.item-glass-card,.item-board-lane,.agent-card,.plugin-card,.plugins-desktop,.ui-card){background:var(--surface-raised);border-color:var(--line);box-shadow:none}
 #widget-anchor #widget-panel #pane-plugins .plugin-card{background:var(--surface-raised);border-color:var(--line);box-shadow:none}
-#widget-anchor #widget-panel #pane-plugins .plugin-card:hover{background:var(--surface-hover);border-color:#49434f}
-#widget-anchor #widget-panel #pane-plugins .plugin-logo,#widget-anchor #widget-panel .familiar-avatar{background:#202026;border-color:var(--line)}
-#widget-anchor #widget-panel :is(.workspace-menu,.glass-popover,.glass-sheet,.detail-action-menu,.detail-project-menu,.item-view-menu,.item-stage-menu,#live-options,#live-shortcut-editor,#widget-options,#plugin-detail,#music-account-panel,.voice-command-sheet){background:#1b1c20;border:1px solid #3b3842;border-radius:11px;box-shadow:0 10px 28px #00000066;color:var(--ink-primary)}
-#widget-anchor #widget-panel #music-account-panel.plugins-auth-panel{background:#1b1c20;border-color:#3b3842;box-shadow:0 10px 28px #00000066}
+#widget-anchor #widget-panel #pane-plugins .plugin-card:hover{background:var(--surface-hover);border-color:var(--ash-9)}
+#widget-anchor #widget-panel #pane-plugins .plugin-logo,#widget-anchor #widget-panel .familiar-avatar{background:var(--ash-5);border-color:var(--line)}
+#widget-anchor #widget-panel :is(.workspace-menu,.glass-popover,.glass-sheet,.detail-action-menu,.detail-project-menu,.item-view-menu,.item-stage-menu,#live-options,#live-shortcut-editor,#widget-options,#plugin-detail,#music-account-panel,.voice-command-sheet,.ui-popover){background:var(--surface-overlay);border:1px solid var(--ash-8);border-radius:var(--radius-5);box-shadow:0 10px 28px var(--shade-4);color:var(--ink-primary)}
+#widget-anchor #widget-panel #music-account-panel.plugins-auth-panel{background:var(--ash-4);border-color:var(--ash-8);box-shadow:0 10px 28px var(--shade-4)}
 #widget-anchor #widget-panel :is(.plugin-detail p,.plugin-setup li,#plugin-detail-note,#music-account-panel small){color:var(--ink-secondary)}
 #widget-anchor #widget-panel :is(.workspace-menu,.detail-action-menu,.item-view-menu,.item-stage-menu,#widget-options) button:hover{background:var(--surface-hover);color:var(--ink-primary)}
-#widget-anchor #widget-panel :is(input:not([type=checkbox]):not([type=range]),textarea,select){color:var(--ink-primary);caret-color:var(--accent);background-color:var(--surface-inset);border-color:#39363f;box-shadow:none}
-#widget-anchor #widget-panel :is(.topic-form,.lockin-source-form,.music-source-form,#capture-form,#familiar-compose,#live-capture){background:var(--surface-raised);border-color:var(--line);border-radius:9px;box-shadow:none}
+/* Fields: every text input, textarea and select is an inset surface with the control line. */
+#widget-anchor #widget-panel :is(input:not([type=checkbox]):not([type=range]),textarea,select,.ui-field){color:var(--ink-primary);caret-color:var(--accent);background-color:var(--surface-inset);border-color:var(--line);border-radius:var(--radius-3);box-shadow:none}
+/* A text field shows focus on its line, not with a ring. */
+#widget-anchor #widget-panel :is(input:not([type=checkbox]):not([type=range]),textarea,.ui-field):is(:focus,:focus-visible){outline:none;outline-offset:0;box-shadow:none;border-color:var(--line-accent)}
+/* A composite field draws the box and the input inside it is bare, so the box shows one surface. */
+#widget-anchor #widget-panel :is(.agent-search,.plugins-search,.playlist-rail-search,.lockin-source-form,.ui-field-group){border:1px solid var(--line);border-radius:var(--radius-3);background:var(--surface-inset);box-shadow:none}
+#widget-anchor #widget-panel :is(.agent-search,.plugins-search,.playlist-rail-search,.lockin-source-form,.ui-field-group):focus-within{outline:none;border-color:var(--line-accent)}
+#widget-anchor #widget-panel :is(.capture-input-wrap,.agenda-minutes-field,.agent-search,.plugins-search,.youtube-queue-search,.playlist-rail-search,.focus-topic,#capture-form,#music-source-form,#youtube-form,#computer-task-form,.ui-field-group) :is(input:not([type=checkbox]):not([type=range]),textarea,select){background:transparent;border:0;border-radius:0;box-shadow:none}
+#widget-anchor #widget-panel :is(.topic-form,#capture-form,#familiar-compose,#live-capture){background:var(--surface-raised);border-color:var(--line);border-radius:var(--radius-4);box-shadow:none}
 #widget-anchor #widget-panel :is(#capture-input,#familiar-message,#audio-transcript,#detail-title,#library-search,#plugins-search){background:none;box-shadow:none}
-#widget-anchor #widget-panel :is(.topic-form,.lockin-source-form,.music-source-form,#capture-form,#familiar-compose):focus-within{background:var(--surface-raised);border-color:#857493;box-shadow:none}
+#widget-anchor #widget-panel :is(.topic-form,#capture-form,#familiar-compose):focus-within{background:var(--surface-raised);}
 #widget-anchor #widget-panel :is(.reading-article-actions,.reading-pages,.terminal-rail-pages,.items-pagination>div,.text-pages>div,.focus-pagination>div,.youtube-queue-pages,.workspace-pagination,.live-capture-fields select){background:var(--surface-raised);border-color:var(--line);box-shadow:none}
-#widget-anchor #widget-panel :is(.reading-article-actions,.transcript-actions,.live-question-head) :is(button,a){height:28px;min-height:28px;padding:5px 8px;border-radius:7px;border-color:var(--line);background:var(--surface-raised);box-shadow:none;color:var(--ink-secondary)}
-#widget-anchor #widget-panel :is(.reading-article-actions,.transcript-actions,.live-question-head) :is(button,a):hover:not(:disabled){background:var(--surface-hover);border-color:#51465f;color:var(--ink-primary)}
+#widget-anchor #widget-panel :is(.reading-article-actions,.transcript-actions,.live-question-head) :is(button,a){height:28px;min-height:28px;padding:5px 8px;border-radius:var(--radius-3);border-color:var(--line);background:var(--surface-raised);box-shadow:none;color:var(--ink-secondary)}
+#widget-anchor #widget-panel :is(.reading-article-actions,.transcript-actions,.live-question-head) :is(button,a):hover:not(:disabled){background:var(--surface-hover);border-color:var(--mauve-5);color:var(--ink-primary)}
 #widget-anchor #widget-panel :is(.items-table tbody td,.focus-topic.current,.familiar-message.user,#live-answers article>strong){background:var(--surface-raised);border-color:var(--line);box-shadow:none}
 #widget-anchor #widget-panel :is(.items-table tbody tr:hover td,.items-table tbody tr:focus-within td){background:var(--surface-hover)}
-#widget-anchor #widget-panel :is(.focus-topic.current,.familiar-message.user,#live-answers article>strong){border-color:#51465f}
-#widget-anchor #widget-panel .focus-topic.current{background:var(--surface-selected);border-color:#453b50;box-shadow:inset 2px 0 var(--accent)}
-#widget-anchor #widget-panel :is(.plugin-primary,.music-account-primary,#familiar-send,#reading-feed-submit){background:var(--accent);color:#1b1720;border-color:var(--accent);box-shadow:none}
-#widget-anchor #widget-panel :is(.plugin-primary,.music-account-primary,#familiar-send,#reading-feed-submit):hover:not(:disabled){background:#d5c6e6;color:#1b1720}
-#widget-anchor .frame-size-hud{background:#1b1c20;border-color:#3b3842;box-shadow:0 8px 20px #00000066;backdrop-filter:none;-webkit-backdrop-filter:none}
+#widget-anchor #widget-panel :is(.focus-topic.current,.familiar-message.user,#live-answers article>strong){border-color:var(--mauve-5)}
+#widget-anchor #widget-panel .focus-topic.current{background:var(--surface-selected);border-color:var(--mauve-4);box-shadow:inset 2px 0 var(--accent)}
+/* Primary button: the one accent-filled action on a surface. */
+#widget-anchor #widget-panel :is(.plugin-primary,.music-account-primary,#familiar-send,#reading-feed-submit,#focus-start,.ui-button-primary){border:1px solid var(--accent);border-radius:var(--radius-3);background:var(--accent);box-shadow:none;color:var(--ink-on-accent);font-size:var(--text-caption);font-weight:500}
+#widget-anchor #widget-panel :is(.plugin-primary,.music-account-primary,#familiar-send,#reading-feed-submit,#focus-start,.ui-button-primary):hover:not(:disabled){border-color:var(--accent-strong);background-color:var(--accent-strong);color:var(--ink-on-accent)}
+#widget-anchor .frame-size-hud{background:var(--ash-4);border-color:var(--ash-8);box-shadow:0 8px 20px var(--shade-4);backdrop-filter:none;-webkit-backdrop-filter:none}
 #widget-anchor .frame-size-hud>i:after{box-shadow:none}
-#widget-anchor.frame-collapse-ready .frame-size-hud{background:#2b2027;border-color:#8d5e71;color:#f0d5df}
-#open-sesame-select-menu{background:#1b1c20;border-color:#3b3842;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 10px 28px #00000066}
-#open-sesame-select-menu .is-active{background:var(--surface-selected,#26232d)}
-body.capture-launcher-open #widget-anchor{background:#101113!important;box-shadow:inset 0 0 0 1px #2b2b33,0 14px 28px #00000059!important}
-body.capture-launcher-open #widget-anchor #capture-form{background:#17181c!important}
+#widget-anchor.frame-collapse-ready .frame-size-hud{background:var(--mauve-1);border-color:#8d5e71;color:var(--mauve-12)}
+#open-sesame-select-menu{background:var(--ash-4);border-color:var(--ash-8);backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 10px 28px var(--shade-4)}
+#open-sesame-select-menu .is-active{background:var(--surface-selected,var(--mauve-1))}
+body.capture-launcher-open #widget-anchor{background:var(--ash-2)!important;box-shadow:inset 0 0 0 1px var(--ash-7),0 14px 28px var(--shade-4)!important}
+body.capture-launcher-open #widget-anchor #capture-form{background:var(--ash-3)!important}
 
 /* 4. Quiet, accessible feedback: static dots, visible focus, stable disabled states. */
-#widget-anchor{--activity-color:#a69aae}
-#widget-anchor[data-ember=focus]{--activity-color:#d1b27e}
-#widget-anchor[data-ember=working]{--activity-color:#a8c4b5}
-#widget-anchor[data-ember=present]{--activity-color:#a5afc5}
-#widget-anchor[data-ember=listening]{--activity-color:#d4a4b6}
-#widget-anchor[data-ember=attention]{--activity-color:#e0a0a8}
+#widget-anchor{--activity-color:var(--mauve-9)}
+#widget-anchor[data-ember=focus]{--activity-color:var(--gold-3)}
+#widget-anchor[data-ember=working]{--activity-color:var(--green-3)}
+#widget-anchor[data-ember=present]{--activity-color:var(--ash-14)}
+#widget-anchor[data-ember=listening]{--activity-color:var(--rose-3)}
+#widget-anchor[data-ember=attention]{--activity-color:var(--rose-3)}
 #widget-anchor .activity-indicator{position:absolute;top:4px;right:4px;width:4px;height:4px;border-radius:50%;background:var(--activity-color);box-shadow:none;pointer-events:none;animation:none;opacity:1}
 #widget-anchor .activity-indicator[hidden],#widget-anchor .live-tab-dot{display:none!important}
 #widget-anchor #audio-live-dot{animation:none;opacity:1;box-shadow:none}
@@ -85,8 +116,8 @@ body.capture-launcher-open #widget-anchor #capture-form{background:#17181c!impor
 #widget-anchor #widget-panel :is(#activity-menu button,#reading-list button,#terminal-pane-list button,#remote-rail-list button,#familiar-list button):focus-visible{outline-offset:-2px}
 #widget-anchor #widget-panel :is(button,input,select,textarea):disabled{opacity:1;color:var(--ink-disabled);cursor:not-allowed;filter:none;box-shadow:none}
 #widget-anchor #widget-panel :is(.widget-pane,.lockin-workspace,.agents-workspace){animation:none}
-#widget-anchor #widget-panel :is(button,a){transition:color .12s,background-color .12s,border-color .12s;filter:none}
-#widget-anchor #widget-panel :is(.reading-article,.github-readme,#familiar-messages,#familiar-list,#live-answers,.terminal-native){scrollbar-width:thin;scrollbar-color:#4b4754 var(--surface-inset)}
-#widget-anchor ::-webkit-scrollbar{width:5px;height:5px;background:var(--surface-inset)}#widget-anchor ::-webkit-scrollbar-thumb{background:#4b4754;border:0;border-radius:8px}#widget-anchor ::-webkit-scrollbar-corner{background:var(--surface-inset)}
+#widget-anchor #widget-panel :is(button,a){transition:color var(--motion-fast),background-color var(--motion-fast),border-color var(--motion-fast);filter:none}
+#widget-anchor #widget-panel :is(.reading-article,.github-readme,#familiar-messages,#familiar-list,#live-answers,.terminal-native){scrollbar-width:thin;scrollbar-color:var(--mauve-5) var(--surface-inset)}
+#widget-anchor ::-webkit-scrollbar{width:5px;height:5px;background:var(--surface-inset)}#widget-anchor ::-webkit-scrollbar-thumb{background:var(--mauve-5);border:0;border-radius:var(--radius-4)}#widget-anchor ::-webkit-scrollbar-corner{background:var(--surface-inset)}
 @media(prefers-reduced-motion:reduce){#widget-anchor,#widget-anchor.expanded,#widget-anchor #widget-panel :is(button,a){transition:none}}
 @media(forced-colors:active){#widget-anchor #widget-panel :is(button,a,input,textarea,select):focus-visible{outline-color:Highlight}#widget-anchor #widget-panel [aria-selected=true]{border-color:Highlight}#widget-anchor .activity-indicator{background:Highlight}}

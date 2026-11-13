@@ -21,14 +21,21 @@
     const overlay=document.createElement('pre'),content=document.createElement('code');overlay.className='syntax-overlay';overlay.setAttribute('aria-hidden','true');overlay.append(content);field.after(overlay);field.parentElement.classList.add('syntax-host');
     const item={field,overlay,content,code,value:null};surfaces.push(item);field.addEventListener('input',refresh);field.addEventListener('scroll',()=>{content.style.transform=`translate(${-field.scrollLeft}px,${-field.scrollTop}px)`});new ResizeObserver(refresh).observe(field);
   }
-  function paint(item){
-    const {field,overlay,content}=item;if(!field.offsetWidth){overlay.hidden=true;return}overlay.hidden=false;
-    const style=getComputedStyle(field),value=field.value,code=typeof item.code==='function'?item.code():item.code;
+  const copied=['font','lineHeight','letterSpacing','padding','wordBreak','overflowWrap','whiteSpace','tabSize','textAlign'];
+  // Read every surface before writing to any, so a refresh costs one layout rather than two per surface.
+  function measure(item){
+    const {field}=item;if(field.closest('[hidden]')||!field.offsetWidth)return null;
+    const style=getComputedStyle(field);
+    return{style:copied.map(property=>[property,style[property]]),left:field.offsetLeft,top:field.offsetTop,width:field.clientWidth,height:field.clientHeight,scrollLeft:field.scrollLeft,scrollTop:field.scrollTop};
+  }
+  function paint(item,box){
+    const {field,overlay,content}=item;if(!box){overlay.hidden=true;return}overlay.hidden=false;
+    const value=field.value,code=typeof item.code==='function'?item.code():item.code;
     const key=value+'|'+code;
     if(item.value!==key){item.value=key;content.replaceChildren(...OpenSesameSyntax.tokens(value,{code}).map(token=>{const span=document.createElement('span');span.className=token.type?'syntax-'+token.type:'';span.textContent=token.text;return span}),document.createTextNode('\n'))}
-    for(const property of ['font','lineHeight','letterSpacing','padding','wordBreak','overflowWrap','whiteSpace','tabSize','textAlign'])overlay.style[property]=style[property];
-    overlay.style.left=field.offsetLeft+'px';overlay.style.top=field.offsetTop+'px';overlay.style.width=field.clientWidth+'px';overlay.style.height=field.clientHeight+'px';
-    field.classList.toggle('syntax-input',!!value);content.style.transform=`translate(${-field.scrollLeft}px,${-field.scrollTop}px)`;
+    for(const [property,setting] of box.style)overlay.style[property]=setting;
+    overlay.style.left=box.left+'px';overlay.style.top=box.top+'px';overlay.style.width=box.width+'px';overlay.style.height=box.height+'px';
+    field.classList.toggle('syntax-input',!!value);content.style.transform=`translate(${-box.scrollLeft}px,${-box.scrollTop}px)`;
   }
   function updateResult(){
     const intent=window.openSesameCapture?.interpret(input.value,el('capture-type').value,state.scenario);
@@ -40,7 +47,7 @@
   function refresh(){
     cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{
       updateResult();
-      surfaces.forEach(paint);
+      const boxes=surfaces.map(measure);surfaces.forEach((item,index)=>paint(item,boxes[index]));
     });
   }
   surface(input,()=>window.OpenSesameShellInput?.interpret(input.value,state.scenario)?.kind==='shell');surface(el('terminal-task'),()=>el('terminal-task').classList.contains('is-command'));
