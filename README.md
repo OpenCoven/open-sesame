@@ -37,7 +37,7 @@ Plugin cards include setup and repair instructions. See [plugin setup and privat
 
 | Need | Read |
 | --- | --- |
-| Contribute a change | [Contribution guide](https://github.com/OpenCoven/open-sesame/blob/main/CONTRIBUTING.md) |
+| Contribute a change | [Development workflow](docs/development-workflow.md), [agent instructions](AGENTS.md) |
 | Agent instructions and source/test navigation | [AGENTS.md](AGENTS.md), [repository map](docs/repository-map.md), [documentation index](docs/README.md) |
 | Find an active task or resume safely | [Current-state lookup](docs/work-tracking.md#find-current-work), [development workflow](docs/development-workflow.md) |
 | Understand what is implemented versus accepted | [Capability matrix](docs/capabilities.md) |
