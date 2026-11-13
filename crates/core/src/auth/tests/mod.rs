@@ -62,9 +62,16 @@ pub(super) fn jwks() -> Jwks {
 
 pub(super) fn sign(key: &RsaPrivateKey, header: &Value, claims: &Value) -> String {
     use rsa::sha2::{Digest, Sha256};
-    let input = format!("{}.{}", b64(header.to_string().as_bytes()), b64(claims.to_string().as_bytes()));
+    let input = format!(
+        "{}.{}",
+        b64(header.to_string().as_bytes()),
+        b64(claims.to_string().as_bytes())
+    );
     let signature = key
-        .sign(Pkcs1v15Sign::new::<Sha256>(), &Sha256::digest(input.as_bytes()))
+        .sign(
+            Pkcs1v15Sign::new::<Sha256>(),
+            &Sha256::digest(input.as_bytes()),
+        )
         .expect("sign the fixture token");
     format!("{input}.{}", b64(&signature))
 }
@@ -98,7 +105,11 @@ pub(super) fn user() -> User {
 }
 
 pub(super) fn tokens(access_token: String, refresh_token: &str) -> Tokens {
-    Tokens { access_token, refresh_token: refresh_token.into(), user: user() }
+    Tokens {
+        access_token,
+        refresh_token: refresh_token.into(),
+        user: user(),
+    }
 }
 
 type Reply = Result<Tokens, AuthError>;
@@ -126,14 +137,28 @@ impl FakeApi {
 
 impl WorkosApi for FakeApi {
     fn exchange_code(&self, code: &str, verifier: &str) -> Reply {
-        self.exchange_calls.lock().unwrap().push((code.into(), verifier.into()));
+        self.exchange_calls
+            .lock()
+            .unwrap()
+            .push((code.into(), verifier.into()));
         self.interrupt();
-        self.exchanges.lock().unwrap().pop().unwrap_or(Err(AuthError::Network))
+        self.exchanges
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap_or(Err(AuthError::Network))
     }
     fn refresh(&self, refresh_token: &str) -> Reply {
-        self.refresh_calls.lock().unwrap().push(refresh_token.into());
+        self.refresh_calls
+            .lock()
+            .unwrap()
+            .push(refresh_token.into());
         self.interrupt();
-        self.refreshes.lock().unwrap().pop().unwrap_or(Err(AuthError::Network))
+        self.refreshes
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap_or(Err(AuthError::Network))
     }
     fn jwks(&self) -> Result<Jwks, AuthError> {
         if self.jwks_fails.load(Ordering::SeqCst) {
@@ -215,7 +240,13 @@ pub(super) fn rig() -> Rig {
             count.fetch_add(1, Ordering::SeqCst);
         }),
     }));
-    Rig { api, store, clock, changes, auth }
+    Rig {
+        api,
+        store,
+        clock,
+        changes,
+        auth,
+    }
 }
 
 impl Rig {
@@ -236,7 +267,11 @@ impl Rig {
     }
     /// A complete, successful sign-in.
     pub fn sign_in(&self) {
-        self.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+        self.api
+            .exchanges
+            .lock()
+            .unwrap()
+            .push(Ok(tokens(jwt(&claims()), "refresh-one")));
         let callback = self.begin();
         self.auth.complete_sign_in(&callback);
     }
@@ -255,5 +290,9 @@ pub(super) fn query_values(url: &str, name: &str) -> Vec<String> {
 
 pub(super) fn query_value(url: &str, name: &str) -> Option<String> {
     let mut values = query_values(url, name);
-    if values.len() == 1 { values.pop() } else { None }
+    if values.len() == 1 {
+        values.pop()
+    } else {
+        None
+    }
 }

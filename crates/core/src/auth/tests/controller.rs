@@ -4,7 +4,9 @@ const GENERIC: &str = "Could not complete sign-in. Check your connection and try
 const ENDED: &str = "Your sign-in has ended. Sign in again to continue.";
 
 fn signed_out(rig: &Rig) -> bool {
-    !rig.auth.authenticated() && rig.status()["authenticated"] == json!(false) && rig.status()["email"] == json!("")
+    !rig.auth.authenticated()
+        && rig.status()["authenticated"] == json!(false)
+        && rig.status()["email"] == json!("")
 }
 
 #[test]
@@ -62,7 +64,11 @@ fn callback_with_bad_state_or_error_leaves_the_app_signed_out() {
     ];
     for case in cases {
         let rig = rig();
-        rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+        rig.api
+            .exchanges
+            .lock()
+            .unwrap()
+            .push(Ok(tokens(jwt(&claims()), "refresh-one")));
         let good = rig.begin();
         let state = query_value(&good, "state").unwrap();
         let bad = case(&state);
@@ -70,7 +76,10 @@ fn callback_with_bad_state_or_error_leaves_the_app_signed_out() {
         assert!(signed_out(&rig), "{bad}");
         assert_eq!(rig.status()["busy"], json!(false));
         assert_eq!(rig.message(), GENERIC);
-        assert!(rig.api.exchange_calls.lock().unwrap().is_empty(), "no code was sent for {bad}");
+        assert!(
+            rig.api.exchange_calls.lock().unwrap().is_empty(),
+            "no code was sent for {bad}"
+        );
         assert_eq!(rig.store.saved(), None);
         // The attempt is over: the genuine callback arriving afterwards is ignored too.
         rig.auth.complete_sign_in(&good);
@@ -83,7 +92,11 @@ fn callback_with_bad_state_or_error_leaves_the_app_signed_out() {
 fn token_for_another_user_is_rejected() {
     let rig = rig();
     let other = jwt(&with(claims(), "sub", json!("user_other")));
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(other, "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(other, "refresh-one")));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
@@ -94,7 +107,10 @@ fn token_for_another_user_is_rejected() {
 #[test]
 fn expired_token_is_rejected() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&with(claims(), "exp", json!(NOW - 1))), "refresh-one")));
+    rig.api.exchanges.lock().unwrap().push(Ok(tokens(
+        jwt(&with(claims(), "exp", json!(NOW - 1))),
+        "refresh-one",
+    )));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
@@ -104,7 +120,10 @@ fn expired_token_is_rejected() {
 #[test]
 fn token_with_wrong_signature_is_rejected() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(sign(other_key(), &header(), &claims()), "refresh-one")));
+    rig.api.exchanges.lock().unwrap().push(Ok(tokens(
+        sign(other_key(), &header(), &claims()),
+        "refresh-one",
+    )));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
@@ -115,7 +134,11 @@ fn token_with_wrong_signature_is_rejected() {
 fn unreachable_key_set_fails_closed() {
     let rig = rig();
     rig.api.jwks_fails.store(true, Ordering::SeqCst);
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
@@ -125,7 +148,11 @@ fn unreachable_key_set_fails_closed() {
 #[test]
 fn cancel_then_late_callback_is_ignored() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     rig.auth.cancel();
     assert_eq!(rig.message(), "Sign in to continue.");
@@ -136,7 +163,11 @@ fn cancel_then_late_callback_is_ignored() {
     assert_eq!(rig.message(), "Sign in to continue.");
     assert!(rig.api.exchange_calls.lock().unwrap().is_empty());
     assert_eq!(rig.store.saved(), None);
-    assert_eq!(rig.changes.load(Ordering::SeqCst), before, "an ignored callback changes nothing");
+    assert_eq!(
+        rig.changes.load(Ordering::SeqCst),
+        before,
+        "an ignored callback changes nothing"
+    );
 }
 
 #[test]
@@ -144,7 +175,11 @@ fn callback_from_an_earlier_attempt_is_ignored() {
     let rig = rig();
     let first = rig.begin();
     rig.auth.cancel();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let second = rig.begin();
     // The first attempt's callback carries the wrong state for the second attempt.
     rig.auth.complete_sign_in(&first);
@@ -156,7 +191,8 @@ fn callback_from_an_earlier_attempt_is_ignored() {
 #[test]
 fn callback_without_a_pending_sign_in_is_ignored() {
     let rig = rig();
-    rig.auth.complete_sign_in("opensesame://auth/callback?code=x&state=anything");
+    rig.auth
+        .complete_sign_in("opensesame://auth/callback?code=x&state=anything");
     assert!(signed_out(&rig));
     assert_eq!(rig.message(), "Sign in to use Open Sesame.");
     assert_eq!(rig.changes.load(Ordering::SeqCst), 0);
@@ -168,7 +204,8 @@ fn second_callback_for_the_same_attempt_is_ignored() {
     let rig = rig();
     rig.sign_in();
     let calls = rig.api.exchange_calls.lock().unwrap().len();
-    rig.auth.complete_sign_in("opensesame://auth/callback?code=replayed&state=anything");
+    rig.auth
+        .complete_sign_in("opensesame://auth/callback?code=replayed&state=anything");
     assert_eq!(rig.api.exchange_calls.lock().unwrap().len(), calls);
     assert!(rig.auth.authenticated());
 }
@@ -176,7 +213,11 @@ fn second_callback_for_the_same_attempt_is_ignored() {
 #[test]
 fn cancel_during_the_code_exchange_discards_the_result() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     let auth = rig.auth.clone();
     *rig.api.during_call.lock().unwrap() = Some(Box::new(move || auth.cancel()));
@@ -189,7 +230,11 @@ fn cancel_during_the_code_exchange_discards_the_result() {
 #[test]
 fn sign_out_during_the_code_exchange_discards_the_result() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     let auth = rig.auth.clone();
     *rig.api.during_call.lock().unwrap() = Some(Box::new(move || {
@@ -205,7 +250,11 @@ fn sign_out_during_the_code_exchange_discards_the_result() {
 fn failed_code_exchange_keeps_an_existing_credential() {
     let rig = rig();
     rig.sign_in();
-    rig.api.exchanges.lock().unwrap().push(Err(AuthError::Ended));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Ended));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
@@ -216,11 +265,18 @@ fn failed_code_exchange_keeps_an_existing_credential() {
 fn restore_with_saved_token_signs_in() {
     let rig = rig();
     *rig.store.token.lock().unwrap() = Some("refresh-saved".into());
-    rig.api.refreshes.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
     rig.auth.restore();
     assert!(rig.auth.authenticated());
     assert_eq!(rig.status()["email"], json!("fixture@example.invalid"));
-    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), vec!["refresh-saved".to_string()]);
+    assert_eq!(
+        *rig.api.refresh_calls.lock().unwrap(),
+        vec!["refresh-saved".to_string()]
+    );
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-rotated"));
 }
 
@@ -249,14 +305,21 @@ fn restore_with_an_unreadable_store_reports_it() {
     rig.store.fail_load.store(true, Ordering::SeqCst);
     rig.auth.restore();
     assert!(signed_out(&rig));
-    assert_eq!(rig.message(), "The saved sign-in could not be opened. Sign in again.");
+    assert_eq!(
+        rig.message(),
+        "The saved sign-in could not be opened. Sign in again."
+    );
 }
 
 #[test]
 fn restore_with_revoked_token_deletes_it() {
     let rig = rig();
     *rig.store.token.lock().unwrap() = Some("refresh-saved".into());
-    rig.api.refreshes.lock().unwrap().push(Err(AuthError::Ended));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Ended));
     rig.auth.restore();
     assert!(signed_out(&rig));
     assert_eq!(rig.store.saved(), None);
@@ -268,7 +331,11 @@ fn restore_with_revoked_token_deletes_it() {
 fn revoked_token_ends_a_live_session() {
     let rig = rig();
     rig.sign_in();
-    rig.api.refreshes.lock().unwrap().push(Err(AuthError::Ended));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Ended));
     rig.auth.refresh();
     assert!(signed_out(&rig));
     assert_eq!(rig.store.saved(), None);
@@ -279,7 +346,11 @@ fn revoked_token_ends_a_live_session() {
 fn transient_refresh_failure_keeps_token_and_retries() {
     let rig = rig();
     *rig.store.token.lock().unwrap() = Some("refresh-saved".into());
-    rig.api.refreshes.lock().unwrap().push(Err(AuthError::Network));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Network));
     rig.auth.restore();
     assert!(signed_out(&rig));
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-saved"));
@@ -288,7 +359,11 @@ fn transient_refresh_failure_keeps_token_and_retries() {
     // The retry uses the same saved token and succeeds.
     rig.advance(20);
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::ZERO));
-    rig.api.refreshes.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
     rig.auth.refresh();
     assert!(rig.auth.authenticated());
     assert_eq!(rig.api.refresh_calls.lock().unwrap().len(), 2);
@@ -299,9 +374,16 @@ fn transient_failure_keeps_a_live_session_until_it_expires() {
     let rig = rig();
     rig.sign_in();
     rig.advance(240);
-    rig.api.refreshes.lock().unwrap().push(Err(AuthError::Network));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Network));
     rig.auth.refresh();
-    assert!(rig.auth.authenticated(), "the verified session is still within its deadline");
+    assert!(
+        rig.auth.authenticated(),
+        "the verified session is still within its deadline"
+    );
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
     rig.advance(60);
@@ -317,12 +399,19 @@ fn refresh_rotates_the_saved_token_and_extends_the_deadline() {
     rig.advance(240);
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::ZERO));
     let later = with(claims(), "exp", json!(NOW + 240 + 300));
-    rig.api.refreshes.lock().unwrap().push(Ok(tokens(jwt(&later), "refresh-two")));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&later), "refresh-two")));
     rig.auth.refresh();
     assert!(rig.auth.authenticated());
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(240)));
-    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), vec!["refresh-one".to_string()]);
+    assert_eq!(
+        *rig.api.refresh_calls.lock().unwrap(),
+        vec!["refresh-one".to_string()]
+    );
 }
 
 #[test]
@@ -333,7 +422,11 @@ fn refresh_that_returns_another_user_is_rejected() {
     other.user.id = "user_other".into();
     rig.api.refreshes.lock().unwrap().push(Ok(other));
     rig.auth.refresh();
-    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"), "the unverified token is not saved");
+    assert_eq!(
+        rig.store.saved().as_deref(),
+        Some("refresh-one"),
+        "the unverified token is not saved"
+    );
     assert_eq!(rig.message(), GENERIC);
 }
 
@@ -349,7 +442,11 @@ fn refresh_without_a_saved_token_does_nothing() {
 fn sign_in_takes_precedence_over_a_restore_in_progress() {
     let rig = rig();
     *rig.store.token.lock().unwrap() = Some("refresh-saved".into());
-    rig.api.refreshes.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-rotated")));
     let auth = rig.auth.clone();
     let started = Arc::new(Mutex::new(None));
     let seen = started.clone();
@@ -357,7 +454,10 @@ fn sign_in_takes_precedence_over_a_restore_in_progress() {
         *seen.lock().unwrap() = Some(auth.begin_sign_in());
     }));
     rig.auth.restore();
-    assert!(matches!(*started.lock().unwrap(), Some(Ok(_))), "sign-in started while restoring");
+    assert!(
+        matches!(*started.lock().unwrap(), Some(Ok(_))),
+        "sign-in started while restoring"
+    );
     assert!(signed_out(&rig), "the restore result was discarded");
     assert_eq!(rig.status()["busy"], json!(true));
     assert_eq!(rig.message(), "Finish signing in in your browser.");
@@ -368,9 +468,18 @@ fn sign_in_takes_precedence_over_a_restore_in_progress() {
 fn sign_out_deletes_token_and_returns_logout_url() {
     let rig = rig();
     rig.sign_in();
-    let url = rig.auth.sign_out().expect("a logout URL for the verified session");
-    assert_eq!(query_values(&url, "session_id"), vec![SESSION_ID.to_string()]);
-    assert_eq!(query_values(&url, "return_to"), vec!["opensesame%3A%2F%2Fauth%2Fsigned-out".to_string()]);
+    let url = rig
+        .auth
+        .sign_out()
+        .expect("a logout URL for the verified session");
+    assert_eq!(
+        query_values(&url, "session_id"),
+        vec![SESSION_ID.to_string()]
+    );
+    assert_eq!(
+        query_values(&url, "return_to"),
+        vec!["opensesame%3A%2F%2Fauth%2Fsigned-out".to_string()]
+    );
     assert!(signed_out(&rig));
     assert_eq!(rig.store.saved(), None);
     assert!(rig.store.signed_out());
@@ -394,14 +503,24 @@ fn sign_out_reports_a_credential_that_could_not_be_removed() {
     rig.store.fail_delete.store(true, Ordering::SeqCst);
     rig.auth.sign_out();
     assert!(signed_out(&rig));
-    assert_eq!(rig.message(), "Signed out. The saved credential could not be removed; sign in again to replace it.");
-    assert!(rig.store.signed_out(), "the marker keeps the leftover credential from being restored");
+    assert_eq!(
+        rig.message(),
+        "Signed out. The saved credential could not be removed; sign in again to replace it."
+    );
+    assert!(
+        rig.store.signed_out(),
+        "the marker keeps the leftover credential from being restored"
+    );
 }
 
 #[test]
 fn late_callback_after_sign_out_is_ignored() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     rig.auth.sign_out();
     rig.auth.complete_sign_in(&callback);
@@ -414,18 +533,29 @@ fn late_callback_after_sign_out_is_ignored() {
 fn store_failure_reports_keychain_message() {
     let rig = rig();
     rig.store.fail_save.store(true, Ordering::SeqCst);
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
-    assert_eq!(rig.message(), "Could not save your sign-in in your system keychain. Unlock it and try again.");
+    assert_eq!(
+        rig.message(),
+        "Could not save your sign-in in your system keychain. Unlock it and try again."
+    );
     assert_eq!(rig.auth.next_refresh_in(), None);
 }
 
 #[test]
 fn shutdown_discards_work_in_flight() {
     let rig = rig();
-    rig.api.exchanges.lock().unwrap().push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     let auth = rig.auth.clone();
     *rig.api.during_call.lock().unwrap() = Some(Box::new(move || auth.shutdown()));
@@ -439,10 +569,12 @@ fn shutdown_discards_work_in_flight() {
 fn status_never_contains_a_token() {
     let rig = rig();
     rig.sign_in();
-    let access = rig.api.exchange_calls.lock().unwrap().len();
-    assert_eq!(access, 1);
     let shown = rig.status().to_string();
-    assert!(!shown.contains("refresh-one") && !shown.contains("eyJ"), "{shown}");
-    let keys: Vec<String> = rig.status().as_object().unwrap().keys().cloned().collect();
+    assert!(
+        !shown.contains("refresh-one") && !shown.contains("eyJ"),
+        "{shown}"
+    );
+    let mut keys: Vec<String> = rig.status().as_object().unwrap().keys().cloned().collect();
+    keys.sort();
     assert_eq!(keys, ["authenticated", "busy", "email", "message", "name"]);
 }

@@ -8,15 +8,22 @@ fn rejected(url: &str) -> bool {
 
 #[test]
 fn callback_accepts_exact_url() {
-    let code = authorization_code("opensesame://auth/callback?state=fixture-state&code=fixture-code", S);
+    let code = authorization_code(
+        "opensesame://auth/callback?state=fixture-state&code=fixture-code",
+        S,
+    );
     assert_eq!(code.as_deref(), Ok("fixture-code"));
-    let reordered = authorization_code("opensesame://auth/callback?code=abc&state=fixture-state", S);
+    let reordered =
+        authorization_code("opensesame://auth/callback?code=abc&state=fixture-state", S);
     assert_eq!(reordered.as_deref(), Ok("abc"));
 }
 
 #[test]
 fn callback_accepts_percent_encoded_values() {
-    let code = authorization_code("opensesame://auth/callback?state=fixture%2Dstate&code=a%2Fb", S);
+    let code = authorization_code(
+        "opensesame://auth/callback?state=fixture%2Dstate&code=a%2Fb",
+        S,
+    );
     assert_eq!(code.as_deref(), Ok("a/b"));
 }
 
@@ -41,8 +48,12 @@ fn callback_rejects_every_case_the_swift_tests_reject() {
 #[test]
 fn callback_rejects_wrong_state() {
     assert!(rejected("opensesame://auth/callback?code=abc&state=other"));
-    assert!(rejected("opensesame://auth/callback?code=abc&state=fixture-state%20"));
-    assert!(rejected("opensesame://auth/callback?code=abc&state=FIXTURE-STATE"));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=fixture-state%20"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=FIXTURE-STATE"
+    ));
 }
 
 #[test]
@@ -54,23 +65,39 @@ fn callback_rejects_missing_state() {
 
 #[test]
 fn callback_rejects_duplicate_state() {
-    assert!(rejected("opensesame://auth/callback?code=abc&state=fixture-state&state=fixture-state"));
-    assert!(rejected("opensesame://auth/callback?state=other&code=abc&state=fixture-state"));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=fixture-state&state=fixture-state"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?state=other&code=abc&state=fixture-state"
+    ));
     // A percent-encoded name is still the same parameter.
-    assert!(rejected("opensesame://auth/callback?code=abc&state=fixture-state&st%61te=other"));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=fixture-state&st%61te=other"
+    ));
 }
 
 #[test]
 fn callback_rejects_duplicate_code() {
-    assert!(rejected("opensesame://auth/callback?code=a&code=b&state=fixture-state"));
-    assert!(rejected("opensesame://auth/callback?code=a&c%6Fde=a&state=fixture-state"));
+    assert!(rejected(
+        "opensesame://auth/callback?code=a&code=b&state=fixture-state"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?code=a&c%6Fde=a&state=fixture-state"
+    ));
 }
 
 #[test]
 fn callback_rejects_error_parameter() {
-    assert!(rejected("opensesame://auth/callback?code=abc&state=fixture-state&error=access_denied"));
-    assert!(rejected("opensesame://auth/callback?code=abc&state=fixture-state&error"));
-    assert!(rejected("opensesame://auth/callback?code=abc&state=fixture-state&err%6Fr=x"));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=fixture-state&error=access_denied"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=fixture-state&error"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?code=abc&state=fixture-state&err%6Fr=x"
+    ));
 }
 
 #[test]
@@ -100,21 +127,41 @@ fn callback_rejects_other_scheme_host_path_port_user_fragment() {
 
 #[test]
 fn callback_rejects_empty_and_oversized_code() {
-    assert!(rejected("opensesame://auth/callback?code=&state=fixture-state"));
-    let at_limit = format!("opensesame://auth/callback?code={}&state=fixture-state", "a".repeat(8192));
-    assert_eq!(authorization_code(&at_limit, S).map(|code| code.len()), Ok(8192));
-    let over = format!("opensesame://auth/callback?code={}&state=fixture-state", "a".repeat(8193));
+    assert!(rejected(
+        "opensesame://auth/callback?code=&state=fixture-state"
+    ));
+    let at_limit = format!(
+        "opensesame://auth/callback?code={}&state=fixture-state",
+        "a".repeat(8192)
+    );
+    assert_eq!(
+        authorization_code(&at_limit, S).map(|code| code.len()),
+        Ok(8192)
+    );
+    let over = format!(
+        "opensesame://auth/callback?code={}&state=fixture-state",
+        "a".repeat(8193)
+    );
     assert!(rejected(&over));
 }
 
 #[test]
 fn callback_rejects_malformed_percent_encoding() {
-    assert!(rejected("opensesame://auth/callback?code=%zz&state=fixture-state"));
-    assert!(rejected("opensesame://auth/callback?code=%4&state=fixture-state"));
-    assert!(rejected("opensesame://auth/callback?code=%ff&state=fixture-state"));
+    assert!(rejected(
+        "opensesame://auth/callback?code=%zz&state=fixture-state"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?code=%4&state=fixture-state"
+    ));
+    assert!(rejected(
+        "opensesame://auth/callback?code=%ff&state=fixture-state"
+    ));
 }
 
 #[test]
 fn callback_rejects_an_empty_expected_state() {
-    assert_eq!(authorization_code("opensesame://auth/callback?code=a&state=", ""), Err(AuthError::InvalidCallback));
+    assert_eq!(
+        authorization_code("opensesame://auth/callback?code=a&state=", ""),
+        Err(AuthError::InvalidCallback)
+    );
 }

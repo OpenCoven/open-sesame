@@ -11,14 +11,20 @@ fn invalid(token: &str) -> bool {
 #[test]
 fn valid_token_yields_expiry_and_session_id() {
     let verified = verify(&jwt(&claims())).unwrap();
-    assert_eq!(verified.expires, UNIX_EPOCH + Duration::from_secs(NOW + 300));
+    assert_eq!(
+        verified.expires,
+        UNIX_EPOCH + Duration::from_secs(NOW + 300)
+    );
     assert_eq!(verified.session_id, SESSION_ID);
 }
 
 #[test]
 fn token_for_another_user_is_rejected() {
     assert!(invalid(&jwt(&with(claims(), "sub", json!("user_other")))));
-    assert_eq!(verify_access_token(&jwt(&claims()), &jwks(), "user_other", now()), Err(AuthError::InvalidSession));
+    assert_eq!(
+        verify_access_token(&jwt(&claims()), &jwks(), "user_other", now()),
+        Err(AuthError::InvalidSession)
+    );
 }
 
 #[test]
@@ -31,7 +37,11 @@ fn expired_token_is_rejected() {
 #[test]
 fn non_user_token_is_rejected() {
     assert!(invalid(&jwt(&with(claims(), "sub_type", json!("agent")))));
-    assert!(invalid(&jwt(&with(claims(), "sub_profile", json!("agent")))));
+    assert!(invalid(&jwt(&with(
+        claims(),
+        "sub_profile",
+        json!("agent")
+    ))));
     assert!(invalid(&jwt(&with(claims(), "sub_profile", Value::Null))));
     assert!(verify(&jwt(&with(claims(), "sub_profile", json!("user")))).is_ok());
     let mut no_sid = claims();
@@ -47,8 +57,16 @@ fn forged_token_is_rejected() {
     let token = jwt(&claims());
     let parts: Vec<&str> = token.split('.').collect();
     let forged = with(claims(), "sub", json!("user_other"));
-    let tampered = format!("{}.{}.{}", parts[0], b64(forged.to_string().as_bytes()), parts[2]);
-    assert_eq!(verify_access_token(&tampered, &jwks(), "user_other", now()), Err(AuthError::InvalidSession));
+    let tampered = format!(
+        "{}.{}.{}",
+        parts[0],
+        b64(forged.to_string().as_bytes()),
+        parts[2]
+    );
+    assert_eq!(
+        verify_access_token(&tampered, &jwks(), "user_other", now()),
+        Err(AuthError::InvalidSession)
+    );
     assert!(invalid(&tampered));
 }
 
@@ -79,7 +97,15 @@ fn token_with_unexpected_header_is_rejected() {
 #[test]
 fn malformed_token_is_rejected() {
     let token = jwt(&claims());
-    for bad in ["", "a.b", "a.b.c.d", "...", "not a token", &format!("{token}."), &format!("{token}=")] {
+    for bad in [
+        "",
+        "a.b",
+        "a.b.c.d",
+        "...",
+        "not a token",
+        &format!("{token}."),
+        &format!("{token}="),
+    ] {
         assert!(invalid(bad), "{bad}");
     }
     let huge = with(claims(), "padding", json!("x".repeat(70_000)));
@@ -101,7 +127,10 @@ fn token_with_bad_claim_types_is_rejected() {
         ("nbf", json!(NOW + 60)),
         ("nbf", json!("soon")),
     ] {
-        assert!(invalid(&jwt(&with(claims(), name, value.clone()))), "{name}={value}");
+        assert!(
+            invalid(&jwt(&with(claims(), name, value.clone()))),
+            "{name}={value}"
+        );
     }
     assert!(verify(&jwt(&with(claims(), "nbf", json!(NOW)))).is_ok());
 }
@@ -116,7 +145,10 @@ fn key_set_must_publish_exactly_one_matching_signing_key() {
     assert!(check(json!([jwk_json(KID)])).is_ok());
     assert!(check(json!([jwk_json("other"), jwk_json(KID)])).is_ok());
     assert_eq!(check(json!([])), Err(AuthError::InvalidSession));
-    assert_eq!(check(json!([jwk_json(KID), jwk_json(KID)])), Err(AuthError::InvalidSession));
+    assert_eq!(
+        check(json!([jwk_json(KID), jwk_json(KID)])),
+        Err(AuthError::InvalidSession)
+    );
     for (name, value) in [
         ("alg", json!("RS512")),
         ("kty", json!("EC")),
@@ -127,7 +159,11 @@ fn key_set_must_publish_exactly_one_matching_signing_key() {
     ] {
         let mut jwk = jwk_json(KID);
         jwk[name] = value.clone();
-        assert_eq!(check(json!([jwk])), Err(AuthError::InvalidSession), "{name}={value}");
+        assert_eq!(
+            check(json!([jwk])),
+            Err(AuthError::InvalidSession),
+            "{name}={value}"
+        );
     }
     let mut no_use = jwk_json(KID);
     no_use.as_object_mut().unwrap().remove("use");
