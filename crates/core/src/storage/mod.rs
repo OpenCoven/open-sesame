@@ -31,11 +31,12 @@ pub use model::{
 };
 pub use schema::SCHEMA_VERSION;
 
+use rusqlite::config::DbConfig;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// The database's file name inside the app data directory.
 pub const DATABASE_FILE: &str = "open-sesame.sqlite3";
@@ -114,11 +115,26 @@ impl Storage {
         if !app_data_dir.is_absolute() {
             return Err(invalid("The data directory must be an absolute path."));
         }
-        let io = |error: std::io::Error| StorageError::Database(error.to_string());
+        // Nothing has been saved yet, so a failure here is "could not open", not "could not save".
+        let io = |error: std::io::Error| StorageError::Unreadable(error.to_string());
         std::fs::create_dir_all(app_data_dir).map_err(io)?;
         let path = app_data_dir.join(DATABASE_FILE);
+        // The database must be a file in this directory. A symbolic link under its name would
+        // put the data somewhere else, so it is refused, like a directory or any other non-file.
+        match std::fs::symlink_metadata(&path) {
+            Ok(found) if !found.file_type().is_file() => {
+                return Err(StorageError::Unreadable(
+                    "the database path is not a regular file".into(),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io(error)),
+        }
         create_private(&path).map_err(io)?;
-        Self::prepare(Connection::open(&path)?, clock, Some(path))
+        let conn =
+            Connection::open(&path).map_err(|error| StorageError::Unreadable(error.to_string()))?;
+        Self::prepare(conn, clock, Some(path))
     }
 
     /// A database that lives only as long as this value. For tests and previews.
@@ -132,8 +148,9 @@ impl Storage {
         path: Option<PathBuf>,
     ) -> Result<Self, StorageError> {
         let on_disk = path.is_some();
+        let pending_log = path.as_deref().is_some_and(has_pending_log);
         // A failure before the first statement that writes means the file was not changed.
-        let conn = Self::configure(conn, on_disk).map_err(|error| match error {
+        let conn = Self::configure(conn, on_disk, pending_log).map_err(|error| match error {
             StorageError::Database(detail) => StorageError::Unreadable(detail),
             other => other,
         })?;
@@ -144,12 +161,25 @@ impl Storage {
         })
     }
 
-    fn configure(mut conn: Connection, on_disk: bool) -> Result<Connection, StorageError> {
+    fn configure(
+        mut conn: Connection,
+        on_disk: bool,
+        pending_log: bool,
+    ) -> Result<Connection, StorageError> {
         conn.busy_timeout(BUSY_TIMEOUT)?;
+        // Closing the last connection folds a pending write-ahead log into the database file and
+        // deletes the log. Until the file is known to be ours, a refusal must leave both exactly
+        // as they were, so that step is held back while the file is inspected.
+        if pending_log {
+            conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
+        }
         schema::inspect(&conn, SCHEMA_VERSION)?;
+        if pending_log {
+            conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
+        }
         // Write-ahead logging lets a second process read while this one writes. FULL keeps a
         // committed write on disk through a power loss.
-        let mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
+        let mode = enable_write_ahead_log(&conn)?;
         if on_disk && !mode.eq_ignore_ascii_case("wal") {
             return Err(StorageError::Unreadable(
                 "write-ahead logging is not available for this file".into(),
@@ -223,6 +253,33 @@ fn system_clock() -> Clock {
             .unwrap_or_default();
         i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
     })
+}
+
+/// Switches the database to write-ahead logging and returns the mode it is now in. When two
+/// processes open a new database at the same moment, both ask for the same exclusive lock and
+/// SQLite refuses one of them at once instead of waiting, so the switch is retried for as long as
+/// a write would wait.
+fn enable_write_ahead_log(conn: &Connection) -> Result<String, StorageError> {
+    let deadline = Instant::now() + BUSY_TIMEOUT;
+    loop {
+        match conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0)) {
+            Err(rusqlite::Error::SqliteFailure(failure, _))
+                if failure.code == rusqlite::ErrorCode::DatabaseBusy
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            outcome => return Ok(outcome?),
+        }
+    }
+}
+
+/// Whether the database has a write-ahead log holding changes not yet folded into the file, as
+/// when its last writer did not close it.
+fn has_pending_log(path: &Path) -> bool {
+    let mut log = path.as_os_str().to_owned();
+    log.push("-wal");
+    std::fs::metadata(log).is_ok_and(|found| found.len() > 0)
 }
 
 /// Creates the database file readable and writable by the user only, where the system has such

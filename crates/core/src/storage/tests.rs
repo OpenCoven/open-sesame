@@ -521,6 +521,31 @@ fn settings_refuse_keys_that_name_a_credential_and_malformed_keys() {
     assert!(rig.db.settings().unwrap().is_empty());
 }
 
+/// The key check alone would let a credential in as a field of the value.
+#[test]
+fn settings_refuse_values_with_a_field_named_for_a_credential() {
+    let rig = rig();
+    for value in [
+        json!({ "token": "x" }),
+        json!({ "auth": { "refreshToken": "x" } }),
+        json!([{ "account": { "api_key": "x" } }]),
+        json!({ "login": { "passwd": "x" } }),
+        json!({ "ssh": { "privateKey": "x", "passphrase": "x" } }),
+    ] {
+        let result = rig.db.set_setting("account", &value);
+        assert!(matches!(result, Err(StorageError::Invalid(_))), "{value}");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Credentials are kept in the system keychain, not in settings."
+        );
+    }
+    assert!(rig.db.settings().unwrap().is_empty());
+    // Ordinary nested state is stored, and a word inside a string is not a field name.
+    let layout = json!({ "panes": [{ "width": 420 }], "note": "token" });
+    rig.db.set_setting("layout", &layout).unwrap();
+    assert_eq!(rig.db.get_setting("layout").unwrap(), Some(layout));
+}
+
 #[test]
 fn widget_state_is_kept_per_widget() {
     let rig = rig();
@@ -645,6 +670,35 @@ fn a_saved_item_survives_the_process_dying() {
     assert_eq!(titles(&find(&db, json!({}))), ["written before the crash"]);
 }
 
+/// The app and the MCP server (#81) may both start on a machine that has no database yet. Each
+/// opener has its own connection, as a second process would, and none may be turned away: the
+/// switch to write-ahead logging on a new file is the step that used to fail at once.
+#[test]
+fn a_new_database_can_be_opened_by_several_openers_at_once() {
+    const OPENERS: usize = 8;
+    for round in 0..20 {
+        let dir = tempfile::tempdir().unwrap();
+        let start = Arc::new(std::sync::Barrier::new(OPENERS));
+        let openers: Vec<_> = (0..OPENERS)
+            .map(|_| {
+                let (path, start) = (dir.path().to_path_buf(), start.clone());
+                std::thread::spawn(move || {
+                    start.wait();
+                    let db = Storage::open_in(&path)?;
+                    db.save_item(note("saved by one opener", "")).map(|_| ())
+                })
+            })
+            .collect();
+        for opener in openers {
+            let outcome = opener.join().unwrap();
+            assert!(outcome.is_ok(), "round {round}: {outcome:?}");
+        }
+        let db = Storage::open_in(dir.path()).unwrap();
+        assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(find(&db, json!({})).len(), OPENERS, "round {round}");
+    }
+}
+
 /// The host shares one `Storage` between its command handlers.
 #[test]
 fn storage_can_be_shared_between_threads() {
@@ -672,6 +726,57 @@ fn database_lives_in_the_given_directory_under_a_fixed_name() {
         Storage::open_in(std::path::Path::new("relative/dir")),
         Err(StorageError::Invalid(_))
     ));
+}
+
+const COULD_NOT_OPEN: &str =
+    "Open Sesame could not open its data file. The file has not been changed.";
+
+/// A directory under the database's name is refused, and the failure reads as "could not open",
+/// not as a failed save.
+#[test]
+fn a_directory_in_place_of_the_database_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(DATABASE_FILE)).unwrap();
+    let error = Storage::open_in(dir.path()).err().unwrap();
+    assert!(matches!(error, StorageError::Unreadable(_)), "{error:?}");
+    assert_eq!(error.to_string(), COULD_NOT_OPEN);
+
+    // The data directory itself cannot be created under a plain file.
+    let file = dir.path().join("plain-file");
+    std::fs::write(&file, b"x").unwrap();
+    let error = Storage::open_in(&file.join("data")).err().unwrap();
+    assert!(matches!(error, StorageError::Unreadable(_)), "{error:?}");
+    assert_eq!(error.to_string(), COULD_NOT_OPEN);
+}
+
+/// A symbolic link under the database's name would put the data outside the directory the host
+/// chose, so it is refused and nothing is created where it points.
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_in_place_of_the_database_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let link = dir.path().join(DATABASE_FILE);
+
+    // A link to a file that does not exist yet.
+    let target = outside.path().join("elsewhere.sqlite3");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let error = Storage::open_in(dir.path()).err().unwrap();
+    assert!(matches!(error, StorageError::Unreadable(_)), "{error:?}");
+    assert_eq!(error.to_string(), COULD_NOT_OPEN);
+    assert!(!target.exists(), "nothing was created outside");
+
+    // A link to a real database of this app in another directory.
+    drop(Storage::open_in(outside.path()).unwrap());
+    let real = outside.path().join(DATABASE_FILE);
+    let before = std::fs::read(&real).unwrap();
+    std::fs::remove_file(&link).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    assert!(matches!(
+        Storage::open_in(dir.path()),
+        Err(StorageError::Unreadable(_))
+    ));
+    assert_eq!(std::fs::read(&real).unwrap(), before);
 }
 
 #[cfg(unix)]
@@ -720,6 +825,51 @@ fn a_database_from_a_newer_version_is_refused_untouched() {
         })
         .unwrap();
     assert_eq!(title, "kept");
+}
+
+/// A database whose last writer died keeps its committed changes in the write-ahead log. Refusing
+/// the file must not fold that log into it: both stay byte for byte as they were.
+#[test]
+fn a_refused_database_keeps_its_write_ahead_log_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(DATABASE_FILE);
+    let log = dir.path().join(format!("{DATABASE_FILE}-wal"));
+    let item = Storage::open_in(dir.path())
+        .unwrap()
+        .save_item(note("kept", ""))
+        .unwrap();
+
+    // Stamp a newer version, and copy the file and its log before the writer closes: that is
+    // the state a writer leaves when it dies.
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    raw.execute(
+        "UPDATE schema_version SET version = ?1",
+        [SCHEMA_VERSION + 1],
+    )
+    .unwrap();
+    let (database, pending) = (std::fs::read(&path).unwrap(), std::fs::read(&log).unwrap());
+    assert!(!pending.is_empty(), "the change is still in the log");
+    drop(raw);
+    std::fs::write(&path, &database).unwrap();
+    std::fs::write(&log, &pending).unwrap();
+
+    assert!(matches!(
+        Storage::open_in(dir.path()),
+        Err(StorageError::NewerSchema { .. })
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), database);
+    assert_eq!(std::fs::read(&log).unwrap(), pending);
+
+    // The newer version can still read everything, including what was only in the log.
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let (version, title): (i64, String) = raw
+        .query_row(
+            "SELECT (SELECT version FROM schema_version), title FROM items WHERE id = ?1",
+            [&item.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((version, title.as_str()), (SCHEMA_VERSION + 1, "kept"));
 }
 
 #[test]
@@ -870,6 +1020,71 @@ fn every_row_has_a_stable_id_and_a_modified_timestamp() {
             .query_row(&format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name = 'updated_at' AND \"notnull\" = 1"), [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1, "{table} requires updated_at");
+    }
+}
+
+/// A change must never hide behind an unchanged timestamp: every write moves `updated_at`
+/// forward, even when the clock stands still or is set back, and never touches the ID or
+/// `created_at`.
+#[test]
+fn every_change_moves_the_modified_time_forward_whatever_the_clock_does() {
+    let rig = rig();
+    let home = rig.db.save_project(project("Home")).unwrap();
+    let created = rig
+        .db
+        .save_item(draft(
+            json!({ "kind": "note", "title": "one", "projectId": home.id }),
+        ))
+        .unwrap();
+    let edit = |title: &str| {
+        draft(json!({ "id": created.id, "kind": "note", "title": title, "projectId": home.id }))
+    };
+
+    // The clock has not moved since the item was created.
+    let same = rig.db.save_item(edit("two")).unwrap();
+    assert_eq!(same.updated_at, T0 + 1);
+
+    // The clock is set back an hour.
+    rig.time.store(T0 - 3_600_000, Ordering::SeqCst);
+    let back = rig.db.save_item(edit("three")).unwrap();
+    assert_eq!(back.updated_at, T0 + 2);
+    assert_eq!(
+        (back.id.as_str(), back.created_at),
+        (created.id.as_str(), T0)
+    );
+    assert_eq!(
+        rig.db.get_item(&created.id).unwrap(),
+        Some(back),
+        "what was returned is what was stored"
+    );
+
+    // Changes made by other writes follow the same rule.
+    let renamed = rig
+        .db
+        .save_project(serde_json::from_value(json!({ "id": home.id, "name": "House" })).unwrap())
+        .unwrap();
+    assert_eq!((renamed.created_at, renamed.updated_at), (T0, T0 + 1));
+    assert!(rig.db.delete_project(&home.id).unwrap());
+    assert_eq!(
+        rig.db.get_item(&created.id).unwrap().unwrap().updated_at,
+        T0 + 3
+    );
+    rig.db.set_setting("layout", &json!("wide")).unwrap();
+    rig.db.set_setting("layout", &json!("compact")).unwrap();
+    rig.db
+        .set_widget_state("shells", WidgetState::Active)
+        .unwrap();
+    rig.db
+        .set_widget_state("shells", WidgetState::Inactive)
+        .unwrap();
+    let raw = rusqlite::Connection::open(rig.dir.path().join(DATABASE_FILE)).unwrap();
+    for sql in [
+        "SELECT updated_at FROM settings WHERE key = 'layout'",
+        "SELECT updated_at FROM widget_states WHERE id = 'shells'",
+    ] {
+        let first_write = T0 - 3_600_000;
+        let updated: i64 = raw.query_row(sql, [], |row| row.get(0)).unwrap();
+        assert_eq!(updated, first_write + 1, "{sql}");
     }
 }
 
@@ -1156,6 +1371,17 @@ fn commands_and_the_gate_list_the_same_methods() {
         assert!(
             crate::gate::PORTED.contains(method),
             "{method} is ported in the gate"
+        );
+    }
+    // Every listed command is served: an empty request is understood or refused as a bad
+    // request, never as an unknown command.
+    let db = Storage::open_in_memory().unwrap();
+    for method in commands::METHODS {
+        let outcome = call(&db, method, json!({}));
+        assert_ne!(
+            outcome.err().as_deref(),
+            Some(commands::UNKNOWN_COMMAND),
+            "{method} has a handler"
         );
     }
     let prefixes = ["items.", "projects.", "feedItems.", "settings.", "widgets."];

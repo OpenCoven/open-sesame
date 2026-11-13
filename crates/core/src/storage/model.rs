@@ -223,6 +223,8 @@ impl FeedItemDraft {
     }
 }
 
+const CREDENTIAL_REFUSED: &str = "Credentials are kept in the system keychain, not in settings.";
+
 /// A settings key: letters, digits, `.`, `_` and `-`, at most 100 characters, and not the name of
 /// a credential. Tokens belong in the operating system's credential store.
 pub(super) fn check_setting_key(key: &str) -> Result<(), StorageError> {
@@ -235,24 +237,53 @@ pub(super) fn check_setting_key(key: &str) -> Result<(), StorageError> {
         return Err(invalid("That setting name is not valid."));
     }
     if names_credential(key) {
-        return Err(invalid(
-            "Credentials are kept in the system keychain, not in settings.",
-        ));
+        return Err(invalid(CREDENTIAL_REFUSED));
     }
     Ok(())
 }
 
-/// Whether a name contains `token`, `secret`, `password`, `credential` or `apikey`, ignoring case
-/// and the separators `.`, `_` and `-`.
+/// A settings value: no field in it, at any depth, may be named for a credential.
+pub(super) fn check_setting_value(value: &serde_json::Value) -> Result<(), StorageError> {
+    if value_names_credential(value) {
+        return Err(invalid(CREDENTIAL_REFUSED));
+    }
+    Ok(())
+}
+
+/// Whether a name contains `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`,
+/// `apikey`, `privatekey` or `bearer`, ignoring case and the separators `.`, `_` and `-`.
 pub(super) fn names_credential(name: &str) -> bool {
     let plain: String = name
         .chars()
         .filter(|c| !matches!(c, '.' | '_' | '-'))
         .collect::<String>()
         .to_ascii_lowercase();
-    ["token", "secret", "password", "credential", "apikey"]
-        .iter()
-        .any(|word| plain.contains(word))
+    [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "passphrase",
+        "credential",
+        "apikey",
+        "privatekey",
+        "bearer",
+    ]
+    .iter()
+    .any(|word| plain.contains(word))
+}
+
+/// Whether a settings value carries a field named for a credential at any depth, such as
+/// `{"auth": {"refreshToken": "..."}}`. This reads names only: what a string holds is not
+/// inspected, so the code that handles tokens must never write them to settings at all.
+pub(super) fn value_names_credential(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .any(|(name, inner)| names_credential(name) || value_names_credential(inner)),
+        serde_json::Value::Array(values) => values.iter().any(value_names_credential),
+        _ => false,
+    }
 }
 
 /// The name of a command-line tool whose path the user may override: a lower-case letter, then

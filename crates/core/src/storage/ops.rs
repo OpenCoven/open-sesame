@@ -1,6 +1,8 @@
 //! The operations on each table. Every statement is a fixed string with bound parameters.
 
-use super::model::{check_cli_name, check_cli_path, check_setting_key, check_widget_id};
+use super::model::{
+    check_cli_name, check_cli_path, check_setting_key, check_setting_value, check_widget_id,
+};
 use super::{
     invalid, FeedItem, FeedItemDraft, Item, ItemDraft, ItemFilter, Kind, Priority, Project,
     ProjectDraft, Stage, Storage, StorageError, WidgetState, MAX_SETTING_BYTES,
@@ -94,7 +96,9 @@ fn matches(needle: &Option<String>, fields: &[&str]) -> bool {
     }
 }
 
-/// The creation time of the row being replaced, and a modified time that never goes backwards.
+/// The creation time of the row being replaced, and a modified time later than the one it had.
+/// Every change moves `updated_at` forward, even when the clock stood still or was set back, so a
+/// change can never hide behind an unchanged timestamp.
 fn times(
     conn: &Connection,
     sql: &str,
@@ -106,7 +110,7 @@ fn times(
         .query_row(sql, [id], |row| Ok((row.get(0)?, row.get(1)?)))
         .optional()?;
     let (created, updated) = found.ok_or_else(|| StorageError::NotFound(missing.to_string()))?;
-    Ok((created, now.max(updated)))
+    Ok((created, now.max(updated.saturating_add(1))))
 }
 
 impl Storage {
@@ -276,7 +280,7 @@ impl Storage {
     pub fn delete_project(&self, id: &str) -> Result<bool, StorageError> {
         self.write(|tx, now| {
             tx.execute(
-                "UPDATE items SET project_id = NULL, updated_at = max(updated_at, ?2) WHERE project_id = ?1",
+                "UPDATE items SET project_id = NULL, updated_at = max(updated_at + 1, ?2) WHERE project_id = ?1",
                 params![id, now],
             )?;
             Ok(tx.execute("DELETE FROM projects WHERE id = ?1", [id])? > 0)
@@ -394,9 +398,11 @@ impl Storage {
         })
     }
 
-    /// Stores a JSON value under a key. Credentials are refused; see [`check_setting_key`].
+    /// Stores a JSON value under a key. A key, or a field inside the value, that is named for a
+    /// credential is refused; see [`check_setting_key`] and [`check_setting_value`].
     pub fn set_setting(&self, key: &str, value: &Value) -> Result<(), StorageError> {
         check_setting_key(key)?;
+        check_setting_value(value)?;
         let text = value.to_string();
         if text.len() > MAX_SETTING_BYTES {
             return Err(invalid("That setting is too large to save."));
@@ -404,7 +410,7 @@ impl Storage {
         self.write(|tx, now| {
             tx.execute(
                 "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = max(updated_at, excluded.updated_at)",
+                 ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = max(updated_at + 1, excluded.updated_at)",
                 params![key, text, now],
             )?;
             Ok(())
@@ -456,7 +462,7 @@ impl Storage {
                 None => tx.execute("DELETE FROM cli_paths WHERE name = ?1", [name])?,
                 Some(path) => tx.execute(
                     "INSERT INTO cli_paths (name, path, updated_at) VALUES (?1, ?2, ?3)
-                     ON CONFLICT (name) DO UPDATE SET path = excluded.path, updated_at = max(updated_at, excluded.updated_at)",
+                     ON CONFLICT (name) DO UPDATE SET path = excluded.path, updated_at = max(updated_at + 1, excluded.updated_at)",
                     params![name, path, now],
                 )?,
             };
@@ -490,7 +496,7 @@ impl Storage {
         self.write(|tx, now| {
             tx.execute(
                 "INSERT INTO widget_states (id, state, updated_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (id) DO UPDATE SET state = excluded.state, updated_at = max(updated_at, excluded.updated_at)",
+                 ON CONFLICT (id) DO UPDATE SET state = excluded.state, updated_at = max(updated_at + 1, excluded.updated_at)",
                 params![id, state.as_str(), now],
             )?;
             Ok(())
