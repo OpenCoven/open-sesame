@@ -11,7 +11,11 @@ use std::time::Duration;
 /// Puts a runnable program called `name` in `dir` and returns its path.
 fn install(dir: &Path, name: &str) -> PathBuf {
     std::fs::create_dir_all(dir).unwrap();
-    let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    let file = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
     let path = dir.join(file);
     std::fs::copy(env!("CARGO_BIN_EXE_fixture_cli"), &path).unwrap();
     path
@@ -26,7 +30,10 @@ fn search(path: &[&Path], known: &[&Path]) -> Search {
 }
 
 fn vars(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    pairs.iter().map(|(name, value)| (name.to_string(), value.to_string())).collect()
+    pairs
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect()
 }
 
 #[test]
@@ -36,8 +43,14 @@ fn finds_a_program_in_search_path_order() {
     install(&first, "tool");
     let wanted = install(&second, "tool");
     let other = install(&second, "other");
-    assert_eq!(search(&[&second, &first], &[]).find("tool", None), Some(wanted));
-    assert_eq!(search(&[&first, &second], &[]).find("other", None), Some(other));
+    assert_eq!(
+        search(&[&second, &first], &[]).find("tool", None),
+        Some(wanted)
+    );
+    assert_eq!(
+        search(&[&first, &second], &[]).find("other", None),
+        Some(other)
+    );
 }
 
 #[test]
@@ -63,9 +76,16 @@ fn an_explicit_path_is_used_or_reported_missing() {
     let chosen = install(&dir.path().join("chosen"), "tool");
     let finder = search(&[&on_path], &[]);
     assert_eq!(finder.find("tool", Some(&chosen)), Some(chosen));
-    assert_eq!(finder.find("tool", Some(&dir.path().join("gone").join("tool"))), None);
+    assert_eq!(
+        finder.find("tool", Some(&dir.path().join("gone").join("tool"))),
+        None
+    );
     assert_eq!(finder.find("tool", Some(Path::new("relative/tool"))), None);
-    assert_eq!(finder.find("tool", Some(&on_path)), None, "a directory is not a program");
+    assert_eq!(
+        finder.find("tool", Some(&on_path)),
+        None,
+        "a directory is not a program"
+    );
 }
 
 #[test]
@@ -94,7 +114,11 @@ fn files_that_cannot_be_run_are_skipped() {
     let finder = search(&[&first, &second], &[]);
     assert_eq!(finder.find("tool", None), Some(runnable));
     assert_eq!(finder.find("folder", None), Some(second.join("folder")));
-    assert_eq!(finder.find("tool", Some(&plain)), None, "an override that cannot be run is missing");
+    assert_eq!(
+        finder.find("tool", Some(&plain)),
+        None,
+        "an override that cannot be run is missing"
+    );
 }
 
 #[cfg(windows)]
@@ -108,9 +132,19 @@ fn windows_extensions_are_tried_in_order() {
     finder.extensions = vec![".EXE".into(), ".CMD".into()];
     assert_eq!(finder.find("tool", None), Some(exe.clone()));
     assert_eq!(finder.find("tool.exe", None), Some(exe));
-    assert!(finder.find("script", None).unwrap().to_string_lossy().to_lowercase().ends_with("script.cmd"));
+    assert!(finder
+        .find("script", None)
+        .unwrap()
+        .to_string_lossy()
+        .to_lowercase()
+        .ends_with("script.cmd"));
     finder.extensions = vec![".CMD".into(), ".EXE".into()];
-    assert!(finder.find("tool", None).unwrap().to_string_lossy().to_lowercase().ends_with("tool.cmd"));
+    assert!(finder
+        .find("tool", None)
+        .unwrap()
+        .to_string_lossy()
+        .to_lowercase()
+        .ends_with("tool.cmd"));
 }
 
 /// Only absolute directories are searched: never the working directory, never an empty entry.
@@ -128,12 +162,20 @@ fn the_search_path_keeps_only_absolute_directories() {
 
 #[test]
 fn the_environment_is_not_printed_when_debugged() {
-    let env = ShellEnv::from_vars(vars(&[("PATH", "/usr/bin"), ("API_KEY", "value-that-must-not-print")]));
+    let env = ShellEnv::from_vars(vars(&[
+        ("PATH", "/usr/bin"),
+        ("API_KEY", "value-that-must-not-print"),
+    ]));
     let printed = format!("{env:?}");
-    assert!(!printed.contains("value-that-must-not-print") && !printed.contains("/usr/bin"), "{printed}");
+    assert!(
+        !printed.contains("value-that-must-not-print") && !printed.contains("/usr/bin"),
+        "{printed}"
+    );
     assert_eq!(env.get("API_KEY"), Some("value-that-must-not-print"));
     assert_eq!(env.source(), &EnvSource::Inherited(Fallback::NotCaptured));
-    assert!(env.to_run_env().contains(&("PATH".to_string(), "/usr/bin".to_string())));
+    assert!(env
+        .to_run_env()
+        .contains(&("PATH".to_string(), "/usr/bin".to_string())));
 }
 
 #[test]
@@ -156,11 +198,24 @@ fn without_a_usable_shell_the_inherited_environment_is_kept() {
     let none = ShellEnv::capture(None, inherited.clone(), Duration::from_secs(5));
     assert_eq!(none.vars(), &inherited);
     assert!(matches!(none.source(), EnvSource::Inherited(_)));
-    let missing = ShellEnv::capture(Some(Path::new("/no/such/shell-73")), inherited.clone(), Duration::from_secs(5));
+    let missing = ShellEnv::capture(
+        Some(Path::new("/no/such/shell-73")),
+        inherited.clone(),
+        Duration::from_secs(5),
+    );
     assert_eq!(missing.vars(), &inherited);
     assert!(matches!(missing.source(), EnvSource::Inherited(_)));
-    let relative = ShellEnv::capture(Some(Path::new("zsh")), inherited.clone(), Duration::from_secs(5));
-    assert_eq!(relative.source(), &EnvSource::Inherited(Fallback::NoShell));
+    let relative = ShellEnv::capture(
+        Some(Path::new("zsh")),
+        inherited.clone(),
+        Duration::from_secs(5),
+    );
+    let expected = if cfg!(windows) {
+        Fallback::NotNeeded
+    } else {
+        Fallback::NoShell
+    };
+    assert_eq!(relative.source(), &EnvSource::Inherited(expected));
 }
 
 #[cfg(unix)]
@@ -177,7 +232,11 @@ mod login_shell {
         for (name, content) in files {
             std::fs::write(dir.path().join(name), content).unwrap();
         }
-        let inherited = vars(&[("HOME", dir.path().to_str().unwrap()), ("PATH", "/usr/bin:/bin"), ("FROM_LAUNCHER", "kept")]);
+        let inherited = vars(&[
+            ("HOME", dir.path().to_str().unwrap()),
+            ("PATH", "/usr/bin:/bin"),
+            ("FROM_LAUNCHER", "kept"),
+        ]);
         (dir, inherited)
     }
 
@@ -191,11 +250,19 @@ mod login_shell {
     }
 
     fn login_path_case(shell_path: &'static str, startup_file: &str) {
-        let Some(shell) = shell(shell_path) else { return };
+        let Some(shell) = shell(shell_path) else {
+            return;
+        };
         let tools = tempfile::tempdir().unwrap();
         let bin = tools.path().join("login only bin");
         let tool = install(&bin, "only-on-login-path");
-        let (_home, inherited) = home(&[(startup_file, format!("export PATH=\"{}:$PATH\"\nexport FROM_PROFILE=set\n", bin.display()))]);
+        let (_home, inherited) = home(&[(
+            startup_file,
+            format!(
+                "export PATH=\"{}:$PATH\"\nexport FROM_PROFILE=set\n",
+                bin.display()
+            ),
+        )]);
 
         // What the app sees when it is started from the desktop: the tool is not found.
         let before = ShellEnv::from_vars(inherited.clone());
@@ -207,7 +274,14 @@ mod login_shell {
         assert_eq!(env.source(), &EnvSource::LoginShell, "{shell_path}");
         assert_eq!(env.get("FROM_PROFILE"), Some("set"));
         assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
-        assert!(env.get("PATH").unwrap().split(':').any(|dir| Path::new(dir) == bin), "{:?}", env.get("PATH"));
+        assert!(
+            env.get("PATH")
+                .unwrap()
+                .split(':')
+                .any(|dir| Path::new(dir) == bin),
+            "{:?}",
+            env.get("PATH")
+        );
         let mut finder = Search::from_env(&env);
         finder.known_dirs.clear();
         assert_eq!(finder.find("only-on-login-path", None), Some(tool));
@@ -226,9 +300,14 @@ mod login_shell {
     /// Startup files print banners, and may even print something that looks like a marker.
     #[test]
     fn startup_noise_does_not_corrupt_the_result() {
-        let Some(shell) = shell("/bin/zsh") else { return };
+        let Some(shell) = shell("/bin/zsh") else {
+            return;
+        };
         let noise = "echo 'Welcome back!'\necho '__OPEN_SESAME_ENV_0000000000000000__'\necho 'FAKE=from-noise'\nexport REAL=value\necho 'warning' >&2\n";
-        let (_home, inherited) = home(&[(".zprofile", noise.to_string()), (".zlogin", "echo 'last words'\n".to_string())]);
+        let (_home, inherited) = home(&[
+            (".zprofile", noise.to_string()),
+            (".zlogin", "echo 'last words'\n".to_string()),
+        ]);
         let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("REAL"), Some("value"));
@@ -237,8 +316,13 @@ mod login_shell {
 
     #[test]
     fn a_value_with_a_newline_is_kept_whole() {
-        let Some(shell) = shell("/bin/zsh") else { return };
-        let (_home, inherited) = home(&[(".zprofile", "export MULTI=$'first\\nSECOND=fake'\nexport AFTER=ok\n".to_string())]);
+        let Some(shell) = shell("/bin/zsh") else {
+            return;
+        };
+        let (_home, inherited) = home(&[(
+            ".zprofile",
+            "export MULTI=$'first\\nSECOND=fake'\nexport AFTER=ok\n".to_string(),
+        )]);
         let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("MULTI"), Some("first\nSECOND=fake"));
@@ -249,11 +333,17 @@ mod login_shell {
     /// A startup file that never finishes costs the timeout and nothing more.
     #[test]
     fn a_startup_file_that_hangs_falls_back_to_the_inherited_environment() {
-        let Some(shell) = shell("/bin/zsh") else { return };
+        let Some(shell) = shell("/bin/zsh") else {
+            return;
+        };
         let (_home, inherited) = home(&[(".zprofile", "export HALF=done\nsleep 30\n".to_string())]);
         let started = Instant::now();
         let env = ShellEnv::capture(Some(shell), inherited.clone(), Duration::from_millis(700));
-        assert!(started.elapsed() < Duration::from_secs(4), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "{:?}",
+            started.elapsed()
+        );
         assert_eq!(env.source(), &EnvSource::Inherited(Fallback::TimedOut));
         assert_eq!(env.vars(), &inherited);
     }
@@ -261,11 +351,20 @@ mod login_shell {
     /// A startup file that waits for the keyboard gets end of input instead.
     #[test]
     fn a_startup_file_that_reads_input_does_not_hang() {
-        let Some(shell) = shell("/bin/zsh") else { return };
-        let (_home, inherited) = home(&[(".zprofile", "read -r answer\nexport ASKED=yes\n".to_string())]);
+        let Some(shell) = shell("/bin/zsh") else {
+            return;
+        };
+        let (_home, inherited) = home(&[(
+            ".zprofile",
+            "read -r answer\nexport ASKED=yes\n".to_string(),
+        )]);
         let started = Instant::now();
         let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
-        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("ASKED"), Some("yes"));
     }
@@ -274,8 +373,8 @@ mod login_shell {
     #[test]
     fn a_shell_that_prints_no_markers_falls_back() {
         let (_home, inherited) = home(&[]);
-        let not_a_shell = Path::new(env!("CARGO_BIN_EXE_fixture_cli"));
-        let env = ShellEnv::capture(Some(not_a_shell), inherited.clone(), LIMIT);
+        let not_a_shell = install(_home.path(), "zsh");
+        let env = ShellEnv::capture(Some(&not_a_shell), inherited.clone(), LIMIT);
         assert_eq!(env.source(), &EnvSource::Inherited(Fallback::ShellFailed));
         assert_eq!(env.vars(), &inherited);
     }

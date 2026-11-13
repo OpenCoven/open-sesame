@@ -28,6 +28,17 @@ fn main() -> ExitCode {
             }
             0
         }
+        // burst <n>: prints 1..=n as fast as it can, then exits.
+        Some("burst") => {
+            let mut out = std::io::BufWriter::new(std::io::stdout());
+            for line in 1..=number(&rest, 0) {
+                if writeln!(out, "{line}").is_err() {
+                    break;
+                }
+            }
+            let _ = out.flush();
+            0
+        }
         // flood <bytes>, flood-stderr <bytes>: writes that many bytes with no newline.
         Some("flood") => flood(&mut std::io::stdout(), number(&rest, 0)),
         Some("flood-stderr") => flood(&mut std::io::stderr(), number(&rest, 0)),
@@ -44,7 +55,12 @@ fn main() -> ExitCode {
             0
         }
         Some("cwd") => {
-            println!("{}", std::env::current_dir().map(|dir| dir.display().to_string()).unwrap_or_default());
+            println!(
+                "{}",
+                std::env::current_dir()
+                    .map(|dir| dir.display().to_string())
+                    .unwrap_or_default()
+            );
             0
         }
         // env <NAME>: prints the value, or exits 1 when it is not set.
@@ -71,13 +87,19 @@ fn main() -> ExitCode {
         // heartbeat <file>: writes a growing counter to the file until killed.
         Some("heartbeat") => {
             let file = rest.first().copied().unwrap_or_default();
+            let scratch = format!("{file}.next");
             for beat in 1u64.. {
-                let _ = std::fs::write(file, beat.to_string());
+                // Written beside the file and renamed over it, so the file always holds a whole
+                // number even if this process is killed mid-write.
+                if std::fs::write(&scratch, beat.to_string()).is_ok() {
+                    let _ = std::fs::rename(&scratch, file);
+                }
                 sleep(Duration::from_millis(20));
             }
             0
         }
-        // spawn-child-and-sleep <file>: starts a heartbeat child, prints its PID, then sleeps.
+        // spawn-child-and-sleep <file>: starts a heartbeat child, waits for its first beat,
+        // prints its PID, then sleeps.
         // spawn-child-and-exit <file>: the same, but exits at once and leaves the child running
         // with this process's output pipes still open.
         Some(mode @ ("spawn-child-and-sleep" | "spawn-child-and-exit")) => {
@@ -85,6 +107,14 @@ fn main() -> ExitCode {
             let program = std::env::current_exe().expect("the fixture knows its own path");
             match Command::new(program).args(["heartbeat", file]).spawn() {
                 Ok(child) => {
+                    // Wait for the child's first beat, so a test can tell a child that was
+                    // stopped from one that never ran.
+                    for _ in 0..500 {
+                        if std::fs::metadata(file).is_ok_and(|beat| beat.len() > 0) {
+                            break;
+                        }
+                        sleep(Duration::from_millis(10));
+                    }
                     println!("{}", child.id());
                     let _ = std::io::stdout().flush();
                     if mode == "spawn-child-and-sleep" {
@@ -104,7 +134,9 @@ fn main() -> ExitCode {
 }
 
 fn number(rest: &[&str], index: usize) -> usize {
-    rest.get(index).and_then(|text| text.parse().ok()).unwrap_or(0)
+    rest.get(index)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(0)
 }
 
 fn flood(out: &mut dyn Write, mut bytes: usize) -> u8 {

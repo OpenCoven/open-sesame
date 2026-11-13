@@ -25,7 +25,10 @@ fn ok(run_request: Run) -> Output {
 /// The counter the heartbeat child last wrote, or 0 when it has not written yet.
 fn beat(file: &Path) -> u64 {
     for _ in 0..20 {
-        if let Some(count) = std::fs::read_to_string(file).ok().and_then(|text| text.trim().parse().ok()) {
+        if let Some(count) = std::fs::read_to_string(file)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
             return count;
         }
         std::thread::sleep(Duration::from_millis(5));
@@ -43,7 +46,11 @@ fn assert_stopped(file: &Path) {
         if before > 0 && before == after {
             return;
         }
-        assert!(Instant::now() < deadline, "the grandchild is still running (counter {before} -> {after})");
+        assert!(
+            Instant::now() < deadline,
+            "the grandchild is still running (counter {before} -> {after}, file {:?})",
+            std::fs::read_to_string(file)
+        );
     }
 }
 
@@ -51,9 +58,15 @@ fn assert_stopped(file: &Path) {
 fn missing_program_is_not_found() {
     let by_name = run(Run::new("open-sesame-no-such-program-73"), None);
     assert_eq!(by_name.unwrap_err(), RunError::NotFound);
-    let by_path = run(Run::new(std::env::temp_dir().join("no-such-dir-73").join("tool")), None);
+    let by_path = run(
+        Run::new(std::env::temp_dir().join("no-such-dir-73").join("tool")),
+        None,
+    );
     assert_eq!(by_path.unwrap_err(), RunError::NotFound);
-    assert_eq!(RunError::NotFound.to_string(), "That program is not installed or could not be found.");
+    assert_eq!(
+        RunError::NotFound.to_string(),
+        "That program is not installed or could not be found."
+    );
 }
 
 #[test]
@@ -93,13 +106,35 @@ fn an_unterminated_last_line_is_not_streamed() {
     assert!(text(&output.stdout).ends_with("three"));
 }
 
+/// The program has long exited while the caller is still working through its output. Nothing
+/// is cut off.
+#[test]
+fn a_slow_consumer_still_receives_everything() {
+    let mut count = 0u32;
+    let mut on_line = |line: &str| {
+        count += 1;
+        assert_eq!(line, count.to_string());
+        if count.is_multiple_of(40) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let output = run(fixture(&["burst", "20000"]), Some(&mut on_line)).unwrap();
+    assert_eq!(output.status, Some(0));
+    assert_eq!(count, 20000);
+    assert!(text(&output.stdout).trim_end().ends_with("20000"));
+}
+
 #[test]
 fn timeout_kills_the_child() {
     let mut request = fixture(&["sleep", "30"]);
     request.timeout = Duration::from_millis(300);
     let started = Instant::now();
     assert_eq!(run(request, None).unwrap_err(), RunError::Timeout);
-    assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
@@ -113,7 +148,11 @@ fn cancel_kills_the_child() {
     });
     let started = Instant::now();
     assert_eq!(run(request, None).unwrap_err(), RunError::Cancelled);
-    assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
     canceller.join().unwrap();
 }
 
@@ -159,8 +198,14 @@ fn grandchild_is_killed_on_timeout() {
     request.timeout = Duration::from_millis(600);
     let mut pid = String::new();
     let mut on_line = |line: &str| pid = line.to_string();
-    assert_eq!(run(request, Some(&mut on_line)).unwrap_err(), RunError::Timeout);
-    assert!(pid.parse::<u32>().is_ok(), "the fixture printed the grandchild's PID: {pid:?}");
+    assert_eq!(
+        run(request, Some(&mut on_line)).unwrap_err(),
+        RunError::Timeout
+    );
+    assert!(
+        pid.parse::<u32>().is_ok(),
+        "the fixture printed the grandchild's PID: {pid:?}"
+    );
     assert_stopped(&file);
 }
 
@@ -189,7 +234,11 @@ fn a_child_left_behind_by_a_finished_program_is_killed() {
     let started = Instant::now();
     let output = ok(fixture(&["spawn-child-and-exit", file.to_str().unwrap()]));
     assert_eq!(output.status, Some(0));
-    assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
     assert!(text(&output.stdout).trim().parse::<u32>().is_ok());
     assert_stopped(&file);
 }
@@ -203,17 +252,33 @@ fn runs_in_a_cwd_with_spaces_and_unicode() {
     request.cwd = Some(cwd.clone());
     let output = ok(request);
     let reported = PathBuf::from(text(&output.stdout).trim_end_matches(['\r', '\n']));
-    assert_eq!(reported.canonicalize().unwrap(), cwd.canonicalize().unwrap());
+    assert_eq!(
+        reported.canonicalize().unwrap(),
+        cwd.canonicalize().unwrap()
+    );
 }
 
 /// Arguments reach the program as given. Nothing is passed through a shell.
 #[test]
 fn arguments_are_passed_exactly() {
-    let args = ["two words", "é 日本語", "$HOME", "a;b", "\"quoted\"", "*", "--flag=value", ""];
+    let args = [
+        "two words",
+        "é 日本語",
+        "$HOME",
+        "a;b",
+        "\"quoted\"",
+        "*",
+        "--flag=value",
+        "",
+    ];
     let mut all = vec!["echo-args"];
     all.extend(args);
     let output = ok(fixture(&all));
-    let lines: Vec<String> = text(&output.stdout).replace('\r', "").split('\n').map(str::to_string).collect();
+    let lines: Vec<String> = text(&output.stdout)
+        .replace('\r', "")
+        .split('\n')
+        .map(str::to_string)
+        .collect();
     assert_eq!(&lines[..args.len()], &args[..]);
 }
 
@@ -247,7 +312,11 @@ fn environment_is_added_or_replaced() {
 
     // With a cleared environment only the given variables exist.
     let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    assert_eq!(ok(fixture(&["env", name])).status, Some(0), "{name} is inherited by default");
+    assert_eq!(
+        ok(fixture(&["env", name])).status,
+        Some(0),
+        "{name} is inherited by default"
+    );
     let mut request = fixture(&["env", name]);
     request.clear_env = true;
     if cfg!(windows) {
@@ -283,8 +352,19 @@ fn a_panicking_callback_still_kills_the_tree() {
 
 #[test]
 fn errors_are_plain_sentences_without_details() {
-    for error in [RunError::NotFound, RunError::Timeout, RunError::Cancelled, RunError::TooLarge, RunError::Io("os error 13: /private/path".into())] {
+    for error in [
+        RunError::NotFound,
+        RunError::Timeout,
+        RunError::Cancelled,
+        RunError::TooLarge,
+        RunError::Io("os error 13: /private/path".into()),
+    ] {
         let message = error.to_string();
-        assert!(message.ends_with('.') && !message.contains("/private/path") && !message.contains("os error"), "{message}");
+        assert!(
+            message.ends_with('.')
+                && !message.contains("/private/path")
+                && !message.contains("os error"),
+            "{message}"
+        );
     }
 }
