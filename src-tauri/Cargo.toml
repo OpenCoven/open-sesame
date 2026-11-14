@@ -1,9 +1,22 @@
 [package]
 name = "open-sesame"
 version = "0.1.0"
-description = "Open Sesame desktop application. The Tauri shell is added in issue #70."
+description = "Open Sesame desktop application: the Tauri shell around the headless core."
 edition.workspace = true
 publish.workspace = true
 
+[lib]
+# A different name from the binary, so the two do not collide in the Windows build output.
+name = "open_sesame_lib"
+
 [dependencies]
 open-sesame-core = { path = "../crates/core" }
+serde_json = "1.0.154"
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+
+[dev-dependencies]
+# Test-only: Tauri's windowless runtime, so the command is tested behind Tauri's own request handling.
+tauri = { version = "2.12.5", features = ["test"] }
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
