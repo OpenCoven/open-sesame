@@ -28,7 +28,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 // method has an entry there (a function of the params that returns a status or throws).
 function fakeBridge(status, answers = {}) {
   const calls = [];
-  const state = { status: { defaultShortcut: 'Alt+Shift+Space', toggleCommand: 'open-sesame --toggle', message: '', hideOnBlur: false, ...status } };
+  const state = { status: { defaultShortcut: 'Control+Alt+Shift+Space', toggleCommand: 'open-sesame --toggle', message: '', hideOnBlur: false, ...status } };
   const request = async (method, params = {}) => {
     calls.push({ method, params });
     if (answers[method]) return (state.status = answers[method](params, state.status));
@@ -41,15 +41,15 @@ function fakeBridge(status, answers = {}) {
 // 1. What a person is told for each state.
 {
   const base = { toggleCommand: 'open-sesame --toggle', message: '' };
-  assert.deepEqual(describe({ ...base, session: 'macos', shortcut: 'Alt+Shift+Space', registered: true }),
-    { editable: true, warn: false, hint: EXAMPLE, message: 'Press Alt+Shift+Space anywhere to show or hide Open Sesame.' });
+  assert.deepEqual(describe({ ...base, session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true }),
+    { editable: true, warn: false, hint: EXAMPLE, message: 'Press Control+Alt+Shift+Space anywhere to show or hide Open Sesame.' });
   assert.deepEqual(describe({ ...base, session: 'x11', shortcut: '', registered: false }),
     { editable: true, warn: false, hint: EXAMPLE, message: 'No shortcut is set.' });
   const refused = 'Open Sesame could not register Alt+Space. Another application may already use it. Choose a different shortcut.';
   assert.deepEqual(describe({ ...base, session: 'windows', shortcut: 'Alt+Space', registered: false, message: refused }),
     { editable: true, warn: true, hint: EXAMPLE, message: refused });
   // Wayland: no field to fill in, and the exact command to bind.
-  const wayland = describe({ ...base, session: 'wayland', shortcut: 'Alt+Shift+Space', registered: false, message: 'ignored here' });
+  const wayland = describe({ ...base, session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: false, message: 'ignored here' });
   assert.equal(wayland.editable, false);
   assert.equal(wayland.warn, false);
   assert.ok(wayland.hint.endsWith('open-sesame --toggle'), wayland.hint);
@@ -58,14 +58,14 @@ function fakeBridge(status, answers = {}) {
 
 // 2. The section appears with what the host reports, and stays hidden when the host has no summon.
 {
-  const bridge = fakeBridge({ session: 'x11', shortcut: 'Alt+Shift+Space', registered: true, hideOnBlur: true });
+  const bridge = fakeBridge({ session: 'x11', shortcut: 'Control+Alt+Shift+Space', registered: true, hideOnBlur: true });
   const ui = parts();
   await mountSummon(bridge, ui);
   assert.equal(ui.section.hidden, false);
   assert.equal(ui.form.hidden, false);
-  assert.equal(ui.input.value, 'Alt+Shift+Space');
+  assert.equal(ui.input.value, 'Control+Alt+Shift+Space');
   assert.equal(ui.blur.checked, true);
-  assert.equal(ui.message.textContent, 'Press Alt+Shift+Space anywhere to show or hide Open Sesame.');
+  assert.equal(ui.message.textContent, 'Press Control+Alt+Shift+Space anywhere to show or hide Open Sesame.');
   assert.equal(ui.message.dataset.warn, 'false');
   assert.deepEqual(bridge.calls, [{ method: 'summon.status', params: {} }]);
 
@@ -74,7 +74,7 @@ function fakeBridge(status, answers = {}) {
   assert.equal(none.section.hidden, true, 'No summon methods, no section');
 
   const wayland = parts();
-  await mountSummon(fakeBridge({ session: 'wayland', shortcut: 'Alt+Shift+Space', registered: false }), wayland);
+  await mountSummon(fakeBridge({ session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: false }), wayland);
   assert.equal(wayland.section.hidden, false);
   assert.equal(wayland.form.hidden, true, 'Wayland offers no shortcut field');
   assert.ok(wayland.hint.textContent.endsWith('open-sesame --toggle'));
@@ -82,7 +82,7 @@ function fakeBridge(status, answers = {}) {
 
 // 3. Saving sends the trimmed text once and shows the host's answer; nothing is reloaded.
 {
-  const bridge = fakeBridge({ session: 'macos', shortcut: 'Alt+Shift+Space', registered: true }, {
+  const bridge = fakeBridge({ session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true }, {
     'summon.setShortcut': ({ shortcut }, status) => ({ ...status, shortcut, registered: Boolean(shortcut) }),
   });
   const ui = parts();
@@ -108,7 +108,7 @@ function fakeBridge(status, answers = {}) {
 //    the saved shortcut is still the working one.
 {
   const refused = 'Open Sesame could not register Alt+Space. Another application may already use it. Choose a different shortcut.';
-  const bridge = fakeBridge({ session: 'windows', shortcut: 'Alt+Shift+Space', registered: true }, {
+  const bridge = fakeBridge({ session: 'windows', shortcut: 'Control+Alt+Shift+Space', registered: true }, {
     'summon.setShortcut': () => { throw new Error(refused); },
   });
   const ui = parts();
@@ -120,13 +120,13 @@ function fakeBridge(status, answers = {}) {
   assert.equal(ui.message.dataset.warn, 'true');
   assert.equal(ui.input.value, 'Alt+Space', 'What was typed stays for correction');
   assert.deepEqual(bridge.calls.map(call => call.method), ['summon.status', 'summon.setShortcut', 'summon.status']);
-  assert.equal(bridge.state.status.shortcut, 'Alt+Shift+Space');
+  assert.equal(bridge.state.status.shortcut, 'Control+Alt+Shift+Space');
   assert.equal(bridge.state.status.registered, true);
 }
 
 // 5. The checkbox sends its state, and a failure puts it back to what the host has.
 {
-  const bridge = fakeBridge({ session: 'x11', shortcut: 'Alt+Shift+Space', registered: true }, {
+  const bridge = fakeBridge({ session: 'x11', shortcut: 'Control+Alt+Shift+Space', registered: true }, {
     'summon.setHideOnBlur': ({ enabled }, status) => ({ ...status, hideOnBlur: enabled }),
   });
   const ui = parts();
@@ -137,7 +137,7 @@ function fakeBridge(status, answers = {}) {
   assert.deepEqual(bridge.calls.at(-1), { method: 'summon.setHideOnBlur', params: { enabled: true } });
   assert.equal(ui.blur.checked, true);
 
-  const failing = fakeBridge({ session: 'x11', shortcut: 'Alt+Shift+Space', registered: true }, {
+  const failing = fakeBridge({ session: 'x11', shortcut: 'Control+Alt+Shift+Space', registered: true }, {
     'summon.setHideOnBlur': () => { throw new Error('Open Sesame could not save the shortcut setting.'); },
   });
   const other = parts();
@@ -184,10 +184,11 @@ function fakeBridge(status, answers = {}) {
   const window = read('src-tauri/src/window.rs');
   const entry = read('src-tauri/src/lib.rs');
   const capability = read('src-tauri/capabilities/default.json');
-  // The default is not a shortcut ChatGPT, Gemini, Raycast or Alfred take.
+  // The default is not a shortcut ChatGPT, Gemini (Option+Space, and Option+Shift+Space on a Mac),
+  // Raycast or Alfred take.
   const fallback = host.match(/pub const DEFAULT_SHORTCUT: &str = "([^"]+)";/)[1];
-  assert.equal(fallback, 'Alt+Shift+Space');
-  for (const taken of ['Alt+Space', 'Option+Space', 'Control+Space', 'Super+Space', 'Command+Space', 'Control+Shift+Space', 'Control+Alt+Space']) assert.notEqual(fallback.toLowerCase(), taken.toLowerCase());
+  assert.equal(fallback, 'Control+Alt+Shift+Space');
+  for (const taken of ['Alt+Space', 'Option+Space', 'Alt+Shift+Space', 'Option+Shift+Space', 'Control+Space', 'Super+Space', 'Command+Space', 'Control+Shift+Space', 'Control+Alt+Space', 'Control+Super+Space', 'Super+Alt+Space', 'Super+Shift+Space']) assert.notEqual(fallback.toLowerCase(), taken.toLowerCase());
   // Hide-on-blur is off unless the person turns it on.
   assert.match(host, /hide_on_blur: false,\n        \}\n    \}\n\}/);
   // On Wayland the window is not positioned and always-on-top is refused with the fixed message.

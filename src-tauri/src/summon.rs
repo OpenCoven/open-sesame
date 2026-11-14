@@ -39,12 +39,14 @@ pub const TOGGLE_FLAG: &str = "--toggle";
 /// What a person binds to a desktop shortcut where the application cannot grab a key.
 pub const TOGGLE_COMMAND: &str = "open-sesame --toggle";
 /// Not Alt+Space or Option+Space, which ChatGPT, Gemini, Raycast, Alfred and the shipped Swift
-/// host all use, and not Control+Alt+Space or Control+Shift+Space, which other assistants and
-/// password managers use on Windows.
-pub const DEFAULT_SHORTCUT: &str = "Alt+Shift+Space";
+/// host all use, and not Alt+Shift+Space, which Gemini's Mac app takes for its full window. Every
+/// other pair of modifiers with Space is some launcher's, password manager's or system's own
+/// (`the_default_is_not_a_shortcut_other_launchers_take` lists them), and macOS does not report
+/// a conflict, so the default holds three.
+pub const DEFAULT_SHORTCUT: &str = "Control+Alt+Shift+Space";
 
 pub const INVALID_SHORTCUT: &str =
-    "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Alt+Shift+Space.";
+    "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Control+Alt+Shift+Space.";
 pub const INVALID_REQUEST: &str = "Invalid summon request.";
 pub const NOT_SAVED: &str = "Open Sesame could not save the shortcut setting.";
 pub const WAYLAND: &str =
@@ -646,8 +648,13 @@ mod tests {
         let default = parse_shortcut(DEFAULT_SHORTCUT).unwrap();
         for taken in [
             "Alt+Space",
+            // Gemini's Mac app opens its full window with Option+Shift+Space.
+            "Alt+Shift+Space",
             "Control+Alt+Space",
             "Control+Shift+Space",
+            "Control+Super+Space",
+            "Super+Alt+Space",
+            "Super+Shift+Space",
             "Super+Space",
             "Control+Space",
         ] {
