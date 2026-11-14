@@ -7,8 +7,9 @@ for(const file of readdirSync('scripts').filter(name=>/^check-.*\.mjs$/.test(nam
   process.stdout.write(`${result.status===0?'PASS':'FAIL'} ${file}\n`);
   if(result.status!==0){failures++;process.stderr.write(result.stdout+result.stderr);if(result.error)console.error(result.error.message);}
 }
-for(const file of readdirSync('dist').filter(name=>name.endsWith('.js'))){
-  const result=spawnSync(process.execPath,['--check','dist/'+file],{encoding:'utf8',timeout:30000});
+// Authored JavaScript: the current UI in dist/ and the restart's new shell in ui/ (ES modules).
+for(const directory of ['dist','ui'])for(const file of readdirSync(directory).filter(name=>name.endsWith('.js'))){
+  const result=spawnSync(process.execPath,['--check',directory+'/'+file],{encoding:'utf8',timeout:30000});
   if(result.status!==0){failures++;process.stderr.write(result.stderr);}
 }
 console.log(failures?`${failures} checks failed.`:'All widget checks and JavaScript syntax checks passed.');

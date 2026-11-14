@@ -102,6 +102,8 @@ fn is_dev_server_page(dev_url: &Url, url: &Url) -> bool {
         && url.password().is_none()
 }
 
+/// Brings the window back. Only macOS asks for this, when the Dock icon is clicked.
+#[cfg(target_os = "macos")]
 pub fn show(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = focus(&window);
