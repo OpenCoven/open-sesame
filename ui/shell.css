@@ -292,3 +292,6 @@ button:hover { border-color: var(--muted); }
   gap: 0.5rem;
   color: var(--ink);
 }
+
+/* The general input rule above gives text fields a width; a checkbox keeps its own. */
+.summon .check input { width: auto; padding: 0; }
