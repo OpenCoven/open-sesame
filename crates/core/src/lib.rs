@@ -5,9 +5,12 @@
 //! [`gate::dispatch`], which decides whether the request may run before any feature code does.
 //! Allowed requests that need no window go to [`Core::handle`].
 
+pub mod auth;
 pub mod gate;
 pub mod handler;
+pub mod process;
 pub mod protocol;
+pub mod storage;
 pub mod system;
 
 pub use handler::Core;
