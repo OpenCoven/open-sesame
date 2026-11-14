@@ -22,7 +22,7 @@ export function describe(status) {
   const message = words(known.message);
   if (known.authenticated === true) {
     const who = words(known.email) || words(known.name);
-    return { state: 'signed-in', title: who ? `Signed in as ${who}` : 'Signed in', detail: message, warn: false, signIn: false, cancel: false, signOut: true };
+    return { state: 'signed-in', title: who ? `Signed in as ${who}` : 'Signed in', detail: '', warn: false, signIn: false, cancel: false, signOut: true };
   }
   if (known.busy === true) {
     return { state: 'signing-in', title: 'Signing in', detail: message, warn: false, signIn: false, cancel: true, signOut: false };

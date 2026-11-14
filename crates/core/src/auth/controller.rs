@@ -19,16 +19,20 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
-const START: &str = "Sign in to use Open Sesame.";
+// Sign-in is an account control, not a door (issue #60): these sentences say what happened to
+// the session and never tell a person they must sign in to carry on. Before any attempt there
+// is nothing to say.
+const START: &str = "";
 const IN_BROWSER: &str = "Finish signing in in your browser.";
 const SIGNED_IN: &str = "Signed in.";
 const REFRESHING: &str = "Refreshing sign-in…";
 const RESTORING: &str = "Restoring your sign-in…";
-const CANCELLED: &str = "Sign in to continue.";
-const EXPIRED: &str = "Your session expired. Sign in to continue.";
-const ENDED: &str = "Your sign-in has ended. Sign in again to continue.";
+const CANCELLED: &str = "Sign-in cancelled.";
+const EXPIRED: &str = "Your session expired. Sign in again to use your account.";
+const ENDED: &str = "Your sign-in has ended. Sign in again to use your account.";
 const FAILED: &str = "Could not complete sign-in. Check your connection and try again.";
-const STORE_UNREADABLE: &str = "The saved sign-in could not be opened. Sign in again.";
+const STORE_UNREADABLE: &str =
+    "The saved sign-in could not be read from the system's credential store.";
 const STORE_UNWRITABLE: &str =
     "Could not save your sign-in in your system keychain. Unlock it and try again.";
 const SIGNED_OUT: &str = "Signed out on this computer.";

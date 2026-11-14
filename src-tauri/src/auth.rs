@@ -31,7 +31,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Manager, Runtime};
 
 pub const BUSY: &str = "A sign-in is already open in your browser. Finish it there, or cancel it.";
@@ -50,8 +50,10 @@ pub const CHANGED_EVENT: &str = "auth.changed";
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// Larger than any answer the token or key-set endpoints give.
 const MAX_ANSWER_BYTES: u64 = 1024 * 1024;
-/// How long the refresh thread sleeps when nothing is due. A change wakes it sooner.
-const IDLE: Duration = Duration::from_secs(3600);
+/// The longest the refresh thread sleeps before it looks at the clock again.
+const TICK: Duration = Duration::from_secs(30);
+/// The shortest time between two refreshes this thread starts.
+const BETWEEN_ATTEMPTS: Duration = Duration::from_secs(20);
 
 /// What an address handed to the application by the system is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,8 +282,9 @@ pub struct Auth {
     store_check: StoreCheck,
     /// Keeps a window that hides on blur in place while the person is in the browser.
     hold: Mutex<Option<summon::Hold>>,
-    /// Wakes the threads when the status may have changed. Dropped on shutdown.
+    /// Wakes the two threads once more at shutdown, so they see `stopped` and end.
     wake: Mutex<Option<(Sender<()>, Sender<()>)>>,
+    stopped: AtomicBool,
 }
 
 /// The receiving ends for [`Auth::run`].
@@ -319,6 +322,7 @@ impl Auth {
             store_check,
             hold: Mutex::new(None),
             wake: Mutex::new(Some(senders)),
+            stopped: AtomicBool::new(false),
         });
         (auth, Wakes { notify, refresh })
     }
@@ -400,6 +404,9 @@ impl Auth {
         let auth = Arc::clone(self);
         std::thread::spawn(move || {
             while wakes.notify.recv().is_ok() {
+                if auth.stopped.load(Ordering::SeqCst) {
+                    break;
+                }
                 let status = auth.status();
                 // The person is back from the browser, or gave up: the window may hide again.
                 if status["busy"] != Value::Bool(true) {
@@ -409,14 +416,34 @@ impl Auth {
             }
         });
         let auth = Arc::clone(self);
-        std::thread::spawn(move || loop {
-            let due = auth.controller.next_refresh_in();
-            match wakes.refresh.recv_timeout(due.unwrap_or(IDLE)) {
-                // Something changed: work out again when the next refresh is due.
-                Ok(()) => {}
-                Err(RecvTimeoutError::Timeout) if due.is_some() => auth.controller.refresh(),
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => break,
+        std::thread::spawn(move || {
+            // No sooner than this after an attempt, whatever the controller says is due: a
+            // failure it does not schedule a retry for must not become a loop of requests.
+            let mut not_before = Instant::now();
+            loop {
+                // Woken at least every TICK, because the timeout does not count time asleep
+                // and the session's deadline does.
+                let due = auth.controller.next_refresh_in();
+                let wait = due.unwrap_or(TICK).min(TICK);
+                match wakes.refresh.recv_timeout(wait) {
+                    // Something changed: work out again when the next refresh is due.
+                    Ok(()) => {}
+                    Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        let now = Instant::now();
+                        let is_due = auth
+                            .controller
+                            .next_refresh_in()
+                            .is_some_and(|left| left.is_zero());
+                        if is_due && now >= not_before {
+                            not_before = now + BETWEEN_ATTEMPTS;
+                            auth.controller.refresh();
+                        }
+                    }
+                }
+                if auth.stopped.load(Ordering::SeqCst) {
+                    break;
+                }
             }
         });
     }
@@ -424,7 +451,11 @@ impl Auth {
     /// At quit: discards anything in flight and stops the threads. What is saved is kept.
     pub fn shutdown(&self) {
         self.controller.shutdown();
-        lock(&self.wake).take();
+        self.stopped.store(true, Ordering::SeqCst);
+        if let Some((notify, refresh)) = lock(&self.wake).take() {
+            let _ = notify.send(());
+            let _ = refresh.send(());
+        }
         lock(&self.hold).take();
     }
 }
@@ -1015,6 +1046,73 @@ mod tests {
             );
         }
         auth.shutdown();
+    }
+
+    /// Takes a little over twenty seconds: the time the core waits before a retry.
+    #[test]
+    fn a_restore_that_could_not_reach_the_server_is_tried_again_once_and_not_in_a_loop() {
+        let failure = || ("500 Internal Server Error", String::from("{}"));
+        let server = stand_in(vec![failure(), failure(), failure(), failure(), failure()]);
+        let store = Arc::new(Memory(Mutex::new(Some("kept-refresh".to_string()))));
+        let (auth, wakes) = Auth::new(
+            Arc::new(api(&server)),
+            Arc::clone(&store) as Arc<dyn CredentialStore>,
+            Arc::new(Marker::new(None)),
+            Arc::new(|_| true),
+            Arc::new(|| None),
+        );
+        auth.run(wakes, |_| {});
+        auth.restore();
+        let started = Instant::now();
+        let seen = || server.requests.lock().unwrap().len();
+        while seen() < 2 && started.elapsed() < Duration::from_secs(40) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert_eq!(seen(), 2, "the retry never came");
+        let retried_after = started.elapsed();
+        assert!(
+            retried_after >= Duration::from_secs(19),
+            "{retried_after:?}"
+        );
+        // No third request follows at once.
+        std::thread::sleep(Duration::from_secs(3));
+        assert_eq!(seen(), 2);
+        for (line, body) in server.requests.lock().unwrap().iter() {
+            assert_eq!(line, "POST /user_management/authenticate HTTP/1.1");
+            let sent: Value = serde_json::from_str(body).unwrap();
+            assert_eq!(sent, refresh_body("kept-refresh"));
+        }
+        assert_eq!(store.load().unwrap().as_deref(), Some("kept-refresh"));
+        assert!(!auth.authenticated());
+        auth.shutdown();
+    }
+
+    #[test]
+    fn shutting_down_stops_telling_the_page() {
+        let parts = wired(vec![], true, None);
+        parts.auth.handle("auth.signIn", no_hold).unwrap();
+        until(&parts.changes, |status| status["busy"] == json!(true));
+        parts.auth.shutdown();
+        // Both threads end, so the sender they held is dropped and the channel closes.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match parts.changes.recv_timeout(Duration::from_millis(100)) {
+                Err(RecvTimeoutError::Disconnected) => break,
+                _ if Instant::now() > deadline => panic!("the threads are still running"),
+                _ => {}
+            }
+        }
+        assert_eq!(parts.auth.status()["busy"], json!(false));
+    }
+
+    /// Asks the real WorkOS API for this application's public signing keys: one request with
+    /// no credential in it, to show that the HTTPS client and its certificate roots work
+    /// against the real server. Ignored by default because it needs the network.
+    #[test]
+    #[ignore = "contacts the real WorkOS API"]
+    fn the_real_key_set_is_reachable_over_tls() {
+        let keys = HttpApi::workos().jwks().expect("the key set");
+        assert!(!keys.keys.is_empty());
     }
 
     /// Reads and writes the real credential store of the machine the test runs on, under a

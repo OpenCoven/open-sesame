@@ -49,7 +49,8 @@ function fakeBridge(status, answers = {}) {
   assert.match(LOCAL, /works without an account/);
   assert.deepEqual(describe({ ...SIGNED_OUT, busy: true, message: 'Finish signing in in your browser.' }),
     { state: 'signing-in', title: 'Signing in', detail: 'Finish signing in in your browser.', warn: false, signIn: false, cancel: true, signOut: false });
-  assert.deepEqual(describe({ authenticated: true, busy: false, message: '', name: 'Ada', email: 'ada@example.com' }),
+  // Signed in, the title says it all; the host's "Signed in." or "Refreshing sign-in…" is not repeated.
+  assert.deepEqual(describe({ authenticated: true, busy: true, message: 'Refreshing sign-in…', name: 'Ada', email: 'ada@example.com' }),
     { state: 'signed-in', title: 'Signed in as ada@example.com', detail: '', warn: false, signIn: false, cancel: false, signOut: true });
   assert.equal(describe({ authenticated: true, busy: false, message: '', name: 'Ada', email: '' }).title, 'Signed in as Ada');
   assert.equal(describe({ authenticated: true, busy: false, message: '', name: '', email: '' }).title, 'Signed in');
@@ -112,7 +113,7 @@ function fakeBridge(status, answers = {}) {
   assert.equal(ui.section.dataset.state, 'signed-in');
 
   // The session lapsing, for example with the network away, is one more event.
-  bridge.send({ event: CHANGED_EVENT, status: { ...SIGNED_OUT, message: 'Your session expired. Sign in again.' } });
+  bridge.send({ event: CHANGED_EVENT, status: { ...SIGNED_OUT, message: 'Your session expired. Sign in again to use your account.' } });
   assert.equal(ui.section.dataset.state, 'signed-out');
   assert.equal(ui.signIn.hidden, false);
 }
@@ -177,6 +178,10 @@ function fakeBridge(status, answers = {}) {
   assert.match(markup, /<section class="account" data-account hidden/);
   assert.ok(markup.indexOf('data-account') > markup.indexOf('data-status'), 'The account control is part of the shell, after its status line');
   assert.match(gate, /pub const ACCOUNT_BACKED: &\[&str\] = &\[\];/, 'No method in this version needs a session');
+  // The core's sentences describe the session; none tells a person to sign in to carry on.
+  const sentences = [...read('crates/core/src/auth/controller.rs').matchAll(/^const [A-Z_]+: &str =\s*"([^"]*)";/gm)].map(match => match[1]);
+  assert.ok(sentences.length >= 12, `${sentences.length} sentences read`);
+  for (const sentence of sentences) assert.ok(!/to continue|to use Open Sesame/.test(sentence), sentence);
 }
 
 // 7. Rules a reviewer is asked to look for, read from the sources and the configuration.
