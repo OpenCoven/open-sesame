@@ -13,6 +13,8 @@
     "predev": "python3 scripts/build-desktop-source.py",
     "dev": "python3 desktop/dev_server.py",
     "dev:macos": "bash run-macos.sh",
+    "dev:app": "cd src-tauri && cargo tauri dev --no-dev-server",
+    "build:app": "cd src-tauri && cargo tauri build",
     "test:vnc:browser": "node scripts/fixtures/vnc-browser.mjs",
     "hooks:install": "python3 -B scripts/install-hooks.py",
     "check:secrets": "python3 -B scripts/check-secrets.py",

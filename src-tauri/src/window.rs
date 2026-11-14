@@ -33,6 +33,7 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
         .min_inner_size(MINIMUM_SIZE.0, MINIMUM_SIZE.1)
         .resizable(true)
+        .center()
         .initialization_script(initialization_script(&version))
         .on_navigation({
             let dev_url = app.config().build.dev_url.clone();
