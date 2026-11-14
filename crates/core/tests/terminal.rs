@@ -586,18 +586,23 @@ fn a_resize_reaches_the_program() {
     assert!(gone(&[pid(&result)]));
 }
 
-/// Runs the thirty-second wait in a new pane, types Control+C as the byte the emulator sends
-/// for it, then the next command. Returns whether the shell took that command within ten
-/// seconds, and the end of what the pane printed.
-fn interrupts(terminals: &Terminals, id: &str) -> (bool, String) {
+/// Control+C, typed as the byte the emulator sends for it, stops the running command, and the
+/// shell takes the next one long before the thirty-second wait would have ended by itself.
+///
+/// On Windows this also holds when the tests themselves were started with Control+C ignored,
+/// as a hosted CI runner starts them: the core clears that before it starts a shell. Without
+/// that, this test failed there, and passed once the test cleared the attribute itself.
+#[test]
+fn control_c_interrupts_the_running_command() {
+    let terminals = plain();
     let pane = Pane::new();
-    open(terminals, &pane, json!({"id": id, "mode": "local"})).unwrap();
-    input(terminals, id, WAIT_COMMAND);
+    let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+    input(&terminals, "main", WAIT_COMMAND);
     wait_output(&pane, "RUNNING");
     std::thread::sleep(Duration::from_millis(300));
-    input(terminals, id, "\u{3}");
+    input(&terminals, "main", "\u{3}");
     std::thread::sleep(Duration::from_millis(300));
-    input(terminals, id, AFTER_COMMAND);
+    input(&terminals, "main", AFTER_COMMAND);
     let interrupted = wait_for(Duration::from_secs(10), || {
         pane.text().contains("AFTER-INTERRUPT")
     });
@@ -606,43 +611,12 @@ fn interrupts(terminals: &Terminals, id: &str) -> (bool, String) {
         .chars()
         .skip(text.chars().count().saturating_sub(400))
         .collect();
-    call(terminals, "terminal.close", json!({"id": id})).unwrap();
-    (interrupted, tail)
-}
-
-/// Restores normal Control+C handling in this process, so a program it starts does not inherit
-/// "ignore Control+C" from whatever started the tests.
-#[cfg(windows)]
-fn stop_ignoring_control_c() -> bool {
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn SetConsoleCtrlHandler(handler: *const std::ffi::c_void, add: i32) -> i32;
-    }
-    // SAFETY: a null handler with FALSE only clears this process's "ignore Control+C"
-    // attribute; nothing is registered and no pointer is kept.
-    unsafe { SetConsoleCtrlHandler(std::ptr::null(), 0) != 0 }
-}
-
-/// Control+C stops the running command, and the shell takes the next one long before the
-/// thirty-second wait would have ended by itself.
-#[test]
-fn control_c_interrupts_the_running_command() {
-    let terminals = plain();
-    let (interrupted, tail) = interrupts(&terminals, "first");
-    // One diagnostic run for the review of #74: on the hosted Windows runner the first attempt
-    // was not interrupted. Find out whether an inherited "ignore Control+C" is why.
-    #[cfg(windows)]
-    if !interrupted {
-        let cleared = stop_ignoring_control_c();
-        let (again, second) = interrupts(&terminals, "second");
-        panic!(
-            "DIAGNOSTIC not interrupted as started; attribute cleared: {cleared}; interrupted after clearing: {again}; first pane ended {tail:?}; second pane ended {second:?}"
-        );
-    }
     assert!(
         interrupted,
         "Control+C did not stop the running command; the pane ended {tail:?}"
     );
+    terminals.close_all();
+    assert!(gone(&[pid(&result)]));
 }
 
 /// A pane cannot be opened once the terminals have been shut down for Quit.

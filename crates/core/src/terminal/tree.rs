@@ -17,7 +17,7 @@ use std::io;
 #[cfg(unix)]
 pub(super) use unix::Tree;
 #[cfg(windows)]
-pub(super) use windows::Tree;
+pub(super) use windows::{deliver_control_c, Tree};
 
 #[cfg(unix)]
 mod unix {
@@ -174,11 +174,31 @@ mod unix {
 mod windows {
     use super::*;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
+
+    /// Makes sure a shell started from here receives Control+C.
+    ///
+    /// A process inherits "ignore Control+C" from the one that starts it, and a shell that has
+    /// it never sees the Control+C a pane types: the running command is not interrupted. This
+    /// process may have inherited it itself. A hosted CI runner starts its steps that way, and
+    /// there a pane's `Start-Sleep` ran on through Control+C until the attribute was cleared.
+    /// So it is cleared here, once, before the first pane starts. With no handler given, the
+    /// call changes nothing else.
+    pub(in super::super) fn deliver_control_c() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            // SAFETY: no handler is registered and no pointer is kept; `FALSE` with no handler
+            // only restores normal Control+C processing for this process and its children.
+            unsafe {
+                SetConsoleCtrlHandler(None, 0);
+            }
+        });
+    }
 
     /// A job object holding the shell and everything it starts. Closing it kills what is left.
     pub(in super::super) struct Tree {

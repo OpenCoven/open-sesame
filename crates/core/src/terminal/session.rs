@@ -131,6 +131,9 @@ impl Session {
         command.cwd(&launch.cwd);
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
+        // The shell inherits how this process treats Control+C; see `deliver_control_c`.
+        #[cfg(windows)]
+        super::tree::deliver_control_c();
         let mut child = pair.slave.spawn_command(command).map_err(failed)?;
         // Only the child may hold the other end, or the stream never reports its end.
         drop(pair.slave);
