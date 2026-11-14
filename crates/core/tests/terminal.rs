@@ -5,7 +5,7 @@
 //! translated under their own names. Tests that need a POSIX shell are Unix only; the rest run on
 //! Windows through PowerShell and ConPTY.
 
-use open_sesame_core::terminal::{Config, Output, Sink, Terminals, HIGH_WATER};
+use open_sesame_core::terminal::{Config, Output, Sink, Terminals};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,6 +34,7 @@ impl Pane {
         })
     }
 
+    #[cfg(unix)]
     fn len(&self) -> usize {
         self.bytes.lock().unwrap().len()
     }
@@ -139,7 +140,8 @@ fn number_after(pane: &Pane, marker: &str) -> u32 {
             }
             false
         }),
-        "no number after {marker:?} in the terminal output"
+        "no number after {marker:?} in the terminal output: {:?}",
+        pane.text()
     );
     found.unwrap()
 }
@@ -155,7 +157,7 @@ fn plain() -> Terminals {
 
 #[cfg(windows)]
 fn plain() -> Terminals {
-    Terminals::new()
+    Terminals::with(Config::default())
 }
 
 fn folder(root: &Path, name: &str) -> PathBuf {
@@ -170,9 +172,10 @@ const MARKER_COMMAND: &str = "printf 'open-%s-marker\\n' sesame\r";
 #[cfg(windows)]
 const MARKER_COMMAND: &str = "Write-Output ('open-' + 'sesame' + '-marker')\r";
 
-/// Starts a long-running child of the shell and prints `CHILD:<pid>`.
+/// Starts a long-running child of the shell and prints `CHILD:<pid>`. `$!` stays unquoted and
+/// last on the line: an interactive shell reads `!"` as history expansion.
 #[cfg(unix)]
-const CHILD_COMMAND: &str = "sleep 300 & printf 'CHILD:%s\\n' \"$!\"\r";
+const CHILD_COMMAND: &str = "sleep 300 & printf 'CHILD:%s\\n' $!\r";
 #[cfg(windows)]
 const CHILD_COMMAND: &str = "$child = Start-Process ping -ArgumentList '-n','300','127.0.0.1' -PassThru -NoNewWindow; Write-Output ('CHILD:' + $child.Id)\r";
 
@@ -433,7 +436,7 @@ fn close_kills_children_that_ignore_hangup() {
     input(
         &terminals,
         "main",
-        "set -m; nohup sleep 300 >/dev/null 2>&1 & printf 'CHILD:%s\\n' \"$!\"\r",
+        "set -m; nohup sleep 300 >/dev/null 2>&1 & printf 'CHILD:%s\\n' $!\r",
     );
     let child = number_after(&pane, "CHILD:");
     assert!(alive(child));
@@ -519,6 +522,7 @@ fn input_limits_and_binary_input() {
 #[cfg(unix)]
 mod unix {
     use super::*;
+    use open_sesame_core::terminal::HIGH_WATER;
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
@@ -700,7 +704,7 @@ mod unix {
         open(
             &terminals,
             &pane,
-            json!({"id": "bash", "mode": "ssh", "host": "[2001:db8::1]", "launcher": "bash", "prompt": "ls -la", "cwd": "/tmp"}),
+            json!({"id": "bash", "mode": "ssh", "host": "2001:db8::1", "launcher": "bash", "prompt": "ls -la", "cwd": "/tmp"}),
         )
         .unwrap();
         wait_output(&pane, "TTY:yes");
@@ -754,16 +758,19 @@ mod unix {
         let terminals = plain();
         let pane = Pane::new();
         let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
-        // 600,000 numbered lines, about 4.6 MB once the terminal turns each line end into two
-        // bytes. `stty -echo` keeps the typed command out of the output that is checked.
+        // 600,000 numbered lines, about 4 MB. `stty -echo -opost` keeps the typed command out
+        // of the checked output and stops the terminal from rewriting line ends, so the bytes
+        // that arrive are exactly the bytes the program wrote. (With line-end rewriting on, the
+        // macOS kernel now and then writes a second carriage return when its queue is full.)
         input(
             &terminals,
             "main",
-            "stty -echo; printf '__START__\\n'; awk 'BEGIN { for (i = 1; i <= 600000; i++) print i }'; printf '__END__\\n'\r",
+            "stty -echo -opost; printf '__START__\n'; awk 'BEGIN { for (i = 1; i <= 600000; i++) print i }'; printf '__END__\n'\r",
         );
         let limit = HIGH_WATER as usize + 256 * 1024;
         assert!(
-            wait_for(Duration::from_secs(20), || pane.len() >= HIGH_WATER as usize),
+            wait_for(Duration::from_secs(20), || pane.len()
+                >= HIGH_WATER as usize),
             "output never reached the high-water mark"
         );
         // Nothing acknowledged: the stream has to stop near the mark and stay stopped.
@@ -775,7 +782,7 @@ mod unix {
         );
         std::thread::sleep(Duration::from_millis(300));
         assert_eq!(pane.len(), paused_at, "output kept flowing while paused");
-        assert!(!pane.text().contains("__END__"));
+        assert!(!pane.text().contains("__END__\n"));
 
         // Acknowledge as an emulator does, and the rest arrives.
         let finished = wait_for(Duration::from_secs(60), || {
@@ -786,21 +793,14 @@ mod unix {
                 json!({"id": "main", "bytes": received}),
             )
             .unwrap();
-            pane.text().contains("__END__\r\n")
+            pane.text().contains("__END__\n")
         });
         assert!(finished, "output did not resume after acknowledgement");
         let text = pane.text();
-        let body = &text[text.find("__START__\r\n").unwrap() + 11..text.find("__END__").unwrap()];
-        let mut expected = 1u32;
-        for line in body.split("\r\n").filter(|line| !line.is_empty()) {
-            assert_eq!(
-                line.parse::<u32>().ok(),
-                Some(expected),
-                "output lost or reordered"
-            );
-            expected += 1;
-        }
-        assert_eq!(expected, 600_001, "output was cut short");
+        let body = &text[text.find("__START__\n").unwrap() + 10..text.rfind("__END__\n").unwrap()];
+        let expected: String = (1..=600_000).map(|line| format!("{line}\n")).collect();
+        assert_eq!(body.len(), expected.len(), "output lost or duplicated");
+        assert!(body == expected, "output reordered or changed");
         terminals.close_all();
         assert!(gone(&[pid(&result)]));
     }
