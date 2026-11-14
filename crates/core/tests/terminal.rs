@@ -751,6 +751,98 @@ mod unix {
         assert!(gone(&[pid(&result)]));
     }
 
+    /// A long paste reaches the program whole. On macOS a shell that edits lines switches the
+    /// terminal's mode at every line end, and input already waiting then can come out damaged,
+    /// so the pane types a line at a time there. Each shell here reads a here-document of 1,500
+    /// numbered lines sent as one input.
+    #[test]
+    fn a_large_paste_reaches_the_shell_intact() {
+        let root = tempfile::tempdir().unwrap();
+        let body: String = (1..=1500)
+            .map(|n| format!("line {n} of the pasted text\r"))
+            .collect();
+        let expected = body.replace('\r', "\n");
+        assert!(expected.len() > 40_000);
+        for (name, launch) in [
+            ("sh", json!({"launcher": "bash", "prompt": "exec /bin/sh"})),
+            (
+                "bash",
+                json!({"launcher": "bash", "prompt": "exec /bin/bash"}),
+            ),
+            ("default", json!({})),
+        ] {
+            let terminals = plain();
+            let pane = Pane::new();
+            let mut request = params(json!({"id": name, "mode": "local"}));
+            request.extend(params(launch));
+            open(&terminals, &pane, Value::Object(request)).unwrap();
+            let file = root.path().join(name);
+            let data = format!(
+                " cat > '{}' <<'PASTE_END'\r{body}PASTE_END\r printf 'paste-%s\\n' done\r",
+                file.display()
+            );
+            input(&terminals, name, &data);
+            assert!(
+                wait_for(Duration::from_secs(60), || pane
+                    .text()
+                    .contains("paste-done")),
+                "{name}: the shell never finished reading the paste"
+            );
+            let written = std::fs::read_to_string(&file).unwrap();
+            assert!(
+                written == expected,
+                "{name}: the paste was damaged ({} of {} bytes)",
+                written.len(),
+                expected.len()
+            );
+            call(&terminals, "terminal.close", json!({"id": name})).unwrap();
+        }
+    }
+
+    /// Input for a program that is not reading is queued without holding the request, refused
+    /// with a sentence once a megabyte is waiting, and does not keep the pane from closing.
+    #[test]
+    fn input_to_a_program_that_is_not_reading_never_blocks() {
+        let terminals = plain();
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "busy", "mode": "local"})).unwrap();
+        input(
+            &terminals,
+            "busy",
+            "stty -echo; printf 'now-%s\\n' busy; sleep 300\r",
+        );
+        wait_output(&pane, "now-busy");
+        let block = "x".repeat(100_000);
+        let started = Instant::now();
+        let mut refused = None;
+        for _ in 0..40 {
+            if let Err(error) = call(
+                &terminals,
+                "terminal.input",
+                json!({"id": "busy", "data": block}),
+            ) {
+                refused = Some(error);
+                break;
+            }
+        }
+        assert_eq!(
+            refused.as_deref(),
+            Some("This shell is not reading its input. Wait for it, or close the pane.")
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "input requests waited for the program"
+        );
+        let started = Instant::now();
+        call(&terminals, "terminal.close", json!({"id": "busy"})).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "close waited for queued input"
+        );
+        assert!(gone(&[pid(&result)]));
+        assert!(wait_for(Duration::from_secs(5), || pane.exited()));
+    }
+
     /// Output stops when the emulator falls behind by the high-water mark and resumes once it
     /// acknowledges, and nothing is lost or reordered across the pause.
     #[test]

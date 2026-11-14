@@ -6,12 +6,17 @@
 //! more than [`HIGH_WATER`] bytes behind, until they are within [`LOW_WATER`]. While the sender
 //! is stopped the buffer fills, the reader stops reading, the pseudo-terminal fills, and the
 //! program blocks on its own write: nothing is dropped and memory stays bounded.
+//!
+//! Input is typed by a third thread from a bounded queue, so a request to send input returns at
+//! once even when the program is not reading. On macOS it is typed in small pieces with a pause
+//! between them: see [`Pace`].
 
 use super::launch::Launch;
 use super::tree::Tree;
 use super::{Output, Sink, HIGH_WATER, LOW_WATER};
 use crate::protocol::BridgeError;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -23,10 +28,43 @@ const BATCH_WINDOW: Duration = Duration::from_millis(4);
 /// How much output may wait in memory between the reader and the sender.
 const BUFFER_BYTES: usize = 256 * 1024;
 const READ_BYTES: usize = 16 * 1024;
+/// How much input may wait for a program that is not reading before more is refused.
+const INPUT_BACKLOG: usize = 1024 * 1024;
+/// How input is typed: at most this many bytes at once, never past the end of a line when
+/// `by_line` is set, and with this pause after each piece.
+///
+/// On macOS a shell that edits lines (`sh`, `bash`) switches the terminal between raw and line
+/// mode at the end of every line, and input that is already waiting in the terminal driver when
+/// it does so can come out damaged: a paste of a few kilobytes arrives with characters replaced
+/// and lines repeated. So input there is typed a line at a time with a pause for the shell to
+/// take each line. Measured on macOS 27.2 with a 42 KB paste into `sh`: all at once, damaged
+/// almost every time; 1024 bytes every 15 ms, 2 of 20 damaged; 256 bytes every 2 ms, 1 of 29;
+/// a line at a time with 0.2 ms, 5 of 30; a line at a time with 2 ms, 0 of 80. This is a
+/// measurement, not a guarantee, and it costs speed: about 400 lines a second. Linux and
+/// Windows hold the writer back instead of damaging input, so there a request is written whole.
+struct Pace {
+    piece: usize,
+    by_line: bool,
+    pause: Duration,
+}
+#[cfg(target_os = "macos")]
+const PACE: Pace = Pace {
+    piece: 256,
+    by_line: true,
+    pause: Duration::from_millis(2),
+};
+#[cfg(not(target_os = "macos"))]
+const PACE: Pace = Pace {
+    piece: 64 * 1024,
+    by_line: false,
+    pause: Duration::ZERO,
+};
 
 pub(super) const COULD_NOT_START: &str = "Open Sesame could not start the shell.";
 pub(super) const ENDED: &str = "This shell has ended. Reopen the pane to reconnect.";
 pub(super) const STREAM_ENDED: &str = "Terminal stream ended.";
+pub(super) const NOT_READING: &str =
+    "This shell is not reading its input. Wait for it, or close the pane.";
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
@@ -48,13 +86,22 @@ struct Stream {
     acknowledged: u64,
 }
 
+/// Input accepted from the pane and not yet typed into the pseudo-terminal.
+#[derive(Default)]
+struct Typing {
+    pending: VecDeque<u8>,
+    /// The pane has ended or the pseudo-terminal refused a write: nothing more is typed.
+    closed: bool,
+}
+
 struct Shared {
     stream: Mutex<Stream>,
     changed: Condvar,
+    typing: Mutex<Typing>,
+    typed: Condvar,
     /// Taken by whichever of close and the natural end gets there first.
     child: Mutex<Option<Box<dyn Child + Send + Sync>>>,
     tree: Tree,
-    writer: Mutex<Option<Box<dyn Write + Send>>>,
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     sink: Sink,
 }
@@ -110,8 +157,9 @@ impl Session {
             stream: Mutex::new(Stream::default()),
             changed: Condvar::new(),
             child: Mutex::new(Some(child)),
+            typing: Mutex::new(Typing::default()),
+            typed: Condvar::new(),
             tree,
-            writer: Mutex::new(Some(writer)),
             master: Mutex::new(Some(pair.master)),
             sink,
         });
@@ -119,6 +167,8 @@ impl Session {
         std::thread::spawn(move || for_reader.read(reader));
         let for_sender = Arc::clone(&shared);
         std::thread::spawn(move || for_sender.send());
+        let for_typist = Arc::clone(&shared);
+        std::thread::spawn(move || for_typist.type_in(writer));
         #[cfg(windows)]
         {
             let for_watcher = Arc::clone(&shared);
@@ -132,18 +182,22 @@ impl Session {
         lock(&self.shared.stream).closed
     }
 
+    /// Queues input for the program and returns at once. The input is typed in order by the
+    /// pane's own thread.
     pub(super) fn write(&self, bytes: &[u8]) -> Result<(), BridgeError> {
         if self.closed() {
             return Err(BridgeError::from(ENDED));
         }
-        let mut writer = lock(&self.shared.writer);
-        let Some(writer) = writer.as_mut() else {
+        let mut typing = lock(&self.shared.typing);
+        if typing.closed {
             return Err(BridgeError::from(ENDED));
-        };
-        writer
-            .write_all(bytes)
-            .and_then(|()| writer.flush())
-            .map_err(|_| BridgeError::from(ENDED))
+        }
+        if typing.pending.len() + bytes.len() > INPUT_BACKLOG {
+            return Err(BridgeError::from(NOT_READING));
+        }
+        typing.pending.extend(bytes);
+        self.shared.typed.notify_all();
+        Ok(())
     }
 
     pub(super) fn resize(&self, cols: u16, rows: u16) {
@@ -187,10 +241,57 @@ impl Shared {
         if let Some(mut child) = child.take() {
             self.tree.end(child.as_mut());
         }
-        // After the kill: dropping the writer writes an end-of-input byte, which would block on
-        // a full pseudo-terminal whose reader is alive but not reading.
-        lock(&self.writer).take();
+        // After the kill: the typing thread drops the writer when it sees this, and dropping it
+        // writes an end-of-input byte, which would block on a full pseudo-terminal whose reader
+        // is alive but not reading. A write that was blocked on such a terminal has already
+        // been released by the kill.
+        {
+            let mut typing = lock(&self.typing);
+            typing.closed = true;
+            typing.pending = VecDeque::new();
+            self.typed.notify_all();
+        }
         lock(&self.master).take();
+    }
+
+    /// Types queued input into the pseudo-terminal, a piece at a time, until the pane ends. The
+    /// writer is dropped here, on this thread, and only after [`Shared::end`] or a failed write.
+    fn type_in(&self, mut writer: Box<dyn Write + Send>) {
+        loop {
+            let mut typing = lock(&self.typing);
+            while !typing.closed && typing.pending.is_empty() {
+                typing = self
+                    .typed
+                    .wait(typing)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+            }
+            if typing.closed {
+                return;
+            }
+            let mut count = typing.pending.len().min(PACE.piece);
+            if PACE.by_line {
+                let line_end = |byte: &u8| *byte == b'\r' || *byte == b'\n';
+                if let Some(end) = typing.pending.iter().take(count).position(line_end) {
+                    count = end + 1;
+                }
+            }
+            let bytes: Vec<u8> = typing.pending.drain(..count).collect();
+            drop(typing);
+            if writer
+                .write_all(&bytes)
+                .and_then(|()| writer.flush())
+                .is_err()
+            {
+                // The program has gone; the reader notices and ends the pane.
+                let mut typing = lock(&self.typing);
+                typing.closed = true;
+                typing.pending = VecDeque::new();
+                return;
+            }
+            if !PACE.pause.is_zero() {
+                std::thread::sleep(PACE.pause);
+            }
+        }
     }
 
     /// Reads the pseudo-terminal until it ends. Keeps reading after the pane is closed so the
