@@ -3,7 +3,7 @@
   "productName": "Open Sesame",
   "identifier": "com.perch.widgetstudio",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": ["../ui", "../dist/vendor/xterm.js", "../dist/vendor/xterm.css"]
   },
   "app": {
     "withGlobalTauri": true,
@@ -12,7 +12,7 @@
       "csp": {
         "default-src": "'self'",
         "script-src": "'self'",
-        "style-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
         "img-src": "'self' data:",
         "connect-src": "ipc: http://ipc.localhost",
         "object-src": "'none'",

@@ -231,7 +231,9 @@ for (const [, href] of page.matchAll(/<link\b[^>]*\bhref="([^"]+)"/gi)) assert(/
 // front end, the window created in Rust, a policy that admits only bundled script, and the
 // command granted to the main window alone.
 const config = JSON.parse(read('src-tauri/tauri.conf.json'));
-assert.equal(config.build.frontendDist, '../ui');
+// The new shell, plus the two reviewed terminal emulator files it shares with dist/ (issue #74).
+// A listed folder is served from the root and a listed file under its own name.
+assert.deepEqual(config.build.frontendDist, ['../ui', '../dist/vendor/xterm.js', '../dist/vendor/xterm.css']);
 assert.equal(config.build.devUrl, undefined, 'No dev server: the app always serves the bundled files');
 assert.equal(config.app.withGlobalTauri, true);
 assert.deepEqual(config.app.windows, [], 'The main window is created in Rust so the flags precede every page script');
@@ -242,10 +244,15 @@ const policy = Object.fromEntries(typeof csp === 'string'
   : Object.entries(csp).map(([key, value]) => [key, [].concat(value).flatMap(item => item.trim().split(/\s+/))]));
 assert.deepEqual(policy['default-src'], ["'self'"]);
 assert.deepEqual(policy['script-src'], ["'self'"], 'Only bundled script runs in the main document');
-assert(!JSON.stringify(csp).includes('unsafe'), 'The policy allows no inline or evaluated code');
+// The terminal emulator (issue #74) writes cell colours as style attributes and its metrics into
+// style elements, so inline style is allowed, and that is the only relaxation. Inline or
+// evaluated script never is.
+assert.deepEqual(policy['style-src'], ["'self'", "'unsafe-inline'"]);
+for (const [name, sources] of Object.entries(policy)) if (name !== 'style-src') assert(!sources.some(source => source.includes('unsafe')), `${name} allows nothing unsafe`);
+assert.equal(JSON.stringify(csp).split('unsafe').length, 2, 'The only relaxation is inline style');
 // No directive may name another site: not a frame, a connection, a style or an image.
 const LOCAL_SOURCES = new Set(["'self'", "'none'", 'data:', 'ipc:', 'http://ipc.localhost']);
-for (const [name, sources] of Object.entries(policy)) for (const source of sources) assert(LOCAL_SOURCES.has(source), `${name} admits only the application's own files and the host connection, not ${source}`);
+for (const [name, sources] of Object.entries(policy)) for (const source of sources) assert(LOCAL_SOURCES.has(source) || (name === 'style-src' && source === "'unsafe-inline'"), `${name} admits only the application's own files and the host connection, not ${source}`);
 assert.notEqual(config.app.security.dangerousDisableAssetCspModification, true);
 // One capability, in one file. Tauri also reads capabilities written inline in the configuration
 // and from other file types in this folder, so both are ruled out here.

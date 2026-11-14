@@ -19,7 +19,7 @@ pub fn info() -> Value {
 }
 
 /// This machine's host name, as the UI labels local panes with it.
-fn machine() -> String {
+pub(crate) fn machine() -> String {
     gethostname::gethostname().to_string_lossy().into_owned()
 }
 

@@ -8,8 +8,10 @@
 mod events;
 #[cfg(target_os = "macos")]
 mod panel;
+mod project;
 mod router;
 mod summon;
+mod terminal;
 mod tray;
 mod window;
 
@@ -36,7 +38,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
             summon::launched_again(app, &arguments);
         }))
-        .plugin(summon::shortcut_plugin());
+        .plugin(summon::shortcut_plugin())
+        // Used from Rust only. The capability grants the page none of these plugins' commands.
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
     let app = builder
@@ -66,4 +72,29 @@ pub fn run() {
         RunEvent::Reopen { .. } => window::show(app),
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod test_support {
+    /// Whether a process with this ID exists.
+    #[cfg(unix)]
+    pub fn alive(pid: u32) -> bool {
+        // `kill -0` sends nothing; it only reports whether the process can be signalled.
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    #[cfg(windows)]
+    pub fn alive(pid: u32) -> bool {
+        let filter = format!("PID eq {pid}");
+        std::process::Command::new("tasklist")
+            .args(["/FI", &filter, "/NH", "/FO", "CSV"])
+            .output()
+            .is_ok_and(|output| {
+                String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
+            })
+    }
 }
