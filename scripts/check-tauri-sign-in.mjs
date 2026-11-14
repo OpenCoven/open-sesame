@@ -223,6 +223,16 @@ function fakeBridge(status, answers = {}) {
   // be kept, and the Linux sentence names what to install.
   assert.ok(code.indexOf('(self.store_check)()') < code.indexOf('self.controller.begin_sign_in()'));
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
+  // The store is opened once per run, so a keyring installed later needs a restart, not a retry.
+  assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*start it again[^"]*"/);
+  // At launch the store is asked on the restore thread, never in `start`, which runs on the main
+  // thread before the window exists: a locked keyring answers only after its unlock prompt.
+  const start = code.slice(code.indexOf('pub fn start<'), code.indexOf('fn listen<'));
+  assert.equal(start.split('.available()').length - 1, 2, 'The store is asked in two closures only');
+  assert.match(start, /Arc::new\(move \|\| store_problem\(probe\.available\(\), KeychainStore::exists\(\)\)\);/);
+  assert.match(start, /auth\.restore\(move \|\| !cfg!\(target_os = "linux"\) \|\| saved\.available\(\)\);/);
+  // A refresh that is due before the next attempt is allowed is waited for, not spun on.
+  assert.match(code, /recv_timeout\(pause\(due, allowed_in\)\)/);
 
   // Nothing in the wiring prints or logs: a URL carries the state and a reply carries tokens.
   // The two exceptions are in development builds only and print no address, name or credential.

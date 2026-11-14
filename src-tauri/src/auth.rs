@@ -40,9 +40,13 @@ pub const BUSY: &str = "A sign-in is already open in your browser. Finish it the
 pub const NOT_STARTED: &str = "Could not start sign-in. Try again.";
 pub const NO_BROWSER: &str =
     "Could not open your browser. Check that a default browser is set, then try again.";
-/// Shown on Linux when no Secret Service answers. Without one there is nowhere safe to keep a
-/// sign-in, so the browser is not opened at all.
-pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the system keyring, and none is available. Install and unlock a Secret Service keyring such as GNOME Keyring or KWallet, then try again. Everything on this computer works without signing in.";
+/// Shown on Linux when there is no Secret Service. Without one there is nowhere safe to keep a
+/// sign-in, so the browser is not opened at all. It says to start again because the store is
+/// opened once for as long as the application runs ([`KeychainStore::exists`]): a keyring
+/// installed afterwards is not seen until then.
+pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the system keyring, and none is available. Install a Secret Service keyring such as GNOME Keyring or KWallet, then quit Open Sesame and start it again. Everything on this computer works without signing in.";
+/// Shown when the system has a credential store that would not answer: a keyring that is
+/// locked, or whose prompt was dismissed.
 pub const NO_KEYCHAIN: &str = "Open Sesame could not reach the system's credential store to keep your sign-in. Unlock it and try again. Everything on this computer works without signing in.";
 
 /// The event the page receives whenever the sign-in status may have changed.
@@ -190,9 +194,18 @@ impl KeychainStore {
         keyring::Entry::new(&self.service, CLIENT_ID).map_err(|_| AuthError::Store)
     }
 
-    /// Whether the store can be reached at all. An empty store is reachable.
+    /// Whether the store can be reached at all. An empty store is reachable. On Linux this
+    /// can take as long as a person takes to answer the keyring's unlock prompt, so it must
+    /// not be asked on the main thread.
     pub fn available(&self) -> bool {
         self.load().is_ok()
+    }
+
+    /// Whether the system has a credential store at all. The `keyring` crate opens the store
+    /// the first time it is asked and keeps that answer for as long as the application runs,
+    /// so a Secret Service that appears later is not seen until the application starts again.
+    pub fn exists() -> bool {
+        keyring::Entry::store_status().is_ok()
     }
 }
 
@@ -271,10 +284,33 @@ pub type Browser = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 /// Says why sign-in cannot be kept on this computer, if it cannot.
 pub type StoreCheck = Arc<dyn Fn() -> Option<&'static str> + Send + Sync>;
 
+/// Why a sign-in could not be kept on this computer, if it could not. `answered` is whether
+/// the store could be read just now and `exists` whether the system has one at all. Only a
+/// Linux desktop can be without one; everywhere else, and on Linux when the keyring is there
+/// but locked, the store is one to unlock.
+fn store_problem(answered: bool, exists: bool) -> Option<&'static str> {
+    if answered {
+        None
+    } else if cfg!(target_os = "linux") && !exists {
+        Some(NO_SECRET_SERVICE)
+    } else {
+        Some(NO_KEYCHAIN)
+    }
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// How long the refresh thread sleeps before it looks again: until the refresh is due, but not
+/// before the next attempt is allowed, and never longer than [`TICK`], because a timeout does
+/// not count time the computer is asleep and a session's deadline does. A refresh that is due
+/// while the next attempt is not yet allowed must wait for it; with no wait at all the thread
+/// would spin until then.
+fn pause(due: Option<Duration>, allowed_in: Duration) -> Duration {
+    due.map_or(TICK, |due| due.max(allowed_in)).min(TICK)
 }
 
 /// The sign-in state the application keeps.
@@ -395,10 +431,16 @@ impl Auth {
         kind
     }
 
-    /// At launch: restores the saved session, off the calling thread.
-    pub fn restore(self: &Arc<Self>) {
+    /// At launch: restores the saved session, off the calling thread. `ready` is asked on
+    /// that thread first, because asking the credential store can wait for a person: a locked
+    /// keyring shows its unlock prompt, and the window must not wait for the answer.
+    pub fn restore(self: &Arc<Self>, ready: impl FnOnce() -> bool + Send + 'static) {
         let auth = Arc::clone(self);
-        std::thread::spawn(move || auth.controller.restore());
+        std::thread::spawn(move || {
+            if ready() && !auth.stopped.load(Ordering::SeqCst) {
+                auth.controller.restore();
+            }
+        });
     }
 
     /// Starts the two threads. `changed` is called with the new status after each change.
@@ -423,11 +465,9 @@ impl Auth {
             // failure it does not schedule a retry for must not become a loop of requests.
             let mut not_before = Instant::now();
             loop {
-                // Woken at least every TICK, because the timeout does not count time asleep
-                // and the session's deadline does.
                 let due = auth.controller.next_refresh_in();
-                let wait = due.unwrap_or(TICK).min(TICK);
-                match wakes.refresh.recv_timeout(wait) {
+                let allowed_in = not_before.saturating_duration_since(Instant::now());
+                match wakes.refresh.recv_timeout(pause(due, allowed_in)) {
                     // Something changed: work out again when the next refresh is due.
                     Ok(()) => {}
                     Err(RecvTimeoutError::Disconnected) => break,
@@ -507,18 +547,10 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     let store = Arc::new(KeychainStore::new(credential_service(
         &app.config().identifier,
     )));
-    // On Linux a desktop without a Secret Service is ordinary, and then nothing was ever saved:
-    // there is no session to restore and nothing to tell a person who never signed in. On
-    // macOS and Windows the store always exists, so a failure to read it is worth saying.
-    let restore = !cfg!(target_os = "linux") || store.available();
     let probe = Arc::clone(&store);
-    let store_check: StoreCheck = Arc::new(move || {
-        (!probe.available()).then_some(if cfg!(target_os = "linux") {
-            NO_SECRET_SERVICE
-        } else {
-            NO_KEYCHAIN
-        })
-    });
+    let store_check: StoreCheck =
+        Arc::new(move || store_problem(probe.available(), KeychainStore::exists()));
+    let saved = Arc::clone(&store);
     let browser: Browser = Arc::new(|url| tauri_plugin_opener::open_url(url, None::<&str>).is_ok());
     let (auth, wakes) = Auth::new(
         Arc::new(workos_api()),
@@ -537,9 +569,12 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
         );
         emit(json!({"event": CHANGED_EVENT, "status": status}));
     });
-    if restore {
-        auth.restore();
-    }
+    // On Linux a desktop without a Secret Service is ordinary, and then nothing was ever saved:
+    // there is no session to restore and nothing to tell a person who never signed in. On
+    // macOS and Windows the store always exists, so a failure to read it is worth saying.
+    // The store is asked on the restore thread and never here: this runs on the main thread
+    // before the window exists, and a locked keyring answers only after its prompt does.
+    auth.restore(move || !cfg!(target_os = "linux") || saved.available());
     app.manage(Arc::clone(&auth));
     listen(app, auth);
 }
@@ -549,7 +584,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
 fn listen<R: Runtime>(app: &AppHandle<R>, auth: Arc<Auth>) {
     use tauri_plugin_deep_link::DeepLinkExt;
     // In a development build on Windows and Linux nothing has installed the scheme, so it is
-    // registered for this run. A failure only means callbacks will not arrive.
+    // registered here, for the current user, and stays registered after the run ends. A failure
+    // only means callbacks will not arrive.
     #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
     let _ = app.deep_link().register_all();
     let handle = app.clone();
@@ -1056,7 +1092,6 @@ mod tests {
         );
         assert!(parts.opened.lock().unwrap().is_empty());
         assert_eq!(parts.auth.status()["busy"], json!(false));
-        assert!(NO_SECRET_SERVICE.contains("works without signing in"));
     }
 
     #[test]
@@ -1099,7 +1134,7 @@ mod tests {
         auth.run(wakes, move |status| {
             let _ = tx.send(status);
         });
-        auth.restore();
+        auth.restore(|| true);
         let status = until(&changes, |status| {
             status["busy"] == json!(false)
                 && status["message"]
@@ -1141,7 +1176,7 @@ mod tests {
             Arc::new(|| None),
         );
         auth.run(wakes, |_| {});
-        auth.restore();
+        auth.restore(|| true);
         let started = Instant::now();
         let seen = || server.requests.lock().unwrap().len();
         while seen() < 2 && started.elapsed() < Duration::from_secs(40) {
@@ -1182,6 +1217,111 @@ mod tests {
             }
         }
         assert_eq!(parts.auth.status()["busy"], json!(false));
+    }
+
+    #[test]
+    fn a_refresh_that_is_due_but_not_yet_allowed_is_waited_for() {
+        let seconds = Duration::from_secs;
+        // Nothing to refresh: look again after a tick.
+        assert_eq!(pause(None, Duration::ZERO), TICK);
+        assert_eq!(pause(None, seconds(15)), TICK);
+        // Due later: sleep until then, but never longer than a tick.
+        assert_eq!(pause(Some(seconds(5)), Duration::ZERO), seconds(5));
+        assert_eq!(pause(Some(seconds(240)), Duration::ZERO), TICK);
+        // Due now, or sooner than the next attempt is allowed: sleep until it is allowed. A
+        // wait of nothing here is a thread that spins until the next attempt.
+        assert_eq!(pause(Some(Duration::ZERO), seconds(15)), seconds(15));
+        assert_eq!(pause(Some(seconds(5)), seconds(15)), seconds(15));
+        assert_eq!(
+            pause(Some(Duration::ZERO), BETWEEN_ATTEMPTS),
+            BETWEEN_ATTEMPTS
+        );
+        // Due and allowed: at once.
+        assert_eq!(pause(Some(Duration::ZERO), Duration::ZERO), Duration::ZERO);
+        // The longest wait between two attempts still fits in one sleep.
+        assert!(BETWEEN_ATTEMPTS <= TICK);
+    }
+
+    #[test]
+    fn a_missing_store_and_a_locked_one_are_told_apart() {
+        assert_eq!(store_problem(true, true), None);
+        assert_eq!(store_problem(true, false), None);
+        // A store that is there and would not answer is one to unlock, on every system.
+        assert_eq!(store_problem(false, true), Some(NO_KEYCHAIN));
+        assert!(NO_KEYCHAIN.contains("Unlock it and try again"));
+        // Only Linux can be without one, and a keyring installed while the application runs
+        // is not seen until it starts again, so the sentence must not say to try again.
+        let missing = store_problem(false, false);
+        if cfg!(target_os = "linux") {
+            assert_eq!(missing, Some(NO_SECRET_SERVICE));
+        } else {
+            assert_eq!(missing, Some(NO_KEYCHAIN));
+        }
+        assert!(NO_SECRET_SERVICE.contains("start it again"));
+        assert!(!NO_SECRET_SERVICE.contains("try again"));
+        for sentence in [NO_SECRET_SERVICE, NO_KEYCHAIN] {
+            assert!(sentence.contains("works without signing in"), "{sentence}");
+        }
+    }
+
+    #[test]
+    fn the_restore_does_not_keep_its_caller_waiting_for_the_credential_store() {
+        // A store that answers only when it is told to, as a locked keyring answers only after
+        // its unlock prompt: `ready` is where the application asks it.
+        let wired = |answers| {
+            let server = stand_in(answers);
+            let store = Arc::new(Memory(Mutex::new(Some("kept-refresh".to_string()))));
+            let (auth, wakes) = Auth::new(
+                Arc::new(api(&server)),
+                store,
+                Arc::new(Marker::new(None)),
+                Arc::new(|_| true),
+                Arc::new(|| None),
+            );
+            let (tx, changes) = channel();
+            auth.run(wakes, move |status| {
+                let _ = tx.send(status);
+            });
+            (auth, changes, server.requests)
+        };
+
+        // The prompt is dismissed: nothing is restored and nothing is said.
+        let (auth, changes, requests) = wired(vec![]);
+        let (answer, asked) = channel::<bool>();
+        let started = Instant::now();
+        auth.restore(move || asked.recv().unwrap_or(false));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "the caller waited for the store"
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            changes.try_recv().is_err(),
+            "nothing happens before the store answers"
+        );
+        answer.send(false).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(changes.try_recv().is_err());
+        assert!(requests.lock().unwrap().is_empty());
+        assert_eq!(auth.status()["message"], json!(""));
+        auth.shutdown();
+
+        // The prompt is answered: the saved credential is used, after the answer and not before.
+        let (auth, changes, requests) =
+            wired(vec![("500 Internal Server Error", String::from("{}"))]);
+        let (answer, asked) = channel::<bool>();
+        auth.restore(move || asked.recv().unwrap_or(false));
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(requests.lock().unwrap().is_empty());
+        answer.send(true).unwrap();
+        until(&changes, |status| {
+            status["busy"] == json!(false) && status["message"] != json!("")
+        });
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let sent: Value = serde_json::from_str(&requests[0].1).unwrap();
+        assert_eq!(sent, refresh_body("kept-refresh"));
+        auth.shutdown();
     }
 
     /// Asks the real WorkOS API for this application's public signing keys: one request with
