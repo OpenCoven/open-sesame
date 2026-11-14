@@ -17,7 +17,9 @@
 //! - A callback is passed to the core as it arrived. The core checks it against the pending
 //!   `state`; a callback from another process with no sign-in pending changes nothing.
 //! - The refresh token is saved only through the operating system's credential store. No
-//!   token is logged, printed, put in an error or sent to the page.
+//!   token, address, name or email is logged, printed, put in an error or sent to the page
+//!   beyond the status. A development build prints two lines: the status flags with the
+//!   fixed sentence, and the kind of a link that arrived.
 
 use crate::{summon, window};
 use open_sesame_core::auth::{
@@ -505,6 +507,10 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     let store = Arc::new(KeychainStore::new(credential_service(
         &app.config().identifier,
     )));
+    // On Linux a desktop without a Secret Service is ordinary, and then nothing was ever saved:
+    // there is no session to restore and nothing to tell a person who never signed in. On
+    // macOS and Windows the store always exists, so a failure to read it is worth saying.
+    let restore = !cfg!(target_os = "linux") || store.available();
     let probe = Arc::clone(&store);
     let store_check: StoreCheck = Arc::new(move || {
         (!probe.available()).then_some(if cfg!(target_os = "linux") {
@@ -522,9 +528,18 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
         store_check,
     );
     auth.run(wakes, move |status| {
+        // A development build says what changed, for the launched-application checks: the two
+        // flags and the fixed sentence, never a name, an address or a credential.
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "open-sesame: sign-in authenticated={} busy={} message={}",
+            status["authenticated"], status["busy"], status["message"]
+        );
         emit(json!({"event": CHANGED_EVENT, "status": status}));
     });
-    auth.restore();
+    if restore {
+        auth.restore();
+    }
     app.manage(Arc::clone(&auth));
     listen(app, auth);
 }
@@ -540,7 +555,11 @@ fn listen<R: Runtime>(app: &AppHandle<R>, auth: Arc<Auth>) {
     let handle = app.clone();
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
-            if auth.link(url.as_str()) != Link::Other {
+            let kind = auth.link(url.as_str());
+            // Only what kind of address it was; the address itself carries the code.
+            #[cfg(debug_assertions)]
+            eprintln!("open-sesame: link {kind:?}");
+            if kind != Link::Other {
                 window::show(&handle);
             }
         }

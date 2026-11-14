@@ -225,7 +225,16 @@ function fakeBridge(status, answers = {}) {
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
 
   // Nothing in the wiring prints or logs: a URL carries the state and a reply carries tokens.
-  for (const printer of ['println!', 'eprintln!', 'dbg!', 'log::', 'tracing::']) assert.ok(!code.includes(printer), `auth.rs does not use ${printer}`);
+  // The two exceptions are in development builds only and print no address, name or credential.
+  for (const printer of [' println!', 'dbg!', 'log::', 'tracing::']) assert.ok(!code.includes(printer), `auth.rs does not use ${printer}`);
+  const printed = [...code.matchAll(/(#\[cfg\(debug_assertions\)\]\n\s+)?eprintln!\(([^;]*)\);/g)];
+  assert.equal(printed.length, 2);
+  for (const [, guard, body] of printed) {
+    assert.ok(guard, 'A print is compiled into development builds only');
+    assert.ok(!/url|token|email|name\b|state\b|verifier|code\b/.test(body.replace('open-sesame: sign-in', '')), body);
+  }
+  assert.match(printed[0][2], /status\["authenticated"\], status\["busy"\], status\["message"\]/);
+  assert.match(printed[1][2], /"open-sesame: link \{kind:\?\}"/);
   // No token, address, state or verifier is in what the page is sent.
   assert.match(code, /emit\(json!\(\{"event": CHANGED_EVENT, "status": status\}\)\);/);
 
