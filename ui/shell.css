@@ -89,6 +89,49 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Account control (issue #72). */
+.account {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.account[hidden] { display: none; }
+
+.account h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.account .who, .account .message { margin: 0; }
+
+.account .message { color: var(--muted); font-size: 0.9rem; }
+
+.account .message:empty { display: none; }
+
+.account .message[data-warn="true"] { color: var(--warn); }
+
+.account .row { display: flex; gap: 0.5rem; }
+
+.account button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.account button:disabled { color: var(--muted); }
+
+.account button:focus-visible {
+  outline: 2px solid var(--ok);
+  outline-offset: 1px;
+}
+
 /* Shortcut settings (issue #71). */
 .summon {
   margin-top: 0.5rem;

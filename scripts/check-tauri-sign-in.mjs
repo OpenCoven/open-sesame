@@ -199,7 +199,7 @@ function fakeBridge(status, answers = {}) {
 
   // One scheme, the one the WorkOS application already redirects to.
   assert.deepEqual(config.plugins['deep-link'], { desktop: { schemes: ['opensesame'] } });
-  assert.match(read('crates/core/src/auth/mod.rs') + read('crates/core/src/auth/workos.rs'), /"opensesame:\/\/auth\/callback"/);
+  assert.match(read('crates/core/src/auth/mod.rs'), /pub const REDIRECT: &str = "opensesame:\/\/auth\/callback";/);
 
   // The page is granted neither plugin: it cannot register a scheme, read a link or open an
   // address. The opener plugin is not even registered; the host calls its function directly.

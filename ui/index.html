@@ -16,6 +16,16 @@
     <div><dt>System</dt><dd data-fact="platform"></dd></div>
     <div><dt>Version</dt><dd data-fact="version"></dd></div>
   </dl>
+  <section class="account" data-account hidden aria-labelledby="account-title">
+    <h2 id="account-title">Account</h2>
+    <p class="who" role="status" data-account-title></p>
+    <p class="message" data-account-detail></p>
+    <div class="row">
+      <button type="button" data-account-sign-in hidden>Sign in</button>
+      <button type="button" data-account-cancel hidden>Cancel sign-in</button>
+      <button type="button" data-account-sign-out hidden>Sign out</button>
+    </div>
+  </section>
   <section class="summon" data-summon hidden aria-labelledby="summon-title">
     <h2 id="summon-title">Shortcut</h2>
     <form data-summon-form>
