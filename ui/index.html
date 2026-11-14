@@ -5,17 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Open Sesame</title>
+<link rel="stylesheet" href="./xterm.css">
 <link rel="stylesheet" href="./shell.css">
 <script type="module" src="./main.js"></script>
 </head>
 <body>
 <main class="shell" data-state="connecting">
-  <h1>Open Sesame</h1>
-  <p class="status" role="status" data-status>Connecting to this machine.</p>
-  <dl class="facts" data-facts hidden>
-    <div><dt>System</dt><dd data-fact="platform"></dd></div>
-    <div><dt>Version</dt><dd data-fact="version"></dd></div>
-  </dl>
+  <header class="bar">
+    <h1>Open Sesame</h1>
+    <p class="status" role="status" data-status>Connecting to this machine.</p>
+    <dl class="facts" data-facts hidden>
+      <div><dt>System</dt><dd data-fact="platform"></dd></div>
+      <div><dt>Version</dt><dd data-fact="version"></dd></div>
+    </dl>
+  </header>
+  <section class="terminals" data-terminals hidden aria-label="Terminals">
+    <form class="launch" data-launch autocomplete="off">
+      <label>Folder <input name="cwd" placeholder="Home folder" spellcheck="false" autocapitalize="off"></label>
+      <button type="button" data-action="choose">Choose…</button>
+      <button type="button" data-action="reveal">Show folder</button>
+      <label>SSH host <input name="host" placeholder="This machine" spellcheck="false" autocapitalize="off"></label>
+      <label>User <input name="user" spellcheck="false" autocapitalize="off"></label>
+      <button type="submit">New shell</button>
+    </form>
+    <p class="notice" role="alert" data-notice hidden></p>
+    <div class="tabs" role="tablist" aria-label="Open shells" data-tabs></div>
+    <div class="panes" data-panes></div>
+  </section>
 </main>
 </body>
 </html>

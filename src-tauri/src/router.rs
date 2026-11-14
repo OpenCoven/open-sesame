@@ -1,6 +1,6 @@
 //! The one command the UI can call, and where each allowed request goes.
 
-use crate::{window, AppState};
+use crate::{project, terminal, window, AppState};
 use open_sesame_core::gate::{self, Caller, NOT_IN_VERSION};
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
 use open_sesame_core::Core;
@@ -15,6 +15,10 @@ pub enum Route {
     Auth,
     /// Needs the window, so the application answers it.
     Host,
+    /// A pane's output channel and the clipboard (issue #74).
+    Terminal,
+    /// The folder dialog and the file manager (issue #74).
+    Project,
     /// Everything else: the headless core.
     Core,
 }
@@ -24,6 +28,10 @@ pub fn route(method: &str) -> Route {
         Route::Auth
     } else if window::METHODS.contains(&method) {
         Route::Host
+    } else if terminal::METHODS.contains(&method) {
+        Route::Terminal
+    } else if project::METHODS.contains(&method) {
+        Route::Project
     } else {
         Route::Core
     }
@@ -76,6 +84,8 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
     gate::dispatch(request, &caller, |request| match route(&request.method) {
         Route::Auth => auth(&request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
+        Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
+        Route::Project => project::handle(window, &request.method, &request.params),
         Route::Core => core.handle(&request.method, &request.params),
     })
 }
@@ -186,8 +196,31 @@ mod tests {
         );
         assert_eq!(call(&main, "auth.signIn", json!({})), error(NOT_IN_VERSION));
         assert_eq!(call(&main, "nope.nothing", json!({})), error(UNSUPPORTED));
-        // Listed in the gate ahead of its handler (#74): still a fixed reply, never a crash.
-        assert_eq!(call(&main, "terminal.open", json!({})), error(UNSUPPORTED));
+        // Requests the application answers refuse bad input before they touch a plugin.
+        assert_eq!(
+            call(&main, "terminal.open", json!({"id": "main"})),
+            error(open_sesame_core::terminal::NO_CHANNEL)
+        );
+        assert_eq!(
+            call(
+                &main,
+                "terminal.open",
+                json!({"id": "bad id", "channel": "__CHANNEL__:7"})
+            ),
+            error("Invalid pane ID.")
+        );
+        assert_eq!(
+            call(&main, "terminal.clipboard.read", json!({"x": 1})),
+            error("Invalid terminal clipboard request.")
+        );
+        assert_eq!(
+            call(&main, "terminal.clipboard.write", json!({"text": 5})),
+            error("Invalid terminal clipboard request.")
+        );
+        assert_eq!(
+            call(&main, "project.reveal", json!({"path": "relative"})),
+            error("Folder unavailable.")
+        );
         assert_eq!(
             call(&main, "window.size", json!({"width": "wide"})),
             error(window::INVALID_DIMENSIONS)
@@ -288,9 +321,75 @@ mod tests {
 
     #[test]
     fn everything_else_goes_to_the_core() {
-        for method in ["system.info", "terminal.open", "project.reveal"] {
+        for method in [
+            "system.info",
+            "terminal.input",
+            "terminal.resize",
+            "terminal.close",
+            "terminal.ack",
+        ] {
             assert_eq!(route(method), Route::Core, "{method}");
         }
+    }
+
+    #[test]
+    fn methods_that_need_the_window_or_a_plugin_stay_in_the_application() {
+        for method in [
+            "terminal.open",
+            "terminal.clipboard.read",
+            "terminal.clipboard.write",
+        ] {
+            assert_eq!(route(method), Route::Terminal, "{method}");
+        }
+        for method in ["project.chooseFolder", "project.reveal"] {
+            assert_eq!(route(method), Route::Project, "{method}");
+        }
+    }
+
+    /// A pane opened through the command is a real shell, and closing it through the command
+    /// leaves no process. The channel's messages go nowhere on this windowless runtime; the
+    /// stream itself is tested in the core.
+    #[test]
+    fn a_pane_opens_and_closes_through_the_command() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let opened = call(
+            &main,
+            "terminal.open",
+            json!({"id": "main", "mode": "local", "channel": "__CHANNEL__:7"}),
+        )
+        .unwrap();
+        let pid = opened["result"]["pid"].as_u64().expect("no process ID") as u32;
+        assert_eq!(opened["result"]["id"], "main");
+        assert!(crate::test_support::alive(pid));
+        let ok = Ok(json!({"requestId": "r1", "result": true}));
+        assert_eq!(
+            call(&main, "terminal.ack", json!({"id": "main", "bytes": 10})),
+            ok
+        );
+        assert_eq!(
+            call(
+                &main,
+                "terminal.resize",
+                json!({"id": "main", "cols": 100, "rows": 30})
+            ),
+            ok
+        );
+        assert_eq!(call(&main, "terminal.close", json!({"id": "main"})), ok);
+        assert!(
+            !crate::test_support::alive(pid),
+            "the shell is still running after terminal.close returned"
+        );
+        // Another window cannot reach the panes either.
+        let other = open(&app, "other", bundled());
+        assert_eq!(
+            call(
+                &other,
+                "terminal.open",
+                json!({"id": "x", "channel": "__CHANNEL__:8"})
+            ),
+            Err(Value::Null)
+        );
     }
 
     #[test]
