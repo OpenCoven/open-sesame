@@ -19,6 +19,7 @@ use serde_json::{json, Map, Value};
 use session::Session;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// The sender stops when the emulator has this many bytes it has not acknowledged.
@@ -71,6 +72,8 @@ pub struct Config {
 pub struct Terminals {
     config: Config,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
+    /// Set by [`Terminals::shut_down`]: no pane opens from then on.
+    quitting: AtomicBool,
 }
 
 impl std::fmt::Debug for Terminals {
@@ -88,6 +91,7 @@ impl Terminals {
         Terminals {
             config,
             sessions: Mutex::default(),
+            quitting: AtomicBool::new(false),
         }
     }
 
@@ -117,6 +121,11 @@ impl Terminals {
         let launch = launch::plan(params, &self.config)?;
         let (cols, rows) = size(params);
         let mut sessions = self.sessions();
+        // Read with the panes locked: `shut_down` sets this before it takes them, so a pane is
+        // either refused here or already among the panes it is about to close.
+        if self.quitting.load(Ordering::SeqCst) {
+            return Err(BridgeError::from(crate::handler::SHUTTING_DOWN));
+        }
         if sessions
             .values()
             .filter(|session| !session.closed())
@@ -177,6 +186,17 @@ impl Terminals {
                 scope.spawn(move || session.close());
             }
         });
+    }
+}
+
+impl Terminals {
+    /// Quit: closes every pane as [`Terminals::close_all`] does and refuses every later
+    /// `terminal.open`. The application opens panes here directly, not through `Core::handle`,
+    /// so without this a request that arrives while the app is quitting would start a shell
+    /// after the last thing that could close it has run.
+    pub fn shut_down(&self) {
+        self.quitting.store(true, Ordering::SeqCst);
+        self.close_all();
     }
 }
 

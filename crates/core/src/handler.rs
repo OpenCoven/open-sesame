@@ -38,13 +38,13 @@ impl Core {
         }
     }
 
-    /// Stops everything the core owns: every pane's process tree is killed before this returns.
-    /// Called once on Quit; calling it again does nothing. Returns whether this call was the one
+    /// Stops everything the core owns: every pane's process tree is killed before this returns,
+    /// and no pane opens afterwards. Called once on Quit; calling it again does nothing. Returns whether this call was the one
     /// that shut the core down.
     pub fn shutdown(&self) -> bool {
         let first = !self.shut_down.swap(true, Ordering::SeqCst);
         if first {
-            self.terminals.close_all();
+            self.terminals.shut_down();
         }
         first
     }
@@ -137,6 +137,12 @@ mod tests {
         assert_eq!(
             core.terminals.handle("terminal.input", &params),
             Err(BridgeError::from("Open this shell before sending input."))
+        );
+        // The application opens panes on the terminals directly, so they refuse by themselves:
+        // a pane opened after the shutdown would have nothing left to close it.
+        assert_eq!(
+            core.terminals.open(&params, std::sync::Arc::new(|_| {})),
+            Err(BridgeError::from(SHUTTING_DOWN))
         );
     }
 
