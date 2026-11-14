@@ -51,6 +51,25 @@ pub const PORTED: &[&str] = &[
     "terminal.clipboard.write",
     "project.chooseFolder",
     "project.reveal",
+    // Local storage (#75): the typed commands in storage::commands.
+    "items.list",
+    "items.get",
+    "items.save",
+    "items.delete",
+    "projects.list",
+    "projects.save",
+    "projects.delete",
+    "feedItems.list",
+    "feedItems.get",
+    "feedItems.save",
+    "feedItems.delete",
+    "settings.all",
+    "settings.set",
+    "settings.delete",
+    "settings.cliPaths.list",
+    "settings.cliPaths.set",
+    "widgets.list",
+    "widgets.set",
 ];
 
 /// Features that are not in this version. An entry ending in `.` names a namespace and matches

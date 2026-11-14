@@ -1,19 +1,26 @@
 [package]
 name = "open-sesame-core"
 version = "0.1.0"
-description = "Open Sesame's headless core: wire protocol and request gate. No Tauri dependency."
+description = "Open Sesame's headless core: wire protocol, request gate, local storage, process runner and sign-in logic. No Tauri dependency."
 edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-base64 = "0.23.1"
 gethostname = "1.1.0"
 portable-pty = "0.9.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# SQLite is compiled in ("bundled") so every operating system runs the same version.
+rusqlite = { version = "0.42.0", features = ["bundled"] }
+uuid = { version = "1.29.2", features = ["v7"] }
+base64 = "0.22.1"
+ring = "0.17.14"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# Test-only: generates an ephemeral RSA key and signs fixture tokens. Never used to verify.
+rsa = { version = "0.9.8", features = ["sha2"] }
+rand = "0.8.5"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.191"
