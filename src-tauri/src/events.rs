@@ -9,7 +9,13 @@ use tauri::{AppHandle, Emitter, EventTarget, Runtime};
 /// The event name the UI's bridge listens for. `ui/bridge.js` names the same string.
 pub const MESSAGE_EVENT: &str = "open-sesame-message";
 
-/// An [`Emit`] that delivers each message to the main window and to no other.
+/// An [`Emit`] that addresses each message to the main window.
+///
+/// The address alone does not keep a message from another window's page. Tauri hands an event
+/// sent to one window to every page listener registered without a target, in any window, and
+/// `listen` on the global Tauri object registers exactly that kind. What keeps host messages in
+/// the main window is the capability: only the main window is granted event listening. A window
+/// that is ever granted it reads every host message.
 pub fn emitter<R: Runtime>(app: &AppHandle<R>) -> Emit {
     let app = app.clone();
     Arc::new(move |message| {
@@ -34,6 +40,8 @@ mod tests {
     use tauri::test::{mock_builder, mock_context, noop_assets};
     use tauri::{Listener, WebviewUrl, WebviewWindowBuilder};
 
+    /// Covers listeners registered in Rust, which Tauri matches against the address. A page's
+    /// listener is not covered here: see [`emitter`] for what keeps it out of other windows.
     #[test]
     fn messages_reach_the_main_window_only_and_in_order() {
         let app = mock_builder().build(mock_context(noop_assets())).unwrap();
