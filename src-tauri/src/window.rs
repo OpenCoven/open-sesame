@@ -63,6 +63,8 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let _ = handle.hide();
+            #[cfg(debug_assertions)]
+            eprintln!("open-sesame: hidden by the close button");
         }
         // Hidden only if the person asked for that and nothing holds the window (issue #71).
         WindowEvent::Focused(false) => summon::blurred(handle.app_handle()),

@@ -459,6 +459,8 @@ pub fn blurred<R: Runtime>(app: &AppHandle<R>) {
         .is_some_and(|summon| summon.should_hide_on_blur())
     {
         window::hide(app);
+        #[cfg(debug_assertions)]
+        eprintln!("open-sesame: hidden because the window lost focus");
     }
 }
 

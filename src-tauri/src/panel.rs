@@ -47,10 +47,11 @@ pub fn show<R: Runtime>(window: &WebviewWindow<R>) -> bool {
         return false;
     }
     match app.get_webview_panel(window.label()) {
-        Ok(panel) => {
-            panel.show_and_make_key();
-            true
-        }
+        // AppKit aborts the process when a window is ordered from another thread, and the
+        // callers are a second launch, the shortcut and the bridge, none on the main thread.
+        Ok(panel) => window
+            .run_on_main_thread(move || panel.show_and_make_key())
+            .is_ok(),
         Err(_) => false,
     }
 }

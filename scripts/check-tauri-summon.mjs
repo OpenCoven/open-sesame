@@ -194,6 +194,9 @@ function fakeBridge(status, answers = {}) {
   assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
   assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
   assert.match(window, /Session::Wayland\)\n            \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/);
+  // AppKit aborts the process if a window is ordered off the main thread, and a second launch,
+  // the shortcut and the bridge all call from other threads. Found in a launched app.
+  assert.match(read('src-tauri/src/panel.rs'), /\.run_on_main_thread\(move \|\| panel\.show_and_make_key\(\)\)/);
   // Single-instance is the first plugin, so a second launch never creates a window.
   const plugins = [...entry.matchAll(/\.plugin\(([a-z_:]+)/g)].map(match => match[1]);
   assert.equal(plugins[0], 'tauri_plugin_single_instance::init');
