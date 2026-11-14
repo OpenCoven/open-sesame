@@ -46,6 +46,7 @@ pub const PORTED: &[&str] = &[
     "terminal.input",
     "terminal.resize",
     "terminal.close",
+    "terminal.ack",
     "terminal.clipboard.read",
     "terminal.clipboard.write",
     "project.chooseFolder",
