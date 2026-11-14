@@ -11,3 +11,9 @@ tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "io-util", 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls-vendored"] }
+
+# The engine is its own workspace root. Without this, cargo run in a task worktree under
+# .worktrees/ walks up past the worktree's root workspace, which excludes this directory, into
+# the main checkout's root workspace, which does not exclude .worktrees/<task>/desktop/engine,
+# and refuses to build (#103).
+[workspace]
