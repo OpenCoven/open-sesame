@@ -7,6 +7,7 @@
 
 mod events;
 mod router;
+mod summon;
 mod tray;
 mod window;
 
