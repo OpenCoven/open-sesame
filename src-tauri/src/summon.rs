@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -215,6 +216,18 @@ pub fn hides_on_blur(enabled: bool, holds: usize, held_by_page: bool, pinned: bo
     enabled && holds == 0 && !held_by_page && !pinned
 }
 
+/// How long after the window hid on blur a press of the shortcut counts as the cause of it.
+const BLUR_GRACE: Duration = Duration::from_millis(300);
+
+/// Whether a press of the shortcut is the one that just hid the window. On X11 the press
+/// itself takes the keyboard away from the focused window for a moment, so with hide-on-blur
+/// on the window hides before the press is delivered; toggling then would show it again and
+/// the shortcut could never hide the window. `since_blur_hide` is how long ago the window
+/// last hid because it lost focus, if it has.
+pub fn press_caused_the_blur(since_blur_hide: Option<Duration>) -> bool {
+    since_blur_hide.is_some_and(|elapsed| elapsed < BLUR_GRACE)
+}
+
 /// Where a window of `size` goes so that it sits against a tray icon at `icon` (position and
 /// size) without leaving the `area` of the screen it may use (position and size). The window is
 /// centred on the icon, above it when the icon is in the lower half of the area and below it
@@ -260,6 +273,8 @@ pub struct Summon {
     /// The page says a drag is in progress.
     held_by_page: AtomicBool,
     pinned: AtomicBool,
+    /// When the window last hid because it lost focus.
+    hid_on_blur: Mutex<Option<Instant>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -298,6 +313,7 @@ impl Summon {
             holds: Arc::new(AtomicUsize::new(0)),
             held_by_page: AtomicBool::new(false),
             pinned: AtomicBool::new(false),
+            hid_on_blur: Mutex::new(None),
         }
     }
 
@@ -397,7 +413,7 @@ pub fn shortcut_plugin<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                window::toggle(app);
+                pressed(app);
             }
         })
         .build()
@@ -452,12 +468,24 @@ pub fn launched_again<R: Runtime>(app: &AppHandle<R>, arguments: &[String]) {
     }
 }
 
+/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
+fn pressed<R: Runtime>(app: &AppHandle<R>) {
+    let since_blur_hide = app
+        .try_state::<Summon>()
+        .and_then(|summon| lock(&summon.hid_on_blur).take())
+        .map(|at| at.elapsed());
+    if !press_caused_the_blur(since_blur_hide) {
+        window::toggle(app);
+    }
+}
+
 /// The window lost focus.
 pub fn blurred<R: Runtime>(app: &AppHandle<R>) {
-    if app
-        .try_state::<Summon>()
-        .is_some_and(|summon| summon.should_hide_on_blur())
-    {
+    let Some(summon) = app.try_state::<Summon>() else {
+        return;
+    };
+    if summon.should_hide_on_blur() {
+        *lock(&summon.hid_on_blur) = Some(Instant::now());
         window::hide(app);
         #[cfg(debug_assertions)]
         eprintln!("open-sesame: hidden because the window lost focus");
@@ -749,6 +777,20 @@ mod tests {
         summon.set_pinned(false);
         summon.held_by_page.store(true, Ordering::SeqCst);
         assert!(!summon.should_hide_on_blur());
+    }
+
+    #[test]
+    fn a_press_that_blurred_the_window_does_not_show_it_again() {
+        // Found in a launched app on X11: with hide-on-blur on, the press took the keyboard,
+        // the window hid, and the toggle that followed showed it again.
+        assert!(press_caused_the_blur(Some(Duration::from_millis(0))));
+        assert!(press_caused_the_blur(Some(Duration::from_millis(120))));
+        assert!(!press_caused_the_blur(Some(Duration::from_millis(300))));
+        assert!(!press_caused_the_blur(Some(Duration::from_secs(5))));
+        assert!(
+            !press_caused_the_blur(None),
+            "the window did not hide on blur"
+        );
     }
 
     #[test]
