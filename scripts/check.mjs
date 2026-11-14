@@ -8,7 +8,7 @@ for(const file of readdirSync('scripts').filter(name=>/^check-.*\.mjs$/.test(nam
   if(result.status!==0){failures++;process.stderr.write(result.stdout+result.stderr);if(result.error)console.error(result.error.message);}
 }
 // Authored JavaScript: the current UI in dist/ and the restart's new shell in ui/ (ES modules).
-for(const directory of ['dist','ui'])for(const file of readdirSync(directory).filter(name=>name.endsWith('.js'))){
+for(const directory of ['dist','ui','ui/dev'])for(const file of readdirSync(directory).filter(name=>name.endsWith('.js'))){
   const result=spawnSync(process.execPath,['--check',directory+'/'+file],{encoding:'utf8',timeout:30000});
   if(result.status!==0){failures++;process.stderr.write(result.stderr);}
 }

@@ -218,7 +218,9 @@ for (const [, href] of page.matchAll(/<link\b[^>]*\bhref="([^"]+)"/gi)) assert(/
 // front end, the window created in Rust, a policy that admits only bundled script, and the
 // command granted to the main window alone.
 const config = JSON.parse(read('src-tauri/tauri.conf.json'));
-assert.equal(config.build.frontendDist, '../ui');
+// The new shell, plus the two reviewed terminal emulator files it shares with dist/ (issue #74).
+// A listed folder is served from the root and a listed file under its own name.
+assert.deepEqual(config.build.frontendDist, ['../ui', '../dist/vendor/xterm.js', '../dist/vendor/xterm.css']);
 assert.equal(config.build.devUrl, undefined, 'No dev server: the app always serves the bundled files');
 assert.equal(config.app.withGlobalTauri, true);
 assert.deepEqual(config.app.windows, [], 'The main window is created in Rust so the flags precede every page script');
@@ -226,7 +228,12 @@ const csp = config.app.security.csp;
 const directive = name => (typeof csp === 'string' ? Object.fromEntries(csp.split(';').map(part => part.trim().split(/\s+/)).filter(part => part[0]).map(([key, ...values]) => [key, values])) : csp)[name];
 assert.deepEqual([].concat(directive('default-src')), ["'self'"]);
 assert.deepEqual([].concat(directive('script-src')), ["'self'"], 'Only bundled script runs in the main document');
-assert(!JSON.stringify(csp).includes('unsafe'), 'The policy allows no inline or evaluated code');
+// The terminal emulator (issue #74) writes cell colours as style attributes and its metrics into
+// style elements, so inline style is allowed. Inline or evaluated script never is.
+assert.deepEqual([].concat(directive('style-src')).flatMap(value => value.split(/\s+/)), ["'self'", "'unsafe-inline'"]);
+for (const name of Object.keys(typeof csp === 'string' ? {} : csp).filter(name => name !== 'style-src')) assert(!JSON.stringify(directive(name)).includes('unsafe'), `${name} allows nothing unsafe`);
+assert(!JSON.stringify(csp).includes('unsafe-eval') && !JSON.stringify(csp).includes('unsafe-hashes'), 'The policy allows no evaluated code');
+assert.equal(JSON.stringify(csp).split('unsafe').length, 2, 'The only relaxation is inline style');
 assert.notEqual(config.app.security.dangerousDisableAssetCspModification, true);
 const capabilities = readdirSync(path.join(root, 'src-tauri/capabilities')).filter(name => name.endsWith('.json')).map(name => JSON.parse(read(`src-tauri/capabilities/${name}`)));
 assert.equal(capabilities.length, 1);
