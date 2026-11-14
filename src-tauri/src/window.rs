@@ -4,7 +4,7 @@ use open_sesame_core::gate::{MAIN_WINDOW, UNSUPPORTED};
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, LogicalSize, Manager, Url, WebviewUrl, WebviewWindow};
+use tauri::{AppHandle, LogicalSize, Manager, Runtime, Url, WebviewUrl, WebviewWindow};
 use tauri::{WebviewWindowBuilder, WindowEvent};
 
 const TITLE: &str = "Open Sesame";
@@ -115,14 +115,18 @@ pub fn toggle(app: &AppHandle) {
     }
 }
 
-fn focus(window: &WebviewWindow) -> tauri::Result<()> {
+fn focus<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
     window.show()?;
     window.unminimize()?;
     window.set_focus()
 }
 
 /// Answers a window method the gate has allowed.
-pub fn handle(window: &WebviewWindow, method: &str, params: &Map<String, Value>) -> BridgeResult {
+pub fn handle<R: Runtime>(
+    window: &WebviewWindow<R>,
+    method: &str,
+    params: &Map<String, Value>,
+) -> BridgeResult {
     let unavailable = |_: tauri::Error| BridgeError::from(WINDOW_UNAVAILABLE);
     match method {
         "window.size" => {
