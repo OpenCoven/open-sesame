@@ -6,4 +6,6 @@
 
 pub mod auth;
 pub mod gate;
+pub mod process;
 pub mod protocol;
+pub mod storage;
