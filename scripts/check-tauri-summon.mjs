@@ -183,6 +183,10 @@ function fakeBridge(status, answers = {}) {
   const host = read('src-tauri/src/summon.rs');
   const window = read('src-tauri/src/window.rs');
   const entry = read('src-tauri/src/lib.rs');
+  // The folder dialog (issue #74) takes the focus on purpose, so it holds the window first.
+  const project = read('src-tauri/src/project.rs');
+  const held = project.indexOf('summon::hold(window.app_handle())');
+  assert.ok(held > 0 && held < project.indexOf('.blocking_pick_folder()'), 'The folder dialog takes summon::hold before it opens');
   const capability = read('src-tauri/capabilities/default.json');
   // The default is not a shortcut ChatGPT, Gemini (Option+Space, and Option+Shift+Space on a Mac),
   // Raycast or Alfred take.
