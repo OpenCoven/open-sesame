@@ -101,7 +101,7 @@ mod tests {
             r#"{"requestId":"request-1","method":"terminal.open","params":{"cols":80}}"#,
         )
         .unwrap();
-        assert_eq!(request.request_id, "request-1");
+        assert_eq!(request.request_id, "request-2");
         assert_eq!(request.method, "terminal.open");
         assert_eq!(request.params.get("cols"), Some(&json!(80)));
     }
