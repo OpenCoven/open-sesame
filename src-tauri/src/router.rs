@@ -454,6 +454,27 @@ mod tests {
     }
 
     #[test]
+    fn a_hide_on_blur_excuses_the_one_press_or_click_that_caused_it() {
+        let (app, folder) = app_in(summon::Session::X11, "excuse");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        // Off: losing focus hides nothing, so there is nothing to excuse.
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        // On: the press or click that took the focus must not show the window again, and the
+        // one after it toggles as usual. The shortcut and the tray click both ask this.
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        summon::blurred(app.handle());
+        assert!(summon::blur_just_hid(app.handle()));
+        assert!(!summon::blur_just_hid(app.handle()), "asked once");
+        // A window something holds does not hide, so the next press toggles.
+        let dialog = summon::hold(app.handle()).unwrap();
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        drop(dialog);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
     fn wayland_refuses_always_on_top_with_the_fixed_message() {
         let (app, _folder) = app_in(summon::Session::Wayland, "pin");
         let main = open(&app, MAIN_WINDOW, bundled());

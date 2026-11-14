@@ -470,14 +470,32 @@ pub fn launched_again<R: Runtime>(app: &AppHandle<R>, arguments: &[String]) {
     }
 }
 
-/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
-fn pressed<R: Runtime>(app: &AppHandle<R>) {
+/// Whether the window hid on blur so recently that the press or click being handled now is
+/// what took the focus from it. Asking forgets the hide, so one hide excuses one press.
+pub(crate) fn blur_just_hid<R: Runtime>(app: &AppHandle<R>) -> bool {
     let since_blur_hide = app
         .try_state::<Summon>()
         .and_then(|summon| lock(&summon.hid_on_blur).take())
         .map(|at| at.elapsed());
-    if !press_caused_the_blur(since_blur_hide) {
+    press_caused_the_blur(since_blur_hide)
+}
+
+/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
+fn pressed<R: Runtime>(app: &AppHandle<R>) {
+    if !blur_just_hid(app) {
         window::toggle(app);
+    }
+}
+
+/// The tray icon was clicked, which only Windows reports: the popover, unless this click is
+/// what just hid the window. Pressing the button on the taskbar takes the focus from the
+/// window before the click is reported, so with hide-on-blur on the window has already hidden
+/// and showing it again would mean the icon could never hide it. This is the rule the shortcut
+/// follows on X11; on Windows it is reasoned from how the taskbar takes focus and has not been
+/// seen in a window.
+pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
+    if !blur_just_hid(app) {
+        window::toggle_at(app, icon);
     }
 }
 

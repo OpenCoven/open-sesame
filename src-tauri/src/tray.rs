@@ -3,7 +3,7 @@
 //! Windows a left click shows the window against the icon, as a popover, and a right click
 //! opens the menu (issue #71).
 
-use crate::window;
+use crate::{summon, window};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
@@ -34,7 +34,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 },
             ) = (cfg!(windows), event)
             {
-                window::toggle_at(tray.app_handle(), rect);
+                summon::tray_clicked(tray.app_handle(), rect);
             }
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
