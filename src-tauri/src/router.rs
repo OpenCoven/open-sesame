@@ -215,7 +215,15 @@ mod tests {
         let app = app();
         let elsewhere = WebviewUrl::External("https://example.com/".parse().unwrap());
         let main = open(&app, MAIN_WINDOW, elsewhere);
-        let bundled_origin: tauri::Url = "tauri://localhost".parse().unwrap();
+        // The address Tauri serves bundled files from on this system; any other address is a
+        // remote page to Tauri, which refuses it before the command runs.
+        let bundled_origin: tauri::Url = if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        }
+        .parse()
+        .unwrap();
         for method in ["system.info", "auth.status", "window.focus"] {
             // Tauri refuses a remote page before the command runs, with its own message.
             let refused = call(&main, method, json!({}));
