@@ -108,6 +108,12 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
   assert.deepEqual(of('terminal.ack').map(request => request.params.bytes), [ACK_EVERY + 2, ACK_EVERY * 4 + 2], 'The count is a running total');
   assert.equal(pane.stats.acks, 2);
   assert.equal(pane.stats.processed, pane.stats.received);
+  // A character split between two messages is handed over as the bytes received, never as text
+  // decoded one message at a time: joining the halves is the emulator's work.
+  const before = term.written.length;
+  channel.onmessage(new Uint8Array([0x53, 0x3a, 0xc3]).buffer);
+  channel.onmessage(new Uint8Array([0xa9, 0x3a, 0x45]).buffer);
+  assert.deepEqual(term.written.slice(before).map(chunk => chunk instanceof Uint8Array && [...chunk]), [[0x53, 0x3a, 0xc3], [0xa9, 0x3a, 0x45]]);
 }
 
 // 3. A failed acknowledgement is not an error for the person, and the next one repairs it.

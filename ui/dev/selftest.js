@@ -6,7 +6,7 @@
 // It uses nothing but the product's own panes. It types into real shells, watches the bytes that
 // come back, checks the process list through a shell, and writes what it found to `out` through
 // a shell, because the page has no file access of its own. The script that started the app reads
-// that file; see src-tauri/AGENTS.md.
+// that file; see src-tauri/AGENTS.md. One step also reads the rows the emulator drew.
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -182,6 +182,45 @@ export async function run({ launch, config }) {
       return { folder };
     });
     await firstPane?.close();
+
+    // The host sends bytes and the emulator decodes them, so a character can arrive in two
+    // messages. A plain shell writes three characters in halves, far enough apart that each half
+    // is a message of its own, and the emulator's rows must show them whole.
+    await step('A character whose bytes arrive in two messages is shown whole', async () => {
+      const messages = [];
+      const split = await launch({ mode: 'local', name: 'Split', launcher: 'bash', prompt: "PS1='split$ ' exec /bin/sh" }, { onBytes: bytes => messages.push(bytes.slice()) });
+      const expected = new TextEncoder().encode('S:é:€:🦊:E');
+      const find = () => {
+        const all = new Uint8Array(messages.reduce((total, message) => total + message.length, 0));
+        messages.reduce((offset, message) => { all.set(message, offset); return offset + message.length; }, 0);
+        for (let at = 0; at + expected.length <= all.length; at += 1) if (expected.every((byte, index) => all[at + index] === byte)) return at;
+        return -1;
+      };
+      try {
+        split.pane.send("stty -echo; printf 'S:\\303'; sleep 0.4; printf '\\251:\\342\\202'; sleep 0.4; printf '\\254:\\360\\237'; sleep 0.4; printf '\\246\\212:E\\n'\r");
+        const end = performance.now() + 15000;
+        while (find() < 0) {
+          if (performance.now() > end) throw new Error('The characters did not arrive byte for byte.');
+          await wait(25);
+        }
+        const at = find();
+        // Where one message ended and the next began, counted from the start of the text.
+        const boundaries = [];
+        messages.reduce((offset, message) => { const stop = offset + message.length; if (stop > at && stop < at + expected.length) boundaries.push(stop - at); return stop; }, 0);
+        // Offsets 3, 7 and 11 are inside é (2 to 4), € (5 to 8) and 🦊 (9 to 13).
+        if (![3, 7, 11].every(offset => boundaries.includes(offset))) throw new Error(`The messages were not split inside the characters: boundaries at ${boundaries.join(', ') || 'none'}.`);
+        const rows = () => [...document.querySelectorAll('[data-panes] .pane:not([hidden]) .xterm-rows > div')].map(row => row.textContent);
+        const shown = () => rows().find(row => row.includes('S:') && row.includes(':E') && !row.includes('printf')) || '';
+        const until = performance.now() + 5000;
+        while (!shown().includes('S:é:€:🦊:E')) {
+          if (performance.now() > until) throw new Error(`The emulator shows ${JSON.stringify(shown())}.`);
+          await wait(25);
+        }
+        return { boundaries, shown: shown().trim() };
+      } finally {
+        await split.close();
+      }
+    });
 
     await step(`A command that prints ${lines} numbered lines does not freeze the window or drop output`, async () => {
       const checker = floodChecker(lines);
