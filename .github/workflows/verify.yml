@@ -110,6 +110,13 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee build/verification/rust/clippy.log
       - name: Test the workspace
         run: cargo test --workspace --locked 2>&1 | tee build/verification/rust/test.log
+      # Sign-in keeps its refresh token in the system's credential store (issue #72). This test
+      # writes a value that is not a token under a name nothing else uses, reads it back,
+      # replaces it and removes it. It is ignored in the ordinary run because a machine without
+      # a store cannot run it; the Linux runner has no Secret Service, so it runs on the others.
+      - name: Round-trip a value through the system's credential store
+        if: runner.os != 'Linux'
+        run: cargo test --package open-sesame --locked -- --ignored the_real_credential_store 2>&1 | tee build/verification/rust/credential-store.log
       - name: Build the app
         run: cargo build --package open-sesame --locked 2>&1 | tee build/verification/rust/build.log
       - name: Retain executed-check evidence

@@ -469,6 +469,37 @@ fn marker_path() -> Option<PathBuf> {
     None
 }
 
+/// A stand-in for the WorkOS API on this machine, for a development build only: a loopback
+/// address with a port and nothing after it. Anything else is refused, so the variable cannot
+/// send a code or a credential to another machine.
+#[cfg(any(debug_assertions, test))]
+pub fn dev_api_base(value: &str) -> Option<&str> {
+    let port = value
+        .strip_prefix("http://127.0.0.1:")
+        .or_else(|| value.strip_prefix("http://localhost:"))?;
+    let valid = !port.is_empty()
+        && port.len() <= 5
+        && port.bytes().all(|byte| byte.is_ascii_digit())
+        && port.parse::<u16>().is_ok_and(|port| port != 0);
+    valid.then_some(value)
+}
+
+/// The WorkOS calls. A release build always talks to WorkOS. A development build started with
+/// `OPEN_SESAME_DEV_AUTH_API` talks to a stand-in on this machine instead, which is how the
+/// launched-application checks sign in without an account.
+fn workos_api() -> HttpApi {
+    #[cfg(debug_assertions)]
+    if let Ok(value) = std::env::var("OPEN_SESAME_DEV_AUTH_API") {
+        if let Some(base) = dev_api_base(&value) {
+            return HttpApi::at(
+                authenticate_url().replacen(API, base, 1),
+                jwks_url().replacen(API, base, 1),
+            );
+        }
+    }
+    HttpApi::workos()
+}
+
 /// Builds the real parts, restores the saved session and starts listening for callbacks.
 pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     let store = Arc::new(KeychainStore::new(credential_service(
@@ -484,7 +515,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     });
     let browser: Browser = Arc::new(|url| tauri_plugin_opener::open_url(url, None::<&str>).is_ok());
     let (auth, wakes) = Auth::new(
-        Arc::new(HttpApi::workos()),
+        Arc::new(workos_api()),
         store,
         Arc::new(Marker::new(marker_path())),
         browser,
@@ -576,6 +607,35 @@ mod tests {
             "opensesame://auth/callback",
         ] {
             assert!(!may_open(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn a_development_stand_in_is_a_loopback_port_and_nothing_else() {
+        for value in [
+            "http://127.0.0.1:8080",
+            "http://localhost:1",
+            "http://127.0.0.1:65535",
+        ] {
+            assert_eq!(dev_api_base(value), Some(value), "{value}");
+        }
+        for value in [
+            "",
+            "http://127.0.0.1",
+            "http://127.0.0.1:",
+            "http://127.0.0.1:0",
+            "http://127.0.0.1:65536",
+            "http://127.0.0.1:80/path",
+            "http://127.0.0.1:80@example.com",
+            "http://127.0.0.1.example.com:80",
+            "http://localhost.example.com:80",
+            "https://127.0.0.1:80",
+            "http://192.0.2.1:80",
+            "http://example.com:80",
+            "https://api.workos.com",
+            " http://127.0.0.1:80",
+        ] {
+            assert_eq!(dev_api_base(value), None, "{value}");
         }
     }
 

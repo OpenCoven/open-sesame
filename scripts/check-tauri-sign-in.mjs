@@ -240,6 +240,11 @@ function fakeBridge(status, answers = {}) {
   assert.match(code, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\n    let _ = app\.deep_link\(\)\.register_all\(\);/);
   assert.equal(code.split('register_all').length - 1, 1);
 
+  // Only a development build can be pointed at a stand-in, and only at this machine.
+  assert.match(code, /fn workos_api\(\) -> HttpApi \{\n    #\[cfg\(debug_assertions\)\]\n    if let Ok\(value\) = std::env::var\("OPEN_SESAME_DEV_AUTH_API"\)/);
+  assert.equal(code.split('OPEN_SESAME_DEV_AUTH_API').length - 1, 2, 'The variable is read in one place and named in its comment');
+  assert.match(code, /#\[cfg\(any\(debug_assertions, test\)\)\]\npub fn dev_api_base/);
+
   // The HTTP client never follows a redirect and never waits longer than the core allows.
   assert.match(code, /\.max_redirects\(0\)/);
   assert.match(code, /const TIMEOUT: Duration = Duration::from_secs\(20\);/);
