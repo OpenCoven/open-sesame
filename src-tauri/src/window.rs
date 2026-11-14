@@ -35,6 +35,7 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .min_inner_size(MINIMUM_SIZE.0, MINIMUM_SIZE.1)
         .resizable(true)
         .initialization_script(initialization_script(&version))
+        .initialization_script(selftest_script())
         .on_navigation({
             let dev_url = app.config().build.dev_url.clone();
             move |url| is_app_page(dev_url.as_ref(), url)
@@ -80,6 +81,28 @@ pub fn initialization_script(version: &str) -> String {
         "Object.defineProperty(window,'__OPEN_SESAME_NATIVE__',{{value:true}});\
          Object.defineProperty(window,'__OPEN_SESAME_VERSION__',{{value:{version}}});"
     )
+}
+
+/// In a development build started with `OPEN_SESAME_SELFTEST` set to a JSON object, hands that
+/// object to the page, which then runs the acceptance pass in `ui/dev/selftest.js`. A release
+/// build never sets the flag, whatever the environment says.
+fn selftest_script() -> String {
+    if !cfg!(debug_assertions) {
+        return String::new();
+    }
+    std::env::var("OPEN_SESAME_SELFTEST")
+        .ok()
+        .and_then(|text| selftest_flag(&text))
+        .unwrap_or_default()
+}
+
+/// The script for a self-test request, or `None` when the text is not a JSON object. The value
+/// is written back out as JSON, so it cannot carry script of its own.
+fn selftest_flag(text: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    value.is_object().then(|| {
+        format!("Object.defineProperty(window,'__OPEN_SESAME_SELFTEST__',{{value:Object.freeze({value})}});")
+    })
 }
 
 /// Whether `url` is a page bundled with the application. Tauri serves bundled files from
@@ -358,6 +381,15 @@ mod tests {
         // A version is quoted as a JSON string, so it cannot end the script early.
         let odd = initialization_script("1.0\"});alert(1);//");
         assert!(odd.contains(r#"{value:"1.0\"});alert(1);//"}"#));
+    }
+
+    #[test]
+    fn a_selftest_request_must_be_a_json_object() {
+        assert_eq!(selftest_flag("not json"), None);
+        assert_eq!(selftest_flag("\"});alert(1);//\""), None);
+        assert_eq!(selftest_flag("[1]"), None);
+        let script = selftest_flag(r#"{"out":"/tmp/x y.json"}"#).unwrap();
+        assert!(script.contains(r#"{value:Object.freeze({"out":"/tmp/x y.json"})}"#));
     }
 
     #[test]

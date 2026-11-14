@@ -206,11 +206,13 @@ function fakeBridge(status, answers = {}) {
   assert.deepEqual(config.plugins['deep-link'], { desktop: { schemes: ['opensesame'] } });
   assert.match(read('crates/core/src/auth/mod.rs'), /pub const REDIRECT: &str = "opensesame:\/\/auth\/callback";/);
 
-  // The page is granted neither plugin: it cannot register a scheme, read a link or open an
-  // address. The opener plugin is not even registered; the host calls its function directly.
+  // The page is granted neither plugin: it cannot register a scheme or open an address. The
+  // opener plugin is registered for the file manager of issue #74, with no permission for the
+  // page; sign-in calls the crate's function directly and nothing else in auth.rs opens anything.
   assert.deepEqual(capability.permissions, ['core:event:allow-listen', 'core:event:allow-unlisten', 'allow-bridge-request']);
   assert.deepEqual(capability.windows, ['main']);
-  assert.ok(!entry.includes('tauri_plugin_opener::init') && !entry.includes('tauri_plugin_opener::Builder'));
+  assert.ok(!capability.permissions.some(permission => /opener|deep-link|dialog|clipboard/.test(permission)));
+  assert.equal(code.split('tauri_plugin_opener::').length - 1, 1, 'auth.rs opens an address in one place');
 
   // Every address handed to the browser has passed the origin check first.
   const opens = code.split('(self.browser)(').length - 1;

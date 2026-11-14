@@ -12,5 +12,6 @@ pub mod process;
 pub mod protocol;
 pub mod storage;
 pub mod system;
+pub mod terminal;
 
 pub use handler::Core;
