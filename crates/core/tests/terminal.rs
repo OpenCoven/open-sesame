@@ -72,10 +72,35 @@ fn params(value: Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap()
 }
 
+/// The request a terminal sends to learn where the cursor is, and an answer to it.
+#[cfg(windows)]
+const CURSOR_QUERY: &str = "\u{1b}[6n";
+#[cfg(windows)]
+const CURSOR_ANSWER: &str = "\u{1b}[1;1R";
+
 fn open(terminals: &Terminals, pane: &Arc<Pane>, value: Value) -> Result<Value, String> {
-    terminals
-        .open(&params(value), pane.sink())
-        .map_err(|error| error.0)
+    let request = params(value);
+    #[cfg(windows)]
+    let asked = pane.text().matches(CURSOR_QUERY).count();
+    let result = terminals
+        .open(&request, pane.sink())
+        .map_err(|error| error.0)?;
+    // The Windows pseudo-console asks the terminal where its cursor is before it starts the
+    // program, and waits for the answer. A terminal emulator answers by itself; in these tests
+    // the test is the terminal.
+    #[cfg(windows)]
+    {
+        let id = request.get("id").and_then(Value::as_str).unwrap_or("");
+        let asked_again = || pane.text().matches(CURSOR_QUERY).count() > asked;
+        if wait_for(Duration::from_secs(10), asked_again) {
+            let _ = call(
+                terminals,
+                "terminal.input",
+                json!({"id": id, "data": CURSOR_ANSWER}),
+            );
+        }
+    }
+    Ok(result)
 }
 
 fn call(terminals: &Terminals, method: &str, value: Value) -> Result<Value, String> {
