@@ -94,13 +94,15 @@ mod tests {
     /// nothing. The real capability file is not loaded here, so only the command's own rules
     /// are under test.
     fn app() -> tauri::App<MockRuntime> {
-        mock_builder()
-            .manage(AppState {
-                core: Arc::new(Core::new()),
-            })
+        let app = mock_builder()
             .invoke_handler(tauri::generate_handler![bridge_request])
             .build(mock_context(noop_assets()))
-            .unwrap()
+            .unwrap();
+        app.manage(AppState {
+            core: Arc::new(Core::new()),
+            emit: crate::events::emitter(app.handle()),
+        });
+        app
     }
 
     fn open(

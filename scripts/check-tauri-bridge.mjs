@@ -233,6 +233,7 @@ assert.equal(capabilities[0].webviews, undefined);
 assert.equal(capabilities[0].remote, undefined, 'No remote page is granted the bridge');
 assert(capabilities[0].permissions.includes('allow-bridge-request'));
 assert(/MAIN_WINDOW: &str = "main"/.test(read('crates/core/src/gate.rs')), 'The gate serves the same label the capability names');
+assert(/MESSAGE_EVENT: &str = "open-sesame-message"/.test(read('src-tauri/src/events.rs')), 'The host emits the event name the bridge listens for');
 assert(/AppManifest::new\(\)\.commands\(&\["bridge_request"\]\)/.test(read('src-tauri/build.rs')), 'bridge_request is a declared command, so only a granted window can call it');
 
 // 11. No npm runtime dependency.
