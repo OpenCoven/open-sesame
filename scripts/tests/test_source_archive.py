@@ -33,6 +33,13 @@ class SourceArchiveTests(unittest.TestCase):
             hook.chmod(0o755)
             lock = root / 'package-lock.json'
             lock.write_text('{"lockfileVersion":3}\n')
+            rust = {'Cargo.toml': '[workspace]\n', 'Cargo.lock': 'version = 4\n', 'crates/core/src/gate.rs': 'pub const PORTED: &[&str] = &[];\n', 'src-tauri/Cargo.toml': '[package]\n'}
+            for relative, text in rust.items():
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text(text)
+            generated = root / 'target/debug/open-sesame'
+            generated.parent.mkdir(parents=True)
+            generated.write_text('build output\n')
             builder.ROOT = root
             builder.OUTPUT = root / 'dist/downloads/source.zip'
             builder.build()
@@ -47,6 +54,10 @@ class SourceArchiveTests(unittest.TestCase):
                 self.assertTrue((archive.getinfo(prefix + 'run-macos.sh').external_attr >> 16) & 0o111)
                 self.assertEqual(archive.read(prefix + 'package-lock.json'), lock.read_bytes())
                 self.assertTrue((archive.getinfo(prefix + '.githooks/pre-commit').external_attr >> 16) & 0o111)
+                # The gate check in scripts/ reads the Rust sources, so an extracted package needs them.
+                for relative, text in rust.items():
+                    self.assertEqual(archive.read(prefix + relative).decode(), text)
+                self.assertFalse([name for name in archive.namelist() if name.startswith(prefix + 'target/')])
                 extracted = root / 'unpacked-fixture'
                 extracted.write_bytes(archive.read(item))
                 extracted.chmod((item.external_attr >> 16) & 0o777)

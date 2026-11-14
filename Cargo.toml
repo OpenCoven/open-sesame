@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "src-tauri"]
+# The embedded Coven engine keeps its own lockfile and build until the cutover removes it (#86).
+# It depends on the pinned upstream workspace that its build extracts under build/. Both must be
+# excluded: cargo otherwise treats this manifest as the workspace root of those crates.
+exclude = ["desktop/engine", "build"]
+
+[workspace.package]
+edition = "2021"
+publish = false

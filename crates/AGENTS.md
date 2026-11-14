@@ -1,0 +1,11 @@
+# Rust core for the desktop restart
+
+[open-sesame-core](core/src/lib.rs) is the headless core of the Tauri restart in [epic #58](https://github.com/OpenCoven/open-sesame/issues/58). It is not shipped: the Swift host and Python bridge under [desktop](../desktop/AGENTS.md) remain the running application until the cutover. Read the root [instructions](../AGENTS.md) and the [repository map](../docs/repository-map.md) first; the ownership, evidence, publication and prose rules there apply here.
+
+Keep the core free of any Tauri dependency so `cargo test -p open-sesame-core` runs without a window on macOS, Windows and Linux. The application member is [src-tauri](../src-tauri/src/lib.rs); it depends on the core, never the reverse. The embedded Coven engine under `desktop/engine` is a separate Cargo project that the root workspace excludes, with its own lockfile.
+
+[protocol.rs](core/src/protocol.rs) is the wire contract that [bridge.js](../dist/bridge.js) already speaks: `{requestId, method, params}` requests, `{requestId, result}` or `{requestId, error}` replies, and events with an `event` key. Do not rename fields or change reply shapes without changing the UI transport in the same reviewed change.
+
+[gate.rs](core/src/gate.rs) decides whether a request may run before any feature code does, in the fixed order documented at the top of that file. Local features run signed out; only methods listed as account-backed need a session, as decided in [#60](https://github.com/OpenCoven/open-sesame/issues/60). Admit a method by adding it to `PORTED` in the change that ports its handler, and remove any not-ported entry that would still match it. Do not admit a feature ahead of the issue that ports it, weaken the main-window rule, or let a handler run before the gate. Add account-backed or per-system entries to their lists, not as special cases in handlers.
+
+Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` from the repository root, then `npm run check`. [check-core-gate.mjs](../scripts/check-core-gate.mjs) reads the gate lists as text and fails when the authored UI names a bridge method the gate does not classify; keep the lists as plain string literals. A passing local run is evidence for the operating system it ran on only; three-system and hosted results are recorded separately.
