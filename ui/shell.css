@@ -39,7 +39,8 @@ body {
 .shell {
   height: 100%;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* The bar, the settings, then the terminals with whatever is left. */
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .bar {
@@ -173,3 +174,83 @@ button:hover { border-color: var(--muted); }
 }
 
 .pane .xterm { height: 100%; }
+
+/* Settings that sit between the bar and the terminals until the views of #76 give them a
+   place: the shortcut (issue #71). */
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings[hidden] { display: none; }
+
+.settings > section { flex: 1 1 18rem; max-width: 30rem; }
+
+.summon {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.summon[hidden], .summon form[hidden] { display: none; }
+
+.summon h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.summon form { display: grid; gap: 0.35rem; }
+
+.summon label { color: var(--muted); }
+
+.summon .row { display: flex; gap: 0.5rem; }
+
+.summon input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+.summon button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.summon input:focus-visible, .summon button:focus-visible {
+  outline: 2px solid var(--ok);
+  outline-offset: 1px;
+}
+
+.summon .hint, .summon .message { margin: 0; }
+
+.summon .hint { color: var(--muted); font-size: 0.9rem; }
+
+.summon .message:empty { display: none; }
+
+.summon .message[data-warn="true"] { color: var(--warn); }
+
+.summon .check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+}
+
+/* The general input rule above gives text fields a width; a checkbox keeps its own. */
+.summon .check input { width: auto; padding: 0; }

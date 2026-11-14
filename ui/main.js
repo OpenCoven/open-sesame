@@ -2,6 +2,7 @@
 // hosts terminal panes (issue #74). Views, the widget manifest and lazy loading by widget arrive
 // with issue #76; until then the terminal emulator is the one thing loaded on demand.
 import { createBridge } from './bridge.js';
+import { holdDuringDrag, mountSummon } from './summon.js';
 import { createPane } from './terminal.js';
 
 const SYSTEMS = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
@@ -10,6 +11,7 @@ const bridge = createBridge(window);
 const shell = document.querySelector('.shell');
 const status = shell.querySelector('[data-status]');
 const facts = shell.querySelector('[data-facts]');
+const settings = shell.querySelector('[data-settings]');
 const terminals = shell.querySelector('[data-terminals]');
 const form = shell.querySelector('[data-launch]');
 const notice = shell.querySelector('[data-notice]');
@@ -138,6 +140,17 @@ bridge.ready.then(info => {
   facts.querySelector('[data-fact="platform"]').textContent = SYSTEMS[info.platform] || info.platform;
   facts.querySelector('[data-fact="version"]').textContent = window.__OPEN_SESAME_VERSION__ || 'Unknown';
   facts.hidden = false;
+  settings.hidden = false;
+  const section = settings.querySelector('[data-summon]');
+  mountSummon(bridge, {
+    section,
+    hint: section.querySelector('[data-summon-hint]'),
+    form: section.querySelector('[data-summon-form]'),
+    input: section.querySelector('#summon-shortcut'),
+    message: section.querySelector('[data-summon-message]'),
+    blur: section.querySelector('[data-summon-blur]'),
+  });
+  holdDuringDrag(bridge, document);
   terminals.hidden = false;
   // A development build started with OPEN_SESAME_SELFTEST runs the acceptance pass in
   // ui/dev/selftest.js. A release build never sets the flag.

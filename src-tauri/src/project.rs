@@ -2,10 +2,11 @@
 //! the dialog and opener plugins. The plugins are used from Rust only: the page is granted none
 //! of their commands.
 
+use crate::summon;
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
 use std::path::Path;
-use tauri::{Runtime, WebviewWindow};
+use tauri::{Manager, Runtime, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -22,6 +23,9 @@ pub fn handle<R: Runtime>(
 ) -> BridgeResult {
     match method {
         "project.chooseFolder" => {
+            // The dialog takes the focus from the window. With hide-on-blur on, the window
+            // would hide and take its own dialog with it, so it is held until the answer.
+            let _open = summon::hold(window.app_handle());
             let chosen = window
                 .dialog()
                 .file()
