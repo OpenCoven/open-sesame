@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Open Sesame</title>
+<link rel="stylesheet" href="./shell.css">
+<script type="module" src="./main.js"></script>
+</head>
+<body>
+<main class="shell" data-state="connecting">
+  <h1>Open Sesame</h1>
+  <p class="status" role="status" data-status>Connecting to this machine.</p>
+  <dl class="facts" data-facts hidden>
+    <div><dt>System</dt><dd data-fact="platform"></dd></div>
+    <div><dt>Version</dt><dd data-fact="version"></dd></div>
+  </dl>
+</main>
+</body>
+</html>
