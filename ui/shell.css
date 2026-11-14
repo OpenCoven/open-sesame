@@ -176,7 +176,7 @@ button:hover { border-color: var(--muted); }
 .pane .xterm { height: 100%; }
 
 /* Settings that sit between the bar and the terminals until the views of #76 give them a
-   place: the shortcut (issue #71). */
+   place: the account (issue #72) and the shortcut (issue #71). */
 .settings {
   display: flex;
   flex-wrap: wrap;
@@ -188,6 +188,47 @@ button:hover { border-color: var(--muted); }
 .settings[hidden] { display: none; }
 
 .settings > section { flex: 1 1 18rem; max-width: 30rem; }
+
+/* Account control (issue #72). */
+.account {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.account[hidden] { display: none; }
+
+.account h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.account .who, .account .message { margin: 0; }
+
+.account .message { color: var(--muted); font-size: 0.9rem; }
+
+.account .message:empty { display: none; }
+
+.account .message[data-warn="true"] { color: var(--warn); }
+
+.account .row { display: flex; gap: 0.5rem; }
+
+.account button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.account button:disabled { color: var(--muted); }
+
+.account button:focus-visible {
+  outline: 2px solid var(--ok);
+  outline-offset: 1px;
+}
 
 .summon {
   display: grid;
