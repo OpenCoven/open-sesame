@@ -544,6 +544,85 @@ fn input_limits_and_binary_input() {
     assert!(gone(&[pid(&result)]));
 }
 
+/// Prints `SIZE:<columns>x<rows>` as the program sees its terminal. The typed line never
+/// contains that text itself.
+#[cfg(unix)]
+const SIZE_COMMAND: &str = "stty size | awk '{ print \"SIZE:\" $2 \"x\" $1 }'\r";
+#[cfg(windows)]
+const SIZE_COMMAND: &str =
+    "Write-Output ('SIZE:' + [Console]::WindowWidth + 'x' + [Console]::WindowHeight)\r";
+
+/// Prints `RUNNING`, then waits thirty seconds.
+#[cfg(unix)]
+const WAIT_COMMAND: &str = "printf 'RUN%s\\n' NING; sleep 30\r";
+#[cfg(windows)]
+const WAIT_COMMAND: &str = "Write-Output ('RUN' + 'NING'); Start-Sleep -Seconds 30\r";
+
+#[cfg(unix)]
+const AFTER_COMMAND: &str = "printf 'AFTER-%s\\n' INTERRUPT\r";
+#[cfg(windows)]
+const AFTER_COMMAND: &str = "Write-Output ('AFTER-' + 'INTERRUPT')\r";
+
+/// A resize reaches the program: POSIX window size on Unix, the pseudo-console on Windows.
+#[test]
+fn a_resize_reaches_the_program() {
+    let terminals = plain();
+    let pane = Pane::new();
+    let result = open(
+        &terminals,
+        &pane,
+        json!({"id": "main", "mode": "local", "cols": 80, "rows": 24}),
+    )
+    .unwrap();
+    call(
+        &terminals,
+        "terminal.resize",
+        json!({"id": "main", "cols": 117, "rows": 31}),
+    )
+    .unwrap();
+    input(&terminals, "main", SIZE_COMMAND);
+    wait_output(&pane, "SIZE:117x31");
+    terminals.close_all();
+    assert!(gone(&[pid(&result)]));
+}
+
+/// Control+C, typed as the byte the emulator sends for it, stops the running command, and the
+/// shell takes the next one long before the thirty-second wait would have ended by itself.
+#[test]
+fn control_c_interrupts_the_running_command() {
+    let terminals = plain();
+    let pane = Pane::new();
+    let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+    input(&terminals, "main", WAIT_COMMAND);
+    wait_output(&pane, "RUNNING");
+    std::thread::sleep(Duration::from_millis(300));
+    let started = Instant::now();
+    input(&terminals, "main", "\u{3}");
+    std::thread::sleep(Duration::from_millis(300));
+    input(&terminals, "main", AFTER_COMMAND);
+    wait_output(&pane, "AFTER-INTERRUPT");
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "the shell took the next command only after the wait ended by itself"
+    );
+    terminals.close_all();
+    assert!(gone(&[pid(&result)]));
+}
+
+/// A pane cannot be opened once the terminals have been shut down for Quit.
+#[test]
+fn nothing_opens_after_shut_down() {
+    let terminals = plain();
+    let pane = Pane::new();
+    let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+    terminals.shut_down();
+    assert!(gone(&[pid(&result)]));
+    assert_eq!(
+        open(&terminals, &pane, json!({"id": "late", "mode": "local"})).unwrap_err(),
+        "Open Sesame is quitting."
+    );
+}
+
 #[cfg(unix)]
 mod unix {
     use super::*;
@@ -879,10 +958,13 @@ mod unix {
         // of the checked output and stops the terminal from rewriting line ends, so the bytes
         // that arrive are exactly the bytes the program wrote. (With line-end rewriting on, the
         // macOS kernel now and then writes a second carriage return when its queue is full.)
+        // `set +m` turns job control off: with it on, the macOS `sh` now and then prints
+        // `sh: child setpgid (N to N): Operation not permitted` when it starts `awk` on a busy
+        // machine, and that line lands between the markers (seen in 1 run of 40 under load).
         input(
             &terminals,
             "main",
-            "stty -echo -opost; printf '__START__\n'; awk 'BEGIN { for (i = 1; i <= 600000; i++) print i }'; printf '__END__\n'\r",
+            "stty -echo -opost; set +m; printf '__START__\n'; awk 'BEGIN { for (i = 1; i <= 600000; i++) print i }'; printf '__END__\n'\r",
         );
         let limit = HIGH_WATER as usize + 256 * 1024;
         assert!(
@@ -920,6 +1002,68 @@ mod unix {
         assert!(body == expected, "output reordered or changed");
         terminals.close_all();
         assert!(gone(&[pid(&result)]));
+    }
+
+    /// A character whose bytes the program writes apart arrives as two messages, split inside
+    /// the character, with every byte unchanged: the core never turns output into text. Joining
+    /// the halves is the emulator's job, checked in the launched app's self-test.
+    #[test]
+    fn a_character_split_between_two_messages_keeps_every_byte() {
+        let terminals = plain();
+        let pane = Arc::new(Split::default());
+        let sink: Sink = {
+            let pane = Arc::clone(&pane);
+            Arc::new(move |output| {
+                if let Output::Data(data) = output {
+                    pane.messages.lock().unwrap().push(data);
+                }
+            })
+        };
+        let result = terminals
+            .open(&params(json!({"id": "main", "mode": "local"})), sink)
+            .unwrap();
+        // é, € and 🦊, each written in two halves 300 ms apart.
+        input(
+            &terminals,
+            "main",
+            "stty -echo; printf 'S:\\303'; sleep 0.3; printf '\\251:\\342\\202'; sleep 0.3; printf '\\254:\\360\\237'; sleep 0.3; printf '\\246\\212:E\\n'\r",
+        );
+        let expected = "S:é:€:🦊:E".as_bytes();
+        let found = |pane: &Split| {
+            let all = pane.messages.lock().unwrap().concat();
+            all.windows(expected.len())
+                .position(|window| window == expected)
+        };
+        assert!(
+            wait_for(Duration::from_secs(10), || found(&pane).is_some()),
+            "the characters did not arrive byte for byte"
+        );
+        let at = found(&pane).unwrap();
+        let mut end = 0;
+        let inside: Vec<usize> = pane
+            .messages
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|message| {
+                end += message.len();
+                (end > at && end < at + expected.len()).then(|| end - at)
+            })
+            .collect();
+        // Offsets 3, 7 and 11 are inside é (2..4), € (5..8) and 🦊 (9..13).
+        assert_eq!(
+            inside,
+            [3, 7, 11],
+            "the messages were not split inside the characters"
+        );
+        terminals.close_all();
+        assert!(gone(&[pid(&result)]));
+    }
+
+    /// The messages one pane's sink received, each as it arrived.
+    #[derive(Default)]
+    struct Split {
+        messages: Mutex<Vec<Vec<u8>>>,
     }
 
     /// Closing a pane whose output is paused does not wait for an acknowledgement.
