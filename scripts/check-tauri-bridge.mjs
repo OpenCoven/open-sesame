@@ -197,14 +197,16 @@ assert(uiFiles.includes('ui/index.html') && uiFiles.includes('ui/bridge.js'));
 for (const file of uiFiles.filter(name => /\.(?:js|html|css)$/.test(name))) {
   const text = read(file);
   assert(!/messageHandlers|@tauri-apps|\beval\(|new Function\(/.test(text), `${file} uses only the global Tauri object and no dynamic code`);
-  assert(!/(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(text.replace(/<!--[\s\S]*?-->|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, '')), `${file} names no remote address`);
+  // Comments are not stripped first: a remote address has no place in these files at all.
+  assert(!/(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(text), `${file} names no remote address, comments included`);
   if (file.endsWith('.js')) {
     for (const match of text.matchAll(/\bimport\s*(?:[^'"()]*?\bfrom\s*)?\(?\s*(['"])([^'"]+)\1/g)) assert(/^\.\.?\//.test(match[2]), `${file} imports only relative modules, not ${match[2]}`);
   }
 }
 const page = read('ui/index.html');
-const scripts = [...page.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+const scripts = [...page.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)];
 assert(scripts.length > 0);
+assert.equal(scripts.length, (page.match(/<script\b/gi) || []).length, 'Every script tag in the page is one of the checked ones');
 for (const [, attributes, body] of scripts) {
   assert(/\btype="module"/.test(attributes) && /\bsrc="\.\/[^"]+"/.test(attributes), 'Every script is a relative ES module');
   assert.equal(body.trim(), '', 'The page has no inline script');
