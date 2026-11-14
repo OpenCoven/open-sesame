@@ -7,6 +7,7 @@
 
 pub mod gate;
 pub mod handler;
+pub mod process;
 pub mod protocol;
 pub mod system;
 
