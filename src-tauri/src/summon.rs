@@ -39,12 +39,14 @@ pub const TOGGLE_FLAG: &str = "--toggle";
 /// What a person binds to a desktop shortcut where the application cannot grab a key.
 pub const TOGGLE_COMMAND: &str = "open-sesame --toggle";
 /// Not Alt+Space or Option+Space, which ChatGPT, Gemini, Raycast, Alfred and the shipped Swift
-/// host all use, and not Control+Alt+Space or Control+Shift+Space, which other assistants and
-/// password managers use on Windows.
-pub const DEFAULT_SHORTCUT: &str = "Alt+Shift+Space";
+/// host all use, and not Alt+Shift+Space, which Gemini's Mac app takes for its full window. Every
+/// other pair of modifiers with Space is some launcher's, password manager's or system's own
+/// (`the_default_is_not_a_shortcut_other_launchers_take` lists them), and macOS does not report
+/// a conflict, so the default holds three.
+pub const DEFAULT_SHORTCUT: &str = "Control+Alt+Shift+Space";
 
 pub const INVALID_SHORTCUT: &str =
-    "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Alt+Shift+Space.";
+    "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Control+Alt+Shift+Space.";
 pub const INVALID_REQUEST: &str = "Invalid summon request.";
 pub const NOT_SAVED: &str = "Open Sesame could not save the shortcut setting.";
 pub const WAYLAND: &str =
@@ -468,14 +470,32 @@ pub fn launched_again<R: Runtime>(app: &AppHandle<R>, arguments: &[String]) {
     }
 }
 
-/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
-fn pressed<R: Runtime>(app: &AppHandle<R>) {
+/// Whether the window hid on blur so recently that the press or click being handled now is
+/// what took the focus from it. Asking forgets the hide, so one hide excuses one press.
+pub(crate) fn blur_just_hid<R: Runtime>(app: &AppHandle<R>) -> bool {
     let since_blur_hide = app
         .try_state::<Summon>()
         .and_then(|summon| lock(&summon.hid_on_blur).take())
         .map(|at| at.elapsed());
-    if !press_caused_the_blur(since_blur_hide) {
+    press_caused_the_blur(since_blur_hide)
+}
+
+/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
+fn pressed<R: Runtime>(app: &AppHandle<R>) {
+    if !blur_just_hid(app) {
         window::toggle(app);
+    }
+}
+
+/// The tray icon was clicked, which only Windows reports: the popover, unless this click is
+/// what just hid the window. Pressing the button on the taskbar takes the focus from the
+/// window before the click is reported, so with hide-on-blur on the window has already hidden
+/// and showing it again would mean the icon could never hide it. This is the rule the shortcut
+/// follows on X11; on Windows it is reasoned from how the taskbar takes focus and has not been
+/// seen in a window.
+pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
+    if !blur_just_hid(app) {
+        window::toggle_at(app, icon);
     }
 }
 
@@ -646,8 +666,13 @@ mod tests {
         let default = parse_shortcut(DEFAULT_SHORTCUT).unwrap();
         for taken in [
             "Alt+Space",
+            // Gemini's Mac app opens its full window with Option+Shift+Space.
+            "Alt+Shift+Space",
             "Control+Alt+Space",
             "Control+Shift+Space",
+            "Control+Super+Space",
+            "Super+Alt+Space",
+            "Super+Shift+Space",
             "Super+Space",
             "Control+Space",
         ] {

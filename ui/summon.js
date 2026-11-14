@@ -8,7 +8,7 @@
 
 const text = error => (error && typeof error.message === 'string' && error.message) || String(error);
 
-export const EXAMPLE = 'Write the keys joined by +, for example Alt+Shift+Space. On a Mac, Alt is the Option key and Super is the Command key.';
+export const EXAMPLE = 'Write the keys joined by +, for example Control+Alt+Shift+Space. On a Mac, Alt is the Option key and Super is the Command key.';
 
 // What the section says for a status from the host: {hint, message, warn, editable}.
 export function describe(status) {
