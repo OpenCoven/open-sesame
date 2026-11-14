@@ -43,7 +43,9 @@ pub fn run() {
     app.run(|app, event| match event {
         // Every way out ends here: the tray's Quit, the application menu and a system shutdown.
         RunEvent::Exit => {
-            app.state::<AppState>().core.shutdown();
+            if let Some(state) = app.try_state::<AppState>() {
+                state.core.shutdown();
+            }
         }
         // Clicking the Dock icon brings back the window that closing only hid.
         #[cfg(target_os = "macos")]
