@@ -5,5 +5,6 @@
 //! [`gate::dispatch`], which decides whether the request may run before any feature code does.
 
 pub mod gate;
+pub mod process;
 pub mod protocol;
 pub mod storage;
