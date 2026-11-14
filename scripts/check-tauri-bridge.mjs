@@ -15,7 +15,8 @@ assert.equal(COMMAND, 'bridge_request');
 assert.equal(MESSAGE_EVENT, 'open-sesame-message');
 
 // A fake window: manual timers, a recorded invoke whose calls the test settles, and a recorded listen.
-function fakeHost({ native = true, tauri = true } = {}) {
+// With `heldListen` the listener counts as registered only once the test calls `registered()`.
+function fakeHost({ native = true, tauri = true, heldListen = false } = {}) {
   const timers = new Map(), invokes = [], listens = [], order = [];
   let nextTimer = 0;
   const host = {
@@ -26,7 +27,7 @@ function fakeHost({ native = true, tauri = true } = {}) {
   if (native) host.__OPEN_SESAME_NATIVE__ = true;
   if (tauri) host.__TAURI__ = {
     core: { invoke: (command, args) => new Promise((resolve, reject) => { order.push('invoke'); invokes.push({ command, args, resolve, reject }); }) },
-    event: { listen: (name, handler) => { order.push('listen'); listens.push({ name, handler }); return Promise.resolve(() => {}); } },
+    event: { listen: (name, handler) => { order.push('listen'); return new Promise(resolve => { const entry = { name, handler, registered: () => resolve(() => {}) }; listens.push(entry); if (!heldListen) entry.registered(); }); } },
   };
   return { host, timers, invokes, listens, order };
 }
@@ -72,6 +73,18 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   invokes[0].resolve({ requestId: message.requestId, result: { platform: 'linux', authenticated: false } });
   assert.deepEqual(await bridge.ready, { available: true, platform: 'linux', authenticated: false });
   assert.equal(bridge.available, true);
+}
+
+// 2b. The first request waits until the host has registered the listener, not only until listen was called.
+{
+  const { host, invokes, listens } = fakeHost({ heldListen: true });
+  createBridge(host);
+  await settle();
+  assert.equal(listens.length, 1);
+  assert.equal(invokes.length, 0, 'Nothing is requested while the listener is still being registered');
+  listens[0].registered();
+  await settle();
+  assert.equal(invokes.length, 1, 'The first request follows the registered listener');
 }
 
 // 3. A failed first request leaves the bridge unavailable and reports why, without rejecting `ready`.
@@ -223,17 +236,30 @@ assert.equal(config.build.devUrl, undefined, 'No dev server: the app always serv
 assert.equal(config.app.withGlobalTauri, true);
 assert.deepEqual(config.app.windows, [], 'The main window is created in Rust so the flags precede every page script');
 const csp = config.app.security.csp;
-const directive = name => (typeof csp === 'string' ? Object.fromEntries(csp.split(';').map(part => part.trim().split(/\s+/)).filter(part => part[0]).map(([key, ...values]) => [key, values])) : csp)[name];
-assert.deepEqual([].concat(directive('default-src')), ["'self'"]);
-assert.deepEqual([].concat(directive('script-src')), ["'self'"], 'Only bundled script runs in the main document');
+// Each directive as a list of sources, whether the policy is written as one string or as an object.
+const policy = Object.fromEntries(typeof csp === 'string'
+  ? csp.split(';').map(part => part.trim().split(/\s+/)).filter(part => part[0]).map(([key, ...values]) => [key, values])
+  : Object.entries(csp).map(([key, value]) => [key, [].concat(value).flatMap(item => item.trim().split(/\s+/))]));
+assert.deepEqual(policy['default-src'], ["'self'"]);
+assert.deepEqual(policy['script-src'], ["'self'"], 'Only bundled script runs in the main document');
 assert(!JSON.stringify(csp).includes('unsafe'), 'The policy allows no inline or evaluated code');
+// No directive may name another site: not a frame, a connection, a style or an image.
+const LOCAL_SOURCES = new Set(["'self'", "'none'", 'data:', 'ipc:', 'http://ipc.localhost']);
+for (const [name, sources] of Object.entries(policy)) for (const source of sources) assert(LOCAL_SOURCES.has(source), `${name} admits only the application's own files and the host connection, not ${source}`);
 assert.notEqual(config.app.security.dangerousDisableAssetCspModification, true);
-const capabilities = readdirSync(path.join(root, 'src-tauri/capabilities')).filter(name => name.endsWith('.json')).map(name => JSON.parse(read(`src-tauri/capabilities/${name}`)));
-assert.equal(capabilities.length, 1);
+// One capability, in one file. Tauri also reads capabilities written inline in the configuration
+// and from other file types in this folder, so both are ruled out here.
+assert.deepEqual(config.app.security.capabilities, ['default'], 'The configuration names the one capability file and defines none inline');
+assert.deepEqual(readdirSync(path.join(root, 'src-tauri/capabilities')).filter(name => !name.startsWith('.')), ['default.json'], 'The capability folder holds one file');
+const capabilities = [JSON.parse(read('src-tauri/capabilities/default.json'))];
+assert.equal(capabilities[0].identifier, 'default');
 assert.deepEqual(capabilities[0].windows, ['main']);
 assert.equal(capabilities[0].webviews, undefined);
 assert.equal(capabilities[0].remote, undefined, 'No remote page is granted the bridge');
-assert(capabilities[0].permissions.includes('allow-bridge-request'));
+// Exactly these. Event listening is granted to the main window alone because a page that may
+// listen receives every host message: Tauri delivers an event sent to one window to any page
+// listener registered without a target, whichever window it is in.
+assert.deepEqual([...capabilities[0].permissions].sort(), ['allow-bridge-request', 'core:event:allow-listen', 'core:event:allow-unlisten'], 'The main window is granted the one command and event listening, and nothing else');
 assert(/MAIN_WINDOW: &str = "main"/.test(read('crates/core/src/gate.rs')), 'The gate serves the same label the capability names');
 assert(/MESSAGE_EVENT: &str = "open-sesame-message"/.test(read('src-tauri/src/events.rs')), 'The host emits the event name the bridge listens for');
 assert(/AppManifest::new\(\)\.commands\(&\["bridge_request"\]\)/.test(read('src-tauri/build.rs')), 'bridge_request is a declared command, so only a granted window can call it');
