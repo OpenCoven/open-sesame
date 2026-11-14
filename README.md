@@ -2,6 +2,31 @@
 
 Open Sesame is a local widget workspace with a macOS AppKit/WKWebView companion, a real Python PTY/SSH bridge, and a browser preview. It combines notes, tasks, bookmarks, focus, reading, media, and terminal panes. Some provider surfaces remain previews; see the [current capability matrix](docs/capabilities.md).
 
+## Try Open Sesame
+
+Start with the **[Mac build and launch guide](desktop/README.md#build-and-launch)**, then connect a local project or a Coven familiar. See [what is implemented and what still needs acceptance](docs/capabilities.md) before choosing an integration.
+
+### Platform availability
+
+| Surface | Available path | Important limit |
+| --- | --- | --- |
+| macOS native app | Build from source with the [desktop guide](desktop/README.md) | macOS 13+, Xcode/Swift 6.2+, Python and build prerequisites below; local development signing is not notarized distribution |
+| Windows / Linux | Portable source checks and browser surfaces | No qualified packaged desktop host; passing portable tests does not establish local terminal, SSH or native app support |
+| Local HTTP preview | `npm run dev`, then `http://127.0.0.1:4173` | Sign-in/download preview, not a machine-operation host |
+| iOS / iPadOS / Android | [Mobile design direction](docs/mobile/adr-001-mobile-host.md) | Not implemented or qualified in the current baseline |
+
+### First useful session on a Mac
+
+1. Clone this repository and review the [development prerequisites](#development), including the native build requirements in the [desktop guide](desktop/README.md).
+2. Run `npm run dev:macos` from the repository to build and open the locally signed app.
+3. Complete WorkOS sign-in in your system browser and return to Open Sesame. See [login setup and remaining live checks](docs/workos-login.md) if sign-in does not complete.
+4. Open **Console → Shells**, then **Shell preferences → Connect project** and choose a local folder. Select the project and **Add new pane → Shell**. Run `pwd` to confirm the shell is in the intended folder.
+5. For an agent conversation, use **Console → Familiars → Connect Coven** with an installed, configured Coven CLI. Select a familiar, review the draft and Run with choice, then explicitly **Send**. See the [Coven integration guide](docs/coven-familiars-integration.md).
+
+The shell step runs on your computer, not in a hosted sandbox. Provider sign-in and costs are separate; previews and fixture checks do not prove a real provider connection. For lifecycle validation, follow the [local shell smoke pass](desktop/README.md#local-shell-smoke-pass).
+
+## Product details
+
 The Mac app now requires WorkOS login through the existing **OpenSesame** production project. Sign-in opens in the system browser; verified sessions stay in the macOS Keychain. See [login setup, saved application URLs and remaining live checks](docs/workos-login.md). The local HTTP preview shows the sign-in screen and downloads; machine operations are available through the authenticated native app.
 
 The current widget uses an opaque, flat charcoal palette. Transparency gestures, native vibrancy, animated edges, and view fades have been removed. Navigation, text hierarchy, controls, and static activity feedback share the [four UI refinements](docs/desktop-polish-plan.md#flat-dark-ui-polish); historical glass descriptions are archived.
@@ -12,6 +37,7 @@ Plugin cards include setup and repair instructions. See [plugin setup and privat
 
 | Need | Read |
 | --- | --- |
+| Contribute a change | [Development workflow](docs/development-workflow.md), [agent instructions](AGENTS.md) |
 | Agent instructions and source/test navigation | [AGENTS.md](AGENTS.md), [repository map](docs/repository-map.md), [documentation index](docs/README.md) |
 | Find an active task or resume safely | [Current-state lookup](docs/work-tracking.md#find-current-work), [development workflow](docs/development-workflow.md) |
 | Understand what is implemented versus accepted | [Capability matrix](docs/capabilities.md) |
