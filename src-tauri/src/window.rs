@@ -124,8 +124,16 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
 
 pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = window.hide();
+        let _ = conceal(&window);
     }
+}
+
+fn conceal<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+    // Development evidence where nothing outside the application can see the window, as in
+    // a headless Wayland session.
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: window hidden");
+    window.hide()
 }
 
 /// Whether the person can see the window. A minimized window still counts as visible to the
@@ -139,7 +147,7 @@ pub fn is_shown<R: Runtime>(window: &WebviewWindow<R>) -> bool {
 pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = if is_shown(&window) {
-            window.hide()
+            conceal(&window)
         } else {
             focus(&window)
         };
@@ -154,7 +162,7 @@ pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
         return;
     };
     if is_shown(&window) {
-        let _ = window.hide();
+        let _ = conceal(&window);
         return;
     }
     let placed = window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
@@ -189,6 +197,8 @@ fn place_against<R: Runtime>(window: &WebviewWindow<R>, icon: tauri::Rect) -> ta
 }
 
 fn focus<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: window shown");
     window.show()?;
     window.unminimize()?;
     // On macOS the window is a panel that takes the keyboard without activating the
