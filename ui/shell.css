@@ -1,0 +1,175 @@
+/* Base styles of the new shell (issues #70 and #74). Views and widget styles arrive with #76. */
+:root {
+  color-scheme: light dark;
+  --page: #f6f5f2;
+  --ink: #1b1a18;
+  --muted: #6b6861;
+  --line: #dcd9d2;
+  --field: #ffffff;
+  --ok: #2f7d4f;
+  --warn: #a45a12;
+  --terminal: #131315;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #171614;
+    --ink: #eeebe5;
+    --muted: #a39f96;
+    --line: #34322e;
+    --field: #211f1c;
+    --ok: #6fc48f;
+    --warn: #e0a15c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.shell[data-state="connected"] .status::before { background: var(--ok); }
+.shell[data-state="unavailable"] .status::before { background: var(--warn); }
+
+.facts {
+  margin: 0 0 0 auto;
+  display: flex;
+  gap: 1rem;
+  color: var(--muted);
+}
+
+.facts[hidden], .terminals[hidden], .notice[hidden], .pane[hidden] { display: none; }
+
+.facts div { display: flex; gap: 0.35rem; }
+.facts dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.terminals {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.launch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+}
+
+.launch label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+input, button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+}
+
+input {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+  width: 11rem;
+}
+
+input[name="cwd"] { width: 16rem; }
+
+button { cursor: default; }
+button:hover { border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+
+.notice {
+  margin: 0;
+  padding: 0.25rem 1rem;
+  color: var(--warn);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0 1rem;
+  min-height: 0.25rem;
+}
+
+.tab {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+
+.tab button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tab [role="tab"][aria-selected="true"] { background: var(--terminal); color: #ddd5e7; }
+.tab[data-ended="true"] [role="tab"] { color: var(--muted); }
+.tab .close { color: var(--muted); padding: 0.25rem 0.4rem; }
+
+.panes {
+  min-height: 0;
+  background: var(--terminal);
+}
+
+.pane {
+  height: 100%;
+  padding: 0.4rem 0.5rem;
+}
+
+.pane .xterm { height: 100%; }
