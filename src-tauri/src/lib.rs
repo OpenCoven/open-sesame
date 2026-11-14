@@ -6,6 +6,8 @@
 //! bundled pages and no third-party script may ever be loaded there.
 
 mod events;
+#[cfg(target_os = "macos")]
+mod panel;
 mod router;
 mod summon;
 mod tray;
@@ -28,7 +30,16 @@ pub struct AppState {
 
 /// Builds and runs the application. Returns when the application exits.
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        // First, as the plugin requires: a second launch hands its arguments to the running
+        // application and exits before it creates a window of its own.
+        .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
+            summon::launched_again(app, &arguments);
+        }))
+        .plugin(summon::shortcut_plugin());
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+    let app = builder
         .invoke_handler(tauri::generate_handler![router::bridge_request])
         .setup(|app| {
             app.manage(AppState {
@@ -37,6 +48,8 @@ pub fn run() {
             });
             window::create_main(app.handle())?;
             tray::create(app.handle())?;
+            // After the window exists, so a press that arrives at once has something to show.
+            summon::start(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -1,6 +1,7 @@
 //! The main window: created in Rust, hidden instead of closed, and limited to bundled pages.
 
-use open_sesame_core::gate::{MAIN_WINDOW, UNSUPPORTED};
+use crate::summon::{self, Session, Summon};
+use open_sesame_core::gate::{MAIN_WINDOW, NOT_ON_OS, UNSUPPORTED};
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
 use tauri::webview::NewWindowResponse;
@@ -33,7 +34,6 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
         .min_inner_size(MINIMUM_SIZE.0, MINIMUM_SIZE.1)
         .resizable(true)
-        .center()
         .initialization_script(initialization_script(&version))
         .on_navigation({
             let dev_url = app.config().build.dev_url.clone();
@@ -41,6 +41,12 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         })
         // The page may not open another window; nothing in the shell needs one.
         .on_new_window(|_, _| NewWindowResponse::Deny);
+    // A Wayland session places windows itself; the application does not try to.
+    let builder = if summon::session() == Session::Wayland {
+        builder
+    } else {
+        builder.center()
+    };
     #[cfg(debug_assertions)]
     let builder = builder.on_page_load(|_, payload| {
         if payload.event() == tauri::webview::PageLoadEvent::Finished {
@@ -49,13 +55,18 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         }
     });
     let window = builder.build()?;
+    #[cfg(target_os = "macos")]
+    crate::panel::adopt(&window)?;
     let handle = window.clone();
-    window.on_window_event(move |event| {
+    window.on_window_event(move |event| match event {
         // Closing hides the window and keeps the page alive. Quit is the tray's explicit action.
-        if let WindowEvent::CloseRequested { api, .. } = event {
+        WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let _ = handle.hide();
         }
+        // Hidden only if the person asked for that and nothing holds the window (issue #71).
+        WindowEvent::Focused(false) => summon::blurred(handle.app_handle()),
+        _ => {}
     });
     Ok(window)
 }
@@ -102,25 +113,88 @@ fn is_dev_server_page(dev_url: &Url, url: &Url) -> bool {
         && url.password().is_none()
 }
 
-/// Brings the window back. Only macOS asks for this, when the Dock icon is clicked.
-#[cfg(target_os = "macos")]
-pub fn show(app: &AppHandle) {
+/// Brings the window forward: a second launch, and on macOS a click on the Dock icon.
+pub fn show<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = focus(&window);
     }
 }
 
-pub fn toggle(app: &AppHandle) {
+pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        // A minimized window still counts as visible, so showing it must also restore it.
-        let shown = window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false);
-        let _ = if shown { window.hide() } else { focus(&window) };
+        let _ = window.hide();
     }
+}
+
+/// Whether the person can see the window. A minimized window still counts as visible to the
+/// system, so it is treated as hidden here: showing it must also restore it.
+pub fn is_shown<R: Runtime>(window: &WebviewWindow<R>) -> bool {
+    window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
+}
+
+/// Shows the window if it is hidden and hides it if it is shown: the tray menu, the shortcut
+/// and `open-sesame --toggle` all end here.
+pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = if is_shown(&window) {
+            window.hide()
+        } else {
+            focus(&window)
+        };
+    }
+}
+
+/// The tray popover: hides the window if it is shown; otherwise moves it against the tray icon
+/// at `icon`, inside the work area of the screen the icon is on, and shows it. A window the
+/// person made full-screen or maximized is shown where it is.
+pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    if is_shown(&window) {
+        let _ = window.hide();
+        return;
+    }
+    let placed = window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
+    if !placed {
+        let _ = place_against(&window, icon);
+    }
+    let _ = focus(&window);
+}
+
+fn place_against<R: Runtime>(window: &WebviewWindow<R>, icon: tauri::Rect) -> tauri::Result<()> {
+    // The tray reports physical pixels; a logical value is converted with the window's scale.
+    let scale = window.scale_factor()?;
+    let at = icon.position.to_physical::<f64>(scale);
+    let extent = icon.size.to_physical::<f64>(scale);
+    let Some(monitor) = window.monitor_from_point(at.x, at.y)? else {
+        return Ok(());
+    };
+    let area = monitor.work_area();
+    let size = window.outer_size()?;
+    let (x, y) = summon::popover_position(
+        ((at.x, at.y), (extent.width, extent.height)),
+        (f64::from(size.width), f64::from(size.height)),
+        (
+            (f64::from(area.position.x), f64::from(area.position.y)),
+            (f64::from(area.size.width), f64::from(area.size.height)),
+        ),
+    );
+    window.set_position(tauri::PhysicalPosition::new(
+        x.round() as i32,
+        y.round() as i32,
+    ))
 }
 
 fn focus<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
     window.show()?;
     window.unminimize()?;
+    // On macOS the window is a panel that takes the keyboard without activating the
+    // application, so it can appear over another application's full-screen space.
+    #[cfg(target_os = "macos")]
+    if crate::panel::show(window) {
+        return Ok(());
+    }
     window.set_focus()
 }
 
@@ -149,8 +223,20 @@ pub fn handle<R: Runtime>(
             Ok(json!({"fullscreen": fullscreen}))
         }
         "window.keepOpen" => {
+            let summon = window.app_handle().try_state::<Summon>();
+            // A Wayland session decides stacking itself; forcing a window on top is not offered.
+            if summon
+                .as_ref()
+                .is_some_and(|summon| summon.session() == Session::Wayland)
+            {
+                return Err(BridgeError::from(NOT_ON_OS));
+            }
             let pinned = params.get("pinned") == Some(&Value::Bool(true));
             window.set_always_on_top(pinned).map_err(unavailable)?;
+            // A pinned window also stays when it loses focus.
+            if let Some(summon) = summon {
+                summon.set_pinned(pinned);
+            }
             Ok(json!({"pinned": pinned}))
         }
         _ => Err(BridgeError::from(UNSUPPORTED)),

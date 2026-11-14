@@ -1,9 +1,11 @@
-//! The tray icon. Its menu shows or hides the window and quits; a click only opens the menu,
-//! because Tauri's tray emits no click events on Linux and the menu works everywhere.
+//! The tray icon. Its menu shows or hides the window and quits, and works everywhere. On macOS
+//! and Linux a click only opens the menu: Tauri's tray emits no click events on Linux. On
+//! Windows a left click shows the window against the icon, as a popover, and a right click
+//! opens the menu (issue #71).
 
 use crate::window;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
 
 const TOGGLE: &str = "toggle";
@@ -20,7 +22,21 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("Open Sesame")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(!cfg!(windows))
+        .on_tray_icon_event(|tray, event| {
+            if let (
+                true,
+                TrayIconEvent::Click {
+                    rect,
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                },
+            ) = (cfg!(windows), event)
+            {
+                window::toggle_at(tray.app_handle(), rect);
+            }
+        })
         .on_menu_event(|app, event| match event.id().as_ref() {
             TOGGLE => window::toggle(app),
             // Exit runs the shutdown in `run`, so Quit and every other way out share one path.

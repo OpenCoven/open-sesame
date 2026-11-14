@@ -1,6 +1,7 @@
 // Entry point of the new shell (issue #70). It proves the path from page to host and back, and
 // nothing more: views, the widget manifest and lazy loading arrive with issue #76.
 import { createBridge } from './bridge.js';
+import { holdDuringDrag, mountSummon } from './summon.js';
 
 const SYSTEMS = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
@@ -20,4 +21,14 @@ bridge.ready.then(info => {
   facts.querySelector('[data-fact="platform"]').textContent = SYSTEMS[info.platform] || info.platform;
   facts.querySelector('[data-fact="version"]').textContent = window.__OPEN_SESAME_VERSION__ || 'Unknown';
   facts.hidden = false;
+  const section = shell.querySelector('[data-summon]');
+  mountSummon(bridge, {
+    section,
+    hint: section.querySelector('[data-summon-hint]'),
+    form: section.querySelector('[data-summon-form]'),
+    input: section.querySelector('#summon-shortcut'),
+    message: section.querySelector('[data-summon-message]'),
+    blur: section.querySelector('[data-summon-blur]'),
+  });
+  holdDuringDrag(bridge, document);
 });
