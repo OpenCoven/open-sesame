@@ -115,7 +115,8 @@ function responsiveness() {
 // this window and survives a reload; nothing else in the page uses it.
 const RELOAD_KEY = 'open-sesame-selftest-reload';
 
-export async function run({ launch, config }) {
+export async function run({ launch, bridge, config }) {
+  if (config.kind === 'runtime') return import('./runtime-selftest.js').then(module => module.run({ bridge, config }));
   const results = { started: new Date().toISOString(), agent: navigator.userAgent, phase: 'running', steps: [] };
   const lines = Number(config.lines) || 7000000;
   let writes = 0;

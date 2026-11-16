@@ -25,7 +25,7 @@ mod platform;
 #[path = "windows.rs"]
 mod platform;
 
-pub use env::{EnvSource, Fallback, ShellEnv, StartupEnv};
+pub use env::{EnvSource, Fallback, ShellEnv, StartupEnv, CAPTURE_TIMEOUT};
 pub use find::{not_installed, resolve, Search};
 
 use crate::protocol::BridgeError;
