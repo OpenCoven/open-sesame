@@ -36,6 +36,8 @@ const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
 const START = Date.UTC(2026, 10, 16, 9, 0, 0);
 const MINUTE = 60_000;
 const SAVE_FAILED = 'Could not save. Your changes were not stored; try again.';
+const OVERTAKEN = 'That capture was not saved because another view opened first. The palette keeps it; try again.';
+const NO_RESPONSE = 'The desktop connection did not respond.';
 
 // The host: the shell's own commands in the shapes src-tauri answers, settings and widget
 // states as the core keeps them, and items and projects through the stand-in.
@@ -175,6 +177,35 @@ try {
         await view(page, 'today').locator('[data-today-tasks]').getByText('Call the landlord', {exact: true}).waitFor();
         assert.equal(await view(page, 'today').locator('[data-today-task-count]').textContent(), '2 open · 0 done');
       });
+      await step('a palette capture is kept when another view opens before Today has loaded', async () => {
+        // The last view is Projects, so Today's module is not loaded when the capture asks for it.
+        await page.locator('[data-view="projects"]').click();
+        await view(page, 'projects').waitFor({state: 'visible'});
+        const at = await now(page);
+        await page.close();
+        page = await app.open(at + MINUTE);
+        assert(await view(page, 'projects').isVisible());
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        await page.route('**/ui/widgets/today.js', async route => { await held; await route.continue(); });
+        const requested = page.waitForRequest(request => request.url().endsWith('/ui/widgets/today.js'));
+        await palette(page, 'note: Bring the umbrella');
+        await page.locator('[data-command-query]').press('Enter');
+        await requested;
+        await page.locator('[data-view="projects"]').click();
+        release();
+        await page.locator('[data-shell-notice]').getByText(OVERTAKEN).waitFor();
+        assert.equal(rows(host, item => item.text === 'Bring the umbrella').length, 0, 'nothing was saved');
+        await page.getByRole('button', {name: 'Commands', exact: true}).click();
+        assert.equal(await page.locator('[data-command-query]').inputValue(), 'note: Bring the umbrella', 'the palette kept the text');
+        await page.locator('[data-command-query]').press('Enter');
+        await page.locator('[data-shell-notice]').waitFor({state: 'hidden'});
+        await view(page, 'today').locator('[data-capture-status]').getByText('Note saved.').waitFor();
+        assert.equal(rows(host, item => item.text === 'Bring the umbrella').length, 1);
+        await page.getByRole('button', {name: 'Commands', exact: true}).click();
+        assert.equal(await page.locator('[data-command-query]').inputValue(), '', 'a saved capture is not offered again');
+        await page.locator('[data-command-query]').press('Escape');
+      });
       await step('completing a task in Today archives it in Projects', async () => {
         // The row leaves the list once the core has saved it, so it is clicked once, by name.
         await view(page, 'today').locator('[data-today-tasks] li', {hasText: 'Water the plants'}).getByRole('checkbox').click();
@@ -202,6 +233,12 @@ try {
         assert.equal(await page.locator('[data-command$=".text"]').count(), 0);
         await palette(page, '(1+');
         await page.locator('[data-command-answer="error"]').getByText('Finish the expression to calculate.').waitFor();
+        // An answer that is only an error leaves the capture offers, but Enter does not choose them.
+        await palette(page, '(555) 123-4567');
+        await page.locator('[data-command-answer="error"]').waitFor();
+        assert.equal(await page.locator('[data-command$=".text"]').count(), 2, 'a phone number can still be captured');
+        await page.locator('[data-command-query]').press('Enter');
+        assert(await page.locator('#command-palette').isVisible(), 'Enter chose no capture');
         await page.locator('[data-command-query]').press('Escape');
         assert.equal(host.writes().length, before, 'an answer writes nothing');
       });
@@ -236,6 +273,12 @@ try {
         await page.locator('[data-command-query]').press('Escape');
         await page.getByRole('button', {name: 'Commands', exact: true}).click();
         assert.equal(await page.locator('[data-command-query]').inputValue(), 'note: palette draft');
+        // A search typed over it and run leaves the kept text as it was.
+        await page.locator('[data-command-query]').fill('open projects');
+        await page.locator('[data-command-query]').press('Enter');
+        await view(page, 'projects').waitFor({state: 'visible'});
+        await page.getByRole('button', {name: 'Commands', exact: true}).click();
+        assert.equal(await page.locator('[data-command-query]').inputValue(), 'note: palette draft', 'a search does not replace the kept text');
         await page.locator('[data-command-query]').press('Enter');
         await view(page, 'today').locator('[data-capture-status]').getByText('Note saved.').waitFor();
         await page.locator('[data-shell-notice]').waitFor({state: 'hidden'});
@@ -243,6 +286,30 @@ try {
         await page.getByRole('button', {name: 'Commands', exact: true}).click();
         assert.equal(await page.locator('[data-command-query]').inputValue(), '', 'a saved capture is not offered again');
         await page.locator('[data-command-query]').press('Escape');
+        // A reply lost after the core committed, then an edited retry: the palette keeps its draft's
+        // client ID, so the core keeps one row and the retry edits it.
+        host.core.fault('items.save', 'lose');
+        await palette(page, 'note: Pack the charger');
+        await page.locator('[data-command-query]').press('Enter');
+        await page.locator('[data-shell-notice]').getByText(NO_RESPONSE).waitFor();
+        assert.equal(rows(host, item => item.text === 'Pack the charger').length, 1, 'the lost reply had committed');
+        assert.equal(await page.locator('[data-command-query]').inputValue(), 'note: Pack the charger');
+        await page.locator('[data-command-query]').fill('note: Pack the charger and the cable');
+        await page.locator('[data-command-query]').press('Enter');
+        await page.locator('[data-shell-notice]').waitFor({state: 'hidden'});
+        assert.deepEqual(rows(host, item => item.text.startsWith('Pack the charger')).map(item => item.text), ['Pack the charger and the cable'], 'the edited retry changed that row');
+        // Cleared and closed, a kept capture is dropped with its notice.
+        host.core.fault('items.save', 'fail', SAVE_FAILED);
+        await palette(page, 'note: Never mind');
+        await page.locator('[data-command-query]').press('Enter');
+        await page.locator('[data-shell-notice]').getByText(SAVE_FAILED).waitFor();
+        await page.locator('[data-command-query]').fill('');
+        await page.locator('[data-command-query]').press('Escape');
+        await page.locator('[data-shell-notice]').waitFor({state: 'hidden'});
+        await page.getByRole('button', {name: 'Commands', exact: true}).click();
+        assert.equal(await page.locator('[data-command-query]').inputValue(), '', 'a cleared capture is not offered again');
+        await page.locator('[data-command-query]').press('Escape');
+        assert.equal(rows(host, item => item.text === 'Never mind').length, 0);
         // At 30 active items the next capture is refused before it reaches the core.
         const active = rows(host, item => !(item.stage === 'done' || (item.kind === 'task' && item.done))).length;
         for (let index = active; index < 30; index++) host.core.seed({kind: 'note', text: `Seeded ${index}`, id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`});
@@ -278,6 +345,18 @@ try {
         await page.getByRole('button', {name: 'Widgets', exact: true}).click();
         assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0], 'no browser storage is used');
       });
+      await step('stored markup is shown as text, never as HTML', async () => {
+        // Another writer (an agent, once #81 writes items) can store any text.
+        const markup = '<img src=x onerror="document.body.dataset.injected=1">Plan <b>bold</b>';
+        host.core.seed({kind: 'note', text: markup, title: markup, body: '<script>document.body.dataset.injected=2</script>Body <i>text</i>', id: '00000000-0000-4000-8000-0000000000aa'});
+        await page.locator('[data-view="projects"]').click();
+        await view(page, 'projects').locator('[data-item-list]').getByText(markup, {exact: true}).waitFor();
+        await page.locator('[data-view="today"]').click();
+        await view(page, 'today').locator('[data-today-note-title]').getByText(markup, {exact: true}).waitFor();
+        await view(page, 'today').getByText('document.body.dataset.injected=2 Body text', {exact: true}).waitFor();
+        assert.equal(await page.locator('[data-widget-view] img, [data-widget-view] script').count(), 0, 'no stored tag became an element');
+        assert.equal(await page.evaluate(() => document.body.dataset.injected), undefined, 'and nothing stored ran');
+      });
       await page.close();
 
       // ---- Projects: edits, conflicts, archive, delete and projects ----
@@ -301,10 +380,12 @@ try {
         await editor.getByRole('button', {name: 'Save', exact: true}).click();
         await status.getByText(/changed after you opened it/).waitFor();
         assert.equal(await title.inputValue(), 'Plan, second draft', 'a conflict keeps the draft');
+        assert.equal(await editor.locator('[data-edit-field="body"]').inputValue(), 'changed elsewhere', 'and shows the other writer’s change to a field the person did not edit');
         assert.equal(editing.core.items.get(seeded.id).body, 'changed elsewhere', 'a conflict overwrites nothing');
         await editor.getByRole('button', {name: 'Save', exact: true}).click();
         await status.getByText('Saved.', {exact: true}).waitFor();
-        assert.equal(editing.core.items.get(seeded.id).title, 'Plan, second draft', 'saving again replaces it');
+        assert.equal(editing.core.items.get(seeded.id).title, 'Plan, second draft', 'saving again applies the person’s edit');
+        assert.equal(editing.core.items.get(seeded.id).body, 'changed elsewhere', 'and keeps the other writer’s change to the field the person did not edit');
         await editor.getByRole('button', {name: 'Close', exact: true}).click();
       });
       await step('projects group items; archive, restore and delete need the core’s answer', async () => {
