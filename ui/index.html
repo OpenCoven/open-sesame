@@ -5,33 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Open Sesame</title>
-<link rel="stylesheet" href="./xterm.css">
 <link rel="stylesheet" href="./shell.css">
 <script type="module" src="./main.js"></script>
 </head>
 <body>
-<main class="shell" data-state="connecting">
+<main class="shell" data-state="connecting" aria-busy="true">
   <header class="bar">
     <h1>Open Sesame</h1>
     <p class="status" role="status" data-status>Connecting to this machine.</p>
-    <dl class="facts" data-facts hidden>
-      <div><dt>System</dt><dd data-fact="platform"></dd></div>
-      <div><dt>Version</dt><dd data-fact="version"></dd></div>
-    </dl>
+    <button type="button" data-palette-toggle aria-expanded="false" aria-controls="command-palette">Commands</button>
+    <button type="button" data-widgets-toggle aria-expanded="false" aria-controls="widget-settings">Widgets</button>
   </header>
-  <section class="terminals" data-terminals hidden aria-label="Terminals">
-    <form class="launch" data-launch autocomplete="off">
-      <label>Folder <input name="cwd" placeholder="Home folder" spellcheck="false" autocapitalize="off"></label>
-      <button type="button" data-action="choose">Choose…</button>
-      <button type="button" data-action="reveal">Show folder</button>
-      <label>SSH host <input name="host" placeholder="This machine" spellcheck="false" autocapitalize="off"></label>
-      <label>User <input name="user" spellcheck="false" autocapitalize="off"></label>
-      <button type="submit">New shell</button>
-    </form>
-    <p class="notice" role="alert" data-notice hidden></p>
-    <div class="tabs" role="tablist" aria-label="Open shells" data-tabs></div>
-    <div class="panes" data-panes></div>
+  <section id="command-palette" class="palette" aria-label="Commands" hidden>
+    <label>Find a command <input type="search" data-command-query autocomplete="off" spellcheck="false"></label>
+    <div class="command-results" data-command-results></div>
+    <button type="button" data-palette-close>Close commands</button>
   </section>
+  <section id="widget-settings" class="widget-settings" aria-label="Widgets" hidden>
+    <h2>Widgets</h2>
+    <p>Turn widgets on to use them. Turning one off closes its activity.</p>
+    <div data-widget-options></div>
+  </section>
+  <nav class="navigation" aria-label="Views" data-navigation></nav>
+  <p role="status" class="notice" data-shell-notice hidden></p>
+  <div class="view-host" data-view-host></div>
+  <p class="empty" data-empty hidden>All widgets are off. Open Widgets or choose a command to turn one on.</p>
 </main>
 </body>
 </html>

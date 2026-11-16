@@ -1,0 +1,215 @@
+// Rendered shell/JSON behavior against a synthetic host, with real module/CSS requests.
+// Starts and closes its own loopback-only server. No provider, credential or real PTY is used.
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile, mkdir, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {chromium,webkit} from 'playwright';
+
+const root=fileURLToPath(new URL('../../',import.meta.url));
+const output=path.resolve(process.argv[2]||'build/ui-shell-browser');
+await mkdir(output,{recursive:true});
+const requested=[];
+const server=createServer(async(req,res)=>{
+  try {
+    const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
+    if(pathname==='/favicon.ico'){res.writeHead(204);res.end();return;}
+    const aliases={'/ui/xterm.js':'dist/vendor/xterm.js','/ui/xterm.css':'dist/vendor/xterm.css'};
+    const name=aliases[pathname]||pathname.slice(1);
+    const file=path.resolve(root,name);
+    if(!file.startsWith(root)){res.writeHead(403);res.end();return;}
+    requested.push(pathname);
+    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.json')?'application/json':'text/html');
+    res.end(await readFile(file));
+  }catch{res.writeHead(404);res.end();}
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const origin=`http://127.0.0.1:${server.address().port}`;
+const browsers=process.env.UI_SHELL_ENGINES?.split(',')||['chromium','webkit'];
+const report={kind:'browser with synthetic host; no native/device/provider acceptance',platform:process.platform,results:[]};
+const definition=JSON.parse(await readFile(path.join(root,'dist/tools/meeting-notes/tool.json'),'utf8'));
+try {
+  for(const name of browsers) {
+    const browser=await ({chromium,webkit})[name].launch({headless:process.env.UI_SHELL_HEADLESS!=='0'});
+    const context=await browser.newContext({viewport:{width:1090,height:700}});
+    await context.route('**/*',route=>route.request().url().startsWith(origin)?route.continue():route.abort());
+    await context.addInitScript(()=>{
+      const settings=JSON.parse(sessionStorage.getItem('fixture.settings')||'{}');
+      const states=JSON.parse(sessionStorage.getItem('fixture.states')||'{}');
+      const calls=[];let noteReply,releaseOpen;
+      window.__fixture__={settings,states,calls,holdNotes:false,holdOpen:false,releaseNote:()=>noteReply?.(),releaseOpen:()=>releaseOpen?.()};
+      window.__OPEN_SESAME_NATIVE__=true;
+      window.__TAURI__={event:{listen:async()=>()=>{}},core:{Channel:class{},invoke:async(command,{message})=>{
+        const {requestId,method,params}=message;calls.push({method,params:{...params,channel:undefined}});
+        let result;
+        if(method==='system.info')result={available:true,platform:'darwin',authenticated:false};
+        else if(method==='settings.all')result={settings};
+        else if(method==='widgets.list')result={widgets:states};
+        else if(method==='settings.set'){settings[params.key]=params.value;sessionStorage.setItem('fixture.settings',JSON.stringify(settings));result={saved:true};}
+        else if(method==='widgets.set'){states[params.id]=params.state;sessionStorage.setItem('fixture.states',JSON.stringify(states));result={saved:true};}
+        else if(method==='items.save') {
+          if(window.__fixture__.holdNotes)await new Promise(resolve=>noteReply=resolve);
+          if(window.__fixture__.failNote)return {requestId,error:'The note could not be saved.'};
+          result={item:{id:params.item.id}};
+        } else if(method==='terminal.open') {
+          if(window.__fixture__.holdOpen)await new Promise(resolve=>releaseOpen=resolve);
+          result={id:params.id,pid:0,machine:'fixture'};
+        }else result=true;
+        return {requestId,result};
+      }}};
+    });
+    const page=await context.newPage();
+    const errors=[],events=[];page.on('pageerror',e=>errors.push(e.message));
+    for(const event of ['load','domcontentloaded','crash'])page.on(event,()=>events.push({event,time:Date.now()}));
+    page.on('requestfailed',request=>events.push({event:'requestfailed',url:request.url(),error:request.failure()}));
+    const requests=[];page.on('request',req=>requests.push(new URL(req.url()).pathname));
+    const step=async(label,action)=>{await action();report.results.push({engine:name,label,passed:true});};
+    try {
+      await page.goto(origin+'/ui/index.html');
+      await page.locator('[data-ready="true"]').waitFor();
+      await step('startup loads only shell and last view',async()=>{
+        assert(await page.locator('[data-widget-view="today"]').isVisible());
+        for(const part of ['shells.js','shells.css','terminal.js','xterm.js','xterm.css','declarative.js','definitions.js'])assert(!requests.some(r=>r.endsWith('/'+part)),part+' must not load');
+        assert.deepEqual(await page.evaluate(()=>Object.keys(window).filter(k=>k.startsWith('OpenSesame'))),[]);
+        const trace=await page.evaluate(()=>({paint:performance.getEntriesByType('paint').map(x=>({name:x.name,time:x.startTime})),resources:performance.getEntriesByType('resource').map(x=>({name:x.name,start:x.startTime,duration:x.duration,bytes:x.transferSize}))}));
+        await writeFile(path.join(output,`${name}-startup.json`),JSON.stringify({requests:[...requests],...trace},null,2));
+      });
+      await step('off widget command is discoverable without import',async()=>{
+        await page.getByRole('button',{name:'Commands',exact:true}).click();
+        await page.locator('[data-command-query]').fill('GitHub');
+        assert(await page.locator('[data-command="github.open"]').isVisible());
+        assert(!requests.some(r=>r.includes('github.js')));
+        await page.locator('[data-command-query]').press('Enter');
+        await page.locator('[data-widget-view="github"]').waitFor({state:'visible'});
+      });
+      await step('Shells code and CSS load on selection; new pane and off cleanup',async()=>{
+        await page.locator('[data-view="shells"]').click();
+        await page.locator('[data-widget-view="shells"]').waitFor({state:'visible'});
+        assert(requests.some(r=>r.endsWith('/shells.js')));assert(requests.some(r=>r.endsWith('/shells.css')));
+        await page.getByRole('button',{name:'New shell',exact:true}).click();
+        await page.locator('.xterm').waitFor();
+        await page.getByRole('button',{name:'Widgets',exact:true}).click();
+        await page.locator('[data-widget="shells"]').uncheck();
+        await page.locator('[data-widget-view="shells"]').waitFor({state:'detached'});
+        await page.waitForFunction(()=>window.__fixture__.calls.some(c=>c.method==='terminal.close'));
+        assert.equal(await page.locator('link[data-widget-style*="shells"]').count(),0);
+      });
+      await step('repeated terminal toggles leave no pane or stylesheet behind',async()=>{
+        for(let i=0;i<12;i++) {
+          await page.locator('[data-widget="shells"]').check();
+          await page.locator('[data-launch]').waitFor();
+          await page.getByRole('button',{name:'New shell',exact:true}).click();
+          await page.locator('.xterm').waitFor();
+          if(i===0) {
+            const geometry=await page.locator('.panes').boundingBox();
+            assert(geometry.height>100,'Terminal keeps a usable viewport');
+            await page.screenshot({path:path.join(output,`${name}-terminal.png`),fullPage:true});
+          }
+          await page.locator('[data-widget="shells"]').uncheck();
+          await page.locator('[data-widget-view="shells"]').waitFor({state:'detached'});
+        }
+        await page.waitForFunction(()=>window.__fixture__.calls.filter(c=>c.method==='terminal.open').length===window.__fixture__.calls.filter(c=>c.method==='terminal.close').length);
+        assert.equal(await page.locator('.xterm,link[data-widget-style*="shells"]').count(),0);
+      });
+      await step('JSON preview is isolated and install is explicit',async()=>{
+        await page.locator('[data-widget="declarative"]').check();
+        const host=page.locator('[data-widget-view="declarative"]');
+        const before=await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='items.save').length);
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await host.getByRole('heading',{name:'Preview: '+definition.name}).waitFor();
+        assert.equal(await host.locator('.json-card').count(),0);
+        assert.equal(await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='items.save').length),before);
+        await host.getByRole('button',{name:'Install widget',exact:true}).click();
+        await host.locator('.json-card').waitFor();
+        assert(!await host.getByText('Sample content · no action or provider is run.',{exact:true}).count());
+      });
+      await step('unknown code is rejected and markup is rendered as text',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...definition,script:'./evil.js'}))});
+        await host.getByRole('status').filter({hasText:'Unknown field'}).waitFor();
+        assert.equal(await host.getByRole('button',{name:'Install widget',exact:true}).count(),0);
+        const unsafe={...definition,name:'<img src=x onerror=alert(1)>',components:[{type:'text',label:'Literal',text:'<script>bad()</script>'}]};
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'literal.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(unsafe))});
+        await host.getByText('<script>bad()</script>',{exact:true}).waitFor();
+        assert.equal(await host.locator('img,script,iframe').count(),0);
+        await host.getByRole('button',{name:'Dismiss preview',exact:true}).click();
+      });
+      await step('failed note retains draft; off removes inner widget surface',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        const input=host.locator('.json-card textarea').first();
+        await input.fill('A draft retained after a failed save.');
+        await page.evaluate(()=>window.__fixture__.failNote=true);
+        await host.getByRole('button',{name:definition.actions.find(a=>a.operation==='note.save').label,exact:true}).click();
+        await host.getByRole('status').filter({hasText:'could not be saved'}).waitFor();
+        assert.equal(await input.inputValue(),'A draft retained after a failed save.');
+        await host.getByRole('button',{name:'Turn off',exact:true}).click();
+        await host.locator('[data-json-surface]').waitFor({state:'detached'});
+        await host.getByRole('button',{name:'Turn on',exact:true}).click();
+        assert.equal(await host.locator('textarea').first().inputValue(),'A draft retained after a failed save.');
+      });
+      await step('turning off retires a delayed failed action',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        await host.getByRole('button',{name:'Save configuration',exact:true}).click();
+        await host.getByRole('status').filter({hasText:'Configuration saved.'}).waitFor();
+        const before=await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='items.save').length);
+        await page.evaluate(()=>{window.__fixture__.holdNotes=true;window.__fixture__.failNote=true;});
+        await host.getByRole('button',{name:'Save note',exact:true}).click();
+        await page.waitForFunction(count=>window.__fixture__.calls.filter(c=>c.method==='items.save').length>count,before);
+        await host.getByRole('button',{name:'Turn off',exact:true}).click();
+        await host.locator('[data-json-surface]').waitFor({state:'detached'});
+        const beforeReply=await host.getByRole('status').textContent();
+        await page.evaluate(()=>window.__fixture__.releaseNote());
+        await page.waitForTimeout(100);
+        assert.equal(await host.getByRole('status').textContent(),beforeReply,'A retired action must not report its late error');
+      });
+      await step('last view and installed command survive reload without JSON code loading',async()=>{
+        await page.locator('[data-view="today"]').click();
+        await page.waitForFunction(()=>window.__fixture__.settings['shell.lastView']==='today');
+        requests.length=0;
+        await page.reload();await page.locator('[data-ready="true"]').waitFor();
+        assert(!requests.some(r=>r.endsWith('/declarative.js')||r.endsWith('/definitions.js')));
+        await page.getByRole('button',{name:'Commands',exact:true}).click();
+        await page.locator('[data-command-query]').fill(definition.name);
+        assert(await page.locator('[data-command^="json."]').isVisible());
+        await page.locator('[data-command-query]').press('Escape');
+      });
+      await step('keyboard palette stays reachable; narrow layout fits',async()=>{
+        await page.setViewportSize({width:390,height:844});
+        await page.getByRole('button',{name:'Commands',exact:true}).click();
+        await page.locator('[data-command-query]').fill('new shell');
+        await page.locator('[data-command-query]').press('ArrowDown');
+        assert.equal(await page.locator('[data-command="shells.new"]').evaluate(e=>e===document.activeElement),true);
+        await page.keyboard.press('Escape');
+        assert.equal(await page.getByRole('button',{name:'Commands',exact:true}).evaluate(e=>e===document.activeElement),true);
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+        await page.screenshot({path:path.join(output,`${name}-narrow.png`),fullPage:true});
+        await page.setViewportSize({width:1090,height:700});
+        await page.screenshot({path:path.join(output,`${name}-desktop.png`),fullPage:true});
+      });
+      await step('initial widget failure does not strand shell restoration',async()=>{
+        const recovering=await context.newPage();
+        try {
+          await recovering.route('**/ui/widgets/pending.js',route=>route.abort());
+          await recovering.goto(origin+'/ui/index.html');
+          await recovering.locator('[data-shell-notice]:not([hidden])').waitFor();
+          await recovering.locator('[data-view="shells"]').click();
+          await recovering.locator('[data-launch]').waitFor();
+          await recovering.waitForTimeout(100);
+          assert.equal(await recovering.locator('.shell').getAttribute('aria-busy'),'false');
+          assert.equal(await recovering.locator('.shell').getAttribute('data-ready'),'true');
+          assert.equal(await recovering.evaluate(()=>window.__fixture__.settings['shell.lastView']),'shells');
+        }finally{await recovering.close();}
+      });
+      assert.deepEqual(errors,[]);
+    }catch(error){
+      const state=await Promise.race([page.evaluate(()=>({url:location.href,ready:document.readyState,shellReady:document.querySelector('.shell')?.dataset.ready,busy:document.querySelector('.shell')?.getAttribute('aria-busy'),notice:document.querySelector('[data-shell-notice]')?.textContent,resources:performance.getEntriesByType('resource').map(r=>r.name)})).catch(e=>({error:String(e)})),new Promise(resolve=>setTimeout(()=>resolve({error:'diagnostic observation timed out'}),2000))]);
+      await writeFile(path.join(output,`${name}-diagnostic.json`),JSON.stringify({state,events,requests,errors},null,2));
+      await page.screenshot({path:path.join(output,`${name}-failure.png`),fullPage:true}).catch(()=>{});report.results.push({engine:name,passed:false,error:error.stack});throw error;}
+    finally {await browser.close();}
+  }
+}finally {
+  server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+  await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
+}
+console.log(JSON.stringify(report,null,2));

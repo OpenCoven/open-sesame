@@ -1,0 +1,89 @@
+@import '../xterm.css';
+
+.terminals {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.terminals .launch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+}
+
+.terminals .launch label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+.terminals input, .terminals button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+}
+
+.terminals input {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+  width: 11rem;
+}
+
+.terminals input[name="cwd"] { width: 16rem; }
+
+.terminals button { cursor: default; }
+.terminals button:hover { border-color: var(--muted); }
+.terminals :focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+
+.terminals .notice {
+  margin: 0;
+  padding: 0.25rem 1rem;
+  color: var(--warn);
+}
+
+.terminals .tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0 1rem;
+  min-height: 0.25rem;
+}
+
+.terminals .tab {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+
+.terminals .tab button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.terminals .tab [role="tab"][aria-selected="true"] { background: var(--terminal); color: #ddd5e7; }
+.terminals .tab[data-ended="true"] [role="tab"] { color: var(--muted); }
+.terminals .tab .close { color: var(--muted); padding: 0.25rem 0.4rem; }
+
+.terminals .panes {
+  min-height: 0;
+  background: var(--terminal);
+}
+
+.terminals .pane {
+  height: 100%;
+  padding: 0.4rem 0.5rem;
+}
+
+.terminals .pane .xterm { height: 100%; }
