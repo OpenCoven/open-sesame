@@ -424,3 +424,224 @@ fn failed_new_sign_in_keeps_an_earlier_unsaved_rotation_scheduled() {
     );
     assert_eq!(rig.auth.next_refresh_in(), None);
 }
+
+// The tests below hold rules that the review of the merged change found no test for (#94).
+
+#[test]
+fn sign_out_with_an_unsaved_replacement_leaves_nothing_for_a_later_save() {
+    let rig = rig();
+    rig.sign_in();
+    rig.advance(240);
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    rig.auth.refresh();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    rig.auth.sign_out();
+    assert_eq!(rig.store.saved(), None);
+    // Neither the save retry nor the final save at quit may write the replacement back.
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    assert_eq!(rig.auth.next_refresh_in(), None);
+    rig.advance(20);
+    rig.auth.refresh();
+    assert_eq!(
+        rig.store.saved(),
+        None,
+        "the save retry wrote after sign-out"
+    );
+    rig.auth.shutdown();
+    assert_eq!(rig.store.saved(), None, "quit wrote after sign-out");
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+}
+
+#[test]
+fn a_direct_refresh_inside_the_delay_does_not_try_the_store_again() {
+    let rig = rig();
+    rig.sign_in();
+    rig.advance(240);
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    let before = rig.store.saves.load(Ordering::SeqCst);
+    rig.auth.refresh();
+    assert_eq!(rig.store.saves.load(Ordering::SeqCst) - before, 1);
+    for _ in 0..3 {
+        rig.auth.refresh();
+    }
+    assert_eq!(
+        rig.store.saves.load(Ordering::SeqCst) - before,
+        1,
+        "a call inside the 20 seconds went to the store"
+    );
+    rig.advance(20);
+    rig.auth.refresh();
+    assert_eq!(rig.store.saves.load(Ordering::SeqCst) - before, 2);
+}
+
+/// Whether the status said busy, and its message, each time the change callback was called.
+type Seen = Arc<Mutex<Vec<(bool, String)>>>;
+
+/// A controller whose change callback records what the status says each time it is called.
+fn recording() -> (Rig, Seen) {
+    let api = Arc::new(FakeApi::default());
+    let store = Arc::new(FakeStore::default());
+    let clock = Arc::new(Mutex::new(now()));
+    let changes = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let slot: Arc<Mutex<std::sync::Weak<AuthController>>> = Arc::default();
+    let (time, record, from) = (clock.clone(), seen.clone(), slot.clone());
+    let auth = Arc::new(AuthController::new(AuthParts {
+        api: api.clone(),
+        store: store.clone(),
+        marker: store.clone(),
+        clock: Arc::new(move || *time.lock().unwrap()),
+        on_change: Arc::new(move || {
+            let auth = from.lock().unwrap().upgrade();
+            if let Some(auth) = auth {
+                let status = auth.status();
+                record.lock().unwrap().push((
+                    status["busy"].as_bool().unwrap(),
+                    status["message"].as_str().unwrap().to_string(),
+                ));
+            }
+        }),
+    }));
+    *slot.lock().unwrap() = Arc::downgrade(&auth);
+    let rig = Rig {
+        api,
+        store,
+        clock,
+        changes,
+        auth,
+    };
+    (rig, seen)
+}
+
+#[test]
+fn the_end_of_a_refresh_is_announced_once_it_is_no_longer_busy() {
+    // A refresh that opens a session, and one that stops at the key set: neither path calls
+    // the change callback itself, so the page hears of the end only when the flight is dropped.
+    for key_set_fails in [false, true] {
+        let (rig, seen) = recording();
+        rig.sign_in();
+        rig.advance(240);
+        reply(&rig, "refresh-two");
+        rig.api.jwks_fails.store(key_set_fails, Ordering::SeqCst);
+        seen.lock().unwrap().clear();
+        rig.auth.refresh();
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen.first(),
+            Some(&(true, "Refreshing sign-in…".to_string())),
+            "{seen:?}"
+        );
+        let (busy, message) = seen.last().unwrap();
+        assert!(!busy, "the last word to the page was still busy: {seen:?}");
+        assert_eq!(*message, rig.message(), "{seen:?}");
+        assert_ne!(message, "Refreshing sign-in…", "{seen:?}");
+    }
+}
+
+#[test]
+fn cancel_keeps_the_save_of_an_unsaved_replacement_due() {
+    let rig = rig();
+    rig.sign_in();
+    rig.advance(240);
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    rig.auth.refresh();
+    assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
+    rig.auth.cancel();
+    assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    rig.advance(20);
+    rig.auth.refresh();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+}
+
+#[test]
+fn a_second_restore_keeps_the_replacement_held_in_memory() {
+    let rig = rig();
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    rig.auth.restore();
+    // The store still holds the credential the exchange consumed.
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    rig.advance(20);
+    rig.auth.restore();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+    assert!(rig.auth.authenticated());
+}
+
+/// A controller whose change callback panics while `armed` is set.
+fn panicking() -> (Rig, Arc<AtomicBool>) {
+    let api = Arc::new(FakeApi::default());
+    let store = Arc::new(FakeStore::default());
+    let clock = Arc::new(Mutex::new(now()));
+    let changes = Arc::new(AtomicUsize::new(0));
+    let armed = Arc::new(AtomicBool::new(false));
+    let (time, flag) = (clock.clone(), armed.clone());
+    let auth = Arc::new(AuthController::new(AuthParts {
+        api: api.clone(),
+        store: store.clone(),
+        marker: store.clone(),
+        clock: Arc::new(move || *time.lock().unwrap()),
+        on_change: Arc::new(move || {
+            if flag.load(Ordering::SeqCst) {
+                panic!("the host's change callback panicked");
+            }
+        }),
+    }));
+    let rig = Rig {
+        api,
+        store,
+        clock,
+        changes,
+        auth,
+    };
+    (rig, armed)
+}
+
+/// Whether `shutdown` returns within three seconds.
+fn shutdown_returns(rig: &Rig) -> bool {
+    let (done, finished) = std::sync::mpsc::channel();
+    let auth = rig.auth.clone();
+    std::thread::spawn(move || {
+        auth.shutdown();
+        let _ = done.send(());
+    });
+    finished.recv_timeout(Duration::from_secs(3)).is_ok()
+}
+
+#[test]
+fn a_change_callback_that_panics_as_a_refresh_starts_does_not_hold_up_quit() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let (rig, armed) = panicking();
+    rig.sign_in();
+    rig.advance(240);
+    armed.store(true, Ordering::SeqCst);
+    let auth = rig.auth.clone();
+    assert!(catch_unwind(AssertUnwindSafe(move || auth.refresh())).is_err());
+    armed.store(false, Ordering::SeqCst);
+    assert!(
+        shutdown_returns(&rig),
+        "quit waits for a refresh that never ran"
+    );
+}
+
+#[test]
+fn a_change_callback_that_panics_as_a_restore_starts_does_not_hold_up_quit() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let (rig, armed) = panicking();
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    armed.store(true, Ordering::SeqCst);
+    let auth = rig.auth.clone();
+    assert!(catch_unwind(AssertUnwindSafe(move || auth.restore())).is_err());
+    armed.store(false, Ordering::SeqCst);
+    assert!(
+        shutdown_returns(&rig),
+        "quit waits for a refresh that never ran"
+    );
+}

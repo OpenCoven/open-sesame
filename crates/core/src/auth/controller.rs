@@ -16,6 +16,7 @@ use super::{
     CredentialStore, SignedOutMarker, Tokens, User, WorkosApi,
 };
 use serde_json::{json, Value};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
@@ -123,14 +124,22 @@ pub struct AuthController {
     drained: Condvar,
 }
 
-/// Release refresh admission even if a host boundary panics during unwinding.
+/// Release refresh admission even if a host boundary panics during unwinding. It is made as
+/// soon as a refresh is admitted, before the host hears of it, so that a change callback that
+/// panics there is covered too. What it releases is admission only: after such a panic the
+/// status stays busy until Cancel, sign-out or a new sign-in.
 struct RefreshFlight<'a>(&'a AuthController);
 
 impl Drop for RefreshFlight<'_> {
     fn drop(&mut self) {
         self.0.lock().refreshing = false;
         self.0.drained.notify_all();
-        self.0.changed();
+        if std::thread::panicking() {
+            // A second panic while the first unwinds would end the process.
+            let _ = catch_unwind(AssertUnwindSafe(|| self.0.changed()));
+        } else {
+            self.0.changed();
+        }
     }
 }
 
@@ -282,9 +291,10 @@ impl AuthController {
                 }
             }
         });
+        let flight = started.is_some().then(|| RefreshFlight(self));
         self.changed();
-        if let Some((ticket, work)) = started {
-            self.run_refresh(ticket, work);
+        if let (Some(flight), Some((ticket, work))) = (flight, started) {
+            self.run_refresh(flight, ticket, work);
         }
     }
 
@@ -293,8 +303,9 @@ impl AuthController {
     pub fn refresh(&self) {
         let started = self.start_refresh(&mut self.lock(), false);
         if let Some((ticket, work)) = started {
+            let flight = RefreshFlight(self);
             self.changed();
-            self.run_refresh(ticket, work);
+            self.run_refresh(flight, ticket, work);
         }
     }
 
@@ -372,8 +383,7 @@ impl AuthController {
 
     /// The network half runs unlocked. A successful exchange consumes its input credential,
     /// so checkpoint the replacement before any fallible JWKS work, even after cancellation.
-    fn run_refresh(&self, ticket: RefreshTicket, work: RefreshWork) {
-        let _flight = RefreshFlight(self);
+    fn run_refresh(&self, _flight: RefreshFlight<'_>, ticket: RefreshTicket, work: RefreshWork) {
         if !self.persist_refresh(ticket) {
             return;
         }

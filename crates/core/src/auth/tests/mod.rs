@@ -187,6 +187,8 @@ pub(super) struct FakeStore {
     pub fail_load: AtomicBool,
     pub fail_save: AtomicBool,
     pub fail_delete: AtomicBool,
+    /// How often `save` was called, refused calls included.
+    pub saves: AtomicUsize,
     /// Runs inside `load`, after the saved value has been read and before it is returned.
     #[allow(clippy::type_complexity)]
     pub during_load: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
@@ -210,6 +212,7 @@ impl CredentialStore for FakeStore {
         Ok(loaded)
     }
     fn save(&self, refresh_token: &str) -> Result<(), AuthError> {
+        self.saves.fetch_add(1, Ordering::SeqCst);
         if self.fail_save.load(Ordering::SeqCst) {
             return Err(AuthError::Store);
         }

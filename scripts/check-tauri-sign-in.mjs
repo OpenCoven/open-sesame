@@ -193,6 +193,15 @@ function fakeBridge(status, answers = {}) {
   const config = JSON.parse(read('src-tauri/tauri.conf.json'));
   const capability = JSON.parse(read('src-tauri/capabilities/default.json'));
 
+  // Quit waits for the sign-in controller, so a refresh that was already sent saves its
+  // replacement credential before the process ends (issue #94). The exit handler makes the call
+  // itself, in every build, and the host's shutdown starts with the controller's.
+  const bare = entry.replace(/^\s*\/\/.*$/gm, '');
+  const exit = /RunEvent::Exit => \{([\s\S]*?)\n        \}/.exec(bare);
+  assert.ok(exit, 'The application has an exit handler');
+  assert.match(exit[1], /^\s*if let Some\(auth\) = app\.try_state::<Arc<auth::Auth>>\(\) \{\s*auth\.shutdown\(\);\s*\}/, 'The exit handler shuts the sign-in controller down itself, before anything else');
+  assert.match(code.replace(/^\s*\/\/.*$/gm, ''), /pub fn shutdown\(&self\) \{\s*self\.controller\.shutdown\(\);/, 'The host\'s shutdown starts with the controller\'s');
+
   // Single-instance is registered before every other plugin and has its deep-link feature, so
   // a callback that starts a second process on Windows or Linux reaches the running one and the
   // second process exits without a window.
