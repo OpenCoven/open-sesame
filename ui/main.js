@@ -164,7 +164,13 @@ async function start() {
   changed(manager.snapshot());
   for (const button of navButtons.values()) button.disabled=false;
   for (const input of switches.values()) input.disabled=false;
-  try { if (initial) await manager.show(initial); }
+  // show() records the restored view before its first await; only that record is skipped. A
+  // switch or view the person changes while the first view is still loading is saved.
+  try {
+    const first = initial ? manager.show(initial) : null;
+    restoring = false;
+    await first;
+  }
   catch (error) { report(message(error)); }
   finally {
     restoring=false;
