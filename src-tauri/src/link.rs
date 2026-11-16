@@ -17,15 +17,24 @@
 //!   exists, and nothing listens for it.
 //!
 //! A launch that carries only one of sign-in's two links, and that the single-instance plugin
-//! did not hand to a running application, exits before it creates a window or opens anything
-//! ([`only_a_link`]). The sign-in the link belongs to waits in another process or in none: when
-//! no application is running, or on a Linux session with no D-Bus session bus, where the plugin
-//! cannot find the running one.
+//! did not hand to a running application, exits before `setup` creates a window or opens
+//! anything ([`only_a_link`]). The plugins' own setups have run by then: single-instance has
+//! claimed the instance, and in a development build on Windows and Linux the deep-link plugin
+//! has announced the link, with no page to hear it. The sign-in the link belongs to waits in
+//! another process or in none: when no application is running, or on a Linux session with no
+//! D-Bus session bus, where the plugin cannot find the running one.
 //!
-//! Any other address on the scheme is not sign-in's to take. The hosted login page's "Open in
-//! app" is one (`opensesame://auth/login`): a launch with it is an ordinary launch, and a
-//! second launch with it is left to summon, which shows the window. On macOS the system hands
-//! it to the running application, which ignores it, as it did before this module.
+//! Any other address on the scheme is not sign-in's to take. The hosted login page's "Open
+//! Open Sesame" is one (`opensesame://auth/login`): a launch with it is an ordinary launch,
+//! and a second launch with it is left to summon, which shows the window. On macOS the system
+//! hands it to the running application, which ignores it, as it did before this module.
+//!
+//! The address is taken as the parser returns it, not as it arrived. The parser puts the
+//! scheme in lower case, drops spaces and control characters around the address and tabs and
+//! line ends inside it, works out `.` and `..` in the path, and drops an empty user name and
+//! an empty port. So `opensesame://auth/x/../callback` and `opensesame://@auth/callback` are
+//! the callback too. The deep-link plugin did the same before this module, and the core's rule
+//! that only the waiting `state` ends a sign-in does not depend on the spelling.
 
 use crate::auth::{classify, Auth, Link};
 use crate::window;
@@ -52,7 +61,7 @@ fn for_sign_in<S: AsRef<str>>(arguments: &[S]) -> Option<Url> {
     argument(arguments).filter(|url| classify(url.as_str()) != Link::Other)
 }
 
-/// Whether a launch carries only a link for sign-in, and so has nothing to show.
+/// Whether a launch carries only one of sign-in's two links, and so has nothing to show.
 pub fn only_a_link<S: AsRef<str>>(arguments: &[S]) -> bool {
     for_sign_in(arguments).is_some()
 }
@@ -97,16 +106,24 @@ fn deliver<R: Runtime>(app: &AppHandle<R>, url: &str) {
     // Only what kind of address it was; the address itself carries the code.
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: link {kind:?}");
-    if kind != Link::Other {
+    if brings_the_window(kind) {
         window::show(app);
     }
 }
 
-/// Ends a launch that carries only a link, before it has a window. Called from setup.
+/// Whether a link the application was handed brings its window forward: sign-in's two do, and
+/// any other address on the scheme does not. On macOS that is the whole of what such an
+/// address does to a running application.
+fn brings_the_window(kind: Link) -> bool {
+    kind != Link::Other
+}
+
+/// Ends a launch that carries only one of sign-in's links, before it has a window. Called
+/// from setup.
 pub fn exit_without_window<R: Runtime>(app: &AppHandle<R>) {
     // Development evidence for the launched-application checks; the link is not printed.
     #[cfg(debug_assertions)]
-    eprintln!("open-sesame: a launch with only a link exits");
+    eprintln!("open-sesame: a launch with only a sign-in link exits");
     app.exit(0);
 }
 
@@ -201,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn a_link_from_a_second_launch_reaches_sign_in_and_is_never_announced() {
+    fn a_link_from_a_second_launch_reaches_sign_in_and_announces_nothing_itself() {
         let waiting = waiting();
         let arguments = vec!["/usr/bin/open-sesame".to_string(), waiting.callback.clone()];
         assert!(handed_over(waiting.app.handle(), &arguments));
@@ -239,32 +256,40 @@ mod tests {
         assert_eq!(waiting.announced.load(Ordering::SeqCst), 0);
     }
 
-    /// The hosted login page's "Open in app" is a link on the scheme that is not sign-in's
-    /// (issue #116, review of #129). A second launch with it is left to summon, which shows
-    /// the window, and nothing is sent anywhere.
+    /// The hosted login page's "Open Open Sesame" is a link on the scheme that is not
+    /// sign-in's (issue #116, review of #129). A second launch with it is left to summon,
+    /// which shows the window. So is an address one character away from the callback.
     #[test]
     fn a_link_on_the_scheme_that_is_not_sign_ins_is_left_to_summon() {
         let waiting = waiting();
         for link in [
             "opensesame://auth/login",
             "opensesame://auth/login?code=the-code&state=x",
+            "opensesame://auth/callback/?code=the-code&state=x",
+            "opensesame://auth/signed-out/",
             "opensesame:anything",
         ] {
             let arguments = vec!["open-sesame".to_string(), link.to_string()];
             assert!(!handed_over(waiting.app.handle(), &arguments), "{link}");
         }
-        assert!(
-            waiting
-                .codes
-                .recv_timeout(Duration::from_millis(300))
-                .is_err(),
-            "no code was sent"
-        );
+        // A launch that was not taken gave sign-in nothing, so no thread was started and
+        // there is nothing to wait for.
+        assert!(waiting.codes.try_recv().is_err(), "no code was sent");
+    }
+
+    /// Only sign-in's two links bring the window forward when the application is handed one;
+    /// on macOS that is how the login page's address comes to be ignored.
+    #[test]
+    fn only_sign_ins_links_bring_the_window_forward() {
+        assert!(brings_the_window(Link::Callback));
+        assert!(brings_the_window(Link::SignedOut));
+        assert!(!brings_the_window(Link::Other));
+        assert_eq!(classify("opensesame://auth/login"), Link::Other);
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn a_link_the_system_opens_on_macos_reaches_sign_in_and_is_never_announced() {
+    fn a_link_the_system_opens_on_macos_reaches_sign_in_and_announces_nothing_itself() {
         let waiting = waiting();
         opened(
             waiting.app.handle(),
@@ -281,22 +306,32 @@ mod tests {
     }
 
     #[test]
-    fn only_one_address_on_the_scheme_after_the_program_name_is_a_link() {
+    fn only_one_of_sign_ins_links_after_the_program_name_ends_a_launch() {
         for arguments in [
             ["open-sesame", "opensesame://auth/callback?code=x&state=y"],
             ["open-sesame", "opensesame://auth/callback"],
             ["open-sesame", "opensesame://auth/signed-out"],
             ["open-sesame", "OPENSESAME://auth/callback?code=x"],
+            // Spellings the address parser turns into the callback before anything here sees
+            // them. They are taken, as the deep-link plugin took them; the core's rule about
+            // the waiting `state` is what a callback has to pass.
+            ["open-sesame", "opensesame://auth/x/../callback?code=x"],
+            ["open-sesame", "opensesame://@auth/callback?code=x"],
+            ["open-sesame", "opensesame://auth:/callback?code=x"],
+            ["open-sesame", " opensesame://auth/call\tback?code=x"],
         ] {
             assert!(only_a_link(&arguments), "{arguments:?}");
         }
-        let others: [&[&str]; 16] = [
+        let others: [&[&str]; 19] = [
             &[],
-            // On the scheme, and not sign-in's: the login page's "Open in app" among them. Such
-            // a launch is an ordinary one.
+            // On the scheme, and not sign-in's: the login page's "Open Open Sesame" among
+            // them. Such a launch is an ordinary one.
             &["open-sesame", "opensesame://auth/login"],
             &["open-sesame", "opensesame://auth/login?next=x"],
             &["open-sesame", "opensesame://auth/callbacks"],
+            &["open-sesame", "opensesame://auth/callback/"],
+            &["open-sesame", "opensesame://auth/callback/?code=x&state=y"],
+            &["open-sesame", "opensesame://auth/signed-out/"],
             &["open-sesame", "opensesame://AUTH/callback?code=x"],
             &["open-sesame", "opensesame:anything"],
             &["opensesame://auth/callback?code=x"],

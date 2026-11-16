@@ -75,8 +75,9 @@ pub fn run() {
     let app = builder
         .invoke_handler(tauri::generate_handler![router::bridge_request])
         .setup(|app| {
-            // A launch that carries only a link, which the single-instance plugin did not hand to
-            // a running application, has nothing to show and no sign-in waiting in it (link.rs).
+            // A launch that carries only one of sign-in's links, which the single-instance plugin
+            // did not hand to a running application, has nothing to show and no sign-in waiting
+            // in it (link.rs).
             // This comes before anything is opened or started: a launch that ends here manages
             // no state, so nothing it had opened would be shut down at exit.
             let arguments: Vec<String> = std::env::args_os()

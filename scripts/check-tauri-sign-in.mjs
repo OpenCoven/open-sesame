@@ -224,21 +224,47 @@ function fakeBridge(status, answers = {}) {
   // running application cannot be found (issue #116). It also exits before anything is opened
   // or started: such a launch manages no state, so the exit handler would shut nothing down,
   // and storage opened before the question would be left open.
-  const setup = entry.slice(entry.indexOf('.setup(|app| {'));
-  assert.ok(setup.includes('link::only_a_link('), 'setup asks whether the launch carries only a link');
-  assert.match(setup, /if link::only_a_link\(&arguments\) \{\n\s+link::exit_without_window\(app\.handle\(\)\);\n\s+return Ok\(\(\)\);\n\s+\}/);
-  const asked = setup.indexOf('return Ok(());', setup.indexOf('link::only_a_link('));
+  //
+  // What is held is the text of `setup` itself: with the comments taken out it begins with
+  // exactly the question and the return, so nothing in `setup`, named below or not, can come
+  // before them, and neither a comment that names them nor an attribute on the `if` passes for
+  // them. It does not hold what a plugin's own setup does before `setup` runs, nor what a
+  // function called later does.
+  const lines = text => text.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//'));
+  const setup = lines(entry.slice(entry.indexOf('.setup(|app| {') + '.setup(|app| {'.length));
+  const first = [
+    'let arguments: Vec<String> = std::env::args_os()',
+    '.map(|argument| argument.to_string_lossy().into_owned())',
+    '.collect();',
+    'if link::only_a_link(&arguments) {',
+    'link::exit_without_window(app.handle());',
+    'return Ok(());',
+    '}',
+  ];
+  assert.deepEqual(setup.slice(0, first.length), first, 'setup begins with the link-only question and its return, and nothing else');
+  const rest = setup.slice(first.length).join('\n');
   for (const later of ['Core::new(', 'data::start_storage(', 'Storage::open_in(', 'startup::Startup::start(', 'app.manage(', 'auth::start(', 'link::register(', 'window::create_main(', 'tray::create(', 'summon::start(']) {
-    assert.ok(setup.includes(later), `setup still calls ${later}`);
-    assert.ok(asked < setup.indexOf(later), `the link-only launch has returned before ${later}`);
+    assert.ok(rest.includes(later), `setup still calls ${later}, after the link-only launch has returned`);
   }
+  // One question and one way out: no second exit for a link further down, and no other place
+  // in the entry file that ends the application.
+  const entryCode = lines(entry.split('#[cfg(test)]')[0]).join('\n');
+  for (const [once, why] of [['link::only_a_link(', 'The link-only question is asked once'], ['link::exit_without_window(', 'A link-only launch has one way out'], ['link::handed_over(', 'A second launch is asked about a link once']]) {
+    assert.equal(entryCode.split(once).length - 1, 1, why);
+  }
+  assert.ok(!/\.exit\(|process::exit|std::process::abort/.test(entryCode), 'The entry file ends the application nowhere itself');
   // Only sign-in's two links end a launch or are taken from a second one. Any other address
-  // on the scheme, the login page's "Open in app" among them, is an ordinary launch.
+  // on the scheme, the login page's "Open Open Sesame" among them, is an ordinary launch.
   const taken = read('src-tauri/src/link.rs').split('#[cfg(test)]')[0];
   assert.match(taken, /fn for_sign_in<S: AsRef<str>>\(arguments: &\[S\]\) -> Option<Url> \{\n\s+argument\(arguments\)\.filter\(\|url\| classify\(url\.as_str\(\)\) != Link::Other\)\n\}/);
   assert.match(taken, /pub fn only_a_link<S: AsRef<str>>\(arguments: &\[S\]\) -> bool \{\n\s+for_sign_in\(arguments\)\.is_some\(\)\n\}/);
   assert.match(taken, /pub fn handed_over<R: Runtime>\(app: &AppHandle<R>, arguments: &\[String\]\) -> bool \{\n\s+match for_sign_in\(arguments\) \{/);
   assert.match(read('src-tauri/src/link.rs'), /pub fn exit_without_window<R: Runtime>\(app: &AppHandle<R>\) \{\n(?:\s+(?:\/\/|#\[cfg|eprintln)[^\n]*\n)*\s+app\.exit\(0\);\n\}/);
+  // A link the running application is handed brings the window forward only when it is one
+  // of sign-in's, which is how the login page's address is ignored on macOS.
+  assert.match(taken, /if brings_the_window\(kind\) \{\n\s+window::show\(app\);\n\s+\}/);
+  assert.match(taken, /fn brings_the_window\(kind: Link\) -> bool \{\n\s+kind != Link::Other\n\}/);
+  assert.equal(taken.split('window::show(').length - 1, 1, 'The window is shown for a link in one place');
 
   // One scheme, the one the WorkOS application already redirects to.
   assert.deepEqual(config.plugins['deep-link'], { desktop: { schemes: ['opensesame'] } });
@@ -289,7 +315,7 @@ function fakeBridge(status, answers = {}) {
   }
   assert.match(printed[0][2], /status\["authenticated"\], status\["busy"\], status\["message"\]/);
   assert.match(linkPrinted[0][2], /"open-sesame: link \{kind:\?\}"/);
-  assert.match(linkPrinted[1][2], /"open-sesame: a launch with only a link exits"/);
+  assert.match(linkPrinted[1][2], /"open-sesame: a launch with only a sign-in link exits"/);
   // No token, address, state or verifier is in what the page is sent.
   assert.match(code, /emit\(json!\(\{"event": CHANGED_EVENT, "status": status\}\)\);/);
 

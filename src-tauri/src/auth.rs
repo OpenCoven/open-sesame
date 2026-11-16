@@ -422,13 +422,19 @@ impl Auth {
     /// An address the system handed over. Returns what it was. A callback is exchanged on a
     /// thread of its own, because that is a network call.
     pub fn link(self: &Arc<Self>, url: &str) -> Link {
+        self.link_started(url).0
+    }
+
+    /// [`Auth::link`], and the thread a callback was given to, so that a test can wait for the
+    /// core to have finished with it instead of waiting a fixed time.
+    fn link_started(self: &Arc<Self>, url: &str) -> (Link, Option<std::thread::JoinHandle<()>>) {
         let kind = classify(url);
-        if kind == Link::Callback {
+        let thread = (kind == Link::Callback).then(|| {
             let auth = Arc::clone(self);
             let url = url.to_string();
-            std::thread::spawn(move || auth.controller.complete_sign_in(&url));
-        }
-        kind
+            std::thread::spawn(move || auth.controller.complete_sign_in(&url))
+        });
+        (kind, thread)
     }
 
     /// At launch: restores the saved session, off the calling thread. `ready` is asked on
@@ -968,12 +974,19 @@ mod tests {
     #[test]
     fn a_callback_without_the_pending_state_sends_nothing_to_the_server() {
         let parts = wired(vec![("200 OK", SESSION.into())], true, None);
-        // `link` hands a callback to the core on a thread of its own. The core is called here
-        // on this thread instead, so the test knows it has finished and waits for nothing.
+        // The callback goes in where the host takes one, `link`, which hands it to the core on
+        // a thread of its own; the test waits for that thread to end, not for a fixed time.
         let forged = "opensesame://auth/callback?code=stolen&state=guess";
-        assert_eq!(classify(forged), Link::Callback);
+        let through_the_host = || {
+            let (kind, thread) = parts.auth.link_started(forged);
+            assert_eq!(kind, Link::Callback);
+            thread
+                .expect("a callback is given to a thread")
+                .join()
+                .unwrap();
+        };
         // No sign-in is pending: a callback from any process changes nothing.
-        parts.auth.controller.complete_sign_in(forged);
+        through_the_host();
         assert!(parts.requests.lock().unwrap().is_empty());
         assert_eq!(parts.auth.status()["busy"], json!(false));
 
@@ -981,7 +994,7 @@ mod tests {
         // the attempt keeps waiting for the browser's own callback (issue #116).
         parts.auth.handle("auth.signIn", no_hold).unwrap();
         until(&parts.changes, |status| status["busy"] == json!(true));
-        parts.auth.controller.complete_sign_in(forged);
+        through_the_host();
         let status = parts.auth.status();
         assert_eq!(status["busy"], json!(true), "the sign-in is still waiting");
         assert_eq!(
