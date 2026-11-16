@@ -193,15 +193,16 @@ mod windows {
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
     /// How long `end` and `discard` wait for a killed shell's process to end. A killed process
-    /// ends within milliseconds; the limit is for one that does not, so that closing a pane
-    /// does not wait for it without end.
+    /// ends within milliseconds; the limit is for one that does not, so that a close, or a
+    /// start that fails, does not wait for it without end.
     ///
     /// The limit covers that wait and nothing after it. The caller then closes the
     /// pseudo-console. Microsoft's page for `ClosePseudoConsole` says the call returns at once
     /// from Windows 11 24H2 (build 26100) on and that earlier builds wait for the
-    /// pseudo-console to exit, so on an earlier build a shell that outlived the limit may
-    /// still hold the close up. No test produces such a shell, and the hosted runner is build
-    /// 26100, so this is from reading only.
+    /// pseudo-console to exit, without a limit when its output pipe is neither closed nor
+    /// read. So on an earlier build a shell that outlived the limit, or a start that failed
+    /// before anything read the output, may still hold the caller up. No test produces either,
+    /// and the hosted runner is build 26100, so this is from reading only.
     const ENDING: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Makes sure a shell started from here receives Control+C.
