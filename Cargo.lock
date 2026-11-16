@@ -2984,6 +2984,7 @@ name = "open-sesame"
 version = "0.1.0"
 dependencies = [
  "keyring",
+ "keyring-core",
  "open-sesame-core",
  "serde_json",
  "tauri",
@@ -2997,6 +2998,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "ureq",
+ "zbus-secret-service-keyring-store",
 ]
 
 [[package]]

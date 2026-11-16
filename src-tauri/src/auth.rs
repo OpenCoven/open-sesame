@@ -41,10 +41,10 @@ pub const NOT_STARTED: &str = "Could not start sign-in. Try again.";
 pub const NO_BROWSER: &str =
     "Could not open your browser. Check that a default browser is set, then try again.";
 /// Shown on Linux when there is no Secret Service. Without one there is nowhere safe to keep a
-/// sign-in, so the browser is not opened at all. It says to start again because the store is
-/// opened once for as long as the application runs ([`KeychainStore::exists`]): a keyring
-/// installed afterwards is not seen until then.
-pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the system keyring, and none is available. Install a Secret Service keyring such as GNOME Keyring or KWallet, then quit Open Sesame and start it again. Everything on this computer works without signing in.";
+/// sign-in, so the browser is not opened at all. It says to try again because the store is
+/// looked for again on every attempt ([`KeychainStore::exists`]): a keyring that is installed
+/// or started while the application runs is found by the next press of Sign in (issue #116).
+pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the system keyring, and none is available. Install a Secret Service keyring such as GNOME Keyring or KWallet, then try again. Everything on this computer works without signing in.";
 /// Shown when the system has a credential store that would not answer: a keyring that is
 /// locked, or whose prompt was dismissed.
 pub const NO_KEYCHAIN: &str = "Open Sesame could not reach the system's credential store to keep your sign-in. Unlock it and try again. Everything on this computer works without signing in.";
@@ -177,9 +177,76 @@ impl WorkosApi for HttpApi {
     }
 }
 
+/// A credential store that is opened when it is first needed and opened again after it has
+/// failed (issue #116).
+///
+/// The `keyring` crate opens the system's store once and keeps that answer, a failure included,
+/// for as long as the application runs. On Linux the store is a connection to the Secret
+/// Service: with no keyring at the first look, Sign in stayed refused until the application
+/// was started again, and a keyring that was restarted left every later read and write of the
+/// sign-in failing on the old connection. So on Linux the store is held here instead:
+///
+/// - It is opened when first asked. If that fails, the next ask opens it again.
+/// - If a store that was opened earlier answers with a platform failure, which is what a lost
+///   connection or a restarted service gives, it is dropped, opened again, and asked once
+///   more. That second answer stands.
+/// - Any other answer stands at once. In particular "no access", which is what gnome-keyring
+///   gives for a locked keyring or a dismissed unlock prompt, is never asked twice: the person
+///   would be prompted twice. That was measured with gnome-keyring 46.1 only, and with a
+///   stand-in program in place of the unlock dialog. By reading, the store crate turns some
+///   other failures of a prompt into a platform failure, which this rule would ask again.
+///
+/// Two cases this does not reach, both seen in a container: a keyring that was just installed
+/// and has no default collection passes the look and then refuses the save, and a keyring
+/// that dies while its unlock prompt is open leaves the call waiting, because the library
+/// waits for the prompt with no limit.
+///
+/// Nothing here keeps a secret, and there is no other place a secret is written when the store
+/// cannot be reached.
+#[cfg(any(test, target_os = "linux"))]
+struct Reopening<S> {
+    open: Box<dyn Fn() -> keyring::Result<S> + Send + Sync>,
+    store: Mutex<Option<S>>,
+}
+
+#[cfg(any(test, target_os = "linux"))]
+impl<S: Clone> Reopening<S> {
+    fn new(open: impl Fn() -> keyring::Result<S> + Send + Sync + 'static) -> Reopening<S> {
+        Reopening {
+            open: Box::new(open),
+            store: Mutex::new(None),
+        }
+    }
+
+    /// The store, and whether it was opened by this call.
+    fn get(&self) -> keyring::Result<(S, bool)> {
+        let mut store = lock(&self.store);
+        if let Some(store) = store.as_ref() {
+            return Ok((store.clone(), false));
+        }
+        let opened = (self.open)()?;
+        *store = Some(opened.clone());
+        Ok((opened, true))
+    }
+
+    /// Asks the store one thing, by the rules above.
+    fn with<T>(&self, ask: impl Fn(&S) -> keyring::Result<T>) -> keyring::Result<T> {
+        let (store, opened_now) = self.get()?;
+        match ask(&store) {
+            Err(keyring::Error::PlatformFailure(_)) if !opened_now => {
+                *lock(&self.store) = None;
+                ask(&self.get()?.0)
+            }
+            answer => answer,
+        }
+    }
+}
+
 /// The refresh token in Keychain, Windows Credential Manager or the Secret Service.
 pub struct KeychainStore {
     service: String,
+    #[cfg(target_os = "linux")]
+    secrets: Reopening<Arc<zbus_secret_service_keyring_store::Store>>,
 }
 
 impl KeychainStore {
@@ -187,11 +254,33 @@ impl KeychainStore {
     /// refresh token is replaced each time it is used and two applications sharing one would
     /// sign each other out.
     pub fn new(service: String) -> KeychainStore {
-        KeychainStore { service }
+        KeychainStore {
+            service,
+            #[cfg(target_os = "linux")]
+            secrets: Reopening::new(zbus_secret_service_keyring_store::Store::new),
+        }
     }
 
-    fn entry(&self) -> Result<keyring::Entry, AuthError> {
-        keyring::Entry::new(&self.service, CLIENT_ID).map_err(|_| AuthError::Store)
+    /// Asks this application's entry in the system's store one thing.
+    #[cfg(not(target_os = "linux"))]
+    fn ask<T>(
+        &self,
+        ask: impl Fn(&keyring_core::Entry) -> keyring::Result<T>,
+    ) -> keyring::Result<T> {
+        ask(&keyring::Entry::new(&self.service, CLIENT_ID)?.inner)
+    }
+
+    /// Asks this application's entry in the Secret Service one thing. The entry is the one
+    /// `keyring` builds: the same store, service and user, so a sign-in saved by an earlier
+    /// build is found.
+    #[cfg(target_os = "linux")]
+    fn ask<T>(
+        &self,
+        ask: impl Fn(&keyring_core::Entry) -> keyring::Result<T>,
+    ) -> keyring::Result<T> {
+        use keyring_core::api::CredentialStoreApi;
+        self.secrets
+            .with(|store| ask(&store.build(&self.service, CLIENT_ID, None)?))
     }
 
     /// Whether the store can be reached at all. An empty store is reachable. On Linux this
@@ -201,17 +290,25 @@ impl KeychainStore {
         self.load().is_ok()
     }
 
-    /// Whether the system has a credential store at all. The `keyring` crate opens the store
-    /// the first time it is asked and keeps that answer for as long as the application runs,
-    /// so a Secret Service that appears later is not seen until the application starts again.
-    pub fn exists() -> bool {
-        keyring::Entry::store_status().is_ok()
+    /// Whether the system has a credential store at all. On Linux this looks again each time
+    /// it is asked while no store has been opened, so a Secret Service that appears while the
+    /// application runs is seen. Elsewhere the system always has one, and the `keyring`
+    /// crate's one answer is used.
+    pub fn exists(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.secrets.get().is_ok()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            keyring::Entry::store_status().is_ok()
+        }
     }
 }
 
 impl CredentialStore for KeychainStore {
     fn load(&self) -> Result<Option<String>, AuthError> {
-        match self.entry()?.get_password() {
+        match self.ask(|entry| entry.get_password()) {
             Ok(token) => Ok(Some(token)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(_) => Err(AuthError::Store),
@@ -219,13 +316,12 @@ impl CredentialStore for KeychainStore {
     }
 
     fn save(&self, refresh_token: &str) -> Result<(), AuthError> {
-        self.entry()?
-            .set_password(refresh_token)
+        self.ask(|entry| entry.set_password(refresh_token))
             .map_err(|_| AuthError::Store)
     }
 
     fn delete(&self) -> Result<(), AuthError> {
-        match self.entry()?.delete_credential() {
+        match self.ask(|entry| entry.delete_credential()) {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err(AuthError::Store),
         }
@@ -551,7 +647,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     )));
     let probe = Arc::clone(&store);
     let store_check: StoreCheck =
-        Arc::new(move || store_problem(probe.available(), KeychainStore::exists()));
+        Arc::new(move || store_problem(probe.available(), probe.exists()));
     let saved = Arc::clone(&store);
     let browser: Browser = Arc::new(|url| tauri_plugin_opener::open_url(url, None::<&str>).is_ok());
     let (auth, wakes) = Auth::new(
@@ -1251,16 +1347,16 @@ mod tests {
         // A store that is there and would not answer is one to unlock, on every system.
         assert_eq!(store_problem(false, true), Some(NO_KEYCHAIN));
         assert!(NO_KEYCHAIN.contains("Unlock it and try again"));
-        // Only Linux can be without one, and a keyring installed while the application runs
-        // is not seen until it starts again, so the sentence must not say to try again.
+        // Only Linux can be without one. A keyring installed while the application runs is
+        // found by the next attempt, so the sentence says to try again, not to start again.
         let missing = store_problem(false, false);
         if cfg!(target_os = "linux") {
             assert_eq!(missing, Some(NO_SECRET_SERVICE));
         } else {
             assert_eq!(missing, Some(NO_KEYCHAIN));
         }
-        assert!(NO_SECRET_SERVICE.contains("start it again"));
-        assert!(!NO_SECRET_SERVICE.contains("try again"));
+        assert!(NO_SECRET_SERVICE.contains("then try again"));
+        assert!(!NO_SECRET_SERVICE.contains("start it again"));
         for sentence in [NO_SECRET_SERVICE, NO_KEYCHAIN] {
             assert!(sentence.contains("works without signing in"), "{sentence}");
         }
@@ -1324,6 +1420,242 @@ mod tests {
         let sent: Value = serde_json::from_str(&requests[0].1).unwrap();
         assert_eq!(sent, refresh_body("kept-refresh"));
         auth.shutdown();
+    }
+
+    /// A stand-in for a store that is a connection: each opening gets the next number, the
+    /// first `refused` openings fail, and both openings and questions are counted.
+    struct Connections {
+        opened: Arc<std::sync::atomic::AtomicUsize>,
+        store: Reopening<usize>,
+    }
+
+    fn connections(refused: usize) -> Connections {
+        let opened = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&opened);
+        let store = Reopening::new(move || {
+            let number = count.fetch_add(1, Ordering::SeqCst) + 1;
+            if number <= refused {
+                Err(keyring::Error::PlatformFailure("no service".into()))
+            } else {
+                Ok(number)
+            }
+        });
+        Connections { opened, store }
+    }
+
+    fn gone<T>() -> keyring::Result<T> {
+        Err(keyring::Error::PlatformFailure(
+            "the service went away".into(),
+        ))
+    }
+
+    /// With no keyring at the first look, the next look finds one that has appeared, and a
+    /// store that is open is not opened again (issue #116).
+    #[test]
+    fn a_store_that_could_not_be_opened_is_looked_for_again() {
+        let connections = connections(2);
+        let number = |store: &usize| Ok(*store);
+        assert!(connections.store.with(number).is_err());
+        assert!(connections.store.get().is_err());
+        assert_eq!(connections.store.with(number).unwrap(), 3);
+        assert_eq!(connections.store.with(number).unwrap(), 3);
+        assert_eq!(connections.store.get().unwrap(), (3, false));
+        assert_eq!(connections.opened.load(Ordering::SeqCst), 3);
+    }
+
+    /// A keyring that was restarted leaves the open connection failing. The store is opened
+    /// again and asked once more, and that second answer stands, whatever it is.
+    #[test]
+    fn a_store_that_fails_after_it_was_opened_is_opened_again_and_asked_once_more() {
+        let connections = connections(0);
+        assert_eq!(connections.store.with(|store| Ok(*store)).unwrap(), 1);
+        let asked = std::cell::Cell::new(0);
+        let only_the_new_one = |store: &usize| {
+            asked.set(asked.get() + 1);
+            if *store == 1 {
+                gone()
+            } else {
+                Ok(*store)
+            }
+        };
+        assert_eq!(connections.store.with(only_the_new_one).unwrap(), 2);
+        assert_eq!(asked.get(), 2);
+        assert_eq!(connections.opened.load(Ordering::SeqCst), 2);
+
+        // A service that stays away: one more opening and one more question, not a loop.
+        asked.set(0);
+        let never = |_: &usize| {
+            asked.set(asked.get() + 1);
+            gone::<usize>()
+        };
+        assert!(matches!(
+            connections.store.with(never),
+            Err(keyring::Error::PlatformFailure(_))
+        ));
+        assert_eq!(asked.get(), 2);
+        assert_eq!(connections.opened.load(Ordering::SeqCst), 3);
+    }
+
+    /// A failure from a store that was opened for this very question is the answer: opening
+    /// it yet again would only repeat what just happened.
+    #[test]
+    fn a_store_opened_for_this_question_is_not_asked_twice() {
+        let connections = connections(0);
+        let asked = std::cell::Cell::new(0);
+        let never = |_: &usize| {
+            asked.set(asked.get() + 1);
+            gone::<usize>()
+        };
+        assert!(connections.store.with(never).is_err());
+        assert_eq!(asked.get(), 1);
+        assert_eq!(connections.opened.load(Ordering::SeqCst), 1);
+    }
+
+    /// A locked keyring, a dismissed unlock prompt and a missing entry are answers, not lost
+    /// connections: the store is kept and the person is not prompted a second time.
+    #[test]
+    fn a_locked_store_or_a_missing_entry_is_not_asked_twice() {
+        let connections = connections(0);
+        assert_eq!(connections.store.with(|store| Ok(*store)).unwrap(), 1);
+        let asked = std::cell::Cell::new(0);
+        let locked = |_: &usize| {
+            asked.set(asked.get() + 1);
+            Err::<usize, _>(keyring::Error::NoStorageAccess("locked".into()))
+        };
+        assert!(matches!(
+            connections.store.with(locked),
+            Err(keyring::Error::NoStorageAccess(_))
+        ));
+        let missing = |_: &usize| {
+            asked.set(asked.get() + 1);
+            Err::<usize, _>(keyring::Error::NoEntry)
+        };
+        assert!(matches!(
+            connections.store.with(missing),
+            Err(keyring::Error::NoEntry)
+        ));
+        assert_eq!(asked.get(), 2);
+        assert_eq!(connections.opened.load(Ordering::SeqCst), 1);
+    }
+
+    /// For the two tests below, which start and stop a real keyring service. Nothing in the
+    /// repository or in hosted CI runs them: they are run by hand in a disposable Linux
+    /// container, one test to a process (`cargo test -- --ignored --exact <name>`), on a
+    /// private session bus (`dbus-launch`) where gnome-keyring is installed and is not started
+    /// on demand (its D-Bus service files moved aside). They end every `gnome-keyring-daemon`
+    /// of the user and write to whatever keyring is running, so they refuse to run unless
+    /// `OPEN_SESAME_DISPOSABLE_KEYRING` is `1`; never set it on a desktop.
+    #[cfg(target_os = "linux")]
+    mod with_a_real_keyring {
+        use super::*;
+
+        fn sh(command: &str) -> bool {
+            std::process::Command::new("sh")
+                .args(["-c", command])
+                .status()
+                .is_ok_and(|status| status.success())
+        }
+
+        fn running() -> bool {
+            sh("pgrep -x gnome-keyring-d > /dev/null")
+        }
+
+        fn eventually(mut done: impl FnMut() -> bool) -> bool {
+            let until = Instant::now() + Duration::from_secs(10);
+            loop {
+                if done() {
+                    return true;
+                }
+                if Instant::now() >= until {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+
+        fn start() {
+            assert!(
+                sh("printf check | gnome-keyring-daemon --unlock --components=secrets > /dev/null 2>&1"),
+                "the keyring service could not be started"
+            );
+        }
+
+        fn stop() {
+            sh("pkill -x gnome-keyring-d");
+            assert!(
+                eventually(|| !running()),
+                "the keyring service did not stop"
+            );
+        }
+
+        /// A failure and not a silent pass: a test that did not run shows nothing.
+        fn disposable() {
+            assert_eq!(
+                std::env::var("OPEN_SESAME_DISPOSABLE_KEYRING").as_deref(),
+                Ok("1"),
+                "this test ends the user's keyring service; it runs only in a disposable container with OPEN_SESAME_DISPOSABLE_KEYRING=1"
+            );
+        }
+
+        fn store(name: &str) -> KeychainStore {
+            KeychainStore::new(format!(
+                "open-sesame-test-{name}-{}.tauri.workos.test",
+                std::process::id()
+            ))
+        }
+
+        /// With no Secret Service at the first look, one that starts afterwards is used by
+        /// the next attempt, without the application being started again (issue #116).
+        #[test]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
+        fn a_keyring_started_after_the_first_look_is_used() {
+            disposable();
+            assert!(
+                !running(),
+                "this test starts with no keyring service running"
+            );
+            let store = store("late");
+            assert!(!store.available(), "a Secret Service answered already");
+            start();
+            assert!(
+                eventually(|| store.available()),
+                "the keyring that started after the first look was never seen"
+            );
+            store.save("not-a-token-1").unwrap();
+            assert_eq!(store.load(), Ok(Some("not-a-token-1".to_string())));
+            store.delete().unwrap();
+            stop();
+        }
+
+        /// A keyring service that is restarted while the application runs is reached again,
+        /// and what was saved before the restart is read after it (issue #116).
+        #[test]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
+        fn a_keyring_that_restarts_is_reached_again() {
+            disposable();
+            if !running() {
+                start();
+            }
+            let store = store("restart");
+            assert!(
+                eventually(|| store.available()),
+                "no Secret Service answered"
+            );
+            store.save("not-a-token-1").unwrap();
+            stop();
+            assert_eq!(store.load(), Err(AuthError::Store), "read with no service");
+            start();
+            assert!(
+                eventually(|| store.load() == Ok(Some("not-a-token-1".to_string()))),
+                "after the restart the saved value could not be read: {:?}",
+                store.load()
+            );
+            store.save("not-a-token-2").unwrap();
+            assert_eq!(store.load(), Ok(Some("not-a-token-2".to_string())));
+            store.delete().unwrap();
+            assert_eq!(store.load(), Ok(None));
+            stop();
+        }
     }
 
     /// Asks the real WorkOS API for this application's public signing keys: one request with
