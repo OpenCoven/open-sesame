@@ -22,6 +22,9 @@ pub fn handle<R: Runtime>(
 ) -> BridgeResult {
     match method {
         "project.chooseFolder" => {
+            if !params.is_empty() {
+                return Err(BridgeError::from("Invalid folder request."));
+            }
             let chosen = window
                 .dialog()
                 .file()

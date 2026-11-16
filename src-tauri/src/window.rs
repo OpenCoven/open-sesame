@@ -43,10 +43,11 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         // The page may not open another window; nothing in the shell needs one.
         .on_new_window(|_, _| NewWindowResponse::Deny);
     #[cfg(debug_assertions)]
-    let builder = builder.on_page_load(|_, payload| {
+    let builder = builder.on_page_load(|window, payload| {
         if payload.event() == tauri::webview::PageLoadEvent::Finished {
             // Development evidence that hiding and showing the window does not load the page again.
             eprintln!("open-sesame: page loaded {}", payload.url());
+            crate::runtime_probe::record(window.app_handle(), "page-load");
         }
     });
     let window = builder.build()?;
