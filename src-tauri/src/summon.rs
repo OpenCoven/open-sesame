@@ -49,7 +49,7 @@ pub const DEFAULT_SHORTCUT: &str = "Control+Alt+Shift+Space";
 pub const INVALID_SHORTCUT: &str =
     "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Control+Alt+Shift+Space.";
 pub const INVALID_REQUEST: &str = "Invalid summon request.";
-/// How many reasons the page may hold the window for at once.
+/// How many named reasons the page may hold the window for at once. The drag is not counted.
 pub const MAX_PAGE_HOLDS: usize = 8;
 /// The reason of a hold the page gives no reason for. A drag was the only reason when the
 /// method was written, and the page still sends it without a name.
@@ -165,8 +165,9 @@ pub fn parse_shortcut(text: &str) -> Result<Shortcut, BridgeError> {
 
 /// Whether pressing the key, with Shift or without, puts a character into the text a person is
 /// writing: letters, digits, punctuation, the space bar, Enter and Tab, on the main block and on
-/// the number pad. Keys that move, delete or do something else are not in the list; whether
-/// Shift alone should be refused for those too is left to issue #115.
+/// the number pad. Every other key is still accepted with Shift alone: the function keys, and
+/// also the keys that move or delete (the arrows, Home, End, Backspace, Delete), Escape, the
+/// lock keys and the media keys. Issue #115 asks only about keys that type.
 fn types_a_character(key: Code) -> bool {
     use Code::*;
     matches!(
@@ -431,19 +432,27 @@ impl Summon {
     }
 
     /// Takes or releases the page's hold for one reason. Taking one that is held, or releasing
-    /// one that is not, changes nothing. The page may hold for [`MAX_PAGE_HOLDS`] reasons at
-    /// once; one more is refused, so a page cannot make this list grow without end.
+    /// one that is not, changes nothing: the reasons are a set, not a count. The page may hold
+    /// for [`MAX_PAGE_HOLDS`] named reasons at once; one more is refused, so a page cannot make
+    /// this list grow without end. The drag is beside that limit and is never refused: the
+    /// page's drag script does not look at the answer.
     fn hold_for_page(&self, reason: &str, held: bool) -> Result<(), BridgeError> {
         let mut reasons = lock(&self.held_by_page);
         if !held {
             reasons.remove(reason);
         } else if !reasons.contains(reason) {
-            if reasons.len() >= MAX_PAGE_HOLDS {
+            let named = reasons.iter().filter(|held| *held != DRAG).count();
+            if reason != DRAG && named >= MAX_PAGE_HOLDS {
                 return Err(BridgeError::from(INVALID_REQUEST));
             }
             reasons.insert(reason.to_string());
         }
         Ok(())
+    }
+
+    /// Releases every hold the page took. The features' own holds and the pin stay.
+    fn release_page_holds(&self) {
+        lock(&self.held_by_page).clear();
     }
 
     /// Records that the person pinned or unpinned the window (`window.keepOpen`).
@@ -625,6 +634,15 @@ pub fn blurred<R: Runtime>(app: &AppHandle<R>) {
         window::hide(app);
         #[cfg(debug_assertions)]
         eprintln!("open-sesame: hidden because the window lost focus");
+    }
+}
+
+/// The window started to load a page. The page that took the holds is gone and the new one
+/// cannot release a reason it never took, so they are released here; without this a hold left
+/// behind kept hide-on-blur from working until the application was started again.
+pub fn page_replaced<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(summon) = app.try_state::<Summon>() {
+        summon.release_page_holds();
     }
 }
 
@@ -816,6 +834,96 @@ mod tests {
         ] {
             assert!(parse_shortcut(good).is_ok(), "{good}");
         }
+    }
+
+    /// Every key that types, by its own name. A name the parser does not know would be refused
+    /// for another reason, so each is first shown to be a key: with Control it is accepted.
+    #[test]
+    fn shift_alone_is_refused_for_every_key_that_types() {
+        let mut keys: Vec<String> = Vec::new();
+        keys.extend(('A'..='Z').map(|letter| format!("Key{letter}")));
+        keys.extend((0..=9).map(|digit| format!("Digit{digit}")));
+        keys.extend((0..=9).map(|digit| format!("Numpad{digit}")));
+        keys.extend(
+            [
+                "Backquote",
+                "Backslash",
+                "BracketLeft",
+                "BracketRight",
+                "Comma",
+                "Equal",
+                "Minus",
+                "Period",
+                "Quote",
+                "Semicolon",
+                "Slash",
+                "Space",
+                "Enter",
+                "Tab",
+                "NumpadAdd",
+                "NumpadDecimal",
+                "NumpadDivide",
+                "NumpadEnter",
+                "NumpadEqual",
+                "NumpadMultiply",
+                "NumpadSubtract",
+            ]
+            .map(String::from),
+        );
+        assert_eq!(keys.len(), 67);
+        for key in keys {
+            assert!(
+                parse_shortcut(&format!("Control+Shift+{key}")).is_ok(),
+                "{key} is not a key name"
+            );
+            assert_eq!(
+                parse_shortcut(&format!("Shift+{key}")).map_err(|error| error.0),
+                Err(INVALID_SHORTCUT.to_string()),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reason_is_a_short_name() {
+        assert!(is_reason("menu"));
+        assert!(is_reason("select-list-2"));
+        assert!(is_reason(&"x".repeat(MAX_REASON_LENGTH)));
+        assert!(!is_reason(&"x".repeat(MAX_REASON_LENGTH + 1)));
+        for bad in ["", "Menu", "with space", "menu_two", "men\u{fc}"] {
+            assert!(!is_reason(bad), "{bad:?}");
+        }
+    }
+
+    /// The drag is the one hold the page takes today, and its script does not look at the
+    /// answer, so it must never be the hold that is refused (found in the review of #124).
+    #[test]
+    fn a_drag_is_held_however_many_named_reasons_are() {
+        let summon = Summon::new(Session::MacOs, None);
+        lock(&summon.settings).hide_on_blur = true;
+        for index in 0..MAX_PAGE_HOLDS {
+            summon
+                .hold_for_page(&format!("reason-{index}"), true)
+                .unwrap();
+        }
+        assert!(summon.hold_for_page("one-more", true).is_err());
+        summon.hold_for_page(DRAG, true).unwrap();
+        for index in 0..MAX_PAGE_HOLDS {
+            summon
+                .hold_for_page(&format!("reason-{index}"), false)
+                .unwrap();
+        }
+        assert!(
+            !summon.should_hide_on_blur(),
+            "the drag was refused at the limit, so the window would hide in the middle of it"
+        );
+        // A drag in progress does not use up one of the named places either.
+        for index in 0..MAX_PAGE_HOLDS {
+            summon
+                .hold_for_page(&format!("reason-{index}"), true)
+                .unwrap();
+        }
+        assert!(summon.hold_for_page("one-more", true).is_err());
     }
 
     /// A saved shortcut that is no longer one gives the default, like any other the file

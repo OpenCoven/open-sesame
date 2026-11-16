@@ -351,10 +351,7 @@ mod tests {
 
     /// The application with summon state for `session` and a settings file in a folder of its
     /// own. The shortcut plugin is not loaded, so the system refuses every registration.
-    fn app_in(
-        session: summon::Session,
-        name: &str,
-    ) -> (tauri::App<MockRuntime>, std::path::PathBuf) {
+    fn app_in(session: summon::Session, name: &str) -> (tauri::App<MockRuntime>, Folder) {
         let app = app();
         let folder =
             std::env::temp_dir().join(format!("open-sesame-router-{name}-{}", std::process::id()));
@@ -363,7 +360,30 @@ mod tests {
             session,
             Some(folder.join("summon.json")),
         ));
-        (app, folder)
+        (app, Folder(folder))
+    }
+
+    /// A test's settings folder. It is removed when the test ends, also when an assertion
+    /// fails before the test's own last line.
+    struct Folder(std::path::PathBuf);
+
+    impl AsRef<std::path::Path> for Folder {
+        fn as_ref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl std::ops::Deref for Folder {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Folder {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -519,6 +539,7 @@ mod tests {
         for bad in [
             json!(""),
             json!(7),
+            json!(null),
             json!("with space"),
             json!("x".repeat(33)),
         ] {
@@ -527,6 +548,10 @@ mod tests {
                 json!(summon::INVALID_REQUEST)
             );
         }
+        let longest = "x".repeat(32);
+        assert_eq!(hold(true, Some(&longest))["result"], json!({"held": true}));
+        hold(false, Some(&longest));
+        assert!(hides());
         for index in 0..summon::MAX_PAGE_HOLDS {
             hold(true, Some(&format!("reason-{index}")));
         }
@@ -540,14 +565,31 @@ mod tests {
             json!(summon::INVALID_REQUEST)
         );
         // One already held can still be named, and all can be released.
-        hold(true, Some("reason-0"));
+        assert_eq!(
+            hold(true, Some("reason-0"))["result"],
+            json!({"held": true})
+        );
         for index in 0..summon::MAX_PAGE_HOLDS {
             hold(false, Some(&format!("reason-{index}")));
         }
         assert!(hides());
 
-        // A native dialog or a browser sign-in, held by the feature that opened it.
+        // A page that loads takes none of the holds of the page before it: that page is gone
+        // and cannot release them.
+        hold(true, Some("menu"));
+        hold(true, None);
+        assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(
+            hides(),
+            "a hold of the page before this one outlived the page load"
+        );
+
+        // A native dialog or a browser sign-in, held by the feature that opened it. It is not
+        // the page's, so a page load leaves it.
         let dialog = summon::hold(app.handle()).unwrap();
+        assert!(!hides());
+        summon::page_replaced(app.handle());
         assert!(!hides());
         drop(dialog);
         assert!(hides());

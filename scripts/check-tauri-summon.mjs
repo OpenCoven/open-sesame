@@ -198,6 +198,11 @@ function fakeBridge(status, answers = {}) {
   // On Wayland the window is not positioned and always-on-top is refused with the fixed message.
   assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
   assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
+  // A page that loads takes none of the old page's holds with it (issue #115), in every build.
+  const loads = window.slice(window.indexOf('builder.on_page_load('), window.indexOf('let window = builder.build()?;'));
+  assert.match(loads, /PageLoadEvent::Started => summon::page_replaced\(window\.app_handle\(\)\),/, 'The page-load hook releases the page\'s holds');
+  assert.ok(!/cfg\(debug_assertions\)\]\s*let builder = builder\.on_page_load/.test(window), 'The page-load hook is not development-only');
+  assert.match(host, /pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\n    if let Some\(summon\) = app\.try_state::<Summon>\(\) \{\n        summon\.release_page_holds\(\);/);
   assert.match(window, /Session::Wayland\)\n            \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/);
   // AppKit aborts the process if a window is ordered off the main thread, and a second launch,
   // the shortcut and the bridge all call from other threads. Found in a launched app.
