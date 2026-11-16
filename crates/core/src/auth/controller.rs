@@ -374,7 +374,8 @@ impl AuthController {
     /// Sign in.
     pub fn store_busy(&self) -> bool {
         // In this order: a call given up is counted as out before its wait is counted back,
-        // so a call that is out is seen by one question or the other.
+        // so a call that has been said to be waited for is seen by one question or the other
+        // until it returns. In its first moment a call is seen by neither, by design.
         self.store_waited_for() || self.store_given_up()
     }
 
@@ -509,8 +510,9 @@ impl AuthController {
                 }
             }
         };
-        // Counted back only now, after a call given up has been counted as out: there is no
-        // moment at which a call that is out is neither waited for nor given up.
+        // Counted back only now, after a call given up has been counted as out: once a call
+        // has been said to be waited for, there is no moment before it returns at which it is
+        // neither waited for nor given up.
         if waited {
             self.store_waits.fetch_sub(1, Ordering::SeqCst);
         }

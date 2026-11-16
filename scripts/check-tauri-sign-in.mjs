@@ -318,7 +318,8 @@ function fakeBridge(status, answers = {}) {
   //   waiting forms, as they would be written on the calling thread;
   // - Sign in asks the controller whether the store is held up before it looks, and looks in
   //   one place; the controller's answer asks about a call waited for first and a call given
-  //   up second, the order in which a call that is out is always seen by one of them;
+  //   up second, the order in which a call that has been said to be waited for is seen by
+  //   one of them until it returns;
   // - the look refuses while a look is out and younger than the limit, asks the store on a
   //   thread of its own, waits for it `self.soon` and answers a wait with the keychain
   //   sentence; a look given up neither ends the look after it nor has its answer kept; an
@@ -334,8 +335,9 @@ function fakeBridge(status, answers = {}) {
   //   ui/bridge.js, the shortest it gives any request (Sign in has a longer one of its own);
   // - the host takes its two times from the controller, whose own are `STORE_SOON` and
   //   `STORE_LIMIT` unless `store_limits` sets others, and the host calls that in one place,
-  //   for the limits a test hands to `with_limits`; `new` hands it none. So the number
-  //   compared is the one the application's look waits.
+  //   for the limits a test hands to `with_limits`; `new` hands it none, and outside the
+  //   tests nothing else calls `with_limits`. So the number compared is the one the
+  //   application's look waits.
   // The pieces read for shape (the handler, the look, the host's cancel, Sign out, the two
   // constructors and the controller) have their comments taken out first, so a rule left
   // behind as a comment is not read as kept. The spellings that must not occur, the thirty
@@ -372,7 +374,7 @@ function fakeBridge(status, answers = {}) {
   const made = strip(code.slice(code.indexOf('pub fn new(\n        api: Arc<dyn WorkosApi>,'), code.indexOf('pub fn authenticated(')));
   assert.ok(made.startsWith('pub fn new('), 'The host is made by `new`');
   assert.match(made, /\) -> \(Arc<Auth>, Wakes\) \{\n\s+Auth::with_limits\(api, store, marker, browser, store_check, None\)\n\s+\}/);
-  assert.equal(made.split('with_limits(').length - 1, 2, 'The limits are handed over in one place');
+  assert.equal(strip(production).split('with_limits(').length - 1, 2, 'The limits are handed over in one place, by `new`');
   assert.match(made, /Some\(\(soon, limit\)\) => controller\.store_limits\(soon, limit\),\n\s+None => controller,/);
   assert.equal(strip(production).split('store_limits(').length - 1, 1, 'and set in one place');
   const soon = Number(core.match(/^const STORE_SOON: Duration = Duration::from_secs\((\d+)\);/m)?.[1]);

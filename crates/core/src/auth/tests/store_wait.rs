@@ -306,12 +306,14 @@ fn a_read_that_never_returns_is_given_up_at_the_limit() {
 /// the call is not yet counted as given up. The host refuses Sign in on this answer, and a
 /// press in such a moment would ask the store behind the prompt. The read at launch is used
 /// because it holds no state, so nothing else refuses a press then.
+///
+/// What this does not hold: the order in which `store_busy` asks its two questions. Asked the
+/// other way round it can miss a call only when the give-up falls between the two reads,
+/// which is too narrow to meet here; check-tauri-sign-in.mjs pins that order as text. And a
+/// test thread that is kept from running across the give-up itself sees nothing of it.
 #[test]
 fn the_store_is_held_up_from_the_wait_to_the_return_with_no_gap() {
-    let rig = rig_with(Some((
-        Duration::from_millis(20),
-        Duration::from_millis(150),
-    )));
+    let rig = rig_with(Some((SOON, SHORT)));
     *rig.store.token.lock().unwrap() = Some("refresh-one".into());
     let (held, hook) = waiter();
     *rig.store.during_load.lock().unwrap() = Some(Box::new(move || hook()));
@@ -323,18 +325,23 @@ fn the_store_is_held_up_from_the_wait_to_the_return_with_no_gap() {
     until("the read is said to be waited for", || {
         rig.auth.store_waited_for()
     });
-    assert!(!rig.auth.store_given_up());
+    // Well short of `TOO_LONG`, after which the store is let go: a call that is never given
+    // up is reported as that, and not as a gap when it returns.
+    let patience = TOO_LONG / 2;
     let started = Instant::now();
     let mut polls = 0_u64;
     while !rig.auth.store_given_up() {
+        assert!(started.elapsed() < patience, "the read was never given up");
         assert!(
             rig.auth.store_busy(),
             "neither waited for nor given up, at poll {polls}"
         );
-        assert!(started.elapsed() < TOO_LONG, "the read was never given up");
         polls += 1;
     }
     assert!(rig.auth.store_busy());
+    // The loop spins for most of the limit; far fewer turns than that mean this thread was
+    // not running while the call was given up, and saw nothing.
+    assert!(polls > 1_000, "too few polls to tell: {polls}");
     // Both can be so for a moment: the wait is counted back after the call is counted as out.
     until("the wait is counted back", || !rig.auth.store_waited_for());
     assert!(rig.auth.store_busy(), "given up, and still out");
