@@ -31,4 +31,4 @@ Local tests, hosted checks, rendered browser observations, installed native oper
 
 [Local speaker labels](speaker-diarization.md) explains opt-in NeMo setup, timestamp alignment, anonymous names, responsive Stop and private temporary-audio cleanup.
 
-The restart's [ES-module shell contract](ui-shell.md) covers metadata-only command discovery, widget lifetimes, the JSON tier, persistence boundaries and rendered/native-renderer checks.
+The restart's [ES-module shell contract](ui-shell.md) covers metadata-only command discovery, widget lifetimes, the JSON tier, persistence boundaries and rendered/native-renderer checks. Its [default views](default-views.md) (Today, Projects and Focus) cover items, projects, the focus timer and palette capture and answers.
