@@ -5,7 +5,7 @@
 // Tauri configuration as text for the rules a reviewer is asked to look for. It runs no Rust,
 // opens no browser, reads no credential and signs nobody in: those are separate evidence.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -211,14 +211,78 @@ function fakeBridge(status, answers = {}) {
   const config = JSON.parse(read('src-tauri/tauri.conf.json'));
   const capability = JSON.parse(read('src-tauri/capabilities/default.json'));
 
-  // Single-instance is registered before every other plugin and has its deep-link feature, so
-  // a callback that starts a second process on Windows or Linux reaches the running one and the
-  // second process exits without a window.
+  // Single-instance is registered before every other plugin, so a callback that starts a second
+  // process on Windows or Linux reaches the running one and the second process exits without a
+  // window. It is built without its deep-link feature: that feature hands the arguments to the
+  // deep-link plugin, which announces the link as a `deep-link://new-url` event that every page
+  // listener receives, code and state included (issue #116). The running application takes the
+  // link out of the arguments itself, in link.rs, before summon sees them.
   const plugins = [...entry.matchAll(/\.plugin\(\s*([a-z_:]+)/g)].map(match => match[1]);
   assert.equal(plugins[0], 'tauri_plugin_single_instance::init', `single-instance is first: ${plugins}`);
-  assert.ok(plugins.includes('tauri_plugin_deep_link::init'));
-  assert.match(manifest, /tauri-plugin-single-instance = \{ version = "2", features = \["deep-link"\] \}/);
-  assert.ok(entry.indexOf('tauri_plugin_single_instance::init') < entry.indexOf('tauri_plugin_deep_link::init'));
+  assert.match(manifest, /^tauri-plugin-single-instance = "2"$/m, 'single-instance is built without its deep-link feature');
+  const lockPackage = name => read('Cargo.lock').split('\n[[package]]\n').find(block => block.startsWith(`name = "${name}"\n`));
+  assert.ok(lockPackage('tauri-plugin-single-instance'), 'single-instance is in the lockfile');
+  assert.ok(!lockPackage('tauri-plugin-single-instance').includes('"tauri-plugin-deep-link'), 'single-instance cannot reach the deep-link plugin');
+  assert.match(entry, /tauri_plugin_single_instance::init\(\|app, arguments, _\| \{\n\s+if !link::handed_over\(app, &arguments\) \{\n\s+summon::launched_again\(app, &arguments\);/);
+  // The deep-link plugin is registered only where it is used: to register the scheme in a
+  // development build on Windows and Linux, where it announces a link only while it starts,
+  // before any page exists. On macOS it would announce every link the system opens, so there
+  // the application takes `RunEvent::Opened` itself.
+  assert.match(entry, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\n    let builder = builder\.plugin\(tauri_plugin_deep_link::init\(\)\);/);
+  assert.equal(entry.split('tauri_plugin_deep_link::init').length - 1, 1, 'The deep-link plugin is registered in one place');
+  assert.match(entry, /#\[cfg\(target_os = "macos"\)\]\n\s+RunEvent::Opened \{ urls \} => link::opened\(app, urls\),/);
+  // Nothing in the application listens for the plugin's event or asks it to announce a link.
+  for (const file of readdirSync(path.join(root, 'src-tauri/src')).filter(name => name.endsWith('.rs'))) {
+    // Code only: the comments may say why the event is not used.
+    const text = read(`src-tauri/src/${file}`).split('#[cfg(test)]')[0].split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
+    for (const forbidden of ['on_open_url', 'handle_cli_arguments', 'deep-link://']) assert.ok(!text.includes(forbidden), `src-tauri/src/${file} does not use ${forbidden}`);
+  }
+  // A launch that carries only one of sign-in's links has nothing to show: it exits before
+  // the window exists, which is what holds on a Linux session with no session bus, where the
+  // running application cannot be found (issue #116). It also exits before anything is opened
+  // or started: such a launch manages no state, so the exit handler would shut nothing down,
+  // and storage opened before the question would be left open.
+  //
+  // What is held is the text of `setup` itself: with the comments taken out it begins with
+  // exactly the question and the return, so nothing in `setup`, named below or not, can come
+  // before them, and neither a comment that names them nor an attribute on the `if` passes for
+  // them. It does not hold what a plugin's own setup does before `setup` runs, nor what a
+  // function called later does.
+  const lines = text => text.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('//'));
+  const setup = lines(entry.slice(entry.indexOf('.setup(|app| {') + '.setup(|app| {'.length));
+  const first = [
+    'let arguments: Vec<String> = std::env::args_os()',
+    '.map(|argument| argument.to_string_lossy().into_owned())',
+    '.collect();',
+    'if link::only_a_link(&arguments) {',
+    'link::exit_without_window(app.handle());',
+    'return Ok(());',
+    '}',
+  ];
+  assert.deepEqual(setup.slice(0, first.length), first, 'setup begins with the link-only question and its return, and nothing else');
+  const rest = setup.slice(first.length).join('\n');
+  for (const later of ['Core::new(', 'data::start_storage(', 'Storage::open_in(', 'startup::Startup::start(', 'app.manage(', 'auth::start(', 'link::register(', 'window::create_main(', 'tray::create(', 'summon::start(']) {
+    assert.ok(rest.includes(later), `setup still calls ${later}, after the link-only launch has returned`);
+  }
+  // One question and one way out: no second exit for a link further down, and no other place
+  // in the entry file that ends the application.
+  const entryCode = lines(entry.split('#[cfg(test)]')[0]).join('\n');
+  for (const [once, why] of [['link::only_a_link(', 'The link-only question is asked once'], ['link::exit_without_window(', 'A link-only launch has one way out'], ['link::handed_over(', 'A second launch is asked about a link once']]) {
+    assert.equal(entryCode.split(once).length - 1, 1, why);
+  }
+  assert.ok(!/\.exit\(|process::exit|std::process::abort/.test(entryCode), 'The entry file ends the application nowhere itself');
+  // Only sign-in's two links end a launch or are taken from a second one. Any other address
+  // on the scheme, the login page's "Open Open Sesame" among them, is an ordinary launch.
+  const taken = read('src-tauri/src/link.rs').split('#[cfg(test)]')[0];
+  assert.match(taken, /fn for_sign_in<S: AsRef<str>>\(arguments: &\[S\]\) -> Option<Url> \{\n\s+argument\(arguments\)\.filter\(\|url\| classify\(url\.as_str\(\)\) != Link::Other\)\n\}/);
+  assert.match(taken, /pub fn only_a_link<S: AsRef<str>>\(arguments: &\[S\]\) -> bool \{\n\s+for_sign_in\(arguments\)\.is_some\(\)\n\}/);
+  assert.match(taken, /pub fn handed_over<R: Runtime>\(app: &AppHandle<R>, arguments: &\[String\]\) -> bool \{\n\s+match for_sign_in\(arguments\) \{/);
+  assert.match(read('src-tauri/src/link.rs'), /pub fn exit_without_window<R: Runtime>\(app: &AppHandle<R>\) \{\n(?:\s+(?:\/\/|#\[cfg|eprintln)[^\n]*\n)*\s+app\.exit\(0\);\n\}/);
+  // A link the running application is handed brings the window forward only when it is one
+  // of sign-in's, which is how the login page's address is ignored on macOS.
+  assert.match(taken, /if brings_the_window\(kind\) \{\n\s+window::show\(app\);\n\s+\}/);
+  assert.match(taken, /fn brings_the_window\(kind: Link\) -> bool \{\n\s+kind != Link::Other\n\}/);
+  assert.equal(taken.split('window::show(').length - 1, 1, 'The window is shown for a link in one place');
 
   // One scheme, the one the WorkOS application already redirects to.
   assert.deepEqual(config.plugins['deep-link'], { desktop: { schemes: ['opensesame'] } });
@@ -294,7 +358,7 @@ function fakeBridge(status, answers = {}) {
   assert.equal(code.split('keyring::Entry::store_status()').length - 1, 1, 'The once-per-run answer is used in one place');
   // At launch the store is asked on the restore thread, never in `start`, which runs on the main
   // thread before the window exists: a locked keyring answers only after its unlock prompt.
-  const start = code.slice(code.indexOf('pub fn start<'), code.indexOf('fn listen<'));
+  const start = code.slice(code.indexOf('pub fn start<'));
   assert.equal(start.split('.available()').length - 1, 2, 'The store is asked in two closures only');
   assert.match(start, /Arc::new\(move \|\| store_problem\(probe\.available\(\), probe\.exists\(\)\)\);/);
   assert.match(start, /auth\.restore\(move \|\| !cfg!\(target_os = "linux"\) \|\| saved\.available\(\)\);/);
@@ -302,16 +366,21 @@ function fakeBridge(status, answers = {}) {
   assert.match(code, /recv_timeout\(pause\(due, allowed_in\)\)/);
 
   // Nothing in the wiring prints or logs: a URL carries the state and a reply carries tokens.
-  // The two exceptions are in development builds only and print no address, name or credential.
-  for (const printer of [' println!', 'dbg!', 'log::', 'tracing::']) assert.ok(!code.includes(printer), `auth.rs does not use ${printer}`);
-  const printed = [...code.matchAll(/(#\[cfg\(debug_assertions\)\]\n\s+)?eprintln!\(([^;]*)\);/g)];
-  assert.equal(printed.length, 2);
-  for (const [, guard, body] of printed) {
+  // The exceptions are in development builds only and print no address, name or credential:
+  // the status in auth.rs, and in link.rs the kind of a link and that a link-only launch ended.
+  const links = read('src-tauri/src/link.rs').split('#[cfg(test)]')[0];
+  const prints = text => [...text.matchAll(/(#\[cfg\(debug_assertions\)\]\n\s+)?eprintln!\(([^;]*)\);/g)];
+  const printed = prints(code), linkPrinted = prints(links);
+  for (const [file, text] of [['auth.rs', code], ['link.rs', links]]) for (const printer of [' println!', 'dbg!', 'log::', 'tracing::']) assert.ok(!text.includes(printer), `${file} does not use ${printer}`);
+  assert.equal(printed.length, 1);
+  assert.equal(linkPrinted.length, 2);
+  for (const [, guard, body] of [...printed, ...linkPrinted]) {
     assert.ok(guard, 'A print is compiled into development builds only');
     assert.ok(!/url|token|email|name\b|state\b|verifier|code\b/.test(body.replace('open-sesame: sign-in', '')), body);
   }
   assert.match(printed[0][2], /status\["authenticated"\], status\["busy"\], status\["message"\]/);
-  assert.match(printed[1][2], /"open-sesame: link \{kind:\?\}"/);
+  assert.match(linkPrinted[0][2], /"open-sesame: link \{kind:\?\}"/);
+  assert.match(linkPrinted[1][2], /"open-sesame: a launch with only a sign-in link exits"/);
   // No token, address, state or verifier is in what the page is sent.
   assert.match(code, /emit\(json!\(\{"event": CHANGED_EVENT, "status": status\}\)\);/);
 
@@ -323,8 +392,9 @@ function fakeBridge(status, answers = {}) {
   assert.equal(service, '.tauri.workos.production');
 
   // The scheme is registered at run time only in a development build on Windows and Linux.
-  assert.match(code, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\n    let _ = app\.deep_link\(\)\.register_all\(\);/);
-  assert.equal(code.split('register_all').length - 1, 1);
+  assert.match(links, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\npub fn register<R: Runtime>\(app: &AppHandle<R>\) \{\n    use tauri_plugin_deep_link::DeepLinkExt;\n    let _ = app\.deep_link\(\)\.register_all\(\);\n\}/);
+  assert.match(entry, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\n\s+link::register\(app\.handle\(\)\);/);
+  assert.equal(code.split('register_all').length + links.split('register_all').length - 2, 1);
 
   // Only a development build can be pointed at a stand-in, and only at this machine.
   assert.match(code, /fn workos_api\(\) -> HttpApi \{\n    #\[cfg\(debug_assertions\)\]\n    if let Ok\(value\) = std::env::var\("OPEN_SESAME_DEV_AUTH_API"\)/);

@@ -1,6 +1,8 @@
 use super::*;
 
 const GENERIC: &str = "Could not complete sign-in. Check your connection and try again.";
+const IN_BROWSER: &str = "Finish signing in in your browser.";
+const REFUSED: &str = "Sign-in was not completed in the browser. Try again.";
 const ENDED: &str = "Your sign-in has ended. Sign in again to use your account.";
 
 fn signed_out(rig: &Rig) -> bool {
@@ -52,15 +54,22 @@ fn sign_in_saves_refresh_token_and_reports_user() {
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(240)));
 }
 
+/// A callback that does not carry the waiting attempt's `state` cannot end it: it was sent by
+/// another program or belongs to an earlier attempt, and a program that does not know the
+/// state must not be able to cancel a person's sign-in (issue #116). In the Swift host only
+/// the browser session's own callback reached the attempt. Nothing is sent, nothing is
+/// reported, and the browser's callback then completes the attempt.
 #[test]
-fn callback_with_bad_state_or_error_leaves_the_app_signed_out() {
-    let oversized = format!("&code={}", "a".repeat(8193));
-    let cases: [&dyn Fn(&str) -> String; 5] = [
+fn a_callback_without_the_waiting_state_leaves_the_sign_in_waiting() {
+    let cases: [&dyn Fn(&str) -> String; 8] = [
         &|state| format!("opensesame://auth/callback?code=x&state={state}x"),
         &|_| "opensesame://auth/callback?code=x".to_string(),
+        &|_| "opensesame://auth/callback?code=x&state".to_string(),
         &|state| format!("opensesame://auth/callback?code=x&state={state}&state={state}"),
-        &|state| format!("opensesame://auth/callback?code=x&state={state}&error=access_denied"),
-        &|state| format!("opensesame://auth/callback?state={state}{oversized}"),
+        &|state| format!("opensesame://auth/callback?code=x&state=other&st%61te={state}"),
+        &|_| "opensesame://auth/callback?error=access_denied&state=guessed".to_string(),
+        &|_| "opensesame://auth/callback?error=access_denied".to_string(),
+        &|state| format!("opensesame://auth/elsewhere?code=x&state={state}"),
     ];
     for case in cases {
         let rig = rig();
@@ -71,14 +80,65 @@ fn callback_with_bad_state_or_error_leaves_the_app_signed_out() {
             .push(Ok(tokens(jwt(&claims()), "refresh-one")));
         let good = rig.begin();
         let state = query_value(&good, "state").unwrap();
-        let bad = case(&state);
-        rig.auth.complete_sign_in(&bad);
-        assert!(signed_out(&rig), "{bad}");
-        assert_eq!(rig.status()["busy"], json!(false));
-        assert_eq!(rig.message(), GENERIC);
+        let changes = rig.changes.load(Ordering::SeqCst);
+        let foreign = case(&state);
+        rig.auth.complete_sign_in(&foreign);
+        assert_eq!(
+            rig.status()["busy"],
+            json!(true),
+            "still waiting after {foreign}"
+        );
+        assert_eq!(rig.message(), IN_BROWSER, "{foreign}");
+        assert_eq!(
+            rig.changes.load(Ordering::SeqCst),
+            changes,
+            "nothing to report for {foreign}"
+        );
         assert!(
             rig.api.exchange_calls.lock().unwrap().is_empty(),
-            "no code was sent for {bad}"
+            "no code was sent for {foreign}"
+        );
+        assert_eq!(rig.store.saved(), None);
+        // The browser's own callback still completes the attempt.
+        rig.auth.complete_sign_in(&good);
+        assert!(rig.auth.authenticated(), "signed in after {foreign}");
+        assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    }
+}
+
+/// A callback that carries the waiting `state` but fails the other rules ends the attempt, as
+/// a refusal in the browser does. No code is sent, and the sentence is not about the
+/// connection, because nothing was asked of the network.
+#[test]
+fn a_callback_with_the_waiting_state_that_fails_the_rules_ends_the_sign_in() {
+    let oversized = "a".repeat(8193);
+    let cases: [&dyn Fn(&str) -> String; 6] = [
+        &|state| format!("opensesame://auth/callback?error=access_denied&state={state}"),
+        &|state| format!("opensesame://auth/callback?code=x&state={state}&error=access_denied"),
+        &|state| format!("opensesame://auth/callback?state={state}"),
+        &|state| format!("opensesame://auth/callback?code=&state={state}"),
+        &|state| format!("opensesame://auth/callback?state={state}&code={oversized}"),
+        &|state| format!("opensesame://auth/callback?code=x&state={state}#fragment"),
+    ];
+    for case in cases {
+        let rig = rig();
+        rig.api
+            .exchanges
+            .lock()
+            .unwrap()
+            .push(Ok(tokens(jwt(&claims()), "refresh-one")));
+        let good = rig.begin();
+        let state = query_value(&good, "state").unwrap();
+        let changes = rig.changes.load(Ordering::SeqCst);
+        let refused = case(&state);
+        rig.auth.complete_sign_in(&refused);
+        assert!(signed_out(&rig), "{refused}");
+        assert_eq!(rig.status()["busy"], json!(false), "{refused}");
+        assert_eq!(rig.message(), REFUSED, "{refused}");
+        assert!(rig.changes.load(Ordering::SeqCst) > changes, "reported");
+        assert!(
+            rig.api.exchange_calls.lock().unwrap().is_empty(),
+            "no code was sent for {refused}"
         );
         assert_eq!(rig.store.saved(), None);
         // The attempt is over: the genuine callback arriving afterwards is ignored too.
@@ -181,11 +241,16 @@ fn callback_from_an_earlier_attempt_is_ignored() {
         .unwrap()
         .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let second = rig.begin();
-    // The first attempt's callback carries the wrong state for the second attempt.
+    // The first attempt's callback carries the wrong state for the second attempt, which keeps
+    // waiting and then completes with its own.
     rig.auth.complete_sign_in(&first);
     assert!(signed_out(&rig));
     assert!(rig.api.exchange_calls.lock().unwrap().is_empty());
-    let _ = second;
+    assert_eq!(rig.status()["busy"], json!(true));
+    assert_eq!(rig.message(), IN_BROWSER);
+    rig.auth.complete_sign_in(&second);
+    assert!(rig.auth.authenticated());
+    assert_eq!(rig.api.exchange_calls.lock().unwrap().len(), 1);
 }
 
 #[test]

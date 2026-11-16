@@ -11,6 +11,7 @@
 //! - Only the public client ID ships. No API key or client secret exists in this code.
 //! - A callback is accepted only when it matches the redirect exactly and carries exactly one
 //!   `state` equal to the pending one and exactly one usable `code` ([`authorization_code`]).
+//!   Only a callback that carries that `state` can end a waiting attempt ([`carries_state`]).
 //! - A session exists only after the access token's signature has been verified against the
 //!   WorkOS key set and its subject equals the returned user ([`verify_access_token`]).
 //! - Only the refresh token is saved, and only through [`CredentialStore`]. Tokens are never
@@ -30,7 +31,7 @@ pub use api::{
     authenticate_url, error_from_response, exchange_body, jwks_url, parse_jwks, parse_tokens,
     refresh_body, Tokens, User, WorkosApi,
 };
-pub use callback::authorization_code;
+pub use callback::{authorization_code, carries_state};
 pub use controller::{AuthController, AuthParts};
 pub use pkce::{authorize_url, generate_pkce, logout_url, Pkce};
 pub use store::{CredentialStore, SignedOutMarker};
