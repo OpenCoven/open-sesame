@@ -163,8 +163,10 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
 // 6b. Sign in waits for the person too: the host reads the saved sign-in before it opens the
 // browser, and with one saved in a locked keyring that read answers only after the unlock
 // prompt (issue #116). No other method the host answers gets the longer limit: each one is
-// requested here and the limit the page really set for it is read from the timer, so the rule
-// holds however the limits are written in ui/bridge.js.
+// requested here once, with no parameters, after the bridge has connected, and the limit the
+// page set for that request is read from the timer. So the table in ui/bridge.js may be written
+// in any way; a limit that depended on a parameter, on the bridge's state or on the order of
+// requests would not be seen here.
 {
   const { bridge, invokes, timers } = await connected();
   let outcome = 'pending';
@@ -176,7 +178,10 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await signIn;
   assert.equal(outcome, 'resolved');
   assert.equal(timers.size, 0);
-  const ported = [...read('crates/core/src/gate.rs').match(/pub const PORTED: &\[&str\] = &\[([^\]]*)\];/)[1].matchAll(/"([^"]+)"/g)].map(match => match[1]);
+  // Read as check-core-gate.mjs reads it: up to the closing `];`, with comments taken out.
+  const list = read('crates/core/src/gate.rs').match(/pub const PORTED: &\[&str\] = &\[([\s\S]*?)\];/);
+  assert.ok(list, 'crates/core/src/gate.rs declares PORTED as a list of string literals');
+  const ported = [...list[1].replace(/\/\/[^\n]*/g, '').matchAll(/"([^"\\]*)"/g)].map(match => match[1]);
   for (const method of ['auth.status', 'auth.signIn', 'auth.cancel', 'auth.signOut', 'project.chooseFolder', 'terminal.open']) assert.ok(ported.includes(method), `${method} is in the list read from the gate`);
   const long = [];
   for (const method of [...ported, 'nobody.answers']) {
