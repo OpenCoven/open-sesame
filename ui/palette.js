@@ -25,10 +25,22 @@ export function captureCommands(query) {
   }));
 }
 
+// The action for a capture saved under the palette's draft `draft`: `capture-<kind>@<draft>:<text>`.
+// Today keeps one client ID per draft, so a retry of the same capture, edited or not, is one row.
+const DRAFT = /^[A-Za-z0-9-]{1,64}$/;
+export function draftAction(action, draft) {
+  const match = /^capture-(note|task):([\s\S]*)$/.exec(String(action));
+  if (!match || typeof draft !== 'string' || !DRAFT.test(draft)) throw TypeError('A capture names a typed draft and a draft ID.');
+  return `capture-${match[1]}@${draft}:${match[2]}`;
+}
+
 // What the palette shows for a query: a calculator or world-clock answer, which is shown and
-// invokes nothing, and the commands, matching ones first. An answer replaces the captures, so
-// Enter never saves a sum or a time question as a note.
+// invokes nothing, and the commands, matching ones first. An answer with a result replaces the
+// captures, so Enter never saves a sum or a time question as a note. An answer that is only an
+// error, as for a phone number, leaves them, but `captureOnEnter` is false: Enter does not choose
+// a capture, and the person picks one by clicking it or with the arrow keys.
 export function paletteView(index, query, options) {
   const found = answer(String(query), options);
-  return {answer: found, commands: [...searchCommands(index, query), ...(found ? [] : captureCommands(query))]};
+  const captures = found && !found.error ? [] : captureCommands(query);
+  return {answer: found, commands: [...searchCommands(index, query), ...captures], captureOnEnter: !found};
 }

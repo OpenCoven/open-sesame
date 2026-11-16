@@ -2,8 +2,8 @@
 // mobile presentation's Today overlay shows them (dist/mobile-shell.js, docs/mobile-shell.md).
 // Its rows and the focus session are read from the core through the bridge whenever it is shown.
 // A draft is kept in its field until the core has saved it; the palette's captures arrive here
-// as the commands `capture-note`, `capture-task` and `capture-note:<text>` or
-// `capture-task:<text>`.
+// as the commands `capture-note`, `capture-task` and `capture-<kind>@<draft>:<text>`, and a
+// capture that was saved answers `{saved: true}`.
 import { draftItem, title, today as summary } from '../items.js';
 import { createFocusStore } from '../focus-model.js';
 import { itemStore, maker, redraw, statusLine, whenShown } from './view-kit.js';
@@ -11,7 +11,7 @@ import { itemStore, maker, redraw, statusLine, whenShown } from './view-kit.js';
 const SAVED = {note: 'Note saved.', task: 'Task saved.'};
 const EMPTY = 'Write something to capture.';
 const FOCUS = {idle: 'Ready to start', running: 'Running', paused: 'Paused', finished: 'Session complete'};
-const CAPTURE = /^capture-(note|task)(?::([\s\S]*))?$/;
+const CAPTURE = /^capture-(note|task)(?:@([A-Za-z0-9-]{1,64}))?(?::([\s\S]*))?$/;
 
 export async function mount({surface, signal, bridge, host, navigate}) {
   const document = surface.ownerDocument;
@@ -115,15 +115,18 @@ export async function mount({surface, signal, bridge, host, navigate}) {
       if (action === 'open') return refresh();
       const match = CAPTURE.exec(action);
       if (!match) return;
-      if (match[2] === undefined) { kind.value = match[1]; text.focus(); return; }
-      // A capture typed in the palette is saved under its own draft, so the field's draft is
-      // never replaced; when it fails, the palette keeps the text and shows why.
-      const fields = draftItem({kind: match[1], text: match[2]});
+      const [, chosen, draft, typed] = match;
+      if (typed === undefined) { kind.value = chosen; text.focus(); return; }
+      // A capture typed in the palette is saved under the palette's draft, so the field's draft
+      // is never replaced, and a retry of it after a failure or a lost reply, edited or not,
+      // keeps its client ID; when it fails, the palette keeps the text and shows why.
+      const fields = draftItem({kind: chosen, text: typed});
       if (!fields) throw Error(EMPTY);
       await refresh();
-      const result = await items.create(fields, {draft: `palette:${match[1]}:${match[2]}`});
+      const result = await items.create(fields, {draft: draft ? `palette:${draft}` : `palette:${chosen}:${typed}`});
       if (!result.saved) throw Error(result.error);
-      if (alive()) capture.say(SAVED[match[1]]);
+      if (alive()) capture.say(SAVED[chosen]);
+      return {saved: true};
     },
     dispose() { if (timer !== null) clearInterval(timer); timer = null; },
   };

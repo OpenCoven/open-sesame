@@ -40,9 +40,9 @@ console.log('Manifest/palette: defaults, metadata-only discovery and scoped comm
   assert.deepEqual(today.commands.map(command => [command.id, command.label, command.action]), [
     ['today.open', 'Open Today', 'open'], ['today.capture-note', 'Capture a note', 'capture-note'], ['today.capture-task', 'Capture a task', 'capture-task'],
   ]);
-  const {paletteView, captureCommands} = await load('ui/palette.js');
+  const {paletteView, captureCommands, draftAction} = await load('ui/palette.js');
   const at = {now: new Date('2026-11-16T04:00:00Z'), localZone: 'Europe/London'};
-  assert.deepEqual(paletteView(paletteIndex, '', at), {answer: null, commands: searchCommands(paletteIndex, '')});
+  assert.deepEqual(paletteView(paletteIndex, '', at), {answer: null, commands: searchCommands(paletteIndex, ''), captureOnEnter: true});
   const capture = query => paletteView(paletteIndex, query, at).commands.filter(command => command.id.endsWith('.text')).map(command => [command.id, command.label, command.widget, command.group, command.action]);
   assert.deepEqual(capture('buy milk'), [
     ['today.capture-note.text', 'Capture note: buy milk', 'today', 'Today', 'capture-note:buy milk'],
@@ -68,6 +68,20 @@ console.log('Manifest/palette: defaults, metadata-only discovery and scoped comm
   assert.deepEqual([time.answer.kind, time.answer.result, time.answer.timeZone], ['time', '1:00:00 PM GMT+9', 'Asia/Tokyo']);
   assert.deepEqual(time.commands.filter(command => command.id.endsWith('.text')), []);
   assert.equal(paletteView(paletteIndex, '(1+', at).answer.error, 'Finish the expression to calculate.');
+  // An answer that is only an error, such as for a phone number, leaves the capture offers, but
+  // Enter does not choose them; the person picks one by clicking or with the arrow keys.
+  const phone = paletteView(paletteIndex, '(555) 123-4567', at);
+  assert.equal(phone.answer.error, 'Finish the expression to calculate.');
+  assert.deepEqual(phone.commands.filter(command => command.capture).map(command => command.action), ['capture-note:(555) 123-4567', 'capture-task:(555) 123-4567']);
+  assert.equal(phone.captureOnEnter, false);
+  assert.equal(sum.captureOnEnter, false);
+  assert.equal(paletteView(paletteIndex, 'buy milk', at).captureOnEnter, true);
+  // A capture names the palette's draft, so a retry of the same capture, edited or not, keeps
+  // its client ID and the core keeps one row.
+  assert.equal(draftAction('capture-note:buy milk', 'p1'), 'capture-note@p1:buy milk');
+  assert.equal(draftAction('capture-task:a: b@c', 'p-2'), 'capture-task@p-2:a: b@c');
+  for (const [action, draft] of [['capture-note:x', 'a b'], ['capture-note:x', ''], ['capture-note:x', 'x'.repeat(65)], ['open', 'p1'], ['capture-note', 'p1']])
+    assert.throws(() => draftAction(action, draft), TypeError, `${action} ${draft}`);
   assert.deepEqual(captureCommands('note: x').map(command => [Object.isFrozen(command), command.capture]), [[true, true]]);
   assert(!paletteIndex.some(command => command.capture), 'only typed drafts are captures');
   assert(!/\b(?:window|globalThis|document|localStorage|fetch)\b/.test(read('ui/palette.js')), 'The palette is pure');
@@ -195,8 +209,16 @@ function rig(custom = {}) {
   const imported=deferred();const commands=[];
   const {manager,surfaces}=rig({loaders:{a:()=>imported.promise,b:async()=>({mount:async()=>({command:a=>commands.push('b:'+a)})})}});
   const opening=manager.show('a','new');await tick();await manager.show('b');
-  imported.resolve({mount:async()=>({command:a=>commands.push('a:'+a)})});await opening;
+  imported.resolve({mount:async()=>({command:a=>commands.push('a:'+a)})});
+  assert.equal(await opening,undefined,'An overtaken show resolves with nothing');
   assert.deepEqual(commands,['b:open']);assert.equal(surfaces.find(s=>s.id==='a').hidden,true);
+  await manager.dispose();
+}
+// show() resolves with the command's own result, so a caller can tell a command that ran from one
+// that another show overtook (issue #77: a palette capture is cleared only once it is saved).
+{
+  const {manager}=rig({loaders:{a:async()=>({mount:async()=>({command:async action=>({ran:action})})})}});
+  assert.deepEqual(await manager.show('a','capture'),{ran:'capture'});
   await manager.dispose();
 }
 console.log('Lifecycle: selected-only loads, CSS ownership, disable/import/mount races, retry and async teardown pass.');
