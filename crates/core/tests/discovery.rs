@@ -381,8 +381,8 @@ mod login_shell {
     /// tests without running them (issue #97). Unset, a missing shell is only noted. A shell is
     /// matched by its file name, so a test that finds its shell through `shell` or `installed`
     /// uses the path named here in place of its own, and a named shell that such a test cannot
-    /// find anywhere fails it. The two tests that came with #105 name `/bin/sh` and `/bin/bash`
-    /// outright and fail without them whatever this says.
+    /// find anywhere fails it. The tests that came with #105 name their shell outright and
+    /// fail without it whatever this says.
     const REQUIRED: &str = "OPEN_SESAME_REQUIRE_SHELLS";
 
     fn required() -> Vec<PathBuf> {
@@ -720,7 +720,9 @@ mod login_shell {
     /// A search path with no directory that can be passed on gives the whole capture up for
     /// the launch environment (issue #97). Since the result is the shell's own environment and
     /// no longer the launch one with changes laid over it, this is the only thing between such
-    /// a startup file and a result with no search path at all.
+    /// a startup file and a result with no search path at all. Under zsh the line goes into
+    /// the file zsh reads last, because a system-wide `zshrc`, which is read after `.zprofile`,
+    /// may put a directory of its own in front and so make the search path usable again.
     #[test]
     fn a_search_path_with_nothing_that_can_be_passed_on_gives_the_capture_up() {
         for kind in KINDS
@@ -730,8 +732,12 @@ mod login_shell {
             let Some(shell) = installed(kind.paths) else {
                 continue;
             };
+            let last_read = match kind.startup_file {
+                ".zprofile" => ".zlogin",
+                other => other,
+            };
             let (_home, inherited) = home(&[(
-                kind.startup_file,
+                last_read,
                 "export PATH=\"/opt/odd$(printf '\\377')dir\"\nexport AFTER=ok\n".to_string(),
             )]);
             let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);

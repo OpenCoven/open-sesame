@@ -457,9 +457,6 @@ mod tests {
         assert!(parse(b"").is_empty());
     }
 
-    /// A value, a name or a continuation line that is not UTF-8 leaves its variable out, in
-    /// both forms. In the NUL form it takes nothing else with it; in the newline form a line
-    /// with a damaged name continues the variable before it and takes that one too.
     #[test]
     fn the_newline_form_takes_shell_names_only() {
         // Without NUL framing a line starts a variable only when it starts with a shell name;
@@ -475,6 +472,9 @@ mod tests {
         assert_eq!(vars.len(), 4, "{:?}", vars.keys());
     }
 
+    /// A value, a name or a continuation line that is not UTF-8 leaves its variable out, in
+    /// both forms. In the NUL form it takes nothing else with it; in the newline form a line
+    /// with a damaged name continues the variable before it and takes that one too.
     #[test]
     fn entries_that_are_not_unicode_are_left_out() {
         let vars = parse(b"A=1\0ODD=\xff\xfe\0MIXED=ok\xff\0N\xffME=x\0B=2\0");
