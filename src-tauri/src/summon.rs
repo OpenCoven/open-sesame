@@ -452,8 +452,8 @@ impl Summon {
 
     /// Releases every hold the page has taken so far. The features' own holds and the pin
     /// stay. A request is not tied to the page that sent it, so a `summon.hold` the old page
-    /// sent that is handled after this is kept until something releases that reason or the
-    /// next page load.
+    /// sent that is handled after this is kept until something releases that reason (for the
+    /// drag, the end of the next drag that starts in the page) or the next page load.
     fn release_page_holds(&self) {
         lock(&self.held_by_page).clear();
     }

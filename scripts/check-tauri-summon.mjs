@@ -199,16 +199,21 @@ function fakeBridge(status, answers = {}) {
   assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
   assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
   // A page that loads takes none of the old page's holds with it (issue #115), in every build.
-  // This reads text, so it cannot show that the call runs. What it holds, with every comment
-  // taken out first: the window sets one page-load hook; neither that statement nor the arm for
-  // a page that starts to load carries an attribute; and in that arm nothing stands before the
-  // call but other plain calls (the proposal for issue #112 adds one), so no condition, macro
-  // or attribute can decide whether it is reached. A statement that is not a plain call goes
-  // after it.
+  // This reads text and cannot show that the call runs. With line comments and block
+  // comments that are not nested taken out (it does not know a string from code), it holds
+  // four things and no more. The text `.on_page_load(` occurs once in window.rs. The statement
+  // `let builder = builder.on_page_load(` has no attribute directly on it. The arm for
+  // `PageLoadEvent::Started` has no attribute directly on it, and inside it nothing stands
+  // before the call but calls of a plain path whose arguments hold no string, block or macro
+  // (the proposal for issue #112 adds one). And `page_replaced` is one function with no attribute directly on it.
+  // It does not read what encloses the statement, the match or `page_replaced`, a guard on an
+  // earlier arm, the body of what `page_replaced` calls, or a hook set by another spelling, so
+  // a hook made development-only from outside passes. It also refuses correct hooks written
+  // another way: anything in the arm that is not such a call goes after the call.
   const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const source = bare(window);
-  assert.equal(source.split('.on_page_load(').length - 1, 1, 'The window sets one page-load hook: a second would replace the first');
-  assert.ok(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(source), 'The page-load hook\'s statement carries no attribute');
+  assert.equal(source.split('.on_page_load(').length - 1, 1, 'window.rs sets the page-load hook once, as `.on_page_load(`: a second would replace the first');
+  assert.ok(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(source), 'The hook is set by the statement `let builder = builder.on_page_load(`, with no attribute directly on it');
   const loads = source.slice(source.indexOf('builder.on_page_load('), source.indexOf('let window = builder.build()?;'));
   assert.ok(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*summon::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(loads), 'The arm for a page that starts to load carries no attribute and reaches the call that releases the page\'s holds through plain calls only');
   assert.equal(bare(host).split('fn page_replaced').length - 1, 1, 'page_replaced is one function, not one per kind of build');
