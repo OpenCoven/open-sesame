@@ -221,7 +221,9 @@ fn an_item_keeps_its_text_and_needs_no_title() {
     // Read later saves a bookmark under the feed entry's title, which can be 300 characters.
     let headline = "t".repeat(MAX_TITLE_CHARS);
     let bookmark = json!({ "kind": "bookmark", "text": "https://example.com/a", "title": headline, "url": "https://example.com/a" });
-    assert!(rig.db.save_item(draft(bookmark)).is_ok());
+    let bookmark = rig.db.save_item(draft(bookmark)).unwrap();
+    assert_eq!(bookmark.title, headline);
+    assert_eq!(rig.db.get_item(&bookmark.id).unwrap(), Some(bookmark));
 
     // Search reaches the text, and an edit replaces it.
     let found = find(&rig.db, json!({ "query": "WORD word" }));

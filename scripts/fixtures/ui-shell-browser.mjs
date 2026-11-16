@@ -44,6 +44,9 @@ try {
         const {requestId,method,params}=message;calls.push({method,params:{...params,channel:undefined}});
         let result;
         if(method==='system.info')result={available:true,platform:'darwin',authenticated:false};
+        // The host settings of #71 and #72, in the shapes src-tauri/src/summon.rs and auth.rs answer.
+        else if(method==='auth.status')result={authenticated:false,busy:false,message:'',name:'',email:''};
+        else if(method==='summon.status')result={session:'macos',shortcut:'Control+Alt+Shift+Space',defaultShortcut:'Control+Alt+Shift+Space',registered:true,message:'',toggleCommand:'open-sesame --toggle',hideOnBlur:false};
         else if(method==='settings.all')result={settings};
         else if(method==='widgets.list')result={widgets:states};
         else if(method==='settings.set'){settings[params.key]=params.value;sessionStorage.setItem('fixture.settings',JSON.stringify(settings));result={saved:true};}
@@ -72,6 +75,11 @@ try {
         assert(await page.locator('[data-widget-view="today"]').isVisible());
         for(const part of ['shells.js','shells.css','terminal.js','xterm.js','xterm.css','declarative.js','definitions.js'])assert(!requests.some(r=>r.endsWith('/'+part)),part+' must not load');
         assert.deepEqual(await page.evaluate(()=>Object.keys(window).filter(k=>k.startsWith('OpenSesame'))),[]);
+        // The account and shortcut of #72 and #71 sit outside every widget and answer at start.
+        await page.locator('[data-account]').getByText('Not signed in').waitFor();
+        assert.equal(await page.locator('#summon-shortcut').inputValue(),'Control+Alt+Shift+Space');
+        assert(await page.locator('[data-summon-blur]').isVisible());
+        assert.equal(await page.locator('[data-view-host] [data-account], [data-view-host] [data-summon]').count(),0,'host settings are not inside a widget view');
         // Restoring the saved state is not a change: a clean start with no action writes nothing.
         assert.deepEqual(await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='widgets.set'||c.method==='settings.set')),[],'startup writes no preference');
         const trace=await page.evaluate(()=>({paint:performance.getEntriesByType('paint').map(x=>({name:x.name,time:x.startTime})),resources:performance.getEntriesByType('resource').map(x=>({name:x.name,start:x.startTime,duration:x.duration,bytes:x.transferSize}))}));

@@ -1,9 +1,11 @@
+import { mountAccount } from './account.js';
 import { createBridge } from './bridge.js';
 import { widgets, paletteIndex } from './manifest.js';
 import { searchCommands } from './palette.js';
 import { loaders, styles } from './widget-loaders.js';
 import { createLifecycle } from './lifecycle.js';
 import { createPreferences } from './preferences.js';
+import { holdDuringDrag, mountSummon } from './summon.js';
 
 const bridge = createBridge(window);
 const shell = document.querySelector('.shell');
@@ -14,6 +16,7 @@ const views = shell.querySelector('[data-view-host]');
 const options = shell.querySelector('[data-widget-options]');
 const palette = shell.querySelector('#command-palette');
 const settings = shell.querySelector('#widget-settings');
+const hostSettings = shell.querySelector('[data-settings]');
 const query = shell.querySelector('[data-command-query]');
 const results = shell.querySelector('[data-command-results]');
 const paletteToggle = shell.querySelector('[data-palette-toggle]');
@@ -145,10 +148,35 @@ function catalogChanged(catalog) {
   if (!palette.hidden) renderCommands();
 }
 
+// The account (issue #72) and the shortcut (issue #71) belong to the host, not to a widget, so
+// they mount once the host answers, whatever widgets are on.
+function mountHostSettings() {
+  hostSettings.hidden = false;
+  const account = hostSettings.querySelector('[data-account]');
+  mountAccount(bridge, {
+    section: account,
+    title: account.querySelector('[data-account-title]'),
+    detail: account.querySelector('[data-account-detail]'),
+    signIn: account.querySelector('[data-account-sign-in]'),
+    cancel: account.querySelector('[data-account-cancel]'),
+    signOut: account.querySelector('[data-account-sign-out]'),
+  });
+  const section = hostSettings.querySelector('[data-summon]');
+  mountSummon(bridge, {
+    section,
+    hint: section.querySelector('[data-summon-hint]'),
+    form: section.querySelector('[data-summon-form]'),
+    input: section.querySelector('#summon-shortcut'),
+    message: section.querySelector('[data-summon-message]'),
+    blur: section.querySelector('[data-summon-blur]'),
+  });
+  holdDuringDrag(bridge, document);
+}
 async function start() {
   const info = await bridge.ready;
   shell.dataset.state = info.available?'connected':'unavailable';
   status.textContent = info.available ? (info.authenticated ? 'Connected · Signed in' : 'Connected · Local workspace') : 'Desktop connection unavailable';
+  if (info.available) mountHostSettings();
   const saved = info.available ? await prefs.read() : {on:{},lastView:null};
   if (!info.available) report('Open this page in the Open Sesame app to connect to this machine.');
   catalogChanged(prefs.catalog);

@@ -10,6 +10,8 @@ The defaults are Today, Projects, Focus, Shells and Agents. Only the selected la
 
 [main.js](../ui/main.js) owns the palette, navigation and on/off switches. Commands for off widgets remain searchable and enable the selected widget when invoked. Saved JSON instance names also feed discovery without importing the JSON renderer or validator. Ctrl/Command+K opens the palette; arrows move through results, Enter invokes, Tab remains inside the open palette and Escape closes it and returns focus. No third-party interactive script tier is admitted.
 
+The account control of [issue 72](https://github.com/OpenCoven/open-sesame/issues/72) ([account.js](../ui/account.js)) and the shortcut settings of [issue 71](https://github.com/OpenCoven/open-sesame/issues/71) ([summon.js](../ui/summon.js)) are host settings, not widgets: they sit in a row under the bar, have no manifest entry or on/off switch, and mount once the host answers, whatever widgets are on.
+
 ## Lifetime and persistence
 
 [lifecycle.js](../ui/lifecycle.js) passes each mount a private surface, dependencies and AbortSignal. `mount` returns an optional `command(action)` and asynchronous `dispose()`. Off aborts immediately, removes the surface and stylesheet and retires activity. If import or mount completes late, it cannot reattach a surface or run the old command. Re-enable waits for old cleanup. An imported module stays in the browser cache; off removes its owned activity rather than claiming to unload parsed JavaScript. Switching views retains enabled surfaces and existing terminals.
