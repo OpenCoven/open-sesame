@@ -1,6 +1,7 @@
 // Entry point of the new shell. It proves the path from page to host and back (issue #70) and
 // hosts terminal panes (issue #74). Views, the widget manifest and lazy loading by widget arrive
 // with issue #76; until then the terminal emulator is the one thing loaded on demand.
+import { mountAccount } from './account.js';
 import { createBridge } from './bridge.js';
 import { holdDuringDrag, mountSummon } from './summon.js';
 import { createPane } from './terminal.js';
@@ -141,6 +142,15 @@ bridge.ready.then(info => {
   facts.querySelector('[data-fact="version"]').textContent = window.__OPEN_SESAME_VERSION__ || 'Unknown';
   facts.hidden = false;
   settings.hidden = false;
+  const account = settings.querySelector('[data-account]');
+  mountAccount(bridge, {
+    section: account,
+    title: account.querySelector('[data-account-title]'),
+    detail: account.querySelector('[data-account-detail]'),
+    signIn: account.querySelector('[data-account-sign-in]'),
+    cancel: account.querySelector('[data-account-cancel]'),
+    signOut: account.querySelector('[data-account-sign-out]'),
+  });
   const section = settings.querySelector('[data-summon]');
   mountSummon(bridge, {
     section,

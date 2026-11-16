@@ -296,8 +296,8 @@ impl Drop for Hold {
 }
 
 /// Suspends hide-on-blur for as long as the returned value lives. A feature takes it before
-/// it opens a native dialog or a browser: the folder dialog (issue #74) does, and sign-in
-/// (issue #72) does when it lands.
+/// it opens a native dialog or a browser: the folder dialog (issue #74) and sign-in
+/// (issue #72) both do.
 pub fn hold<R: Runtime>(app: &AppHandle<R>) -> Option<Hold> {
     app.try_state::<Summon>().map(|summon| summon.hold())
 }

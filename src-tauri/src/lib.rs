@@ -5,6 +5,7 @@
 //! boundary: any script in the main document has the whole bridge, so the main window loads only
 //! bundled pages and no third-party script may ever be loaded there.
 
+mod auth;
 mod events;
 #[cfg(target_os = "macos")]
 mod panel;
@@ -35,10 +36,13 @@ pub fn run() {
     let builder = tauri::Builder::default()
         // First, as the plugin requires: a second launch hands its arguments to the running
         // application and exits before it creates a window of its own.
+        // On Windows and Linux the browser's sign-in callback arrives this way too: the plugin's
+        // deep-link feature passes it to the deep-link plugin before this callback runs.
         .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
             summon::launched_again(app, &arguments);
         }))
         .plugin(summon::shortcut_plugin())
+        .plugin(tauri_plugin_deep_link::init())
         // Used from Rust only. The capability grants the page none of these plugins' commands.
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -52,6 +56,8 @@ pub fn run() {
                 core: Arc::new(Core::new()),
                 emit: events::emitter(app.handle()),
             });
+            // Before the window, so the page's first question about the session has an answer.
+            auth::start(app.handle(), events::emitter(app.handle()));
             window::create_main(app.handle())?;
             tray::create(app.handle())?;
             // After the window exists, so a press that arrives at once has something to show.
@@ -63,6 +69,9 @@ pub fn run() {
     app.run(|app, event| match event {
         // Every way out ends here: the tray's Quit, the application menu and a system shutdown.
         RunEvent::Exit => {
+            if let Some(auth) = app.try_state::<Arc<auth::Auth>>() {
+                auth.shutdown();
+            }
             if let Some(state) = app.try_state::<AppState>() {
                 state.core.shutdown();
             }

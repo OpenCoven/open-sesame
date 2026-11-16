@@ -1,17 +1,18 @@
 //! The one command the UI can call, and where each allowed request goes.
 
+use crate::auth::{self, Auth};
 use crate::{project, summon, terminal, window, AppState};
-use open_sesame_core::gate::{self, Caller, NOT_IN_VERSION};
+use open_sesame_core::gate::{self, Caller};
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
 use open_sesame_core::Core;
 use serde_json::json;
 use std::sync::Arc;
-use tauri::{Manager, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
 /// Who answers an allowed method.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
-    /// Sign-in. Wired to the sign-in logic in issue #72.
+    /// Sign-in: the application's wiring around the core's sign-in logic (issue #72).
     Auth,
     /// Needs the window, so the application answers it.
     Host,
@@ -41,17 +42,22 @@ pub fn route(method: &str) -> Route {
     }
 }
 
-/// Whether a session is verified. Nothing signs in until issue #72, and no method in the first
-/// release needs a session (issue #60), so every local feature runs with this `false`.
-fn authenticated() -> bool {
-    false
+/// Whether a verified session is within its deadline. No method in the first release needs one
+/// (issue #60), so every local feature runs whatever this says.
+fn authenticated<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<Arc<Auth>>()
+        .is_some_and(|auth| auth.authenticated())
 }
 
-/// Sign-in before issue #72: the status is honest and the actions say they are not here yet.
-fn auth(method: &str) -> BridgeResult {
-    match method {
-        "auth.status" => Ok(json!({"authenticated": false})),
-        _ => Err(BridgeError::from(NOT_IN_VERSION)),
+/// Sign-in. Before the wiring has started there is no session and nothing to start one with.
+fn auth<R: Runtime>(app: &AppHandle<R>, method: &str) -> BridgeResult {
+    match app.try_state::<Arc<Auth>>() {
+        // The guard keeps a window that hides on blur in place while the person is in the browser.
+        Some(auth) => auth.handle(method, || summon::hold(app)),
+        None if method == "auth.status" => Ok(json!({
+            "authenticated": false, "busy": false, "message": "", "name": "", "email": "",
+        })),
+        None => Err(BridgeError::from(auth::NOT_STARTED)),
     }
 }
 
@@ -83,10 +89,10 @@ pub async fn bridge_request<R: Runtime>(
 fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request) -> Option<Reply> {
     let caller = Caller {
         window: window.label(),
-        authenticated: authenticated(),
+        authenticated: authenticated(window.app_handle()),
     };
     gate::dispatch(request, &caller, |request| match route(&request.method) {
-        Route::Auth => auth(&request.method),
+        Route::Auth => auth(window.app_handle(), &request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
         Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
         Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
@@ -98,7 +104,7 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_sesame_core::gate::{Gate, MAIN_WINDOW, PORTED, UNSUPPORTED};
+    use open_sesame_core::gate::{Gate, MAIN_WINDOW, NOT_IN_VERSION, PORTED, UNSUPPORTED};
     use serde_json::Value;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime};
@@ -178,7 +184,10 @@ mod tests {
         );
         assert_eq!(
             call(&main, "auth.status", json!({})),
-            Ok(json!({"requestId": "r1", "result": {"authenticated": false}}))
+            Ok(json!({
+                "requestId": "r1",
+                "result": {"authenticated": false, "busy": false, "message": "", "name": "", "email": ""},
+            }))
         );
         assert_eq!(
             call(&main, "window.keepOpen", json!({"pinned": true})),
@@ -199,7 +208,11 @@ mod tests {
             call(&main, "speech.start", json!({})),
             error(NOT_IN_VERSION)
         );
-        assert_eq!(call(&main, "auth.signIn", json!({})), error(NOT_IN_VERSION));
+        // Without the sign-in wiring there is nothing to start a sign-in with.
+        assert_eq!(
+            call(&main, "auth.signIn", json!({})),
+            error(auth::NOT_STARTED)
+        );
         assert_eq!(call(&main, "nope.nothing", json!({})), error(UNSUPPORTED));
         // Requests the application answers refuse bad input before they touch a plugin.
         assert_eq!(
@@ -611,16 +624,112 @@ mod tests {
     }
 
     #[test]
-    fn the_app_is_signed_out_until_sign_in_is_wired() {
-        assert!(!authenticated());
-        assert_eq!(auth("auth.status"), Ok(json!({"authenticated": false})));
+    fn without_the_wiring_the_app_is_signed_out() {
+        let app = app();
+        assert!(!authenticated(app.handle()));
         for method in ["auth.signIn", "auth.cancel", "auth.signOut"] {
-            assert_eq!(auth(method), Err(BridgeError::from(NOT_IN_VERSION)));
+            assert_eq!(
+                auth(app.handle(), method),
+                Err(BridgeError::from(auth::NOT_STARTED))
+            );
         }
         let caller = Caller {
             window: MAIN_WINDOW,
-            authenticated: authenticated(),
+            authenticated: authenticated(app.handle()),
         };
         assert_eq!(gate::gate("system.info", &caller), Gate::SignedOutInfo);
+    }
+
+    /// The wiring with nothing real behind it: no server, a store that is empty, and a browser
+    /// that records what it was asked to open.
+    fn wire(app: &tauri::App<MockRuntime>) -> Arc<std::sync::Mutex<Vec<String>>> {
+        use open_sesame_core::auth::{AuthError, CredentialStore, Jwks, Tokens, WorkosApi};
+        struct Unreachable;
+        impl WorkosApi for Unreachable {
+            fn exchange_code(&self, _: &str, _: &str) -> Result<Tokens, AuthError> {
+                Err(AuthError::Network)
+            }
+            fn refresh(&self, _: &str) -> Result<Tokens, AuthError> {
+                Err(AuthError::Network)
+            }
+            fn jwks(&self) -> Result<Jwks, AuthError> {
+                Err(AuthError::Network)
+            }
+        }
+        struct Empty;
+        impl CredentialStore for Empty {
+            fn load(&self) -> Result<Option<String>, AuthError> {
+                Ok(None)
+            }
+            fn save(&self, _: &str) -> Result<(), AuthError> {
+                Ok(())
+            }
+            fn delete(&self) -> Result<(), AuthError> {
+                Ok(())
+            }
+        }
+        let opened = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let (auth, wakes) = Auth::new(
+            Arc::new(Unreachable),
+            Arc::new(Empty),
+            Arc::new(auth::Marker::new(None)),
+            Arc::new(move |url| {
+                record.lock().unwrap().push(url.to_string());
+                true
+            }),
+            Arc::new(|| None),
+        );
+        auth.run(wakes, |_| {});
+        app.manage(auth);
+        opened
+    }
+
+    #[test]
+    fn the_page_starts_cancels_and_ends_a_sign_in_through_the_bridge() {
+        let app = app();
+        let opened = wire(&app);
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let ok = |result: Value| Ok(json!({"requestId": "r1", "result": result}));
+        let status = |window: &WebviewWindow<MockRuntime>| {
+            call(window, "auth.status", json!({})).unwrap()["result"].clone()
+        };
+        assert_eq!(status(&main)["authenticated"], json!(false));
+        assert_eq!(status(&main)["busy"], json!(false));
+
+        assert_eq!(call(&main, "auth.signIn", json!({})), ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        assert!(opened.lock().unwrap()[0].starts_with("https://api.workos.com/"));
+        assert_eq!(status(&main)["busy"], json!(true));
+        // The reply to the page never carries the address, the state or the verifier.
+        let reply = call(&main, "auth.status", json!({})).unwrap().to_string();
+        assert!(
+            !reply.contains("workos") && !reply.contains("state="),
+            "{reply}"
+        );
+
+        assert_eq!(
+            call(&main, "auth.signIn", json!({})),
+            Ok(json!({"requestId": "r1", "error": auth::BUSY}))
+        );
+        assert_eq!(call(&main, "auth.cancel", json!({})), ok(json!(true)));
+        assert_eq!(status(&main)["busy"], json!(false));
+        assert_eq!(call(&main, "auth.signOut", json!({})), ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1, "sign-out opened nothing");
+
+        // Signed out, every local method is still served: sign-in is not a door (issue #60).
+        assert!(!authenticated(app.handle()));
+        assert_eq!(call(&main, "window.focus", json!({})), ok(json!(true)));
+    }
+
+    #[test]
+    fn another_window_cannot_start_or_read_a_sign_in() {
+        let app = app();
+        let opened = wire(&app);
+        let other = open(&app, "other", bundled());
+        for method in ["auth.status", "auth.signIn", "auth.cancel", "auth.signOut"] {
+            assert!(call(&other, method, json!({})).is_err(), "{method}");
+        }
+        assert!(opened.lock().unwrap().is_empty());
     }
 }
