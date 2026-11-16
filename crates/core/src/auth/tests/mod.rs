@@ -5,6 +5,7 @@ mod api;
 mod callback;
 mod controller;
 mod pkce;
+mod refresh;
 mod token;
 
 use super::*;
@@ -122,6 +123,10 @@ pub(super) struct FakeApi {
     pub exchange_calls: Mutex<Vec<(String, String)>>,
     pub refresh_calls: Mutex<Vec<String>>,
     pub jwks_fails: AtomicBool,
+    pub jwks_calls: AtomicUsize,
+    /// Runs before the key-set answer is returned, without holding a fake's lock.
+    #[allow(clippy::type_complexity)]
+    pub during_jwks: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Runs inside `exchange_code` and `refresh`, before the reply is returned.
     #[allow(clippy::type_complexity)]
     pub during_call: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
@@ -129,7 +134,8 @@ pub(super) struct FakeApi {
 
 impl FakeApi {
     fn interrupt(&self) {
-        if let Some(hook) = self.during_call.lock().unwrap().as_ref() {
+        let hook = self.during_call.lock().unwrap().take();
+        if let Some(hook) = hook {
             hook();
         }
     }
@@ -161,6 +167,11 @@ impl WorkosApi for FakeApi {
             .unwrap_or(Err(AuthError::Network))
     }
     fn jwks(&self) -> Result<Jwks, AuthError> {
+        self.jwks_calls.fetch_add(1, Ordering::SeqCst);
+        let hook = self.during_jwks.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
+        }
         if self.jwks_fails.load(Ordering::SeqCst) {
             return Err(AuthError::Network);
         }

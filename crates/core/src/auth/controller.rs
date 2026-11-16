@@ -5,18 +5,18 @@
 //! [`AuthController::complete_sign_in`], and calls [`AuthController::refresh`] when
 //! [`AuthController::next_refresh_in`] says so.
 //!
-//! Stale work is discarded with an epoch counter, as in the Swift host: starting a sign-in,
-//! cancelling, signing out and shutting down each advance it, and the result of a network call
-//! or of reading the credential store is applied only if the epoch is still the one it started
-//! under. Both run without the state lock held, so the UI can read the status or cancel while
-//! one is in flight.
+//! Session updates use an epoch counter. Refresh credential rotation has a separate lineage:
+//! cancel and a new pending sign-in cannot throw away a replacement for an already consumed
+//! credential. Sign-out and a completed newer sign-in invalidate that lineage too. Network
+//! calls run without the state lock; credential writes are serialized with lineage changes.
+//! Shutdown closes admission and drains an already running refresh before the host exits.
 
 use super::{
     authorization_code, authorize_url, generate_pkce, logout_url, verify_access_token, AuthError,
     CredentialStore, SignedOutMarker, Tokens, User, WorkosApi,
 };
 use serde_json::{json, Value};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 // Sign-in is an account control, not a door (issue #60): these sentences say what happened to
@@ -67,8 +67,29 @@ enum Phase {
     Refresh,
 }
 
+/// Work already admitted by the refresh scheduler.
+enum RefreshWork {
+    Exchange(String),
+    Verify(Tokens),
+    Persist,
+}
+
+#[derive(Clone, Copy)]
+struct RefreshTicket {
+    epoch: u64,
+    credential_epoch: u64,
+}
+
 struct State {
     epoch: u64,
+    credential_epoch: u64,
+    /// Unlike UI busy, this stays set across cancel and a new pending sign-in.
+    refreshing: bool,
+    closed: bool,
+    /// The newest refresh credential must be saved before another exchange.
+    unsaved: bool,
+    /// A returned refresh response waiting for saving or a transient JWKS retry.
+    verification: Option<Tokens>,
     pending: Option<Pending>,
     busy: bool,
     restoring: bool,
@@ -90,6 +111,7 @@ impl State {
     fn interrupt(&mut self) {
         self.epoch += 1;
         self.pending = None;
+        self.verification = None;
         self.busy = false;
         self.restoring = false;
     }
@@ -98,12 +120,29 @@ impl State {
 pub struct AuthController {
     parts: AuthParts,
     state: Mutex<State>,
+    drained: Condvar,
+}
+
+/// Release refresh admission even if a host boundary panics during unwinding.
+struct RefreshFlight<'a>(&'a AuthController);
+
+impl Drop for RefreshFlight<'_> {
+    fn drop(&mut self) {
+        self.0.lock().refreshing = false;
+        self.0.drained.notify_all();
+        self.0.changed();
+    }
 }
 
 impl AuthController {
     pub fn new(parts: AuthParts) -> Self {
         let state = State {
             epoch: 0,
+            credential_epoch: 0,
+            refreshing: false,
+            closed: false,
+            unsaved: false,
+            verification: None,
             pending: None,
             busy: false,
             restoring: false,
@@ -117,6 +156,7 @@ impl AuthController {
         Self {
             parts,
             state: Mutex::new(state),
+            drained: Condvar::new(),
         }
     }
 
@@ -146,7 +186,7 @@ impl AuthController {
         let authenticated = state.authenticated(now);
         let user = state.user.as_ref().filter(|_| authenticated);
         let name = user.and_then(|user| user.name.clone().or_else(|| user.first_name.clone()));
-        let expired = state.user.is_some() && !authenticated && !state.busy;
+        let expired = state.user.is_some() && !authenticated && !state.busy && !state.unsaved;
         json!({
             "authenticated": authenticated,
             "busy": state.busy,
@@ -165,6 +205,9 @@ impl AuthController {
         let url = authorize_url(&pkce);
         {
             let mut state = self.lock();
+            if state.closed {
+                return Err(AuthError::Busy);
+            }
             if state.restoring {
                 state.interrupt();
             }
@@ -172,6 +215,7 @@ impl AuthController {
                 return Err(AuthError::Busy);
             }
             state.epoch += 1;
+            state.verification = None;
             state.pending = Some(Pending {
                 state: pkce.state,
                 verifier: pkce.verifier,
@@ -202,7 +246,7 @@ impl AuthController {
         let result =
             outcome.and_then(|(code, verifier)| self.parts.api.exchange_code(&code, &verifier));
         match result {
-            Ok(tokens) => self.accept(tokens, ticket, Phase::SignIn),
+            Ok(tokens) => self.accept_sign_in(tokens, ticket),
             Err(error) => self.failed(error, ticket, Phase::SignIn),
         }
     }
@@ -211,7 +255,7 @@ impl AuthController {
     pub fn restore(&self) {
         let ticket = {
             let state = self.lock();
-            (!state.busy).then_some(state.epoch)
+            (!state.busy && !state.closed).then_some(state.epoch)
         };
         let ticket = ticket.filter(|_| !self.parts.marker.signed_out());
         let started = ticket.and_then(|ticket| {
@@ -220,14 +264,14 @@ impl AuthController {
             // a credential read before a sign-out would sign the user back in after it.
             let loaded = self.parts.store.load();
             let mut state = self.lock();
-            if state.epoch != ticket {
+            if state.epoch != ticket || state.closed {
                 return None;
             }
             match loaded {
                 Ok(Some(token)) if !token.is_empty() => {
                     // A credential already held in memory is at least as new as the stored one.
                     state.saved.get_or_insert(token);
-                    self.start_refresh(&mut state)
+                    self.start_refresh(&mut state, true)
                 }
                 Ok(_) => None,
                 Err(_) => {
@@ -239,75 +283,206 @@ impl AuthController {
             }
         });
         self.changed();
-        if let Some((ticket, token)) = started {
-            self.run_refresh(ticket, &token);
+        if let Some((ticket, work)) = started {
+            self.run_refresh(ticket, work);
         }
     }
 
-    /// Exchanges the saved refresh token for a new session. Does nothing while busy or when no
-    /// credential is held.
+    /// Renews an existing session or retries admitted restore/recovery work. A cancelled
+    /// signed-out restore needs a new explicit `restore`, not a stale scheduler tick.
     pub fn refresh(&self) {
-        let started = self.start_refresh(&mut self.lock());
-        if let Some((ticket, token)) = started {
+        let started = self.start_refresh(&mut self.lock(), false);
+        if let Some((ticket, work)) = started {
             self.changed();
-            self.run_refresh(ticket, &token);
+            self.run_refresh(ticket, work);
         }
     }
 
-    /// Marks a refresh as in flight and returns its ticket and the token to send, unless the
-    /// controller is busy or holds no credential.
-    fn start_refresh(&self, state: &mut State) -> Option<(u64, String)> {
-        if state.busy {
+    /// Admit at most one refresh, including recovery of a returned response. Backoff applies
+    /// even when a caller asks directly rather than consulting `next_refresh_in`.
+    fn start_refresh(
+        &self,
+        state: &mut State,
+        explicit_restore: bool,
+    ) -> Option<(RefreshTicket, RefreshWork)> {
+        if state.closed
+            || state.busy
+            || state.refreshing
+            || state.retry_at.is_some_and(|due| due > self.now())
+            // A queued scheduler tick cannot revive a cancelled signed-out restore. A new
+            // explicit restore may start it again; save-only work remains admissible.
+            || (!explicit_restore && state.user.is_none() && state.retry_at.is_none() && !state.unsaved)
+        {
             return None;
         }
-        let token = state.saved.clone()?;
+        let work = match &state.verification {
+            Some(tokens) => RefreshWork::Verify(tokens.clone()),
+            None if state.unsaved => RefreshWork::Persist,
+            None => RefreshWork::Exchange(state.saved.clone()?),
+        };
         state.busy = true;
         state.restoring = true;
+        state.refreshing = true;
         state.retry_at = None;
         state.message = if state.authenticated(self.now()) {
             REFRESHING
         } else {
             RESTORING
         };
-        Some((state.epoch, token))
+        Some((
+            RefreshTicket {
+                epoch: state.epoch,
+                credential_epoch: state.credential_epoch,
+            },
+            work,
+        ))
     }
 
-    /// The network half of a refresh. Runs without the state lock held.
-    fn run_refresh(&self, ticket: u64, token: &str) {
-        match self.parts.api.refresh(token) {
-            Ok(tokens) => self.accept(tokens, ticket, Phase::Refresh),
-            Err(error) => self.failed(error, ticket, Phase::Refresh),
+    /// Persist the newest credential before verification or another exchange. A stale UI
+    /// attempt may still save its rotation, but cannot overwrite sign-out or a newer account.
+    fn persist_refresh(&self, ticket: RefreshTicket) -> bool {
+        let mut state = self.lock();
+        if state.credential_epoch != ticket.credential_epoch {
+            return false;
+        }
+        if state.unsaved {
+            let Some(token) = state.saved.as_deref() else {
+                return false;
+            };
+            if self.parts.store.save(token).is_err() {
+                if state.epoch == ticket.epoch && !state.closed {
+                    self.fail(&mut state, AuthError::Store, Phase::Refresh);
+                } else if !state.busy && !state.closed {
+                    state.retry_at = Some(self.now() + RETRY_AFTER);
+                    state.message = STORE_UNWRITABLE;
+                }
+                return false;
+            }
+            state.unsaved = false;
+        }
+        true
+    }
+
+    fn refresh_current(&self, ticket: RefreshTicket) -> bool {
+        let state = self.lock();
+        !state.closed
+            && state.epoch == ticket.epoch
+            && state.credential_epoch == ticket.credential_epoch
+    }
+
+    /// The network half runs unlocked. A successful exchange consumes its input credential,
+    /// so checkpoint the replacement before any fallible JWKS work, even after cancellation.
+    fn run_refresh(&self, ticket: RefreshTicket, work: RefreshWork) {
+        let _flight = RefreshFlight(self);
+        if !self.persist_refresh(ticket) {
+            return;
+        }
+        if !self.refresh_current(ticket) {
+            return;
+        }
+        let tokens = match work {
+            RefreshWork::Persist => {
+                let mut state = self.lock();
+                if !state.closed && state.epoch == ticket.epoch {
+                    state.busy = false;
+                    state.restoring = false;
+                    state.retry_at = None;
+                    state.message = if state.authenticated(self.now()) {
+                        SIGNED_IN
+                    } else {
+                        CANCELLED
+                    };
+                }
+                return;
+            }
+            RefreshWork::Verify(tokens) => tokens,
+            RefreshWork::Exchange(token) => match self.parts.api.refresh(&token) {
+                Ok(tokens) => {
+                    {
+                        let mut state = self.lock();
+                        if state.credential_epoch != ticket.credential_epoch {
+                            return;
+                        }
+                        state.saved = Some(tokens.refresh_token.clone());
+                        state.unsaved = true;
+                        if state.epoch == ticket.epoch && !state.closed {
+                            state.verification = Some(tokens.clone());
+                        }
+                    }
+                    if !self.persist_refresh(ticket) {
+                        return;
+                    }
+                    tokens
+                }
+                Err(error) => return self.failed(error, ticket.epoch, Phase::Refresh),
+            },
+        };
+        if !self.refresh_current(ticket) {
+            return;
+        }
+        let verified = self.parts.api.jwks().and_then(|jwks| {
+            verify_access_token(&tokens.access_token, &jwks, &tokens.user.id, self.now())
+        });
+        {
+            let mut state = self.lock();
+            if state.closed
+                || state.epoch != ticket.epoch
+                || state.credential_epoch != ticket.credential_epoch
+            {
+                return;
+            }
+            match verified {
+                Ok(verified) => {
+                    state.verification = None;
+                    self.open_session(&mut state, tokens, verified);
+                }
+                Err(error) => {
+                    // A malformed, mismatched or expired access token is never reused. The
+                    // rotated refresh credential survives; the next attempt exchanges it.
+                    if error != AuthError::Network {
+                        state.verification = None;
+                    }
+                    self.fail(&mut state, error, Phase::Refresh);
+                }
+            }
         }
     }
 
-    /// Verifies the server's answer and, only then, saves the credential and opens the session.
-    fn accept(&self, tokens: Tokens, ticket: u64, phase: Phase) {
+    fn open_session(&self, state: &mut State, tokens: Tokens, verified: super::Verified) {
+        self.parts.marker.set_signed_out(false);
+        state.user = Some(tokens.user);
+        state.expires = Some(verified.expires);
+        state.session_id = Some(verified.session_id);
+        state.busy = false;
+        state.restoring = false;
+        state.retry_at = None;
+        state.message = SIGNED_IN;
+    }
+
+    /// New sign-ins still verify before saving or replacing the credential lineage.
+    fn accept_sign_in(&self, tokens: Tokens, ticket: u64) {
         let verified = self.parts.api.jwks().and_then(|jwks| {
             verify_access_token(&tokens.access_token, &jwks, &tokens.user.id, self.now())
         });
         let verified = match verified {
             Ok(verified) => verified,
-            Err(error) => return self.failed(error, ticket, phase),
+            Err(error) => return self.failed(error, ticket, Phase::SignIn),
         };
         {
             let mut state = self.lock();
-            if state.epoch != ticket {
+            if state.epoch != ticket || state.closed {
                 return;
             }
             // The lock is held across the save so a cancel or sign-out cannot land between the
             // save and the state change and leave a credential behind.
             if self.parts.store.save(&tokens.refresh_token).is_err() {
-                self.fail(&mut state, AuthError::Store, phase);
+                self.fail(&mut state, AuthError::Store, Phase::SignIn);
             } else {
-                self.parts.marker.set_signed_out(false);
-                state.saved = Some(tokens.refresh_token);
-                state.user = Some(tokens.user);
-                state.expires = Some(verified.expires);
-                state.session_id = Some(verified.session_id);
-                state.busy = false;
-                state.restoring = false;
-                state.retry_at = None;
-                state.message = SIGNED_IN;
+                state.credential_epoch += 1;
+                state.saved = Some(tokens.refresh_token.clone());
+                state.unsaved = false;
+                state.verification = None;
+                self.open_session(&mut state, tokens, verified);
             }
         }
         self.changed();
@@ -336,6 +511,9 @@ impl AuthController {
             state.expires = None;
             state.session_id = None;
             state.saved = None;
+            state.unsaved = false;
+            state.verification = None;
+            state.credential_epoch += 1;
             let _ = self.parts.store.delete();
         }
         let store_failure = error == AuthError::Store;
@@ -346,16 +524,19 @@ impl AuthController {
         } else {
             FAILED
         };
-        let retry = !ended && !store_failure && state.saved.is_some();
+        let retry = !ended
+            && state.saved.is_some()
+            && (phase == Phase::Refresh || !store_failure || state.unsaved);
         state.retry_at = retry.then(|| self.now() + RETRY_AFTER);
     }
 
-    /// Cancels a pending sign-in or restore. Its late callback or late answer is ignored.
+    /// Cancels session updates from pending work. A sent refresh still saves its replacement.
     pub fn cancel(&self) {
         {
             let mut state = self.lock();
             state.interrupt();
             state.message = CANCELLED;
+            state.retry_at = (state.unsaved && !state.closed).then(|| self.now() + RETRY_AFTER);
         }
         self.changed();
     }
@@ -368,6 +549,8 @@ impl AuthController {
             state.interrupt();
             state.retry_at = None;
             state.saved = None;
+            state.unsaved = false;
+            state.credential_epoch += 1;
             state.user = None;
             state.expires = None;
             // The marker is set before the delete so a credential that cannot be removed is
@@ -386,9 +569,35 @@ impl AuthController {
         url
     }
 
-    /// At quit: discards anything in flight without changing what is saved.
+    /// At quit: close admission and drain an already sent refresh through its save attempt.
+    /// Call on the host's exit thread, never reentrantly from a WorkosApi or on_change callback.
+    /// The host must keep the process alive until this returns. Network calls must have the
+    /// timeout required by WorkosApi; a locked credential store may need its unlock prompt.
+    /// Failed secure writes and forced process termination cannot promise durable recovery.
     pub fn shutdown(&self) {
-        self.lock().interrupt();
+        let mut state = self.lock();
+        state.closed = true;
+        state.interrupt();
+        state.retry_at = None;
+        while state.refreshing {
+            state = self
+                .drained
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+        // A previous save may have failed while the app stayed open. Give that exact
+        // replacement one final secure-store attempt; never exchange a credential at Quit.
+        if state.unsaved {
+            if state
+                .saved
+                .as_deref()
+                .is_some_and(|token| self.parts.store.save(token).is_ok())
+            {
+                state.unsaved = false;
+            } else {
+                state.message = STORE_UNWRITABLE;
+            }
+        }
     }
 
     /// How long until the host should call [`AuthController::refresh`]: 20 seconds after a
@@ -397,7 +606,7 @@ impl AuthController {
     pub fn next_refresh_in(&self) -> Option<Duration> {
         let now = self.now();
         let state = self.lock();
-        if state.busy {
+        if state.closed || state.busy || state.refreshing {
             return None;
         }
         let due = match state.retry_at {
