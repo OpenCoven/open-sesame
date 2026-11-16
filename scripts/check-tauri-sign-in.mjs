@@ -185,14 +185,18 @@ function fakeBridge(status, answers = {}) {
 }
 
 // Quit waits for the sign-in controller, so a refresh that was already sent saves its replacement
-// credential before the process ends (issue #94). Read from the sources: the exit handler makes
-// the call itself, before anything else and in every build, and the host's shutdown starts with
-// the controller's.
+// credential before the process ends (issue #94). This reads text, with every comment taken out
+// first: there is one arm for the exit event, with no attribute and no condition on it; its
+// first statement is the call, made there and with no attribute; and the host's shutdown starts
+// with the controller's. It cannot show that the arm runs: a way out that never reaches the exit
+// event (a direct process exit) or a host whose sign-in state was never registered passes it.
 {
-  const strip = text => text.replace(/^\s*\/\/.*$/gm, '');
+  const strip = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const host = read('src-tauri/src/auth.rs');
-  const exit = /RunEvent::Exit => \{([\s\S]*?)\n        \}/.exec(strip(read('src-tauri/src/lib.rs')));
-  assert.ok(exit, 'The application has an exit handler');
+  const entry = strip(read('src-tauri/src/lib.rs'));
+  assert.equal(entry.split('RunEvent::Exit').length - 1, 1, 'The exit event has one arm');
+  const exit = /[{,}]\s*RunEvent::Exit => \{([\s\S]*?)\n        \}/.exec(entry);
+  assert.ok(exit, 'The application has an exit handler, with no attribute and no condition on its arm');
   assert.match(exit[1], /^\s*if let Some\(auth\) = app\.try_state::<Arc<auth::Auth>>\(\) \{\s*auth\.shutdown\(\);\s*\}/, 'The exit handler shuts the sign-in controller down itself, before anything else');
   assert.match(strip(host.slice(0, host.indexOf('#[cfg(test)]'))), /pub fn shutdown\(&self\) \{\s*self\.controller\.shutdown\(\);/, 'The host\'s shutdown starts with the controller\'s');
 }

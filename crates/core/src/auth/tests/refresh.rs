@@ -453,6 +453,30 @@ fn sign_out_with_an_unsaved_replacement_leaves_nothing_for_a_later_save() {
     assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
 }
 
+/// Sign-out forgets the credential held in memory as well as the stored one. Without that, a
+/// sign-in that fails after it leaves a retry due, and the retry would send the signed-out
+/// credential and sign the person back in.
+#[test]
+fn sign_out_then_a_failed_sign_in_does_not_send_the_signed_out_credential() {
+    let rig = rig();
+    rig.sign_in();
+    rig.auth.sign_out();
+    // The new attempt's code exchange has no reply waiting and fails as a network error.
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback);
+    assert!(!rig.auth.authenticated());
+    reply(&rig, "refresh-two");
+    rig.advance(20);
+    rig.auth.refresh();
+    assert_eq!(
+        *rig.api.refresh_calls.lock().unwrap(),
+        Vec::<String>::new(),
+        "the signed-out credential was sent"
+    );
+    assert!(!rig.auth.authenticated());
+    assert_eq!(rig.store.saved(), None);
+}
+
 #[test]
 fn a_direct_refresh_inside_the_delay_does_not_try_the_store_again() {
     let rig = rig();
@@ -476,8 +500,9 @@ fn a_direct_refresh_inside_the_delay_does_not_try_the_store_again() {
     assert_eq!(rig.store.saves.load(Ordering::SeqCst) - before, 2);
 }
 
-/// Whether the status said busy, and its message, each time the change callback was called.
-type Seen = Arc<Mutex<Vec<(bool, String)>>>;
+/// Whether the status said busy, its message, and when the next refresh was due, each time the
+/// change callback was called.
+type Seen = Arc<Mutex<Vec<(bool, String, Option<Duration>)>>>;
 
 /// A controller whose change callback records what the status says each time it is called.
 fn recording() -> (Rig, Seen) {
@@ -500,6 +525,7 @@ fn recording() -> (Rig, Seen) {
                 record.lock().unwrap().push((
                     status["busy"].as_bool().unwrap(),
                     status["message"].as_str().unwrap().to_string(),
+                    auth.next_refresh_in(),
                 ));
             }
         }),
@@ -530,13 +556,17 @@ fn the_end_of_a_refresh_is_announced_once_it_is_no_longer_busy() {
         let seen = seen.lock().unwrap();
         assert_eq!(
             seen.first(),
-            Some(&(true, "Refreshing sign-in…".to_string())),
+            Some(&(true, "Refreshing sign-in…".to_string(), None)),
             "{seen:?}"
         );
-        let (busy, message) = seen.last().unwrap();
+        let (busy, message, due) = seen.last().unwrap();
         assert!(!busy, "the last word to the page was still busy: {seen:?}");
         assert_eq!(*message, rig.message(), "{seen:?}");
         assert_ne!(message, "Refreshing sign-in…", "{seen:?}");
+        // Admission is released before the host is told, so a scheduler that asks from the
+        // callback already sees when the next refresh is due.
+        assert!(due.is_some(), "{seen:?}");
+        assert_eq!(*due, rig.auth.next_refresh_in(), "{seen:?}");
     }
 }
 

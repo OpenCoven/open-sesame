@@ -124,10 +124,11 @@ pub struct AuthController {
     drained: Condvar,
 }
 
-/// Release refresh admission even if a host boundary panics during unwinding. It is made as
-/// soon as a refresh is admitted, before the host hears of it, so that a change callback that
-/// panics there is covered too. What it releases is admission only: after such a panic the
-/// status stays busy until Cancel, sign-out or a new sign-in.
+/// Release refresh admission even if the work of a refresh or the change callback panics. It
+/// is made before the host hears that a refresh was admitted, so that a change callback that
+/// panics there is covered too; the injected clock is read just before that, under no guard.
+/// What it releases is admission only: after such a panic the status stays busy until Cancel,
+/// sign-out or a new sign-in.
 struct RefreshFlight<'a>(&'a AuthController);
 
 impl Drop for RefreshFlight<'_> {
