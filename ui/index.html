@@ -19,6 +19,21 @@
       <div><dt>Version</dt><dd data-fact="version"></dd></div>
     </dl>
   </header>
+  <div class="settings" data-settings hidden>
+    <section class="summon" data-summon hidden aria-labelledby="summon-title">
+      <h2 id="summon-title">Shortcut</h2>
+      <form data-summon-form>
+        <label for="summon-shortcut">Keys that show or hide Open Sesame from anywhere</label>
+        <div class="row">
+          <input id="summon-shortcut" name="shortcut" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="summon-hint">
+          <button type="submit">Save</button>
+        </div>
+      </form>
+      <p class="hint" id="summon-hint" data-summon-hint></p>
+      <p class="message" role="status" data-summon-message></p>
+      <label class="check"><input type="checkbox" data-summon-blur> Hide the window when it loses focus</label>
+    </section>
+  </div>
   <section class="terminals" data-terminals hidden aria-label="Terminals">
     <form class="launch" data-launch autocomplete="off">
       <label>Folder <input name="cwd" placeholder="Home folder" spellcheck="false" autocapitalize="off"></label>

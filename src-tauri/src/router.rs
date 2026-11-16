@@ -1,6 +1,6 @@
 //! The one command the UI can call, and where each allowed request goes.
 
-use crate::{project, terminal, window, AppState};
+use crate::{project, summon, terminal, window, AppState};
 use open_sesame_core::gate::{self, Caller, NOT_IN_VERSION};
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
 use open_sesame_core::Core;
@@ -15,6 +15,8 @@ pub enum Route {
     Auth,
     /// Needs the window, so the application answers it.
     Host,
+    /// The shortcut and the other ways to make the window appear (issue #71).
+    Summon,
     /// A pane's output channel and the clipboard (issue #74).
     Terminal,
     /// The folder dialog and the file manager (issue #74).
@@ -28,6 +30,8 @@ pub fn route(method: &str) -> Route {
         Route::Auth
     } else if window::METHODS.contains(&method) {
         Route::Host
+    } else if summon::METHODS.contains(&method) {
+        Route::Summon
     } else if terminal::METHODS.contains(&method) {
         Route::Terminal
     } else if project::METHODS.contains(&method) {
@@ -84,6 +88,7 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
     gate::dispatch(request, &caller, |request| match route(&request.method) {
         Route::Auth => auth(&request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
+        Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
         Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
         Route::Project => project::handle(window, &request.method, &request.params),
         Route::Core => core.handle(&request.method, &request.params),
@@ -317,6 +322,210 @@ mod tests {
         ] {
             assert_eq!(route(method), Route::Host, "{method}");
         }
+    }
+
+    #[test]
+    fn summon_methods_go_to_summon() {
+        for method in summon::METHODS {
+            assert_eq!(route(method), Route::Summon, "{method}");
+            assert!(PORTED.contains(method), "{method} must be ported");
+        }
+        // A method the gate allows must not fall through because the application forgot it.
+        for method in PORTED.iter().filter(|method| method.starts_with("summon.")) {
+            assert_eq!(route(method), Route::Summon, "{method}");
+        }
+    }
+
+    /// The application with summon state for `session` and a settings file in a folder of its
+    /// own. The shortcut plugin is not loaded, so the system refuses every registration.
+    fn app_in(
+        session: summon::Session,
+        name: &str,
+    ) -> (tauri::App<MockRuntime>, std::path::PathBuf) {
+        let app = app();
+        let folder =
+            std::env::temp_dir().join(format!("open-sesame-router-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        app.manage(summon::Summon::new(
+            session,
+            Some(folder.join("summon.json")),
+        ));
+        (app, folder)
+    }
+
+    #[test]
+    fn the_page_reads_and_changes_the_summon_settings() {
+        let (app, folder) = app_in(summon::Session::Wayland, "wayland");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let result = |reply: Result<Value, Value>| reply.unwrap()["result"].clone();
+        let error = |reply: Result<Value, Value>| reply.unwrap()["error"].clone();
+
+        let status = result(call(&main, "summon.status", json!({})));
+        assert_eq!(status["session"], json!("wayland"));
+        assert_eq!(status["shortcut"], json!(summon::DEFAULT_SHORTCUT));
+        assert_eq!(status["registered"], json!(false));
+        assert_eq!(status["hideOnBlur"], json!(false));
+        assert_eq!(status["toggleCommand"], json!("open-sesame --toggle"));
+
+        // A shortcut that cannot be one is refused and nothing changes.
+        for bad in [
+            json!({"shortcut": "Space"}),
+            json!({"shortcut": "Alt+Nothing"}),
+        ] {
+            assert_eq!(
+                error(call(&main, "summon.setShortcut", bad)),
+                json!(summon::INVALID_SHORTCUT)
+            );
+        }
+        for bad in [json!({}), json!({"shortcut": 7}), json!({"shortcut": null})] {
+            assert_eq!(
+                error(call(&main, "summon.setShortcut", bad)),
+                json!(summon::INVALID_REQUEST)
+            );
+        }
+        assert_eq!(
+            result(call(&main, "summon.status", json!({})))["shortcut"],
+            json!(summon::DEFAULT_SHORTCUT)
+        );
+
+        // A good one is kept for the next launch, and on Wayland the reply names the command.
+        let changed = result(call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": " Control+Alt+K "}),
+        ));
+        assert_eq!(changed["shortcut"], json!("Control+Alt+K"));
+        assert_eq!(changed["registered"], json!(false));
+        assert_eq!(changed["message"], json!(summon::WAYLAND));
+        let kept = summon::Settings::load(&folder.join("summon.json"));
+        assert_eq!(kept.shortcut, "Control+Alt+K");
+
+        assert_eq!(
+            error(call(
+                &main,
+                "summon.setHideOnBlur",
+                json!({"enabled": "yes"})
+            )),
+            json!(summon::INVALID_REQUEST)
+        );
+        let blur = result(call(
+            &main,
+            "summon.setHideOnBlur",
+            json!({"enabled": true}),
+        ));
+        assert_eq!(blur["hideOnBlur"], json!(true));
+        assert!(summon::Settings::load(&folder.join("summon.json")).hide_on_blur);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_refused_shortcut_reaches_the_page_and_the_old_one_is_kept() {
+        let (app, folder) = app_in(summon::Session::X11, "refused");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let reply = call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": "Alt+Space"}),
+        )
+        .unwrap();
+        assert_eq!(reply["error"], json!(summon::refused("Alt+Space")));
+        let status = call(&main, "summon.status", json!({})).unwrap()["result"].clone();
+        assert_eq!(
+            status["shortcut"],
+            json!(summon::DEFAULT_SHORTCUT),
+            "the setting did not change"
+        );
+        assert!(!folder.join("summon.json").exists(), "nothing was saved");
+
+        // None is a choice: it registers nothing, is not an error, and is kept.
+        let none =
+            call(&main, "summon.setShortcut", json!({"shortcut": ""})).unwrap()["result"].clone();
+        assert_eq!(none["shortcut"], json!(""));
+        assert_eq!(none["registered"], json!(false));
+        assert_eq!(none["message"], json!(""));
+        assert_eq!(
+            summon::Settings::load(&folder.join("summon.json")).shortcut,
+            ""
+        );
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_dialog_a_drag_and_a_pin_each_keep_the_window_on_blur() {
+        let (app, folder) = app_in(summon::Session::X11, "blur");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let hides = || app.state::<summon::Summon>().should_hide_on_blur();
+        assert!(!hides(), "off unless turned on");
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        assert!(hides());
+
+        // A drag, reported by the page.
+        assert_eq!(
+            call(&main, "summon.hold", json!({"held": true})).unwrap()["result"],
+            json!({"held": true})
+        );
+        assert!(!hides());
+        call(&main, "summon.hold", json!({"held": false})).unwrap();
+        assert!(hides());
+        assert_eq!(
+            call(&main, "summon.hold", json!({})).unwrap()["error"],
+            json!(summon::INVALID_REQUEST)
+        );
+
+        // A native dialog or a browser sign-in, held by the feature that opened it.
+        let dialog = summon::hold(app.handle()).unwrap();
+        assert!(!hides());
+        drop(dialog);
+        assert!(hides());
+
+        // The pin.
+        call(&main, "window.keepOpen", json!({"pinned": true})).unwrap();
+        assert!(!hides());
+        call(&main, "window.keepOpen", json!({"pinned": false})).unwrap();
+        assert!(hides());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_hide_on_blur_excuses_the_one_press_or_click_that_caused_it() {
+        let (app, folder) = app_in(summon::Session::X11, "excuse");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        // Off: losing focus hides nothing, so there is nothing to excuse.
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        // On: the press or click that took the focus must not show the window again, and the
+        // one after it toggles as usual. The shortcut and the tray click both ask this.
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        summon::blurred(app.handle());
+        assert!(summon::blur_just_hid(app.handle()));
+        assert!(!summon::blur_just_hid(app.handle()), "asked once");
+        // A window something holds does not hide, so the next press toggles.
+        let dialog = summon::hold(app.handle()).unwrap();
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        drop(dialog);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn wayland_refuses_always_on_top_with_the_fixed_message() {
+        let (app, _folder) = app_in(summon::Session::Wayland, "pin");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "window.keepOpen", json!({"pinned": true})),
+            Ok(json!({"requestId": "r1", "error": open_sesame_core::gate::NOT_ON_OS}))
+        );
+        assert!(!app.state::<summon::Summon>().should_hide_on_blur());
+    }
+
+    #[test]
+    fn summon_without_its_state_is_a_fixed_reply() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "summon.status", json!({})),
+            Ok(json!({"requestId": "r1", "error": UNSUPPORTED}))
+        );
     }
 
     #[test]
