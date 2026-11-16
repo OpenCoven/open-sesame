@@ -100,11 +100,16 @@ assert.deepEqual(F.encode({...running, label: 'é'.repeat(32_768)}), {ok: false,
 // 6. The store reads and writes the one setting through the bridge, serialises writes, never
 // reports a failed write as saved, preserves a value it cannot read, and survives a relaunch.
 function host({stored = {}, failSet = null, failAll = null, holdFirstSet = null} = {}) {
-  const settings = {...stored}, calls = [];
+  const settings = {...stored}, calls = [], state = {holdNextAll: null};
   const bridge = {
     async request(method, params) {
       calls.push([method, structuredClone(params)]);
-      if (method === 'settings.all') { if (failAll) throw Error(failAll); return {settings: structuredClone(settings)}; }
+      if (method === 'settings.all') {
+        if (failAll) throw Error(failAll);
+        const read = structuredClone(settings);
+        if (state.holdNextAll) { const hold = state.holdNextAll; state.holdNextAll = null; await hold; }
+        return {settings: read};
+      }
       if (method === 'settings.set') {
         if (failSet) throw Error(failSet);
         if (holdFirstSet) { const hold = holdFirstSet; holdFirstSet = null; await hold; }
@@ -114,7 +119,7 @@ function host({stored = {}, failSet = null, failAll = null, holdFirstSet = null}
       throw Error('That feature is not available in this version.');
     },
   };
-  return {bridge, settings, calls};
+  return {bridge, settings, calls, state};
 }
 let now = T;
 const clockNow = () => now;
@@ -192,6 +197,25 @@ const clockNow = () => now;
   assert.equal((await starting).saved, true);
   assert.equal((await pausing).saved, true);
   assert.equal(h.settings['focus.session'].pausedAt, T);
+}
+
+{ // A view reads the session again whenever it is shown. A read sent while a write is still out
+  // waits for it, so a reply answered before the write committed cannot put the old session back.
+  let releaseSet, releaseAll;
+  const h = host({holdFirstSet: new Promise(resolve => { releaseSet = resolve; })});
+  const store = F.createFocusStore({bridge: h.bridge, now: clockNow});
+  await store.load();
+  h.state.holdNextAll = new Promise(resolve => { releaseAll = resolve; });
+  const starting = store.start();
+  const reading = store.load();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.calls.filter(([method]) => method === 'settings.all').length, 1, 'The read waits for the write');
+  releaseSet();
+  assert.equal((await starting).saved, true);
+  await new Promise(resolve => setImmediate(resolve));
+  releaseAll();
+  assert.equal((await reading).view.status, 'running', 'The read sees the start');
+  assert.equal(store.view().status, 'running');
 }
 
 // 7. The module is pure: it reads no clock of its own, schedules nothing, and defines nothing

@@ -107,7 +107,13 @@ export function createFocusStore({bridge, now}) {
   const shown = () => view(current, now());
   const failed = error => ({saved: false, error, view: shown()});
 
-  async function load() {
+  // Reads run in the same queue as writes, so a read cannot overtake a write still out.
+  function load() {
+    const result = queue.then(read);
+    queue = result.catch(() => {});
+    return result;
+  }
+  async function read() {
     try {
       const reply = await bridge.request('settings.all', {});
       const settings = reply?.settings;
