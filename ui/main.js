@@ -6,6 +6,7 @@ import { loaders, styles } from './widget-loaders.js';
 import { createLifecycle } from './lifecycle.js';
 import { createPreferences } from './preferences.js';
 import { holdDuringDrag, mountSummon } from './summon.js';
+import { mountContextMenu } from './context-menu.js';
 
 const bridge = createBridge(window);
 const shell = document.querySelector('.shell');
@@ -32,6 +33,9 @@ let restoring = true;
 const navButtons = new Map();
 const switches = new Map();
 const run = promise => promise.catch(error => report(message(error)));
+// The native context menu is never opened (issue #115); see context-menu.js. It is mounted
+// before the host answers, so no moment of the page has the native one.
+mountContextMenu(bridge, document, { report });
 
 function closePalette() {
   palette.hidden = true;

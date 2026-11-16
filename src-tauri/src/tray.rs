@@ -24,6 +24,18 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(!cfg!(windows))
         .on_tray_icon_event(|tray, event| {
+            // A press that opens the menu: what the window is doing is noted now, because the
+            // menu may have the keyboard by the time its item is chosen (issue #115).
+            if let TrayIconEvent::Click {
+                button,
+                button_state: MouseButtonState::Down,
+                ..
+            } = &event
+            {
+                if !cfg!(windows) || *button == MouseButton::Right {
+                    summon::tray_pressed(tray.app_handle());
+                }
+            }
             if let (
                 true,
                 TrayIconEvent::Click {
@@ -38,7 +50,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
-            TOGGLE => window::toggle(app),
+            TOGGLE => window::toggle_from_tray_menu(app),
             // Exit runs the shutdown in `run`, so Quit and every other way out share one path.
             QUIT => app.exit(0),
             _ => {}

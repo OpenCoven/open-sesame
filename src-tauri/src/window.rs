@@ -170,34 +170,51 @@ pub fn is_shown<R: Runtime>(window: &WebviewWindow<R>) -> bool {
     window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
 }
 
-/// Shows the window if it is hidden and hides it if it is shown: the tray menu, the shortcut
-/// and `open-sesame --toggle` all end here.
+/// One press of the shortcut or one `open-sesame --toggle`: shows the window if it is hidden,
+/// brings it to the front if it is open but behind, and hides it if it is in front
+/// (`summon::press` has the rule).
 pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = if is_shown(&window) {
-            conceal(&window)
-        } else {
-            focus(&window)
-        };
+        let press = summon::press_on(app, &window);
+        let _ = act(&window, press);
     }
 }
 
-/// The tray popover: hides the window if it is shown; otherwise moves it against the tray icon
-/// at `icon`, inside the work area of the screen the icon is on, and shows it. A window the
-/// person made full-screen or maximized is shown where it is.
+/// The tray's menu item: the same three outcomes, decided by `summon::tray_item_on`.
+pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let press = summon::tray_item_on(app, &window);
+        let _ = act(&window, press);
+    }
+}
+
+fn act<R: Runtime>(window: &WebviewWindow<R>, press: summon::Press) -> tauri::Result<()> {
+    // Development evidence of which of the three a press was.
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: press {press:?}");
+    match press {
+        summon::Press::Hide => conceal(window),
+        summon::Press::Show | summon::Press::Forward => focus(window),
+    }
+}
+
+/// The tray popover: hides the window if it is in front and brings it to the front where it is
+/// if it is open but behind; a hidden window is moved against the tray icon at `icon`, inside
+/// the work area of the screen the icon is on, and shown. A window the person made full-screen
+/// or maximized is shown where it is.
 pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
-    if is_shown(&window) {
-        let _ = conceal(&window);
-        return;
+    let press = summon::press_on(app, &window);
+    if press == summon::Press::Show {
+        let placed =
+            window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
+        if !placed {
+            let _ = place_against(&window, icon);
+        }
     }
-    let placed = window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
-    if !placed {
-        let _ = place_against(&window, icon);
-    }
-    let _ = focus(&window);
+    let _ = act(&window, press);
 }
 
 fn place_against<R: Runtime>(window: &WebviewWindow<R>, icon: tauri::Rect) -> tauri::Result<()> {

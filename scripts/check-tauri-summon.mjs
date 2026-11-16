@@ -54,6 +54,17 @@ function fakeBridge(status, answers = {}) {
   assert.equal(wayland.warn, false);
   assert.ok(wayland.hint.endsWith('open-sesame --toggle'), wayland.hint);
   assert.equal(wayland.message, '');
+  // A saved shortcut the default replaced: the host's notice comes first, as a warning, in
+  // front of what the status says anyway. On Wayland no shortcut is registered at all, so
+  // there is nothing to say about one.
+  const notice = 'Your saved shortcut, Shift+Up, is one Open Sesame no longer takes, so the default, Control+Alt+Shift+Space, is used. Set another here if you prefer.';
+  assert.deepEqual(describe({ ...base, session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true, notice }),
+    { editable: true, warn: true, hint: EXAMPLE, message: `${notice} Press Control+Alt+Shift+Space anywhere to show or hide Open Sesame.` });
+  assert.deepEqual(describe({ ...base, session: 'windows', shortcut: 'Control+Alt+Shift+Space', registered: false, message: refused, notice }),
+    { editable: true, warn: true, hint: EXAMPLE, message: `${notice} ${refused}` });
+  assert.equal(describe({ ...base, session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true, notice: '' }).warn, false);
+  assert.equal(describe({ ...base, session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true, notice: 7 }).warn, false);
+  assert.equal(describe({ ...base, session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: false, notice }).message, '');
 }
 
 // 2. The section appears with what the host reports, and stays hidden when the host has no summon.
@@ -243,4 +254,262 @@ function fakeBridge(status, answers = {}) {
   assert.ok(!capability.includes('nspanel'), 'The capability grants no panel command');
 }
 
-console.log('Tauri summon: the shortcut settings section, drag reporting and the source rules for Wayland, the default shortcut and plugin order passed.');
+// 9. The page's own context menu (issue #115): the native one is never opened, and what is
+//    offered is drawn in the page. Stand-ins for the document; no web view is run here.
+{
+  const { mountContextMenu, provideMenu, fieldItems, isTextField, pasteFor } = await import(pathToFileURL(path.join(root, 'ui/context-menu.js')));
+
+  // What a field offers, by its state.
+  const enabled = state => fieldItems(state).filter(item => item.enabled).map(item => item.id);
+  assert.deepEqual(fieldItems({ editable: true, secret: false, hasSelection: true, hasText: true }).map(item => item.label), ['Cut', 'Copy', 'Paste', 'Select All']);
+  assert.deepEqual(enabled({ editable: true, secret: false, hasSelection: true, hasText: true }), ['cut', 'copy', 'paste', 'selectAll']);
+  assert.deepEqual(enabled({ editable: true, secret: false, hasSelection: false, hasText: true }), ['paste', 'selectAll']);
+  assert.deepEqual(enabled({ editable: true, secret: false, hasSelection: false, hasText: false }), ['paste']);
+  assert.deepEqual(enabled({ editable: false, secret: false, hasSelection: true, hasText: true }), ['copy', 'selectAll']);
+  assert.deepEqual(enabled({ editable: true, secret: true, hasSelection: true, hasText: true }), ['paste', 'selectAll'], 'A password field gives nothing to the clipboard');
+  for (const [tagName, type, expected] of [['INPUT', 'text', true], ['INPUT', 'search', true], ['INPUT', 'password', true], ['INPUT', undefined, true], ['TEXTAREA', undefined, true],
+    ['INPUT', 'checkbox', false], ['INPUT', 'email', false], ['INPUT', 'number', false], ['INPUT', 'file', false], ['BUTTON', 'button', false], ['DIV', undefined, false]]) {
+    assert.equal(isTextField({ tagName, type }), expected, `${tagName} ${type}`);
+  }
+  assert.equal(isTextField(null), false);
+  assert.equal(pasteFor({ value: 'abcdef', maxLength: -1 }, 2, 4, 'XYZ'), 'XYZ');
+  assert.equal(pasteFor({ value: 'abcdef', maxLength: 7 }, 2, 4, 'XYZ12'), 'XYZ', 'A paste respects the field limit');
+  assert.equal(pasteFor({ value: 'abcdef', maxLength: 4 }, 6, 6, 'XYZ'), '');
+  assert.equal(pasteFor({ value: 'abcdef' }, 2, 4, 'XYZ'), 'XYZ');
+
+  // A stand-in document: enough of the DOM for the menu to be built, focused and removed.
+  const makeDocument = () => {
+    const node = (tagName, extra = {}) => {
+      const listeners = new Map();
+      const self = {
+        tagName: tagName.toUpperCase(), children: [], parentNode: null, attributes: {}, style: {}, textContent: '', disabled: false,
+        setAttribute: (name, value) => { self.attributes[name] = value; },
+        addEventListener: (name, run) => { listeners.set(name, [...(listeners.get(name) || []), run]); },
+        fire: (name, event = {}) => { for (const run of listeners.get(name) || []) run(event); },
+        append: (...kids) => { for (const kid of kids) { kid.parentNode = self; self.children.push(kid); } },
+        remove: () => { const kids = self.parentNode?.children; if (kids) kids.splice(kids.indexOf(self), 1); self.parentNode = null; if (doc.activeElement === self || self.children.includes(doc.activeElement)) doc.activeElement = doc.body; },
+        contains: other => { for (let at = other; at; at = at.parentNode) if (at === self) return true; return false; },
+        focus: () => { doc.activeElement = self; },
+        getBoundingClientRect: () => ({ width: 120, height: 100 }),
+        ...extra,
+      };
+      return self;
+    };
+    const listeners = new Map();
+    const windowListeners = new Map();
+    const doc = {
+      selection: '',
+      createElement: tag => node(tag),
+      getSelection: () => doc.selection,
+      addEventListener: (name, run, capture) => { listeners.set(name, [...(listeners.get(name) || []), { run, capture }]); },
+      fire: (name, event = {}) => { for (const { run } of listeners.get(name) || []) run(event); },
+      capturing: name => (listeners.get(name) || []).every(entry => entry.capture === true),
+      defaultView: {
+        innerWidth: 800, innerHeight: 600,
+        Event: class { constructor(type, init) { this.type = type; this.bubbles = init?.bubbles === true; } },
+        addEventListener: (name, run) => { windowListeners.set(name, [...(windowListeners.get(name) || []), run]); },
+        fire: name => { for (const run of windowListeners.get(name) || []) run({}); },
+      },
+      node,
+    };
+    doc.body = node('body');
+    doc.activeElement = doc.body;
+    return doc;
+  };
+  const field = (doc, value, start, end, extra = {}) => {
+    const events = [];
+    const self = doc.node('input', {
+      type: 'text', value, selectionStart: start, selectionEnd: end, readOnly: false, maxLength: -1,
+      setRangeText: (text, from, to) => { self.value = self.value.slice(0, from) + text + self.value.slice(to); self.selectionStart = self.selectionEnd = from + text.length; },
+      setSelectionRange: (from, to) => { self.selectionStart = from; self.selectionEnd = to; },
+      dispatchEvent: event => { events.push(event.type); },
+      events,
+      ...extra,
+    });
+    doc.body.append(self);
+    return self;
+  };
+  const clipboard = (text = '') => {
+    const state = { text, calls: [] };
+    state.request = async (method, params) => {
+      state.calls.push(method);
+      if (method === 'terminal.clipboard.write') { state.text = params.text; return {}; }
+      if (method === 'terminal.clipboard.read') return state.text;
+      throw new Error(`Unexpected ${method}`);
+    };
+    return state;
+  };
+  const ask = (doc, target, at = {}) => {
+    let prevented = 0;
+    doc.fire('contextmenu', { target, clientX: 10, clientY: 20, preventDefault: () => { prevented += 1; }, ...at });
+    return prevented;
+  };
+  const menuOf = doc => doc.body.children.find(child => child.attributes.role === 'menu');
+  const choose = async (doc, label) => {
+    const button = menuOf(doc).children.find(child => child.textContent === label);
+    assert.ok(button, `${label} is offered`);
+    assert.equal(button.disabled, false, `${label} can be chosen`);
+    button.fire('click');
+    await settle();
+  };
+
+  // Nothing to offer: the native menu is still cancelled, and no menu is drawn.
+  {
+    const doc = makeDocument();
+    const menu = mountContextMenu(clipboard(), doc);
+    assert.ok(doc.capturing('contextmenu'), 'The listener captures, so no part of the page can let the native menu through');
+    const plain = doc.node('p');
+    doc.body.append(plain);
+    assert.equal(ask(doc, plain), 1, 'The native menu is cancelled where there is nothing to offer');
+    assert.equal(menu.isOpen(), false);
+    assert.equal(menuOf(doc), undefined);
+    // Selected text anywhere on the page: Copy, and only that.
+    doc.selection = 'some words';
+    const bridge = clipboard();
+    const doc2 = makeDocument();
+    mountContextMenu(bridge, doc2);
+    doc2.selection = 'some words';
+    const text = doc2.node('p');
+    doc2.body.append(text);
+    assert.equal(ask(doc2, text), 1);
+    assert.deepEqual(menuOf(doc2).children.map(child => child.textContent), ['Copy']);
+    await choose(doc2, 'Copy');
+    assert.equal(bridge.text, 'some words');
+    assert.equal(menuOf(doc2), undefined, 'Choosing closes the menu');
+  }
+
+  // A text field: the four items, each doing what it says through the host's clipboard.
+  {
+    const doc = makeDocument();
+    const bridge = clipboard('PASTED');
+    const reported = [];
+    const menu = mountContextMenu(bridge, doc, { report: text => reported.push(text) });
+    const input = field(doc, 'hello world', 0, 5);
+    input.focus();
+    assert.equal(ask(doc, input, { clientX: 790, clientY: 590 }), 1);
+    const box = menuOf(doc);
+    assert.equal(menu.isOpen(), true);
+    assert.deepEqual(box.children.map(child => [child.textContent, child.disabled, child.attributes.role, child.type]),
+      [['Cut', false, 'menuitem', 'button'], ['Copy', false, 'menuitem', 'button'], ['Paste', false, 'menuitem', 'button'], ['Select All', false, 'menuitem', 'button']]);
+    assert.deepEqual([box.style.left, box.style.top], ['680px', '500px'], 'The menu stays inside the window');
+    assert.equal(doc.activeElement, box.children[0], 'The first item that can be chosen has the keyboard');
+    // The arrow keys move among the items; Escape closes and gives the keyboard back.
+    let stopped = 0;
+    box.fire('keydown', { key: 'ArrowUp', preventDefault: () => { stopped += 1; } });
+    assert.equal(doc.activeElement, box.children[3]);
+    box.fire('keydown', { key: 'ArrowDown', preventDefault: () => { stopped += 1; } });
+    assert.equal(doc.activeElement, box.children[0]);
+    box.fire('keydown', { key: 'Escape', preventDefault: () => { stopped += 1; } });
+    assert.equal(stopped, 3);
+    assert.equal(menu.isOpen(), false);
+    assert.equal(doc.activeElement, input, 'The field has the keyboard again');
+
+    ask(doc, input);
+    await choose(doc, 'Copy');
+    assert.equal(bridge.text, 'hello');
+    assert.equal(input.value, 'hello world');
+    assert.deepEqual([input.selectionStart, input.selectionEnd], [0, 5], 'Copy leaves the selection');
+
+    ask(doc, input);
+    await choose(doc, 'Cut');
+    assert.equal(bridge.text, 'hello');
+    assert.equal(input.value, ' world');
+    assert.deepEqual(input.events, ['input'], 'The page hears of the change as it does of typing');
+
+    bridge.text = 'PASTED';
+    input.selectionStart = input.selectionEnd = 0;
+    ask(doc, input);
+    await choose(doc, 'Paste');
+    assert.equal(input.value, 'PASTED world');
+    assert.deepEqual([input.selectionStart, input.selectionEnd], [6, 6]);
+    assert.deepEqual(input.events, ['input', 'input']);
+
+    ask(doc, input);
+    await choose(doc, 'Select All');
+    assert.deepEqual([input.selectionStart, input.selectionEnd], [0, 12]);
+    assert.deepEqual(reported, []);
+
+    // A field with a limit takes no more than fits.
+    const short = field(doc, 'abc', 3, 3, { maxLength: 8 });
+    bridge.text = 'PASTED-LONG';
+    ask(doc, short);
+    await choose(doc, 'Paste');
+    assert.equal(short.value, 'abcPASTE');
+
+    // The clipboard refusing is said, and the field is left as it was.
+    const refusing = { request: async () => { throw new Error('The clipboard is unavailable.'); } };
+    const doc2 = makeDocument();
+    const said = [];
+    mountContextMenu(refusing, doc2, { report: text => said.push(text) });
+    const other = field(doc2, 'keep', 0, 4);
+    ask(doc2, other);
+    await choose(doc2, 'Paste');
+    ask(doc2, other);
+    await choose(doc2, 'Cut');
+    assert.deepEqual(said, ['The clipboard is unavailable.', 'The clipboard is unavailable.']);
+    assert.equal(other.value, 'keep');
+  }
+
+  // A password field and a read-only field.
+  {
+    const doc = makeDocument();
+    const bridge = clipboard('x');
+    mountContextMenu(bridge, doc);
+    const secret = field(doc, 'hunter2', 0, 7, { type: 'password' });
+    ask(doc, secret);
+    assert.deepEqual(menuOf(doc).children.map(child => [child.textContent, child.disabled]), [['Cut', true], ['Copy', true], ['Paste', false], ['Select All', false]]);
+    const fixed = field(doc, 'fixed', 0, 5, { readOnly: true });
+    ask(doc, fixed);
+    assert.equal(doc.body.children.filter(child => child.attributes.role === 'menu').length, 1, 'A second request replaces the menu');
+    assert.deepEqual(menuOf(doc).children.map(child => [child.textContent, child.disabled]), [['Cut', true], ['Copy', false], ['Paste', true], ['Select All', false]]);
+    assert.deepEqual(bridge.calls, [], 'Nothing reads the clipboard until Paste is chosen');
+  }
+
+  // A part of the page with a menu of its own, as a terminal pane has; a press elsewhere, a
+  // scroll, a resize and the window losing focus all close the menu.
+  {
+    const doc = makeDocument();
+    const menu = mountContextMenu(clipboard(), doc);
+    const pane = doc.node('div');
+    const inner = doc.node('canvas');
+    pane.append(inner);
+    doc.body.append(pane);
+    const ran = [];
+    const withdraw = provideMenu(pane, () => [{ label: 'Copy', enabled: false, run: () => ran.push('copy') }, { label: 'Paste', enabled: true, run: () => ran.push('paste') }]);
+    doc.selection = 'page text';
+    assert.equal(ask(doc, inner), 1);
+    assert.deepEqual(menuOf(doc).children.map(child => [child.textContent, child.disabled]), [['Copy', true], ['Paste', false]], 'The pane decides, not the page selection');
+    assert.equal(doc.activeElement, menuOf(doc).children[1]);
+    await choose(doc, 'Paste');
+    assert.deepEqual(ran, ['paste']);
+    for (const closes of [() => doc.fire('pointerdown', { target: doc.body }), () => doc.fire('scroll'), () => doc.defaultView.fire('resize'), () => doc.defaultView.fire('blur')]) {
+      ask(doc, inner);
+      assert.equal(menu.isOpen(), true);
+      closes();
+      assert.equal(menu.isOpen(), false);
+    }
+    // A press inside the menu does not close it before the click arrives, and a context-menu
+    // request on the menu itself is cancelled and changes nothing.
+    ask(doc, inner);
+    const box = menuOf(doc);
+    doc.fire('pointerdown', { target: box.children[1] });
+    assert.equal(menu.isOpen(), true);
+    assert.equal(ask(doc, box.children[1]), 1);
+    assert.equal(menuOf(doc), box);
+    menu.close();
+    withdraw();
+    doc.selection = '';
+    assert.equal(ask(doc, inner), 1);
+    assert.equal(menu.isOpen(), false, 'A pane whose menu was withdrawn offers nothing');
+  }
+
+  // The shell mounts it, the terminal pane provides its own, and nothing in the shell opens
+  // the native menu on purpose.
+  const main = read('ui/main.js');
+  assert.match(main, /^mountContextMenu\(bridge, document, \{ report \}\);$/m);
+  assert.ok(main.indexOf('mountContextMenu(bridge, document') < main.indexOf('async function start()'), 'Mounted before the host is asked anything');
+  assert.match(read('ui/widgets/shells.js'), /provideMenu\(panel, \(\) => \[/);
+  assert.match(read('ui/shell.css'), /^\.context-menu \{ position: fixed;/m);
+}
+
+console.log('Tauri summon: the shortcut settings section, drag reporting, the in-page context menu and the source rules for Wayland, the default shortcut and plugin order passed.');

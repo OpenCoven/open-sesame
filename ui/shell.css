@@ -36,6 +36,10 @@ button:disabled { opacity: .6; cursor: wait; }
 .widget-settings [data-widget-options] { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; }
 .widget-settings label { display: flex; align-items: center; gap: .4rem; }
 .widget-settings input { accent-color: var(--ok); }
+.context-menu { position: fixed; z-index: 1000; display: grid; min-width: 9rem; padding: .25rem; background: var(--field); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgb(0 0 0 / .2); }
+.context-menu button { border: 0; background: none; text-align: left; border-radius: 4px; padding: .3rem .7rem; }
+.context-menu button:hover:not(:disabled), .context-menu button:focus-visible { background: var(--page); outline: none; }
+.context-menu button:disabled { cursor: default; }
 @media (max-width: 600px) { .bar, .navigation { padding: .6rem; } .status { flex-basis: 100%; order: 1; } }
 
 /* Host settings in a row under the bar, outside every widget, so they stay whatever widgets are

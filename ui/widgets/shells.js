@@ -1,4 +1,5 @@
 import { createPane } from '../terminal.js';
+import { provideMenu } from '../context-menu.js';
 
 export async function mount({surface, signal, bridge, host, info}) {
   const document = surface.ownerDocument;
@@ -103,6 +104,13 @@ export async function mount({surface, signal, bridge, host, info}) {
         onExit: () => { item.dataset.ended = 'true'; tab.textContent = `${label} (ended)`; hooks.onExit?.(); },
       },
     );
+    // The pane's own menu, in place of the native one (issue #115): the emulator keeps its
+    // selection, and copy and paste go through the host as the keys do. The menu is kept by
+    // the panel and goes with it.
+    provideMenu(panel, () => [
+      { label: 'Copy', enabled: pane.hasSelection(), run: () => { pane.copy(); } },
+      { label: 'Paste', enabled: !pane.ended, run: () => pane.paste() },
+    ]);
     open.set(id, { pane, tab, item, panel });
     select(id);
     try {

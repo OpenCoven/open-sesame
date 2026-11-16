@@ -10,7 +10,7 @@ The defaults are Today, Projects, Focus, Shells and Agents. Only the selected la
 
 [main.js](../ui/main.js) owns the palette, navigation and on/off switches. Commands for off widgets remain searchable and enable the selected widget when invoked. Saved JSON instance names also feed discovery without importing the JSON renderer or validator. Ctrl/Command+K opens the palette; arrows move through results, Enter invokes, Tab remains inside the open palette and Escape closes it and returns focus. No third-party interactive script tier is admitted.
 
-The account control of [issue 72](https://github.com/OpenCoven/open-sesame/issues/72) ([account.js](../ui/account.js)) and the shortcut settings of [issue 71](https://github.com/OpenCoven/open-sesame/issues/71) ([summon.js](../ui/summon.js)) are host settings, not widgets: they sit in a row under the bar, have no manifest entry or on/off switch, and mount once the host answers, whatever widgets are on.
+The account control of [issue 72](https://github.com/OpenCoven/open-sesame/issues/72) ([account.js](../ui/account.js)) and the shortcut settings of [issue 71](https://github.com/OpenCoven/open-sesame/issues/71) ([summon.js](../ui/summon.js)) are host settings, not widgets: they sit in a row under the bar, have no manifest entry or on/off switch, and mount once the host answers, whatever widgets are on. The context menu ([context-menu.js](../ui/context-menu.js), [issue 115](https://github.com/OpenCoven/open-sesame/issues/115)) is the shell's too: it replaces the web view's native menu everywhere on the page and is mounted before the host answers.
 
 ## Lifetime and persistence
 

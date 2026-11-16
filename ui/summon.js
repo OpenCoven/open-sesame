@@ -20,9 +20,12 @@ export function describe(status) {
       message: '',
     };
   }
-  if (!status.shortcut) return { editable: true, warn: false, hint: EXAMPLE, message: 'No shortcut is set.' };
-  if (status.registered) return { editable: true, warn: false, hint: EXAMPLE, message: `Press ${status.shortcut} anywhere to show or hide Open Sesame.` };
-  return { editable: true, warn: true, hint: EXAMPLE, message: status.message || `Open Sesame could not register ${status.shortcut}.` };
+  // The host says so when a saved shortcut it no longer takes was replaced by the default.
+  const notice = typeof status.notice === 'string' && status.notice ? `${status.notice} ` : '';
+  const view = (warn, message) => ({ editable: true, warn: warn || notice !== '', hint: EXAMPLE, message: notice + message });
+  if (!status.shortcut) return view(false, 'No shortcut is set.');
+  if (status.registered) return view(false, `Press ${status.shortcut} anywhere to show or hide Open Sesame.`);
+  return view(true, status.message || `Open Sesame could not register ${status.shortcut}.`);
 }
 
 /**
