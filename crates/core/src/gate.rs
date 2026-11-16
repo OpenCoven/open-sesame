@@ -41,6 +41,11 @@ pub const PORTED: &[&str] = &[
     "window.focus",
     "window.fullscreen",
     "window.keepOpen",
+    // Summon: the shortcut, its status and the hide-on-blur rule (#71).
+    "summon.status",
+    "summon.setShortcut",
+    "summon.setHideOnBlur",
+    "summon.hold",
     // Terminals, SSH, clipboard and folder picker (#74).
     "terminal.open",
     "terminal.input",
