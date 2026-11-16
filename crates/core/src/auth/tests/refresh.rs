@@ -205,6 +205,102 @@ fn cancelled_restore_retries_only_saving_without_signing_the_user_in() {
     assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
     assert_eq!(rig.api.jwks_calls.load(Ordering::SeqCst), 0);
     assert_eq!(rig.auth.next_refresh_in(), None);
+    assert_eq!(rig.message(), "Sign-in cancelled.");
+}
+
+const EARLIER_SAVED: &str = "The new sign-in could not be completed. Your earlier sign-in is saved and will be used the next time Open Sesame starts.";
+
+/// A restore at launch whose answer comes back after the person started a new sign-in, with a
+/// credential store that refuses to save: the restore's rotated credential is held unsaved,
+/// and the new sign-in then fails on the same store. Nobody is signed in afterwards, and the
+/// only work left is saving the earlier credential.
+fn new_sign_in_fails_over_an_unsaved_restore() -> Rig {
+    let rig = rig();
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    let callback = Arc::new(Mutex::new(String::new()));
+    let (auth, started) = (rig.auth.clone(), callback.clone());
+    *rig.api.during_call.lock().unwrap() = Some(Box::new(move || {
+        let url = auth.begin_sign_in().expect("begin sign-in");
+        let state = query_value(&url, "state").expect("authorisation URL carries state");
+        *started.lock().unwrap() =
+            format!("opensesame://auth/callback?code=fixture-code&state={state}");
+    }));
+    rig.auth.restore();
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-new")));
+    let callback = callback.lock().unwrap().clone();
+    rig.auth.complete_sign_in(&callback);
+    assert!(!rig.auth.authenticated());
+    assert!(rig.message().contains("system keychain"));
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
+    rig
+}
+
+/// What the save-only retry leaves behind: the earlier credential saved, nobody signed in,
+/// nothing exchanged a second time and nothing more scheduled.
+fn the_earlier_credential_is_saved_and_nothing_else(rig: &Rig) {
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    rig.advance(20);
+    rig.auth.refresh();
+    assert!(!rig.auth.authenticated());
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+    assert_eq!(rig.auth.next_refresh_in(), None);
+}
+
+/// Decided on 16 November 2026 (#94): when a new sign-in has failed and the earlier sign-in
+/// is then saved, the status says that. It used to say "Sign-in cancelled." with nobody having
+/// cancelled. The behaviour is as it was: no session in this run.
+#[test]
+fn a_failed_new_sign_in_then_says_the_earlier_sign_in_is_saved() {
+    let rig = new_sign_in_fails_over_an_unsaved_restore();
+    the_earlier_credential_is_saved_and_nothing_else(&rig);
+    assert_eq!(rig.message(), EARLIER_SAVED);
+}
+
+/// A real Cancel on the same path keeps the cancel sentence.
+#[test]
+fn a_cancel_after_a_failed_new_sign_in_still_says_cancelled() {
+    let rig = new_sign_in_fails_over_an_unsaved_restore();
+    rig.auth.cancel();
+    assert_eq!(rig.message(), "Sign-in cancelled.");
+    the_earlier_credential_is_saved_and_nothing_else(&rig);
+    assert_eq!(rig.message(), "Sign-in cancelled.");
+}
+
+/// The last thing the person did decides: a Cancel, then a new sign-in that fails for want
+/// of a connection, ends on the sentence for the failed sign-in.
+#[test]
+fn a_new_sign_in_that_fails_after_a_cancel_says_the_earlier_sign_in_is_saved() {
+    let rig = rig();
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    let auth = rig.auth.clone();
+    *rig.api.during_call.lock().unwrap() = Some(Box::new(move || auth.cancel()));
+    rig.auth.restore();
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback); // No reply scripted: the code exchange fails.
+    assert!(rig.message().starts_with("Could not complete sign-in."));
+    the_earlier_credential_is_saved_and_nothing_else(&rig);
+    assert_eq!(rig.message(), EARLIER_SAVED);
+}
+
+/// A new sign-in that is started again is a new attempt: while it waits in the browser the
+/// sentence is the browser's, and a Cancel of it reads as a Cancel after the save.
+#[test]
+fn a_second_attempt_that_is_cancelled_says_cancelled() {
+    let rig = new_sign_in_fails_over_an_unsaved_restore();
+    let _callback = rig.begin();
+    rig.auth.cancel();
+    the_earlier_credential_is_saved_and_nothing_else(&rig);
+    assert_eq!(rig.message(), "Sign-in cancelled.");
 }
 
 #[test]

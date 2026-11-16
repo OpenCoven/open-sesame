@@ -29,6 +29,10 @@ const SIGNED_IN: &str = "Signed in.";
 const REFRESHING: &str = "Refreshing sign-in…";
 const RESTORING: &str = "Restoring your sign-in…";
 const CANCELLED: &str = "Sign-in cancelled.";
+// After a new sign-in has failed and the earlier sign-in's credential has then been saved:
+// nobody is signed in for the rest of this run, and the next launch restores that sign-in
+// (issue #94, decided on 16 November 2026).
+const EARLIER_SAVED: &str = "The new sign-in could not be completed. Your earlier sign-in is saved and will be used the next time Open Sesame starts.";
 const EXPIRED: &str = "Your session expired. Sign in again to use your account.";
 const ENDED: &str = "Your sign-in has ended. Sign in again to use your account.";
 const FAILED: &str = "Could not complete sign-in. Check your connection and try again.";
@@ -94,6 +98,10 @@ struct State {
     pending: Option<Pending>,
     busy: bool,
     restoring: bool,
+    /// The last thing the person asked for was a new sign-in, and it failed. A Cancel, a new
+    /// attempt, a sign-out and an opened session end it. It decides only which sentence
+    /// follows a save-only retry.
+    sign_in_failed: bool,
     message: &'static str,
     user: Option<User>,
     expires: Option<SystemTime>,
@@ -156,6 +164,7 @@ impl AuthController {
             pending: None,
             busy: false,
             restoring: false,
+            sign_in_failed: false,
             message: START,
             user: None,
             expires: None,
@@ -226,6 +235,7 @@ impl AuthController {
             }
             state.epoch += 1;
             state.verification = None;
+            state.sign_in_failed = false;
             state.pending = Some(Pending {
                 state: pkce.state,
                 verifier: pkce.verifier,
@@ -398,8 +408,12 @@ impl AuthController {
                     state.busy = false;
                     state.restoring = false;
                     state.retry_at = None;
+                    // Nobody is signed in on this path. It is reached after a Cancel, and
+                    // after a new sign-in that failed; the sentence says which.
                     state.message = if state.authenticated(self.now()) {
                         SIGNED_IN
+                    } else if state.sign_in_failed {
+                        EARLIER_SAVED
                     } else {
                         CANCELLED
                     };
@@ -466,6 +480,7 @@ impl AuthController {
         state.session_id = Some(verified.session_id);
         state.busy = false;
         state.restoring = false;
+        state.sign_in_failed = false;
         state.retry_at = None;
         state.message = SIGNED_IN;
     }
@@ -514,6 +529,9 @@ impl AuthController {
         state.busy = false;
         state.restoring = false;
         state.pending = None;
+        if phase == Phase::SignIn {
+            state.sign_in_failed = true;
+        }
         // Only a refresh can end the session. A code exchange the server refuses is a failed
         // sign-in attempt and must not delete a credential that is still good.
         let ended = phase == Phase::Refresh && error == AuthError::Ended;
@@ -546,6 +564,7 @@ impl AuthController {
         {
             let mut state = self.lock();
             state.interrupt();
+            state.sign_in_failed = false;
             state.message = CANCELLED;
             state.retry_at = (state.unsaved && !state.closed).then(|| self.now() + RETRY_AFTER);
         }
@@ -558,6 +577,7 @@ impl AuthController {
         let url = {
             let mut state = self.lock();
             state.interrupt();
+            state.sign_in_failed = false;
             state.retry_at = None;
             state.saved = None;
             state.unsaved = false;
