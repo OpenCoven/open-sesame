@@ -165,7 +165,7 @@ fn cancel_sign_out_and_sign_in_are_told_the_store_is_busy_while_a_save_waits() {
     let auth = rig.auth.clone();
     let cancel = answers(move || auth.cancel_now());
     let auth = rig.auth.clone();
-    let sign_out = answers(move || auth.sign_out_now());
+    let sign_out = answers(move || auth.sign_out_now(|_| ()));
     let auth = rig.auth.clone();
     let sign_in = answers(move || auth.begin_sign_in());
     let busy = rig.status()["busy"].clone();
@@ -183,7 +183,9 @@ fn cancel_sign_out_and_sign_in_are_told_the_store_is_busy_while_a_save_waits() {
     assert!(!rig.store.signed_out.load(Ordering::SeqCst));
     // With nothing waiting they do what they always did.
     assert_eq!(rig.auth.cancel_now(), Ok(()));
-    assert!(matches!(rig.auth.sign_out_now(), Ok(Some(_))));
+    let mut ends = None;
+    assert_eq!(rig.auth.sign_out_now(|url| ends = url), Ok(()));
+    assert!(ends.is_some(), "the address that ends the remote session");
     assert!(!rig.auth.authenticated());
     assert_eq!(rig.store.saved(), None);
 }
@@ -213,8 +215,8 @@ fn a_refresh_whose_save_waits_leaves_the_session_readable() {
 }
 
 /// A keyring that dies while its prompt is open never answers. The save is given up at the
-/// limit and reported as a store failure; while it is still out the store is not asked
-/// again; and when it does return, late, the store is asked again.
+/// limit and reported as a store failure; while it is still out no sign-in is begun and the
+/// store is not asked again; and when it does return, late, the store is asked again.
 #[test]
 fn a_save_that_never_returns_is_given_up_at_the_limit() {
     let rig = rig_with(Some((SOON, SHORT)));
@@ -242,7 +244,8 @@ fn a_save_that_never_returns_is_given_up_at_the_limit() {
     assert_eq!(rig.status()["busy"], json!(false));
     assert_eq!(rig.store.saves.load(Ordering::SeqCst), 1);
 
-    attempt("refresh-two");
+    // While that call is out no sign-in is begun, so the store is not asked again.
+    assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
     assert!(!rig.auth.authenticated());
     assert!(rig.message().contains("system keychain"));
     assert_eq!(
@@ -256,10 +259,9 @@ fn a_save_that_never_returns_is_given_up_at_the_limit() {
     until("the save that was given up lands", || {
         rig.store.saved().as_deref() == Some("refresh-one")
     });
-    until("the store is asked again", || {
-        attempt("refresh-three");
-        rig.auth.authenticated()
-    });
+    until_the_store_is_asked_again(&rig);
+    attempt("refresh-three");
+    assert!(rig.auth.authenticated());
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-three"));
 }
 
@@ -304,5 +306,262 @@ fn quit_gives_the_last_save_up_at_the_limit() {
     assert!(
         took >= SHORT && took < TOO_LONG,
         "quit returned after {took:?}"
+    );
+}
+
+/// Until a call that was given up returns, `begin_sign_in` answers that the store is busy.
+fn until_the_store_is_asked_again(rig: &Rig) {
+    until("the call that was given up returns", || {
+        match rig.auth.begin_sign_in() {
+            Ok(_) => {
+                rig.auth.cancel();
+                true
+            }
+            Err(error) => {
+                assert_eq!(error, AuthError::StoreBusy);
+                false
+            }
+        }
+    });
+}
+
+/// A refresh's replacement is saved after the prompt was left open past the limit, and the
+/// person signs out meanwhile. The removal cannot be made while that save is out, and the
+/// save lands when the prompt is answered: the removal is made then, so that the next launch
+/// does not restore a sign-in the person signed out of.
+#[test]
+fn a_save_given_up_does_not_outlive_a_sign_out() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    rig.advance(240);
+    reply(&rig, "refresh-two");
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    rig.auth.refresh();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+
+    let mut began = false;
+    assert_eq!(rig.auth.sign_out_now(|_| began = true), Ok(()));
+    assert!(began);
+    assert!(!rig.auth.authenticated());
+    assert_eq!(
+        rig.message(),
+        "Signed out. The saved credential could not be removed; sign in again to replace it."
+    );
+    assert!(rig.store.signed_out.load(Ordering::SeqCst));
+    assert_eq!(
+        rig.store.saved().as_deref(),
+        Some("refresh-one"),
+        "nothing can be removed while the save is out"
+    );
+
+    held.open();
+    until_the_store_is_asked_again(&rig);
+    assert_eq!(
+        rig.store.saved(),
+        None,
+        "the save that was given up landed after the sign-out and stayed"
+    );
+}
+
+/// With a call given up and still out a new sign-in could not be saved, so none is begun:
+/// the person is not sent through the browser for nothing.
+#[test]
+fn no_sign_in_is_begun_while_a_call_given_up_is_out() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback);
+    assert!(!rig.auth.authenticated());
+    assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
+    assert_eq!(rig.status()["busy"], json!(false));
+    held.open();
+    until_the_store_is_asked_again(&rig);
+}
+
+/// A call that panics after it was given up has ended as well: it does not count as out
+/// for the rest of the run.
+#[test]
+fn a_call_given_up_that_panics_is_not_out_for_ever() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let (held, hook) = waiter();
+    held.open_when_too_long();
+    *rig.store.before_write.lock().unwrap() = Some(Arc::new(move || {
+        hook();
+        panic!("the store call panicked, as this test asks it to");
+    }));
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback);
+    assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
+    held.open();
+    until_the_store_is_asked_again(&rig);
+}
+
+/// A refresh's save has the limit too, and nobody pressed anything to start it: the session
+/// stays as it was, the replacement stays unsaved, and the status says so.
+#[test]
+fn a_refresh_whose_save_never_returns_is_given_up_at_the_limit() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    rig.advance(240);
+    reply(&rig, "refresh-two");
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    let auth = rig.auth.clone();
+    let started = Instant::now();
+    let refreshing = std::thread::spawn(move || auth.refresh());
+    held.entered();
+    until("the status says the keychain is waited for", || {
+        rig.message() == WAITING
+    });
+    assert!(rig.auth.authenticated(), "the gate waited for the store");
+    refreshing.join().unwrap();
+    let took = started.elapsed();
+    assert!(
+        took >= SHORT && took < TOO_LONG,
+        "the refresh returned after {took:?}"
+    );
+    assert_ne!(rig.message(), WAITING);
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+}
+
+/// A session the server has ended is removed from the store, and that removal can wait for a
+/// prompt as any other: the gate is closed and the status says the session ended before the
+/// store is asked, and the removal is given up at the limit.
+#[test]
+fn an_ended_sessions_removal_closes_the_gate_first_and_has_the_limit() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    rig.advance(240);
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Ended));
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    let auth = rig.auth.clone();
+    let started = Instant::now();
+    let refreshing = std::thread::spawn(move || auth.refresh());
+    held.entered();
+    let auth = rig.auth.clone();
+    assert_eq!(
+        answers(move || auth.authenticated()),
+        Some(false),
+        "the gate stayed open, or waited, while the removal waited"
+    );
+    until("the status says the keychain is waited for", || {
+        rig.message() == WAITING
+    });
+    refreshing.join().unwrap();
+    let took = started.elapsed();
+    assert!(
+        took >= SHORT && took < TOO_LONG,
+        "the refresh returned after {took:?}"
+    );
+    assert!(!rig.auth.authenticated());
+    assert!(
+        rig.message().contains("ended"),
+        "the status reads {:?}",
+        rig.message()
+    );
+}
+
+/// Sign out says that it began, with the address that ends the remote session, before the
+/// store is asked: the host opens that address and answers the page then, and the removal may
+/// take as long as a prompt does.
+#[test]
+fn sign_out_says_it_began_before_the_removal_is_asked() {
+    let rig = rig();
+    rig.sign_in();
+    let held = hold_writes(&rig);
+    let (tell, told) = channel();
+    let auth = rig.auth.clone();
+    let signing_out = std::thread::spawn(move || {
+        auth.sign_out_now(move |url| {
+            let _ = tell.send(url);
+        })
+    });
+    let url = told
+        .recv_timeout(Duration::from_secs(2))
+        .expect("sign-out waited for the store before it said it began");
+    assert!(url.is_some_and(|url| url.contains("/sessions/logout")));
+    assert!(!rig.auth.authenticated());
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    held.open();
+    assert_eq!(signing_out.join().unwrap(), Ok(()));
+    assert_eq!(rig.store.saved(), None);
+}
+
+/// Before the status says the keychain is waited for, it must not go on saying that the
+/// sign-in is being refreshed: the session has ended, and the status says so from the moment
+/// the removal is asked.
+#[test]
+fn an_ended_session_is_said_before_its_removal_is_asked() {
+    let rig = rig_with(Some((TOO_LONG, 2 * TOO_LONG)));
+    rig.sign_in();
+    rig.advance(240);
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Ended));
+    let held = hold_writes(&rig);
+    let auth = rig.auth.clone();
+    let refreshing = std::thread::spawn(move || auth.refresh());
+    held.entered();
+    assert_eq!(
+        rig.message(),
+        "Your sign-in has ended. Sign in again to use your account."
+    );
+    held.open();
+    refreshing.join().unwrap();
+    assert_eq!(rig.store.saved(), None);
+}
+
+/// A read and a write can be out together: the read at launch holds no lock, so a new sign-in
+/// can be saved while it waits. A removal owed is made when the last of them returns: made
+/// when the read returns, it would come before the save lands, and the save would stay.
+#[test]
+fn a_removal_owed_waits_for_the_last_call_that_is_out() {
+    let rig = rig_with(Some((SOON, Duration::from_secs(2))));
+    let (read, hook) = waiter();
+    *rig.store.during_load.lock().unwrap() = Some(Box::new(move || hook()));
+    read.open_when_too_long();
+    let auth = rig.auth.clone();
+    let restoring = std::thread::spawn(move || auth.restore());
+    read.entered();
+    let written = hold_writes(&rig);
+    written.open_when_too_long();
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback);
+    restoring.join().unwrap();
+    assert_eq!(rig.store.saved(), None, "the save was not given up");
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+
+    read.open();
+    std::thread::sleep(Duration::from_millis(300));
+    written.open();
+    until_the_store_is_asked_again(&rig);
+    assert_eq!(
+        rig.store.saved(),
+        None,
+        "the removal was made before the save landed"
     );
 }

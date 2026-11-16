@@ -65,8 +65,8 @@ const WAITING_FOR_STORE: &str =
 /// store that answers does so in far less; a prompt takes a person far longer.
 const STORE_SOON: Duration = Duration::from_secs(2);
 /// How long a call to the credential store is waited for at all. It has to cover a person
-/// reading the keyring's prompt and typing a password, and it stays below the three minutes
-/// the page gives a sign-in, so the page hears the host's answer and not its own time limit.
+/// reading the keyring's prompt and typing a password. No request from the page waits this
+/// long: a request waits `STORE_SOON` at most, which has to stay below the page's own limit.
 const STORE_LIMIT: Duration = Duration::from_secs(120);
 
 /// Refresh this long before the access token expires.
@@ -239,6 +239,34 @@ enum Call {
     GivenUp,
 }
 
+/// The store calls that were given up at the limit and have not returned since.
+#[derive(Default)]
+struct Out {
+    /// How many there are. While there is one, every store call fails at once and no sign-in
+    /// is begun.
+    stuck: usize,
+    /// A removal was asked for meanwhile and could not be made. It is made when the last of
+    /// those calls returns, so that a save given up before a sign-out does not outlive it.
+    removal_owed: bool,
+}
+
+/// A call that was given up has returned, or will never return because it panicked. A
+/// removal that was asked for while it was out is made now, on the call's own thread and
+/// before any other store call is let through.
+fn returned(out: &Mutex<Out>, store: &dyn CredentialStore) {
+    loop {
+        let mut out = unpoisoned(out);
+        if out.removal_owed && out.stuck == 1 {
+            out.removal_owed = false;
+            drop(out);
+            let _ = catch_unwind(AssertUnwindSafe(|| store.delete()));
+            continue;
+        }
+        out.stuck -= 1;
+        break;
+    }
+}
+
 pub struct AuthController {
     parts: AuthParts,
     state: Mutex<State>,
@@ -246,8 +274,7 @@ pub struct AuthController {
     drained: Condvar,
     /// Store calls that have been waited for longer than a moment and are still waited for.
     store_waits: AtomicUsize,
-    /// Store calls that were given up at the limit and have not returned since.
-    store_stuck: Arc<AtomicUsize>,
+    store_out: Arc<Mutex<Out>>,
     store_soon: Duration,
     store_limit: Duration,
 }
@@ -298,7 +325,7 @@ impl AuthController {
             state: Mutex::new(state),
             drained: Condvar::new(),
             store_waits: AtomicUsize::new(0),
-            store_stuck: Arc::new(AtomicUsize::new(0)),
+            store_out: Arc::new(Mutex::new(Out::default())),
             store_soon: STORE_SOON,
             store_limit: STORE_LIMIT,
         }
@@ -317,6 +344,12 @@ impl AuthController {
     /// measures its own look at the store against the same time.
     pub fn store_soon(&self) -> Duration {
         self.store_soon
+    }
+
+    /// How long a store call is waited for before it is given up. The host gives its own look
+    /// at the store up after the same time.
+    pub fn store_limit(&self) -> Duration {
+        self.store_limit
     }
 
     fn lock(&self) -> Locked<'_> {
@@ -352,37 +385,64 @@ impl AuthController {
     ///
     /// A call given up is not ended: nothing can end a keyring call that waits for its prompt.
     /// Its thread stays until the store answers, and what it was asked to do may still happen
-    /// then. A save given up may so land later, and the next launch then restores that
-    /// sign-in. While such a call is out the store is not asked again, because a second call
-    /// would only wait behind the first; every call fails at once until it returns.
+    /// then: a save given up may so land later. While such a call is out the store is not
+    /// asked again, because a second call would only wait behind the first; every call fails
+    /// at once until it returns, and no sign-in is begun. A removal asked for meanwhile is
+    /// made when it returns ([`returned`]), so that such a save does not outlive a sign-out.
     fn store<T: Send + 'static>(
         &self,
         held: Option<&State>,
         call: impl FnOnce(&dyn CredentialStore) -> Result<T, AuthError> + Send + 'static,
     ) -> Result<T, AuthError> {
+        self.store_as(held, false, call)
+    }
+
+    /// Removes the saved credential, as [`AuthController::store`] makes any call. A removal
+    /// that cannot be made because a call given up is still out is owed: it is made when that
+    /// call returns, since what the call was asked to save may land then.
+    fn remove(&self, held: Option<&State>) -> Result<(), AuthError> {
+        self.store_as(held, true, |store| store.delete())
+    }
+
+    fn store_as<T: Send + 'static>(
+        &self,
+        held: Option<&State>,
+        removal: bool,
+        call: impl FnOnce(&dyn CredentialStore) -> Result<T, AuthError> + Send + 'static,
+    ) -> Result<T, AuthError> {
         if let Some(state) = held {
             *unpoisoned(&self.seen) = Seen::of(state);
         }
-        if self.store_stuck.load(Ordering::SeqCst) > 0 {
-            return Err(AuthError::Store);
+        {
+            let mut out = unpoisoned(&self.store_out);
+            if out.stuck > 0 {
+                out.removal_owed |= removal;
+                return Err(AuthError::Store);
+            }
         }
         let (tell, told) = channel();
         let standing = Arc::new(Mutex::new(Call::Out));
-        let (store, stuck, theirs) = (
+        let (store, out, theirs) = (
             self.parts.store.clone(),
-            self.store_stuck.clone(),
+            self.store_out.clone(),
             standing.clone(),
         );
         let started = std::thread::Builder::new()
             .name("credential-store".into())
             .spawn(move || {
-                let answer = call(store.as_ref());
+                // A call that panics has ended too: it must not count as out for ever.
+                let answer = catch_unwind(AssertUnwindSafe(|| call(store.as_ref())));
                 let mut standing = unpoisoned(&theirs);
                 if *standing == Call::GivenUp {
-                    stuck.fetch_sub(1, Ordering::SeqCst);
+                    drop(standing);
+                    returned(&out, store.as_ref());
                 } else {
+                    // Also for a call that panicked: it has ended, and the waiting side must
+                    // not give it up after this and count it as out.
                     *standing = Call::Answered;
-                    let _ = tell.send(answer);
+                    if let Ok(answer) = answer {
+                        let _ = tell.send(answer);
+                    }
                 }
             });
         if started.is_err() {
@@ -412,7 +472,7 @@ impl AuthController {
                     told.try_recv().unwrap_or(Err(AuthError::Store))
                 } else {
                     *standing = Call::GivenUp;
-                    self.store_stuck.fetch_add(1, Ordering::SeqCst);
+                    unpoisoned(&self.store_out).stuck += 1;
                     Err(AuthError::Store)
                 }
             }
@@ -463,6 +523,11 @@ impl AuthController {
     /// cancelled. While another sign-in is pending this returns [`AuthError::Busy`], and
     /// while the credential store is being waited for, [`AuthError::StoreBusy`].
     pub fn begin_sign_in(&self) -> Result<String, AuthError> {
+        // With a store call given up and still out, a new sign-in could not be saved: the
+        // browser is not opened for one.
+        if unpoisoned(&self.store_out).stuck > 0 {
+            return Err(AuthError::StoreBusy);
+        }
         let pkce = generate_pkce()?;
         let url = authorize_url(&pkce);
         {
@@ -795,7 +860,10 @@ impl AuthController {
             state.unsaved = false;
             state.verification = None;
             state.credential_epoch += 1;
-            let _ = self.store(Some(state), |store| store.delete());
+            // Said before the store is asked, so that the status does not show the time
+            // before while the removal is waited for.
+            state.message = ENDED;
+            let _ = self.remove(Some(state));
         }
         let store_failure = error == AuthError::Store;
         state.message = if store_failure {
@@ -839,16 +907,23 @@ impl AuthController {
     /// call that holds the state; a request from the page uses
     /// [`AuthController::sign_out_now`].
     pub fn sign_out(&self) -> Option<String> {
-        self.sign_out_in(self.lock())
+        let mut url = None;
+        self.sign_out_in(self.lock(), |ends| url = ends);
+        url
     }
 
     /// As [`AuthController::sign_out`], for a request from the page: while the credential
     /// store is being waited for nothing changes and the answer is [`AuthError::StoreBusy`].
-    pub fn sign_out_now(&self) -> Result<Option<String>, AuthError> {
-        Ok(self.sign_out_in(self.lock_soon().ok_or(AuthError::StoreBusy)?))
+    /// Otherwise `began` is called once, with the URL that ends the remote session when there
+    /// is one, as soon as the person is signed out here and before the saved credential is
+    /// removed, which is the part that can wait for a prompt. It is called with the state
+    /// held and must not call the controller.
+    pub fn sign_out_now(&self, began: impl FnOnce(Option<String>)) -> Result<(), AuthError> {
+        self.sign_out_in(self.lock_soon().ok_or(AuthError::StoreBusy)?, began);
+        Ok(())
     }
 
-    fn sign_out_in(&self, mut state: Locked<'_>) -> Option<String> {
+    fn sign_out_in(&self, mut state: Locked<'_>, began: impl FnOnce(Option<String>)) {
         state.interrupt();
         state.sign_in_failed = false;
         state.retry_at = None;
@@ -863,16 +938,16 @@ impl AuthController {
         // The person is signed out from here on, whatever the store then does: the gate and
         // the status say so while the delete is waited for.
         state.message = SIGNED_OUT;
-        if self.store(Some(&state), |store| store.delete()).is_err() {
-            state.message = SIGNED_OUT_NOT_REMOVED;
-        }
         let url = state
             .session_id
             .take()
             .map(|session_id| logout_url(&session_id));
+        began(url);
+        if self.remove(Some(&state)).is_err() {
+            state.message = SIGNED_OUT_NOT_REMOVED;
+        }
         drop(state);
         self.changed();
-        url
     }
 
     /// At quit: close admission and drain an already sent refresh through its save attempt.

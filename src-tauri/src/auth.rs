@@ -29,6 +29,7 @@ use open_sesame_core::auth::{
 };
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Emit};
 use serde_json::{json, Value};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -424,16 +425,42 @@ fn pause(due: Option<Duration>, allowed_in: Duration) -> Duration {
     due.map_or(TICK, |due| due.max(allowed_in)).min(TICK)
 }
 
+/// How long an answer that came after its press had been refused is good for.
+const LOOK_KEPT: Duration = Duration::from_secs(30);
+
+/// Where the look at the credential store stands. It is made for Sign in, on a thread of its
+/// own, because on a locked keyring it can wait for the unlock prompt.
+#[derive(Default)]
+struct Look {
+    /// When the look that has not answered yet began.
+    began: Option<Instant>,
+    /// Which look that is, so that one given up does not end the one made after it.
+    turn: u64,
+    /// The last answer that no press was waiting for any more, and when it came. The next
+    /// press takes it, once.
+    kept: Option<(Instant, Option<&'static str>)>,
+}
+
+/// What the sign-out thread says, in order: that it was refused, or that it began, with the
+/// address that ends the remote session, and then that it is done.
+enum SignOut {
+    Refused,
+    Began(Option<String>),
+    Done,
+}
+
 /// The sign-in state the application keeps.
 pub struct Auth {
     controller: Arc<AuthController>,
     browser: Browser,
     store_check: StoreCheck,
-    /// Whether a look at the credential store, made for Sign in, has not answered yet.
-    looking: Arc<AtomicBool>,
+    /// The look at the credential store made for Sign in.
+    look: Arc<Mutex<Look>>,
     /// How long a request from the page waits for the credential store before it is told the
     /// store is being waited for.
     soon: Duration,
+    /// How long a look at the store is waited for before the store is asked again.
+    limit: Duration,
     /// Keeps a window that hides on blur in place while the person is in the browser.
     hold: Mutex<Option<summon::Hold>>,
     /// Wakes the two threads once more at shutdown, so they see `stopped` and end.
@@ -489,10 +516,11 @@ impl Auth {
         });
         let auth = Arc::new(Auth {
             soon: controller.store_soon(),
+            limit: controller.store_limit(),
             controller,
             browser,
             store_check,
-            looking: Arc::new(AtomicBool::new(false)),
+            look: Arc::new(Mutex::new(Look::default())),
             hold: Mutex::new(None),
             wake: Mutex::new(Some(senders)),
             stopped: AtomicBool::new(false),
@@ -554,37 +582,58 @@ impl Auth {
     /// first. The press is then refused with the sentence about the keychain, and nothing was
     /// started by it.
     fn look_at_store(&self) -> Result<Option<&'static str>, BridgeError> {
-        /// Says the look is over when the thread ends, however it ends.
-        struct Looking(Arc<AtomicBool>);
-        impl Drop for Looking {
-            fn drop(&mut self) {
-                self.0.store(false, Ordering::SeqCst);
+        let turn = {
+            let mut look = lock(&self.look);
+            // An answer that came after its own press was refused is this press's answer.
+            if let Some((came, answer)) = look.kept.take() {
+                if came.elapsed() < LOOK_KEPT {
+                    return Ok(answer);
+                }
             }
-        }
-        if self.looking.swap(true, Ordering::SeqCst) {
-            return Err(BridgeError::from(KEYCHAIN_WAITING));
-        }
-        let looking = Looking(Arc::clone(&self.looking));
-        let check = Arc::clone(&self.store_check);
+            // A look that is out is waited for no longer than any store call: past that it is
+            // given up, and the store is asked again by one more thread.
+            if look.began.is_some_and(|began| began.elapsed() < self.limit) {
+                return Err(BridgeError::from(KEYCHAIN_WAITING));
+            }
+            look.began = Some(Instant::now());
+            look.turn += 1;
+            look.turn
+        };
+        let (shared, check) = (Arc::clone(&self.look), Arc::clone(&self.store_check));
         let (tell, told) = channel();
         let started = std::thread::Builder::new()
             .name("credential-store-look".into())
             .spawn(move || {
-                let answer = check();
-                drop(looking);
-                let _ = tell.send(answer);
+                let answer = catch_unwind(AssertUnwindSafe(|| check()));
+                let mut look = lock(&shared);
+                if look.turn == turn {
+                    look.began = None;
+                }
+                // The answer is kept and not sent: a press that has stopped waiting must not
+                // take it with it. A question that panicked has no answer to keep.
+                if let Ok(answer) = answer {
+                    look.kept = Some((Instant::now(), answer));
+                    drop(look);
+                    let _ = tell.send(());
+                }
             });
         if started.is_err() {
-            // The closure was dropped with the thread that never started, and `looking` with it.
+            let mut look = lock(&self.look);
+            if look.turn == turn {
+                look.began = None;
+            }
             return Err(BridgeError::from(NOT_STARTED));
         }
-        told.recv_timeout(self.soon).map_err(|error| {
-            BridgeError::from(match error {
-                RecvTimeoutError::Timeout => KEYCHAIN_WAITING,
-                // The question panicked; it is not being waited for.
-                RecvTimeoutError::Disconnected => NOT_STARTED,
-            })
-        })
+        match told.recv_timeout(self.soon) {
+            Ok(()) => match lock(&self.look).kept.take() {
+                Some((_, answer)) => Ok(answer),
+                // Another press took it between the word and here.
+                None => Err(BridgeError::from(KEYCHAIN_WAITING)),
+            },
+            Err(RecvTimeoutError::Timeout) => Err(BridgeError::from(KEYCHAIN_WAITING)),
+            // The question panicked; it is not being waited for.
+            Err(RecvTimeoutError::Disconnected) => Err(BridgeError::from(NOT_STARTED)),
+        }
     }
 
     /// The host's own cancel, when the browser would not open for a sign-in that had just
@@ -602,35 +651,48 @@ impl Auth {
 
     /// Sign out, for a request from the page. Signing out removes the saved credential, and on
     /// a locked keyring the removal waits for the unlock prompt (issue #130). So it runs on a
-    /// thread of its own. The person is signed out here as soon as it has begun, before the
-    /// store is asked; the request is answered when the removal is done, or after a wait when
-    /// it is not, and the status then says the keychain is being waited for. Only when
-    /// another store call already holds things up is the press refused, with nothing changed.
+    /// thread of its own, and the request is answered as soon as that thread says how it
+    /// began: refused, with nothing changed, because another store call already holds things
+    /// up; or begun, which is when the person is signed out here and before the store is
+    /// asked. The address that ends the remote session is opened then, on this thread, and
+    /// the status says the rest: the keychain being waited for, and how the removal ended.
     ///
-    /// The wait is the time the controller gives a request to begin and the same again, two
-    /// seconds at least: a refusal comes within the first, so past both the sign-out has begun.
+    /// That first word is not given a time of the host's own. The controller gives a request
+    /// its own short time to begin, so a refusal that comes late is still a refusal.
     fn sign_out(&self) -> BridgeResult {
-        let work = |controller: &AuthController, browser: &Browser| {
-            end_remote_session(browser, controller.sign_out_now()?);
-            Ok::<(), AuthError>(())
-        };
-        let (controller, browser) = (Arc::clone(&self.controller), Arc::clone(&self.browser));
+        let controller = Arc::clone(&self.controller);
         let (tell, told) = channel();
         let started = std::thread::Builder::new()
             .name("auth-sign-out".into())
             .spawn(move || {
-                let _ = tell.send(work(&controller, &browser));
+                let began = tell.clone();
+                let ended = controller.sign_out_now(move |url| {
+                    let _ = began.send(SignOut::Began(url));
+                });
+                let _ = tell.send(match ended {
+                    Ok(()) => SignOut::Done,
+                    Err(_) => SignOut::Refused,
+                });
             });
-        let answer = match started {
-            Ok(_) => told.recv_timeout(self.soon + self.soon.max(Duration::from_secs(2))),
+        if started.is_err() {
             // No thread to be had: here, waiting as long as the store does.
-            Err(_) => Ok(work(&self.controller, &self.browser)),
-        };
-        match answer {
-            Ok(Err(_)) => Err(BridgeError::from(KEYCHAIN_WAITING)),
-            // Done, or begun and the removal still waited for. A thread that ended without
-            // an answer panicked in the browser call, after the sign-out.
-            Ok(Ok(())) | Err(_) => Ok(Value::Bool(true)),
+            return match self
+                .controller
+                .sign_out_now(|url| end_remote_session(&self.browser, url))
+            {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(_) => Err(BridgeError::from(KEYCHAIN_WAITING)),
+            };
+        }
+        match told.recv() {
+            Ok(SignOut::Began(url)) => {
+                end_remote_session(&self.browser, url);
+                Ok(Value::Bool(true))
+            }
+            Ok(SignOut::Refused) => Err(BridgeError::from(KEYCHAIN_WAITING)),
+            // The thread ended without saying how it began: the controller panicked, and
+            // what it left is in the status.
+            Ok(SignOut::Done) | Err(_) => Ok(Value::Bool(true)),
         }
     }
 
@@ -1311,7 +1373,7 @@ mod tests {
 
         answer.send(()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
-        while auth.looking.load(Ordering::SeqCst) {
+        while lock(&auth.look).began.is_some() {
             assert!(Instant::now() < deadline, "the look never ended");
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -1445,6 +1507,135 @@ mod tests {
         assert_eq!(sent["grant_type"], json!("authorization_code"));
     }
 
+    /// The wiring with a memory store, a recording browser and `check` as the look at the
+    /// store, measured against `soon` and given up after `limit`.
+    fn looking_with(
+        check: StoreCheck,
+        soon: Duration,
+        limit: Duration,
+    ) -> (Arc<Auth>, Arc<Mutex<Vec<String>>>) {
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let browser: Browser = Arc::new(move |url| {
+            record.lock().unwrap().push(url.to_string());
+            true
+        });
+        let (auth, wakes) = Auth::with_limits(
+            Arc::new(api(&stand_in(vec![]))),
+            Arc::new(Memory(Mutex::new(None))),
+            Arc::new(Marker::new(None)),
+            browser,
+            check,
+            Some((soon, limit)),
+        );
+        auth.run(wakes, |_| {});
+        (auth, opened)
+    }
+
+    fn until_no_look_is_out(auth: &Auth) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while lock(&auth.look).began.is_some() {
+            assert!(Instant::now() < deadline, "the look never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// A store that always takes longer to answer than a press waits must still let a person
+    /// sign in: the answer that came too late for one press is the next press's answer, once.
+    #[test]
+    fn an_answer_that_comes_after_its_press_is_the_next_presss_answer_once() {
+        let looks = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&looks);
+        let (auth, opened) = looking_with(
+            Arc::new(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(600));
+                None
+            }),
+            Duration::from_millis(200),
+            Duration::from_secs(60),
+        );
+        assert_eq!(
+            answered(&auth, "auth.signIn"),
+            Err(BridgeError::from(KEYCHAIN_WAITING))
+        );
+        until_no_look_is_out(&auth);
+        assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+        assert_eq!(looks.load(Ordering::SeqCst), 1, "the kept answer was used");
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
+        // Once: the press after that asks the store again.
+        assert_eq!(
+            answered(&auth, "auth.signIn"),
+            Err(BridgeError::from(KEYCHAIN_WAITING))
+        );
+        assert_eq!(looks.load(Ordering::SeqCst), 2);
+        until_no_look_is_out(&auth);
+        auth.shutdown();
+    }
+
+    /// And when what came too late is that there is no keyring, the next press says so.
+    #[test]
+    fn a_problem_found_after_its_press_was_refused_is_shown_to_the_next_press() {
+        let (auth, opened) = looking_with(
+            Arc::new(|| {
+                std::thread::sleep(Duration::from_millis(600));
+                Some(NO_SECRET_SERVICE)
+            }),
+            Duration::from_millis(200),
+            Duration::from_secs(60),
+        );
+        assert_eq!(
+            answered(&auth, "auth.signIn"),
+            Err(BridgeError::from(KEYCHAIN_WAITING))
+        );
+        until_no_look_is_out(&auth);
+        assert_eq!(
+            answered(&auth, "auth.signIn"),
+            Err(BridgeError::from(NO_SECRET_SERVICE))
+        );
+        assert!(opened.lock().unwrap().is_empty());
+        until_no_look_is_out(&auth);
+        auth.shutdown();
+    }
+
+    /// A look that never answers, as with a keyring that died while its prompt was open, is
+    /// given up at the limit: the store is asked again then, and not before.
+    #[test]
+    fn a_look_that_never_answers_is_given_up_at_the_limit() {
+        let (answer, held) = channel::<()>();
+        let held = Mutex::new(held);
+        let looks = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&looks);
+        let limit = Duration::from_secs(1);
+        let (auth, opened) = looking_with(
+            Arc::new(move || {
+                if count.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let _ = held.lock().unwrap().recv();
+                }
+                None
+            }),
+            Duration::from_millis(200),
+            limit,
+        );
+        let began = Instant::now();
+        for press in 1..=2 {
+            assert_eq!(
+                answered(&auth, "auth.signIn"),
+                Err(BridgeError::from(KEYCHAIN_WAITING)),
+                "press {press}"
+            );
+        }
+        assert!(began.elapsed() < limit, "the two presses took too long");
+        assert_eq!(looks.load(Ordering::SeqCst), 1);
+        std::thread::sleep(limit.saturating_sub(began.elapsed()) + Duration::from_millis(50));
+        assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+        assert_eq!(looks.load(Ordering::SeqCst), 2);
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        answer.send(()).unwrap();
+        auth.shutdown();
+    }
+
     #[test]
     fn a_browser_that_will_not_open_leaves_nothing_pending() {
         let parts = wired(vec![], false, None);
@@ -1459,6 +1650,55 @@ mod tests {
             Err(BridgeError::from(NO_BROWSER))
         );
         assert_eq!(parts.opened.lock().unwrap().len(), 2);
+    }
+
+    /// The browser will not open, and by then a store call holds things up: the host's own
+    /// cancel must not wait for it, because the request has not been answered yet. It is left
+    /// to a thread, and the person is told about the browser at once.
+    #[test]
+    fn a_browser_that_will_not_open_is_reported_while_the_store_waits() {
+        let (asked, was_asked) = channel();
+        let (answer, held) = channel();
+        let was_asked = Mutex::new(was_asked);
+        let slot: Arc<Mutex<Option<Arc<Auth>>>> = Arc::new(Mutex::new(None));
+        let theirs = Arc::clone(&slot);
+        // The browser stands in for the moment between the sign-in beginning and the cancel:
+        // it starts a removal that waits, and says the browser did not open.
+        let browser: Browser = Arc::new(move |_| {
+            let auth = theirs.lock().unwrap().clone().expect("the wiring");
+            std::thread::spawn(move || auth.controller.sign_out());
+            was_asked
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the store was asked to remove the credential");
+            false
+        });
+        let (auth, wakes) = Auth::with_limits(
+            Arc::new(api(&stand_in(vec![]))),
+            Arc::new(Prompting {
+                asked,
+                answer: Mutex::new(held),
+            }),
+            Arc::new(Marker::new(None)),
+            browser,
+            Arc::new(|| None),
+            Some((Duration::from_millis(200), Duration::from_secs(60))),
+        );
+        auth.run(wakes, |_| {});
+        *slot.lock().unwrap() = Some(Arc::clone(&auth));
+        assert_eq!(
+            answered(&auth, "auth.signIn"),
+            Err(BridgeError::from(NO_BROWSER))
+        );
+        answer.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while auth.status()["busy"] != json!(false) {
+            assert!(Instant::now() < deadline, "the sign-in stayed pending");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        slot.lock().unwrap().take();
+        auth.shutdown();
     }
 
     #[test]
@@ -2096,7 +2336,7 @@ mod tests {
             );
             assert_eq!(store.load(), Ok(None));
             assert!(
-                eventually(|| !auth.looking.load(Ordering::SeqCst)),
+                eventually(|| lock(&auth.look).began.is_none()),
                 "the look before Sign in never ended"
             );
             assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
@@ -2133,6 +2373,12 @@ mod tests {
             // The status is answered, and a press is no longer told to wait for the keychain.
             assert!(!says_waiting(&answered(&auth, "auth.status").unwrap()));
             assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
+            // With that call still out a sign-in could not be saved: none is begun, and the
+            // browser is not opened.
+            assert_eq!(
+                answered(&auth, "auth.signIn"),
+                Err(BridgeError::from(KEYCHAIN_WAITING))
+            );
             assert!(opened.lock().unwrap().is_empty());
             // The call that was given up is still out, so the process is not shut down in an
             // orderly way here: the keyring is ended, which is what ends that call.
