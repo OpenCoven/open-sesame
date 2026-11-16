@@ -20,7 +20,7 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | Web engine | WKWebView, WebKit 22625.2.8.11.9 | | | |
 | Binary and its SHA-256 | `target/debug/open-sesame`, development build, `176f3c8b9e5217ab814899653d49e169528c43a169ed7f3eec074890a1d56b41` | | | |
 | Observed by and when | Agent session `claude-code:8bb702d6`, 16 November 2026 | | | |
-| Evidence class | Launched app on one OS, driven by `--toggle`, accessibility actions, keyboard events posted to the app's own process, and the development self-test; each note says which | | | |
+| Evidence class | Launched app on one OS, driven by `--toggle`, accessibility actions, keyboard events posted to the app's own process, shortcut presses posted as synthetic system-level key events, and the development self-test; each note says which | | | |
 
 ## How to read a cell
 
@@ -48,10 +48,10 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
 | --- | --- | --- | --- | --- | --- | --- |
 | C1 | `open-sesame --toggle`, run again from a terminal, hides and then shows the window three times; a plain second launch shows it; each second process exits at once, and one app process and one page load remain throughout | [#78][78]; [#71][71] | pass, [M3](#m3-summon-by---toggle) | | | |
-| C2 | Press the shortcut (Control+Option+Shift+Space on a Mac, Control+Alt+Shift+Space elsewhere) twice: the window hides and shows, the page does not load again, and typing goes into the window after it shows | [#78][78]; hand check from [#71][71] | | | | n/a: Wayland lets no application grab a key; see C4 |
-| C3 | Put another app in full screen and press the shortcut: the window appears over it, the other app stays frontmost, and typing goes into the window | hand check from [#71][71] | | n/a: macOS only | n/a: macOS only | n/a: macOS only |
+| C2 | Press the shortcut (Control+Option+Shift+Space on a Mac, Control+Alt+Shift+Space elsewhere) twice: the window hides and shows, the page does not load again, and typing goes into the window after it shows | [#78][78]; hand check from [#71][71] | fail: hides and shows with one page load, but the keys typed next did not reach the page: [M9](#m9-the-shortcut-pressed-as-synthetic-key-events), [#142][142] | | | n/a: Wayland lets no application grab a key; see C4 |
+| C3 | Put another app in full screen and press the shortcut: the window appears over it, the other app stays frontmost, and typing goes into the window | hand check from [#71][71] | fail: appears over a full-screen app, which stays frontmost, but the keys typed next did not reach the page: [M9](#m9-the-shortcut-pressed-as-synthetic-key-events), [#142][142] | n/a: macOS only | n/a: macOS only | n/a: macOS only |
 | C4 | Bind a shortcut to `open-sesame --toggle` in the desktop's keyboard settings: it shows and hides the window, and the Shortcut section names that command | [#71][71] | n/a: Wayland only | n/a: Wayland only | n/a: Wayland only | |
-| C5 | Save another shortcut in the Shortcut section: the new keys work at once and the old ones no longer do | hand check from [#71][71] | | | | n/a: see C4 |
+| C5 | Save another shortcut in the Shortcut section: the new keys work at once and the old ones no longer do | hand check from [#71][71] | pass: [M9](#m9-the-shortcut-pressed-as-synthetic-key-events) | | | n/a: see C4 |
 | C6 | Save a shortcut that another application already holds: the section says Open Sesame could not register it, and the previous shortcut still works | hand check from [#71][71] | n/a: macOS accepts a held shortcut and reports nothing; owner question on [#71][71] | | | n/a: see C4 |
 | C7 | A left click on the tray icon places the window against the icon; with "Hide the window when it loses focus" on, a tray click hides a shown window and a click inside the page does not | hand check from [#71][71] | n/a: Windows only | | n/a: Windows only | n/a: Windows only |
 
@@ -123,7 +123,11 @@ At the tested commit the storage is wired into the application ([#105][105]), bu
 
 ## Failures and differences
 
-None filed at this commit.
+Filed at this commit, all on macOS:
+
+- [#142][142]: after the shortcut shows the window, the keys typed next do not reach the page; the window itself has the keyboard focus. C2 and C3 fail on it.
+- [#141][141]: the development terminal self-test never starts in an app started from the desktop. It is a development aid, so no line fails on it.
+- [#140][140]: `cargo test` failed once with "could not start the shell" on a busy Mac. That is a headless test, not a line here; draft pull request [#117][117] proposes a retry.
 
 ## macOS observations
 
@@ -145,7 +149,7 @@ With the app from M2 running, `open-sesame --toggle` was run six times from a te
 
 From a terminal, the binary was started with a new disposable settings folder and `OPEN_SESAME_SELFTEST` set, which makes a development build run the terminal self-test of [#74][74] (`ui/dev/selftest.js`). It opened the Shells view by itself and drove real shells through the product's own pane launcher, sending text as the keyboard would but without keystrokes. Its report: the marker `open-sesame-marker` came back intact through a zsh pane in 1.7 seconds; a pane opened in a folder named `open sesame ünï` printed that folder as `$PWD`; characters whose bytes arrived in two messages were drawn whole (`S:é:€:🦊:E`); `awk` printed 7,000,000 numbered lines, 54,888,896 bytes, in 12.8 seconds, each line checked in order, while the page's timers never stopped for more than 18 ms (drawing paused for up to 2.1 seconds once; whether the window was covered at that moment is not known); and closing a pane over `sleep 86400` left neither the shell nor the child 44 ms later, checked through a separate shell.
 
-The same self-test in an app started from the desktop did not start: four minutes after launch the page was ready on the Today view and no shell had been opened. The window had been moved to another Space during that launch. This was not investigated further and is not counted against any line.
+The same self-test in an app started from the desktop never started, in three launches, two of them with the window on screen throughout: the page was ready on the Today view and no shell was opened. The same bundle script run from a terminal passed. This is [#141][141]; no line is counted from or against it.
 
 ### M5 Quit with shells open
 
@@ -170,6 +174,16 @@ In a relaunch from the desktop, the window's close button was pressed through th
 
 In the Shortcut section, `Control+Alt+Shift+K` was typed into the field and Save pressed: the section said "Press Control+Alt+Shift+K anywhere to show or hide Open Sesame." and the settings folder's `summon.json` held that shortcut. After Command-Q and a relaunch from the desktop, the app logged `"shortcut":"Control+Alt+Shift+K"` with `"registered":true`, and the field showed it. The default was then saved back. An earlier try is not counted: a stray outside keystroke had put a `v` before the keys, and the section rejected it as "not a shortcut Open Sesame can use" without saving anything.
 
+### M9 The shortcut, pressed as synthetic key events
+
+The app was started from the desktop with a new disposable settings folder and a shell open, and the other application was a new Script Editor document. The shortcut was pressed as keyboard events posted at the HID level, the path a keyboard's events take to the system's global shortcuts; an earlier run used System Events key codes, with the same results for hiding, showing and the saved keys. No person pressed the keys.
+
+- C2: with Script Editor in front, Control+Option+Shift+Space hid the window and a second press showed it, with one page load throughout. Afterwards the accessibility API reported the app's focused element as the window itself, not the shell's input that had the focus before, and Script Editor stayed frontmost. `echo os78-c2 | tee c2.txt` and Return, posted to the app's process only, did not reach the shell: no file appeared, and the prompt stayed empty in the window image. This is [#142][142].
+- C5: after `Control+Alt+K` was saved, its first press hid the window and its second showed it; two presses of Control+Option+Shift+Space then left the window shown. The page did not load again. Seen in two runs.
+- C3: with the Script Editor document in full screen, the shortcut showed the window in front of it. In the window list, the Open Sesame window came directly before Script Editor's two full-screen windows, and Script Editor stayed frontmost and in full screen. The focus and the typed text behaved as in C2. In one earlier try, text posted at the HID level did not reach the shell either.
+
+Typing through the system's keyboard path was tried in two runs and then stopped: people were using the Mac, and keys that missed Open Sesame could have reached their applications. Text was therefore posted to Open Sesame's process only. That path reached the shell in M6 whenever the page had the focus.
+
 ### Outside input during the run
 
 The Mac was in use by others throughout: keyboard and pointer input arrived within a second of most steps, the front app changed, and the window was moved to another Space. Each line above is counted only from a try whose result was checked after it ran. One outside input switched on "Hide the window when it loses focus" in a disposable settings folder during M4; that folder was not used again.
@@ -190,15 +204,14 @@ These are the numbered steps for each system, written for a person at the machin
 
 ### macOS, part A (about 10 minutes)
 
-An agent observed A1 to A3, C1, D1 to D8, D10, F4, F5 and G1 at the tested commit; see [macOS observations](#macos-observations). These steps need a person's hands.
+An agent observed A1 to A3, C1, C5, D1 to D8, D10, F4, F5 and G1 at the tested commit, and saw C2 and C3 fail on [#142][142]; see [macOS observations](#macos-observations). These steps need a person's hands; steps 3 and 4 also settle whether #142 happens with a real keyboard.
 
 1. With the app started by `npm run dev:app`, open the Shells view and press New shell.
 2. Click the Open Sesame icon in the menu bar and choose Show or Hide: the window hides. Choose it again: the window shows. Do it twice; the terminal still has one `page loaded` line. This is B1.
-3. Press Control+Option+Shift+Space: the window hides. Press it again: it shows, and typing `echo hi` and Return appears in the shell. The terminal still has one `page loaded` line. This is C2.
-4. Put another app in full screen (its green button), then press the shortcut: the window appears over the full-screen app, typing goes into the shell, and when you move the pointer to the top of the screen the menu bar still names the other app. Press the shortcut to hide the window and leave full screen. This is C3.
-5. In the Shortcut section type `Control+Alt+K` and press Save. Press Control+Option+K twice: the window hides and shows. Press Control+Option+Shift+Space: nothing happens. Put `Control+Alt+Shift+Space` back and Save. This is C5.
-6. Fill in SSH host and User for a machine you can reach with SSH and press New shell: it connects; run `hostname`; close the pane with its ×; `pgrep -l ssh` shows no `ssh` left from it. This is D9.
-7. Choose Quit from the menu-bar icon's menu. `pgrep -x open-sesame` prints nothing. This is B2.
+3. Click into the shell, then click another app. Press Control+Option+Shift+Space: the window hides. Press it again: it shows. Without clicking, type `echo hi` and Return: it should appear in the shell; an agent saw the keys go nowhere ([#142][142]), so write what you see. The terminal still has one `page loaded` line. This is C2.
+4. Put another app in full screen (its green button), then press the shortcut: the window appears over the full-screen app; without clicking, typing should go into the shell (see step 3); and when you move the pointer to the top of the screen the menu bar still names the other app. Press the shortcut to hide the window and leave full screen. This is C3.
+5. Fill in SSH host and User for a machine you can reach with SSH and press New shell: it connects; run `hostname`; close the pane with its ×; `pgrep -l ssh` shows no `ssh` left from it. This is D9.
+6. Choose Quit from the menu-bar icon's menu. `pgrep -x open-sesame` prints nothing. This is B2.
 
 ### macOS, part B (about 25 minutes, after #72 and #77 close)
 
@@ -309,8 +322,12 @@ Commit `0d65d4341b97311f6c031016d2af57a8f4aebe5d` (`main` after [#113][113]), be
 [105]: https://github.com/OpenCoven/open-sesame/issues/105
 [113]: https://github.com/OpenCoven/open-sesame/pull/113
 [116]: https://github.com/OpenCoven/open-sesame/issues/116
+[117]: https://github.com/OpenCoven/open-sesame/pull/117
 [116-checks]: https://github.com/OpenCoven/open-sesame/issues/78#issuecomment-6906616293
 [118]: https://github.com/OpenCoven/open-sesame/pull/118
 [119]: https://github.com/OpenCoven/open-sesame/pull/119
 [120]: https://github.com/OpenCoven/open-sesame/pull/120
 [129]: https://github.com/OpenCoven/open-sesame/pull/129
+[140]: https://github.com/OpenCoven/open-sesame/issues/140
+[141]: https://github.com/OpenCoven/open-sesame/issues/141
+[142]: https://github.com/OpenCoven/open-sesame/issues/142
