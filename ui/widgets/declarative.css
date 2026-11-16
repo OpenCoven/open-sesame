@@ -1,0 +1,7 @@
+.widget-view[data-widget-view="declarative"] { overflow-wrap: anywhere; }
+.json-collection { display: grid; gap: 1rem; margin-top: 1rem; }
+.json-card, .widget-view[data-widget-view="declarative"] > section { border: 1px solid var(--line); border-radius: 8px; padding: 1rem; }
+.json-card button { margin: .25rem .5rem .25rem 0; }
+.json-component { margin: .75rem 0; }
+.json-component textarea { display: block; width: 100%; min-height: 5rem; margin-top: .35rem; resize: vertical; }
+.json-component p { white-space: pre-wrap; }
