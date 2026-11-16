@@ -1514,15 +1514,21 @@ mod login_shell {
     /// show: a script under the shell's name that notes each run in `log` beside it, with
     /// whether it was given `ENV` and `BASH_ENV` and, for the second run, its arguments. A run
     /// that starts with `-i` is the login run and does `login`; any other is the second run
-    /// and does `bare`. The script is copied into place by another program, so that no child
-    /// of a test running beside this one can hold it open for writing when it is started.
-    fn stand_in(name: &str, login: &str, bare: &str) -> (tempfile::TempDir, PathBuf) {
+    /// and does `bare`. The script is bash's, because bash passes every launch variable on to
+    /// what it starts, so the script alone decides what is left out; under dash, which is
+    /// `sh` on Ubuntu, `config.key` would be gone before the script's first line. `None`,
+    /// with a note, where there is no bash. The script is copied into place by another
+    /// program, so that no child of a test running beside this one can hold it open for
+    /// writing when it is started.
+    fn stand_in(name: &str, login: &str, bare: &str) -> Option<(tempfile::TempDir, PathBuf)> {
         use std::os::unix::fs::PermissionsExt;
+        let bash = shell("/bin/bash")?;
+        let bash = bash.display();
         let dir = tempfile::tempdir().unwrap();
         let text = dir.path().join("text");
         let shell = dir.path().join(name);
         let script = format!(
-            "#!/bin/sh\nhere=${{0%/*}}\nnoted=\"ENV=${{ENV-unset}} BASH_ENV=${{BASH_ENV-unset}}\"\n\
+            "#!{bash}\nhere=${{0%/*}}\nnoted=\"ENV=${{ENV-unset}} BASH_ENV=${{BASH_ENV-unset}}\"\n\
              if [ \"$1\" = -i ]; then\n  echo \"login $noted\" >> \"$here/log\"\n  {login}\nfi\n\
              echo \"bare $noted $*\" >> \"$here/log\"\n{bare}\n"
         );
@@ -1533,7 +1539,7 @@ mod login_shell {
             .unwrap();
         assert!(copied.success());
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
-        (dir, shell)
+        Some((dir, shell))
     }
 
     /// The login run of a stand-in: the capture's own command, with `config.key` left out.
@@ -1588,7 +1594,9 @@ mod login_shell {
         ];
         for (name, arguments) in cases {
             let bare = format!("exec {WITHOUT} /usr/bin/env -0");
-            let (_dir, shell) = stand_in(name, &login_run(), &bare);
+            let Some((_dir, shell)) = stand_in(name, &login_run(), &bare) else {
+                return;
+            };
             let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
             assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
             assert_eq!(env.get("config.key"), Some("launch"), "{name}");
@@ -1628,7 +1636,9 @@ mod login_shell {
             ),
         ];
         for (what, bare) in cases {
-            let (_dir, shell) = stand_in("zsh", &login_run(), &bare);
+            let Some((_dir, shell)) = stand_in("zsh", &login_run(), &bare) else {
+                return;
+            };
             let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
             assert_eq!(env.source(), &EnvSource::LoginShell, "{what}");
             assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"), "{what}");
@@ -1639,7 +1649,9 @@ mod login_shell {
             "exec {WITHOUT} /bin/sh -c \"$(printf '%s' \"$4\" | sed 's#/usr/bin/env -0#/usr/bin/false#g')\""
         );
         let bare = format!("exec {WITHOUT} /usr/bin/env -0");
-        let (_dir, shell) = stand_in("zsh", &login, &bare);
+        let Some((_dir, shell)) = stand_in("zsh", &login, &bare) else {
+            return;
+        };
         let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
@@ -1651,11 +1663,13 @@ mod login_shell {
     /// killed; the capture keeps what the login run gave and puts nothing back.
     #[test]
     fn a_second_run_that_hangs_is_given_up_at_its_limit_and_killed() {
-        let (dir, shell) = stand_in(
+        let Some((dir, shell)) = stand_in(
             "zsh",
             &login_run(),
             "echo $$ > \"$here/pid\"\nexec sleep 600",
-        );
+        ) else {
+            return;
+        };
         let started = Instant::now();
         let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
         let took = started.elapsed();
@@ -1678,11 +1692,13 @@ mod login_shell {
     /// too.
     #[test]
     fn quitting_during_the_second_run_ends_it_at_once() {
-        let (dir, shell) = stand_in(
+        let Some((dir, shell)) = stand_in(
             "zsh",
             &login_run(),
             "echo $$ > \"$here/pid\"\nexec sleep 600",
-        );
+        ) else {
+            return;
+        };
         let cancel = open_sesame_core::process::Cancel::new();
         let pid_file = dir.path().join("pid");
         let quit = {
