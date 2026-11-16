@@ -182,6 +182,11 @@ mod windows {
         SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+    /// How long `end` waits for a killed shell's process to end. A killed process ends within
+    /// milliseconds; the limit is for one that does not, so that closing a pane cannot hang.
+    const ENDING: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Makes sure a shell started from here receives Control+C.
     ///
@@ -242,13 +247,27 @@ mod windows {
             }
         }
 
-        /// Kills every process in the job and collects the shell.
+        /// Kills every process in the job and collects the shell. Returns when the shell's
+        /// process has ended, or after [`ENDING`] if it has not.
+        ///
+        /// Ending a process is not immediate on Windows, and the library's `wait` returns as
+        /// soon as the shell's exit code is set, which is a moment before the process itself
+        /// has ended: one look straight after a close still found the shell in a hosted run
+        /// (issue #112). So the process is waited for here first. The other processes in the
+        /// job are ended by the same call and are not waited for; they can be seen for a
+        /// moment after this returns.
         pub(in super::super) fn end(&self, child: &mut dyn Child) {
             // SAFETY: the job handle is valid for as long as this value exists.
             unsafe {
                 TerminateJobObject(self.job, 1);
             }
             let _ = child.kill();
+            if let Some(process) = child.as_raw_handle() {
+                // SAFETY: the handle belongs to `child`, which is borrowed for this call.
+                unsafe {
+                    WaitForSingleObject(process as HANDLE, ENDING.as_millis() as u32);
+                }
+            }
             let _ = child.wait();
         }
     }

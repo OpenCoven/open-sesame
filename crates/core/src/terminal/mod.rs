@@ -139,6 +139,9 @@ impl Terminals {
         {
             return Err(BridgeError::from(TOO_MANY));
         }
+        // The panes stay locked while the shell starts, which keeps the count above true and
+        // makes every other request for any pane wait: some milliseconds for a start, and about
+        // 75 ms more when no pseudo-terminal can be opened and every further try fails too.
         let session = Session::start(&launch, cols, rows, sink)?;
         let pid = session.pid;
         let displaced = sessions.insert(id.to_string(), Arc::new(session));
