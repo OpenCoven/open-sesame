@@ -180,28 +180,39 @@ mod tests {
 
     /// `resume` reads a snapshot of every thread on the system to find the new process's own.
     /// From reading alone nobody could say what that costs (issue #97), so this measures it on
-    /// the machine that runs the test, prints it, and fails only when it is out of all
-    /// proportion to starting a process. CI runs it again with its output shown and keeps it.
+    /// the machine that runs the test beside the cost of creating the process, and prints
+    /// both. CI runs it again with its output shown and keeps it. The first hosted run
+    /// measured a median of 8.5 ms; the limit is about twelve times that, so a runner's bad
+    /// day passes and a cost of another order does not.
     #[test]
     fn resuming_a_new_process_on_windows_is_quick() {
-        let mut times = Vec::new();
+        let (mut creating, mut resuming) = (Vec::new(), Vec::new());
         for _ in 0..20 {
             let mut command = Command::new("cmd.exe");
             command
                 .args(["/d", "/c", "exit 0"])
                 .creation_flags(CREATE_SUSPENDED | CREATE_NO_WINDOW);
-            let mut child = command.spawn().unwrap();
             let started = Instant::now();
-            resume(child.id()).unwrap();
-            times.push(started.elapsed());
+            let mut child = command.spawn().unwrap();
+            creating.push(started.elapsed());
+            let started = Instant::now();
+            let resumed = resume(child.id());
+            resuming.push(started.elapsed());
+            if resumed.is_err() {
+                // Still suspended: it would never exit by itself.
+                let _ = child.kill();
+            }
             let _ = child.wait();
+            resumed.unwrap();
         }
-        times.sort();
-        let (median, slowest) = (times[times.len() / 2], times[times.len() - 1]);
+        creating.sort();
+        resuming.sort();
+        let (median, slowest) = (resuming[resuming.len() / 2], resuming[resuming.len() - 1]);
         eprintln!(
-            "WINDOWS-97 resume: median {median:?}, slowest {slowest:?}, {} processes",
-            times.len()
+            "WINDOWS-97 resume: median {median:?}, slowest {slowest:?}, {} processes; creating one: median {:?}",
+            resuming.len(),
+            creating[creating.len() / 2]
         );
-        assert!(median < Duration::from_millis(500), "{times:?}");
+        assert!(median < Duration::from_millis(100), "{resuming:?}");
     }
 }

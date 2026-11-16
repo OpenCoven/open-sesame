@@ -454,18 +454,25 @@ mod windows {
     /// A tool found as a `.cmd` file, the form npm installs, is run by the standard library
     /// through `cmd.exe`, which reads quotes, percent signs and ampersands its own way. The
     /// standard library quotes each argument for it and refuses one it cannot quote safely.
-    /// Either is acceptable; an argument that arrives changed is not. The `.cmd` file hands
-    /// its arguments to the fixture, which prints each exactly as it received it.
+    /// Either is acceptable; an argument that arrives changed is not, and neither is a
+    /// refusal after the tool has started. The `.cmd` file notes each time it runs, then
+    /// hands its arguments to the fixture, which prints each exactly as it received it.
     #[test]
     fn a_cmd_tool_on_windows_gets_each_argument_exactly_or_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let tool = dir.path().join("tool.cmd");
+        let noted = dir.path().join("runs.log");
         let forward = format!(
-            "@\"{}\" echo-args %*\r\n",
+            "@echo ran>>\"%~dp0runs.log\"\r\n@\"{}\" echo-args %*\r\n",
             env!("CARGO_BIN_EXE_fixture_cli")
         );
         std::fs::write(&tool, forward).unwrap();
-        let mut ran = 0;
+        let times_run = || {
+            std::fs::read_to_string(&noted)
+                .map(|text| text.lines().count())
+                .unwrap_or(0)
+        };
+        let (mut ran, mut refused) = (0, 0);
         for argument in [
             "plain",
             "two words",
@@ -473,7 +480,13 @@ mod windows {
             "50% & more",
             "caret^ and (parentheses)",
             "ends in a backslash\\",
+            // The name of a variable every Windows system sets: it must not be filled in.
+            "%OS%",
+            "",
+            "quote\"&next to an ampersand",
+            "line one\nline two",
         ] {
+            let before = times_run();
             let mut request = Run::new(&tool);
             request.args = vec![argument.to_string()];
             request.timeout = Duration::from_secs(20);
@@ -481,24 +494,31 @@ mod windows {
                 Ok(output) => {
                     let received = text(&output.stdout);
                     eprintln!(
-                        "WINDOWS-97 cmd tool: {argument:?} ran with status {:?} and received {:?}",
-                        output.status,
-                        received.trim_end()
+                        "WINDOWS-97 cmd tool: {argument:?} ran with status {:?} and received {received:?}",
+                        output.status
                     );
                     assert_eq!(output.status, Some(0), "{argument:?}");
-                    assert_eq!(
-                        received.trim_end(),
-                        argument,
-                        "the argument arrived changed"
-                    );
+                    // One line, so an empty argument is told from no argument at all.
+                    let line = received
+                        .strip_suffix('\n')
+                        .map(|line| line.strip_suffix('\r').unwrap_or(line));
+                    assert_eq!(line, Some(argument), "the argument arrived changed");
+                    assert_eq!(times_run(), before + 1, "{argument:?}");
                     ran += 1;
                 }
-                Err(RunError::Io(_)) => {
-                    eprintln!("WINDOWS-97 cmd tool: {argument:?} was refused before anything ran");
+                Err(RunError::Io(why)) => {
+                    eprintln!("WINDOWS-97 cmd tool: {argument:?} was refused ({why})");
+                    assert_eq!(
+                        times_run(),
+                        before,
+                        "{argument:?} was refused after the tool had started"
+                    );
+                    refused += 1;
                 }
                 Err(other) => panic!("{argument:?}: {other:?}"),
             }
         }
+        eprintln!("WINDOWS-97 cmd tool: {ran} arguments arrived unchanged, {refused} were refused");
         // The plain cases at least must run, or this test has shown nothing.
         assert!(ran >= 2, "only {ran} of the arguments ran");
     }

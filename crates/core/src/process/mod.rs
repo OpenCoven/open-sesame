@@ -82,6 +82,7 @@ pub struct Run {
     pub stdin: Option<Vec<u8>>,
     pub timeout: Duration,
     /// The most bytes of standard output and standard error together before the run is stopped.
+    /// What the login-shell capture reads from its own pipe counts as well.
     pub max_output: usize,
     pub cancel: Option<Cancel>,
 }
@@ -187,6 +188,19 @@ enum Message {
 use platform::Report;
 #[cfg(not(unix))]
 enum Report {}
+
+/// The flag that ends the reading of a [`Report`]; see `drain` in `unix.rs`. Dropping it sets
+/// it, so an early return from the run ends the reading too.
+#[cfg(unix)]
+#[derive(Default)]
+struct Exited(Arc<AtomicBool>);
+
+#[cfg(unix)]
+impl Drop for Exited {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
 
 /// Starts one of the run's helper threads. A system that cannot start a thread reports an
 /// error here; `std::thread::spawn` would panic instead.
@@ -333,11 +347,22 @@ fn execute(
         pump(stderr, sender.clone(), Message::Stderr).map_err(failed)?;
         open += 1;
     }
+    // Set once the program is seen exited or the run is being stopped, and on every way out of
+    // this function, so the thread that reads the report never outlives the run.
+    #[cfg(unix)]
+    let exited = Exited::default();
     #[cfg(unix)]
     if let Some(report) = report {
-        // The child has its own copy of the writing end by now; this side's is given up here,
-        // so the stream closes when the last process holding it has gone.
-        pump(report.into_reader(), sender.clone(), Message::Report).map_err(failed)?;
+        // The child has its own copy of the writing end by now; this side's is given up here.
+        let reader = report.into_reader();
+        let (sender, exited) = (sender.clone(), exited.0.clone());
+        start(move || {
+            platform::drain(reader, &exited, |bytes| {
+                sender.send(Message::Report(bytes)).is_ok()
+            });
+            let _ = sender.send(Message::Closed);
+        })
+        .map_err(failed)?;
         open += 1;
     }
     #[cfg(not(unix))]
@@ -366,6 +391,10 @@ fn execute(
     let result = loop {
         let reason = shared.reason();
         if reason.is_some() || owned.tree.exited() {
+            // What the program wrote to its report is in the pipe by now. The report is read
+            // out and closed without waiting for whatever else still holds its other end.
+            #[cfg(unix)]
+            exited.0.store(true, Ordering::SeqCst);
             let since = ended.get_or_insert_with(Instant::now).elapsed();
             if open == 0 {
                 break reason;
@@ -409,7 +438,7 @@ fn execute(
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => {
-                // Both streams are closed and the program is still running. Nothing more will
+                // Every stream is closed and the program is still running. Nothing more will
                 // arrive on the channel, so wait here instead of spinning on it.
                 open = 0;
                 std::thread::sleep(tick);
@@ -544,12 +573,13 @@ mod tests {
     }
 
     /// A system that cannot start a thread makes the run an error, not a panic, and the
-    /// program that was already started is killed (issue #97). A run starts up to four
-    /// threads: the watchdog, one for each output stream and one that writes the input.
+    /// program that was already started is killed (issue #97). A run starts up to five
+    /// threads: the watchdog, one for each output stream, one for the report when it has one,
+    /// and one that writes the input.
     #[cfg(unix)]
     #[test]
     fn a_thread_that_cannot_be_started_is_an_error_and_leaves_nothing_running() {
-        for allowed in 0..4 {
+        for allowed in 0..5 {
             let dir = tempfile::tempdir().unwrap();
             let pid_file = dir.path().join("pid");
             let mut request = Run::new("/bin/sh");
@@ -560,7 +590,9 @@ mod tests {
             request.stdin = Some(b"unused".to_vec());
             request.timeout = Duration::from_secs(20);
             THREADS_LEFT.with(|left| left.set(Some(allowed)));
-            let result = run(request, None);
+            let report = Report::new();
+            assert!(report.is_some(), "no pipe for the report");
+            let result = execute(request, None, report).map(|_| ());
             THREADS_LEFT.with(|left| left.set(None));
             assert!(
                 matches!(result, Err(RunError::Io(_))),

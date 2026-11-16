@@ -269,26 +269,46 @@ mod login_shell {
 
     /// Names the shells that must be installed where the tests run, as paths separated like a
     /// search path. CI sets it, so a runner without one of them fails instead of passing these
-    /// tests without running them (issue #97). Unset, a missing shell is only noted.
+    /// tests without running them (issue #97). Unset, a missing shell is only noted. A shell is
+    /// matched by its file name, so a test uses the path named here in place of its own, and
+    /// a named shell that a test cannot find anywhere fails that test.
     const REQUIRED: &str = "OPEN_SESAME_REQUIRE_SHELLS";
 
     fn required() -> Vec<PathBuf> {
         std::env::var_os(REQUIRED)
-            .map(|paths| std::env::split_paths(&paths).collect())
+            .map(|paths| {
+                std::env::split_paths(&paths)
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
-    /// The shell, or `None` with a note when this machine does not have it and need not.
-    fn shell(path: &'static str) -> Option<&'static Path> {
-        let found = Path::new(path).is_file();
-        if !found {
+    /// The shell to use: the required path with the same file name when there is one, else the
+    /// first of `paths` that is installed, else `None` with a note.
+    fn installed(paths: &[&str]) -> Option<PathBuf> {
+        let same_name = |needed: &PathBuf| {
+            paths
+                .iter()
+                .any(|path| Path::new(path).file_name() == needed.file_name())
+        };
+        if let Some(needed) = required().into_iter().find(same_name) {
             assert!(
-                !required().iter().any(|needed| needed == Path::new(path)),
-                "{path} is named in {REQUIRED} and is not installed"
+                needed.is_file(),
+                "{} is named in {REQUIRED} and is not installed",
+                needed.display()
             );
-            eprintln!("NOT RUN: {path} is not installed on this machine");
+            return Some(needed);
         }
-        found.then(|| Path::new(path))
+        let found = paths.iter().map(PathBuf::from).find(|path| path.is_file());
+        if found.is_none() {
+            eprintln!("NOT RUN: none of {paths:?} is installed on this machine");
+        }
+        found
+    }
+
+    fn shell(path: &str) -> Option<PathBuf> {
+        installed(&[path])
     }
 
     /// A required shell that no test happens to ask for is still checked, and so is a path
@@ -313,10 +333,50 @@ mod login_shell {
         "/usr/local/bin/fish",
     ];
 
-    fn login_path_case(shell_path: &'static str, startup_file: &str) {
+    /// The four kinds of shell the capture is tested with: where each is installed, the
+    /// startup file a login shell of that kind reads, and how it exports a variable.
+    struct Kind {
+        paths: &'static [&'static str],
+        startup_file: &'static str,
+        export: fn(&str, &str) -> String,
+    }
+
+    fn posix_export(name: &str, value: &str) -> String {
+        format!("export {name}={value}\n")
+    }
+
+    fn fish_export(name: &str, value: &str) -> String {
+        format!("set -gx {name} {value}\n")
+    }
+
+    const KINDS: [Kind; 4] = [
+        Kind {
+            paths: &["/bin/zsh"],
+            startup_file: ".zprofile",
+            export: posix_export,
+        },
+        Kind {
+            paths: &["/bin/bash"],
+            startup_file: ".bash_profile",
+            export: posix_export,
+        },
+        Kind {
+            paths: &["/bin/sh"],
+            startup_file: ".profile",
+            export: posix_export,
+        },
+        Kind {
+            paths: &FISH,
+            startup_file: ".config/fish/config.fish",
+            export: fish_export,
+        },
+    ];
+
+    fn login_path_case(shell_path: &str, startup_file: &str) {
         let Some(shell) = shell(shell_path) else {
             return;
         };
+        let shell = shell.as_path();
         let tools = tempfile::tempdir().unwrap();
         let bin = tools.path().join("login only bin");
         let tool = install(&bin, "only-on-login-path");
@@ -365,7 +425,7 @@ mod login_shell {
     /// language, so it gets a case of its own wherever it is installed.
     #[test]
     fn a_tool_only_on_the_fish_login_path_is_found() {
-        let Some(fish) = FISH.into_iter().find(|path| shell(path).is_some()) else {
+        let Some(fish) = installed(&FISH) else {
             return;
         };
         let tools = tempfile::tempdir().unwrap();
@@ -378,8 +438,8 @@ mod login_shell {
                 bin.display()
             ),
         )]);
-        let env = ShellEnv::capture(Some(Path::new(fish)), inherited, LIMIT);
-        assert_eq!(env.source(), &EnvSource::LoginShell, "{fish}");
+        let env = ShellEnv::capture(Some(&fish), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell, "{fish:?}");
         assert_eq!(env.get("FROM_PROFILE"), Some("set"));
         assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
         let mut finder = Search::from_env(&env);
@@ -400,7 +460,7 @@ mod login_shell {
             "export ODD=\"$(printf '\\377\\376')\"\nexport MIXED=\"ok$(printf '\\377')\"\nexport AFTER=ok\n"
                 .to_string(),
         )]);
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("ODD"), None);
         assert_eq!(env.get("MIXED"), None);
@@ -411,31 +471,112 @@ mod login_shell {
         );
     }
 
-    /// A background job that a startup file leaves printing shares the shell's output. What it
-    /// prints while the environment is read must neither become a variable nor swallow one
-    /// (issue #97): the environment travels on a channel of its own.
+    /// Background jobs that a startup file leaves printing share the shell's output. What they
+    /// print while the environment is read must neither become a variable nor swallow one
+    /// (issue #97): the environment travels on a channel of its own. The jobs print until they
+    /// are killed, so they are printing when the environment is read on a fast machine too,
+    /// and every kind of shell is tried: each treats the descriptors it is handed differently.
+    /// The counting between two lines paces a job: measured, two jobs print about three lines
+    /// a millisecond on a busy Mac, and stay far below the output cap on a fast machine.
     #[test]
     fn background_output_from_a_startup_file_does_not_reach_the_result() {
-        let Some(shell) = shell("/bin/zsh") else {
-            return;
-        };
-        let noisy = "export REAL=value\n( i=0; while [ $i -lt 3000 ]; do echo \"NOISE$i=x\"; i=$((i+1)); done ) &\nexport LAST=kept\n";
-        for round in 0..12 {
-            let (_home, inherited) = home(&[(".zprofile", noisy.to_string())]);
-            let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
-            assert_eq!(env.source(), &EnvSource::LoginShell, "round {round}");
-            assert_eq!(env.get("REAL"), Some("value"), "round {round}");
-            assert_eq!(env.get("LAST"), Some("kept"), "round {round}");
-            let noise: Vec<&String> = env
-                .vars()
-                .keys()
-                .filter(|name| name.starts_with("NOISE"))
-                .collect();
+        let job = "/bin/sh -c 'while :; do echo NOISE=x; i=0; while [ $i -lt 100 ]; do i=$((i+1)); done; done' &\n";
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let noisy = [
+                (kind.export)("REAL", "value"),
+                job.repeat(2),
+                (kind.export)("LAST", "kept"),
+            ]
+            .concat();
+            for round in 0..6 {
+                let (_home, inherited) = home(&[(kind.startup_file, noisy.clone())]);
+                let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+                let case = format!("{}, round {round}", shell.display());
+                assert_eq!(env.source(), &EnvSource::LoginShell, "{case}");
+                assert_eq!(env.get("REAL"), Some("value"), "{case}");
+                assert_eq!(env.get("LAST"), Some("kept"), "{case}");
+                assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"), "{case}");
+                assert_eq!(
+                    env.get("NOISE"),
+                    None,
+                    "{case}: background output became a variable"
+                );
+                let swallowed: Vec<&String> = env
+                    .vars()
+                    .values()
+                    .filter(|value| value.contains("NOISE"))
+                    .collect();
+                assert!(
+                    swallowed.is_empty(),
+                    "{case}: background output ended up inside {} values",
+                    swallowed.len()
+                );
+            }
+        }
+    }
+
+    /// A helper that a startup file leaves running with its output sent elsewhere, as an agent
+    /// or a daemon is, still holds everything else the shell had open. The capture does not
+    /// wait for it (issue #97). The times compared are the quickest of several, so a busy
+    /// machine does not decide the result; waiting for the helper costs a quarter of a second.
+    #[test]
+    fn a_quiet_helper_left_by_a_startup_file_does_not_hold_up_the_result() {
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let alone = (kind.export)("REAL", "value");
+            let with_helper = format!("{alone}sleep 30 >/dev/null 2>&1 &\n");
+            let time = |startup: &str| {
+                let (_home, inherited) = home(&[(kind.startup_file, startup.to_string())]);
+                let started = Instant::now();
+                let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+                let took = started.elapsed();
+                assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+                assert_eq!(env.get("REAL"), Some("value"), "{}", shell.display());
+                took
+            };
+            let (mut quickest_alone, mut quickest_with_helper) = (Duration::MAX, Duration::MAX);
+            for _ in 0..5 {
+                quickest_alone = quickest_alone.min(time(&alone));
+                quickest_with_helper = quickest_with_helper.min(time(&with_helper));
+            }
             assert!(
-                noise.is_empty(),
-                "round {round}: background output became variables: {noise:?}"
+                quickest_with_helper < quickest_alone + Duration::from_millis(125),
+                "{}: {quickest_with_helper:?} with a helper, {quickest_alone:?} without",
+                shell.display()
             );
         }
+    }
+
+    /// One directory on the search path with a name that is not Unicode does not cost the
+    /// user every other directory their startup files added (issue #97): the capture is still
+    /// used, and the search path is the directories that can be passed on.
+    #[test]
+    fn a_search_path_entry_that_is_not_unicode_is_the_only_thing_left_out() {
+        let Some(shell) = shell("/bin/bash") else {
+            return;
+        };
+        let (_home, inherited) = home(&[(
+            ".bash_profile",
+            "export PATH=\"/opt/first:/opt/odd$(printf '\\377')dir:$PATH:/opt/last\"\nexport AFTER=ok\n"
+                .to_string(),
+        )]);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("AFTER"), Some("ok"));
+        let path: Vec<&str> = env.get("PATH").unwrap().split(':').collect();
+        assert_eq!(path.first(), Some(&"/opt/first"), "{path:?}");
+        assert_eq!(path.last(), Some(&"/opt/last"), "{path:?}");
+        assert!(path.contains(&"/usr/bin"), "{path:?}");
+        assert!(
+            path.iter()
+                .all(|dir| !dir.contains("odd") && !dir.contains('\u{fffd}')),
+            "{path:?}"
+        );
     }
 
     /// Startup files print banners, and may even print something that looks like a marker.
@@ -449,7 +590,7 @@ mod login_shell {
             (".zprofile", noise.to_string()),
             (".zlogin", "echo 'last words'\n".to_string()),
         ]);
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("REAL"), Some("value"));
         assert_eq!(env.get("FAKE"), None);
@@ -464,7 +605,7 @@ mod login_shell {
             ".zprofile",
             "export MULTI=$'first\\nSECOND=fake'\nexport AFTER=ok\n".to_string(),
         )]);
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("MULTI"), Some("first\nSECOND=fake"));
         assert_eq!(env.get("SECOND"), None);
@@ -479,7 +620,7 @@ mod login_shell {
         };
         let (_home, inherited) = home(&[(".zprofile", "export HALF=done\nsleep 30\n".to_string())]);
         let started = Instant::now();
-        let env = ShellEnv::capture(Some(shell), inherited.clone(), Duration::from_millis(700));
+        let env = ShellEnv::capture(Some(&shell), inherited.clone(), Duration::from_millis(700));
         assert!(
             started.elapsed() < Duration::from_secs(4),
             "{:?}",
@@ -500,7 +641,7 @@ mod login_shell {
             "read -r answer\nexport ASKED=yes\n".to_string(),
         )]);
         let started = Instant::now();
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "{:?}",

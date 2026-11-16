@@ -92,7 +92,9 @@ impl ShellEnv {
     /// returns them overlaid with what the shell's startup files set. On any failure the result
     /// is `inherited` unchanged, with the reason in [`ShellEnv::source`]. A variable the shell
     /// reports with a name or value that is not valid Unicode is left out of what is overlaid,
-    /// as [`ShellEnv::inherited`] leaves such variables out.
+    /// as [`ShellEnv::inherited`] leaves such variables out; if `inherited` has a value under
+    /// that name, that value stays. Of a `PATH` that is not valid Unicode, the directories that
+    /// are valid are kept.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -137,7 +139,9 @@ impl ShellEnv {
         let print = match &report {
             Some(report) => {
                 let pipe = report.path();
-                format!("/usr/bin/env -0 > {pipe} 2>/dev/null || /usr/bin/env > {pipe} 2>/dev/null || {to_output}")
+                // Appending, because a shell with `noclobber` set refuses to write over
+                // anything that is not a regular file.
+                format!("/usr/bin/env -0 >> {pipe} 2>/dev/null || /usr/bin/env >> {pipe} 2>/dev/null || {to_output}")
             }
             None => to_output.to_string(),
         };
@@ -239,13 +243,13 @@ fn between<'a>(output: &'a [u8], marker: &[u8]) -> Option<&'a [u8]> {
 /// previous value.
 ///
 /// A variable whose name or value is not valid UTF-8 is left out whole. It is never kept with
-/// replacement characters: a child program would be handed a value the user never set.
+/// replacement characters: a child program would be handed a value the user never set. `PATH`
+/// is the one exception; see [`text`].
 fn parse(body: &[u8]) -> BTreeMap<String, String> {
     let variable = |entry: &[u8]| -> Option<(String, Result<String, ()>)> {
         let equals = entry.iter().position(|byte| *byte == b'=')?;
         let name = std::str::from_utf8(&entry[..equals]).ok()?;
-        let value = std::str::from_utf8(&entry[equals + 1..]);
-        is_name(name).then(|| (name.to_string(), value.map(str::to_string).map_err(|_| ())))
+        is_name(name).then(|| (name.to_string(), text(name, &entry[equals + 1..])))
     };
     let mut vars = BTreeMap::new();
     if body.contains(&0) {
@@ -257,16 +261,17 @@ fn parse(body: &[u8]) -> BTreeMap<String, String> {
         return vars;
     }
     // Lines as `str::lines` gives them: no empty piece after a final line end, and a carriage
-    // return before a line end is part of the ending.
+    // return is part of a line's end only when a line feed follows it.
     let mut lines: Vec<&[u8]> = body.split(|byte| *byte == b'\n').collect();
-    if lines.last().is_some_and(|line| line.is_empty()) {
-        lines.pop();
-    }
+    let unfinished = lines.pop().filter(|line| !line.is_empty());
+    let lines = lines
+        .into_iter()
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+        .chain(unfinished);
     // The variable the next continuation line belongs to; `None` before the first variable and
     // while a variable that was left out is being skipped.
     let mut current: Option<String> = None;
     for line in lines {
-        let line = line.strip_suffix(b"\r").unwrap_or(line);
         match variable(line) {
             Some((name, Ok(value))) => {
                 vars.insert(name.clone(), value);
@@ -292,6 +297,30 @@ fn parse(body: &[u8]) -> BTreeMap<String, String> {
         }
     }
     vars
+}
+
+/// A value as text, or `Err` when it is not valid UTF-8.
+///
+/// `PATH` is kept in part: the directories that are valid UTF-8, in their order. Each entry
+/// stands on its own, so none of what is kept is a value the user never set, and a directory
+/// that cannot be held as text could not be searched from here anyway. Leaving `PATH` out
+/// whole would throw away the capture, and with it every directory the startup files added,
+/// for one directory with an odd name (issue #97).
+fn text(name: &str, value: &[u8]) -> Result<String, ()> {
+    if let Ok(value) = std::str::from_utf8(value) {
+        return Ok(value.to_string());
+    }
+    if name != "PATH" {
+        return Err(());
+    }
+    let kept: Vec<&str> = value
+        .split(|byte| *byte == b':')
+        .filter_map(|entry| std::str::from_utf8(entry).ok())
+        .collect();
+    if kept.is_empty() {
+        return Err(());
+    }
+    Ok(kept.join(":"))
 }
 
 fn is_name(name: &str) -> bool {
@@ -389,5 +418,31 @@ mod tests {
         assert_eq!(get(&vars, "C"), None);
         assert_eq!(get(&vars, "D"), Some("4"));
         assert_eq!(vars.len(), 3, "{:?}", vars.keys());
+    }
+
+    /// The search path is the one value that is kept in part: each directory in it stands on
+    /// its own, and without it the whole capture is of no use.
+    #[test]
+    fn a_search_path_keeps_the_entries_that_are_unicode() {
+        let vars = parse(b"A=1\0PATH=/first:/o\xffdd:/second::/third\0NOTPATH=/first:/o\xffdd\0");
+        assert_eq!(get(&vars, "PATH"), Some("/first:/second::/third"));
+        assert_eq!(get(&vars, "NOTPATH"), None);
+        assert_eq!(get(&vars, "A"), Some("1"));
+
+        let vars = parse(b"PATH=\xff\xfe\0A=1\0");
+        assert_eq!(get(&vars, "PATH"), None);
+
+        let vars = parse(b"A=1\nPATH=/first:/o\xffdd:/second\nB=2\n");
+        assert_eq!(get(&vars, "PATH"), Some("/first:/second"));
+        assert_eq!(get(&vars, "B"), Some("2"));
+    }
+
+    /// As `str::lines` reads them: a carriage return is part of a line's end only when a line
+    /// feed follows it.
+    #[test]
+    fn a_carriage_return_is_dropped_only_before_a_line_feed() {
+        let vars = parse(b"A=1\r\nB=2\r");
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "B"), Some("2\r"));
     }
 }

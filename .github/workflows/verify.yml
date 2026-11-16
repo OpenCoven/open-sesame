@@ -126,10 +126,16 @@ jobs:
       - name: Test the workspace
         run: cargo test --workspace --locked 2>&1 | tee build/verification/rust/test.log
       # Issue #97: what the process runner's Windows-only tests measured. A passing test's output
-      # is hidden in the step above, so they run once more here with it shown.
+      # is hidden in the step above, so they run once more here with it shown. The name filter
+      # passes when it matches no test, so the step fails unless both tests left their lines.
       - name: Record the Windows process-runner measurements
         if: runner.os == 'Windows'
-        run: cargo test -p open-sesame-core --locked on_windows -- --nocapture --test-threads=1 2>&1 | tee build/verification/rust/windows-process-runner.log
+        run: |
+          log=build/verification/rust/windows-process-runner.log
+          cargo test -p open-sesame-core --locked on_windows -- --nocapture --test-threads=1 2>&1 | tee "$log"
+          for line in 'WINDOWS-97 resume:' 'WINDOWS-97 cmd tool:'; do
+            grep -qF "$line" "$log" || { echo "No \"$line\" line: a Windows process-runner test did not run."; exit 1; }
+          done
       - name: Build the app
         run: cargo build --package open-sesame --locked 2>&1 | tee build/verification/rust/build.log
       - name: Retain executed-check evidence
