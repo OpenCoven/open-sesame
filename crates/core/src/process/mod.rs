@@ -522,6 +522,7 @@ fn watch(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::*;
     use std::cell::Cell;
 
@@ -565,10 +566,12 @@ mod tests {
                 matches!(result, Err(RunError::Io(_))),
                 "with {allowed} threads started: {result:?}"
             );
-            // The program either never got as far as writing its process ID or is gone.
+            // The program either never got as far as writing its process ID or is gone. A
+            // shell killed between creating the file and writing to it leaves the file empty,
+            // which a Linux run showed; that too is "never got as far".
             std::thread::sleep(Duration::from_millis(300));
-            if let Ok(pid) = std::fs::read_to_string(&pid_file) {
-                let pid: libc::pid_t = pid.trim().parse().unwrap();
+            let written = std::fs::read_to_string(&pid_file).unwrap_or_default();
+            if let Ok(pid) = written.trim().parse::<libc::pid_t>() {
                 // SAFETY: signal 0 sends nothing; it only reports whether the process exists.
                 let alive = unsafe { libc::kill(pid, 0) } == 0;
                 assert!(!alive, "with {allowed} threads started: {pid} is running");
