@@ -659,17 +659,18 @@ mod login_shell {
     /// A helper that a startup file leaves running with its output sent elsewhere, as an agent
     /// or a daemon is, still holds everything else the shell had open, the pipe the
     /// environment is read from among it. The reading does not wait for it (issue #97). The
-    /// times compared are the quickest of five, so a busy machine does not decide the result;
-    /// waiting for the helper costs a quarter of a second.
+    /// times compared are the quickest of five, to keep a busy machine from deciding the
+    /// result; waiting for the helper costs a quarter of a second. One failure in a Linux
+    /// container under zsh is not explained, so five may not always be enough there.
     ///
-    /// The helper's output is sent elsewhere before it is put in the background, in a
-    /// subshell, and not on the same line as the `&`. With `sleep 30 >/dev/null 2>&1 &` zsh
-    /// lowers the new job's priority before the job has redirected its output, so on a busy
-    /// machine the shell can exit while the job still holds the shell's own output. The
-    /// runner then waits for that output, up to its quarter of a second, and such a round
-    /// looks like the fault this test is for. That cost is real and is not this test's
-    /// subject; `crates/AGENTS.md` records it. fish has no such option and keeps the plain
-    /// line.
+    /// The redirection belongs to a subshell, so it is applied before the helper is started
+    /// in the background. With `sleep 30 >/dev/null 2>&1 &` zsh (its `BG_NICE` option, on by
+    /// default) lowers the new job's priority before the job has redirected its output, so
+    /// on a busy machine the shell can exit while the job still holds the shell's own
+    /// output. The runner then waits for that output, up to its quarter of a second, and
+    /// such a round looks like the fault this test is for. That cost is real and is not this
+    /// test's subject; `crates/AGENTS.md` records it. fish keeps the plain line: it has no
+    /// subshell of this form, and the plain line under fish has not been measured under load.
     #[test]
     fn a_quiet_helper_left_by_a_startup_file_does_not_hold_up_the_result() {
         for kind in &KINDS {
