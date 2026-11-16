@@ -20,7 +20,7 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | Web engine | WKWebView, WebKit 22625.2.8.11.9 | | | |
 | Binary and its SHA-256 | `target/debug/open-sesame`, development build, `176f3c8b9e5217ab814899653d49e169528c43a169ed7f3eec074890a1d56b41` | | | |
 | Observed by and when | Agent session `claude-code:8bb702d6`, 16 November 2026 | | | |
-| Evidence class | Launched app on one OS, driven by `--toggle`, an accessibility action on the application menu, the development self-test, and Command-Q delivered to the app's own process; each note says which | | | |
+| Evidence class | Launched app on one OS, driven by `--toggle`, accessibility actions, keyboard events posted to the app's own process, and the development self-test; each note says which | | | |
 
 ## How to read a cell
 
@@ -38,7 +38,7 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | --- | --- | --- | --- | --- | --- | --- |
 | A1 | Build the development app from the tested commit: `npm run dev:app` (`cargo tauri dev --no-dev-server` in `src-tauri`) finishes compiling and starts the app | [#78][78] | pass, [M1](#m1-build-and-terminal-launch) | | | |
 | A2 | Launch: the window opens and its status says it is connected ("Connected · Local workspace" when signed out), with one Open Sesame process and one `open-sesame: page loaded` line in the terminal | [#78][78]; Windows moved from [#70][70] | pass, [M1](#m1-build-and-terminal-launch), [M2](#m2-launch-from-the-desktop) | | | |
-| A3 | Hide the window with its close button and show it again (Dock icon on macOS, tray menu elsewhere), four times: the `page loaded` count stays at one | Windows moved from [#70][70] | | | | |
+| A3 | Hide the window with its close button and show it again (Dock icon on macOS, tray menu elsewhere), four times: the `page loaded` count stays at one | Windows moved from [#70][70] | pass: [M7](#m7-close-and-reopen-and-the-agents-view) | | | |
 | B1 | Tray menu Show or Hide, clicked by a person, hides and then shows the window | macOS moved from [#70][70] | | | | |
 | B2 | Tray menu Quit, clicked by a person, leaves no Open Sesame process | macOS moved from [#70][70] | | | | |
 | A4 | WebView2 startup trace: `scripts/fixtures/ui-shell-webview2.ps1` on the Windows machine exits 0 and its report says `"passed": true`, so a widget that is off loaded no script and no stylesheet at startup. A renderer probe with a synthetic bridge, not the launched app | moved from [#76][76] | n/a: Windows only; [#76][76] traced WKWebView | | n/a: Windows only; [#76][76] traced WebKitGTK | n/a: Windows only |
@@ -59,16 +59,16 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 
 | ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
 | --- | --- | --- | --- | --- | --- | --- |
-| D1 | New shell, then echo a marker (`echo os78-$((6*7))`; PowerShell `echo "os78-$(6*7)"`): `os78-42` arrives intact | [#78][78]; Windows moved from [#74][74] | pass by the self-test, not typed: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
-| D2 | Resize the window: the shell's size follows (`stty size`; PowerShell `$Host.UI.RawUI.WindowSize`) | [#78][78] | | | | |
-| D3 | Tab completion completes a path or command | [#78][78] | | | | |
-| D4 | Control+C stops a running program (`sleep 600`; Windows `ping -t 127.0.0.1`), the program is gone, and the prompt returns | [#78][78]; Windows moved from [#74][74] | | | | |
+| D1 | New shell, then echo a marker (`echo os78-$((6*7))`; PowerShell `echo "os78-$(6*7)"`): `os78-42` arrives intact | [#78][78]; Windows moved from [#74][74] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop); also by the self-test, [M4](#m4-shells-driven-by-the-development-self-test) | | | |
+| D2 | Resize the window: the shell's size follows (`stty size`; PowerShell `$Host.UI.RawUI.WindowSize`) | [#78][78] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | | | |
+| D3 | Tab completion completes a path or command | [#78][78] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | | | |
+| D4 | Control+C stops a running program (`sleep 600`; Windows `ping -t 127.0.0.1`), the program is gone, and the prompt returns | [#78][78]; Windows moved from [#74][74] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | | | |
 | D5 | Print about 50 MB: the window does not freeze and no output is lost | Windows and a real Linux desktop moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
 | D6 | Close a pane over a long-running child: neither the shell nor the child remains three seconds later | Windows moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
 | D7 | Quit with three panes open: no shell or SSH process remains | Windows moved from [#74][74] | pass: [M5](#m5-quit-with-shells-open) | | | |
 | D8 | A project folder named `open sesame ünï` opens as the shell's working folder | Windows moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
 | D9 | SSH pane: with SSH host and User filled in, New shell connects and runs a command; closing it leaves no `ssh` process | [#78][78] | | | | |
-| D10 | A CLI installed only on the login-shell `PATH` is found when the built app is started from the desktop | moved from [#73][73] | | n/a: the core reads no login shell on Windows (`Fallback::NotNeeded` in [env.rs](../crates/core/src/process/env.rs)) | | |
+| D10 | A CLI installed only on the login-shell `PATH` is found when the built app is started from the desktop | moved from [#73][73] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | n/a: the core reads no login shell on Windows (`Fallback::NotNeeded` in [env.rs](../crates/core/src/process/env.rs)) | | |
 
 At the tested commit the application reads the login-shell environment at startup ([#105][105]), but no feature looks a tool up with it yet; only a development probe (`OPEN_SESAME_RUNTIME_PROBE_DIR`) does. D10 is therefore observed through a shell pane, which is a login shell on macOS and Linux.
 
@@ -110,8 +110,8 @@ These are [#116][116]'s hand checks for sign-in links, [added to this list on #7
 | F1 | Capture a note and a task from the palette (Control+K, Command+K on a Mac): both appear in Today and Projects | [#78][78]; [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] |
 | F2 | A focus session survives hide, show and relaunch with the correct remaining time | [#78][78]; [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] |
 | F3 | Notes, tasks, bookmarks, projects and saved feed items survive quitting and relaunching | moved from [#75][75] | pending [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] |
-| F4 | Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." | [#78][78]; [#76][76] | pass for Today, the view shown at launch: [M1](#m1-build-and-terminal-launch) | | | |
-| F5 | A shortcut saved in the Shortcut section is still there after Quit and a relaunch (a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`) | [#78][78] relaunch; [#71][71] | | | | n/a: see C4 |
+| F4 | Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." | [#78][78]; [#76][76] | pass: [M7](#m7-close-and-reopen-and-the-agents-view) | | | |
+| F5 | A shortcut saved in the Shortcut section is still there after Quit and a relaunch (a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`) | [#78][78] relaunch; [#71][71] | pass: [M8](#m8-a-saved-shortcut-after-quit-and-relaunch) | | | n/a: see C4 |
 
 At the tested commit the storage is wired into the application ([#105][105]), but no view saves a note, task or focus session until [#77][77], so F1 to F3 wait for #77 on every system. F4 and F5 run now.
 
@@ -119,7 +119,7 @@ At the tested commit the storage is wired into the application ([#105][105]), bu
 
 | ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
 | --- | --- | --- | --- | --- | --- | --- |
-| G1 | Quit with a shell open (application menu on macOS, tray menu elsewhere): no Open Sesame, shell or child process remains | [#78][78]; Windows moved from [#70][70] | pass: [M1](#m1-build-and-terminal-launch) for the menu item, [M5](#m5-quit-with-shells-open) with shells open | | | |
+| G1 | Quit with a shell open (application menu on macOS, tray menu elsewhere): no Open Sesame, shell or child process remains | [#78][78]; Windows moved from [#70][70] | pass: [M1](#m1-build-and-terminal-launch) by the menu item, [M5](#m5-quit-with-shells-open) and [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) with shells open | | | |
 
 ## Failures and differences
 
@@ -151,9 +151,28 @@ The same self-test in an app started from the desktop did not start: four minute
 
 With the four shells of M4 open (three running `sleep 86400`, and the self-test's report shell), Command-Q, the key equivalent of the application menu's "Quit open-sesame" item, was delivered to the app's own process (a keyboard event posted to that process only, because another app held the front). The app, the four shells and the three children were gone 0.28 seconds later, and neither an Open Sesame process nor the single-instance socket remained.
 
-### Not observed on macOS at this commit
+### M6 A shell typed into, in an app started from the desktop
 
-A3, D2, D3, D4, D10 and F5 are empty. Three agent attempts to open a shell, type into it, close and reopen the window, and save a shortcut failed: the agent's accessibility helpers found none of the page's buttons by name, and keyboard and pointer input from outside the run arrived throughout, because the Mac was in use (idle time under a second, the front app changing, the window moved to another Space). One such input switched on "Hide the window when it loses focus" in a disposable settings folder. Nothing from those attempts is counted. These lines are in [macOS, part A](#macos-part-a-about-20-minutes) for a person.
+The app was started from the desktop as in M2, with a new disposable settings folder. The Shells view and New shell were pressed through the accessibility API, addressed to the app's process. Text was typed as keyboard events posted to that process only, into the terminal's input, which the accessibility API had focused; a plain second launch first gave the window the keyboard. Each command also wrote its output to a file through `tee`, read afterwards outside the app.
+
+- D1: `echo os78-$((6*7))` gave `os78-42`.
+- D10: the app's own `PATH` was `/usr/bin:/bin:/usr/sbin:/sbin`. In its shell, `command -v gh` gave `/opt/homebrew/bin/gh`, a Homebrew CLI on the login shell's `PATH` only. The development probe (`OPEN_SESAME_RUNTIME_PROBE_DIR`) reported the application's own environment as read from the login shell (`"source": "LoginShell"`, `"captureReady": true`).
+- D2: `stty size` gave `12 148`; after the window was resized from 1090 by 645 to 820 by 500 points it gave `3 111`.
+- D3: `echo /usr/sha` followed by Tab completed to `/usr/share`, and the command printed `/usr/share`. The first try is not counted: a stray outside keystroke had put an `n` before `echo`. The counted try is in a later launch of the same build.
+- D4: `sleep 600` ran as a child of the pane's shell; after Control+C that process was gone, the shell was still running, and `echo after-$((1+1))` then printed `after-2`.
+- G1: Command-Q, posted to the app's process, with the shell open: the app, its WebKit helpers and the shell were gone 0.03 seconds later, and no Open Sesame process or single-instance socket remained.
+
+### M7 Close and reopen, and the Agents view
+
+In a relaunch from the desktop, the window's close button was pressed through the accessibility API, and then the app was sent the reopen event, which is what a click on its Dock icon sends; the app has a Dock icon (application type Foreground). Four times the window went off screen after the close and came back after the reopen, and the page had loaded once throughout. The Agents view, pressed in the same launch, said "This widget is not available in this version."
+
+### M8 A saved shortcut after Quit and relaunch
+
+In the Shortcut section, `Control+Alt+Shift+K` was typed into the field and Save pressed: the section said "Press Control+Alt+Shift+K anywhere to show or hide Open Sesame." and the settings folder's `summon.json` held that shortcut. After Command-Q and a relaunch from the desktop, the app logged `"shortcut":"Control+Alt+Shift+K"` with `"registered":true`, and the field showed it. The default was then saved back. An earlier try is not counted: a stray outside keystroke had put a `v` before the keys, and the section rejected it as "not a shortcut Open Sesame can use" without saving anything.
+
+### Outside input during the run
+
+The Mac was in use by others throughout: keyboard and pointer input arrived within a second of most steps, the front app changed, and the window was moved to another Space. Each line above is counted only from a try whose result was checked after it ran. One outside input switched on "Hide the window when it loses focus" in a disposable settings folder during M4; that folder was not used again.
 
 ## Owner instructions
 
@@ -169,20 +188,17 @@ These are the numbered steps for each system, written for a person at the machin
 6. Where to find the controls: the Account and Shortcut sections are under the title bar, with a row of views (Today, Projects, Focus, Shells, Agents) below them. The shell form (Folder, SSH host, User and the New shell button) is in the Shells view; "New shell" below means that button.
 7. Record the binary's SHA-256: `shasum -a 256 target/debug/open-sesame` on macOS, `sha256sum target/debug/open-sesame` on Linux, `Get-FileHash target\debug\open-sesame.exe` on Windows.
 
-### macOS, part A (about 20 minutes)
+### macOS, part A (about 10 minutes)
 
-An agent observed A1, A2, C1, D1 and D5 to D8 (through the development self-test), F4 and G1 at the tested commit; see [macOS observations](#macos-observations). These steps are for a person.
+An agent observed A1 to A3, C1, D1 to D8, D10, F4, F5 and G1 at the tested commit; see [macOS observations](#macos-observations). These steps need a person's hands.
 
-1. With the app started by `npm run dev:app`, open the Shells view and press New shell. Run `echo os78-$((6*7))`: it prints `os78-42`. Run `stty size`, drag a corner of the window to resize it, and run `stty size` again: the numbers changed. Type `ls /usr/sha` and press Tab: it completes to `/usr/share/`. This is D1 typed by hand, D2 and D3.
-2. Run `sleep 600` and press Control+C: the prompt returns, and `pgrep -fl 'sleep 600'` in Terminal prints nothing. This is D4.
-3. Click the window's close button: the window hides. Click the Open Sesame icon in the Dock: it shows. Do this four times; the terminal still has one `page loaded` line. This is A3.
-4. Click the Open Sesame icon in the menu bar and choose Show or Hide: the window hides. Choose it again: the window shows. Do it twice; the terminal still has one `page loaded` line. This is B1.
-5. Press Control+Option+Shift+Space: the window hides. Press it again: it shows, and typing `echo hi` and Return appears in the shell. The terminal still has one `page loaded` line. This is C2.
-6. Put another app in full screen (its green button), then press the shortcut: the window appears over the full-screen app, typing goes into the shell, and when you move the pointer to the top of the screen the menu bar still names the other app. Press the shortcut to hide the window and leave full screen. This is C3.
-7. In the Shortcut section type `Control+Alt+K` and press Save. Press Control+Option+K twice: the window hides and shows. Press Control+Option+Shift+Space: nothing happens. This is C5. Leave it saved, choose Quit open-sesame in the application menu, and start `npm run dev:app` again: the field shows `Control+Alt+K` and Control+Option+K works. Put `Control+Alt+Shift+Space` back and Save. This is F5.
-8. Fill in SSH host and User for a machine you can reach with SSH and press New shell: it connects; run `hostname`; close the pane with its ×; `pgrep -l ssh` shows no `ssh` left from it. This is D9.
-9. Quit the app from the application menu. Make a minimal app around the binary, from the repository root: `A=/tmp/OS78.app; mkdir -p $A/Contents/MacOS; printf '#!/bin/sh\nexport OPEN_SESAME_DEV_CONFIG_DIR=%s\nexec %s\n' "$OPEN_SESAME_DEV_CONFIG_DIR" "$PWD/target/debug/open-sesame" > $A/Contents/MacOS/os78; chmod +x $A/Contents/MacOS/os78; plutil -create xml1 $A/Contents/Info.plist; plutil -insert CFBundleExecutable -string os78 $A/Contents/Info.plist; plutil -insert CFBundleIdentifier -string org.opencoven.os78-smoke $A/Contents/Info.plist; plutil -insert CFBundlePackageType -string APPL $A/Contents/Info.plist`. Open it from Finder (Go, Go to Folder, `/tmp`, then double-click OS78), as an app is opened from the desktop. In its Shells view press New shell and run `command -v gh`, or another tool installed with Homebrew: it prints a path under `/opt/homebrew/bin`. In Terminal, `ps -E -ww -o command= -p $(pgrep -x open-sesame) | tr ' ' '\n' | grep '^PATH='` shows the app's own `PATH` without `/opt/homebrew/bin`. This is D10.
-10. Choose Quit from the menu-bar icon's menu. `pgrep -x open-sesame` prints nothing. Delete `/tmp/OS78.app`. This is B2.
+1. With the app started by `npm run dev:app`, open the Shells view and press New shell.
+2. Click the Open Sesame icon in the menu bar and choose Show or Hide: the window hides. Choose it again: the window shows. Do it twice; the terminal still has one `page loaded` line. This is B1.
+3. Press Control+Option+Shift+Space: the window hides. Press it again: it shows, and typing `echo hi` and Return appears in the shell. The terminal still has one `page loaded` line. This is C2.
+4. Put another app in full screen (its green button), then press the shortcut: the window appears over the full-screen app, typing goes into the shell, and when you move the pointer to the top of the screen the menu bar still names the other app. Press the shortcut to hide the window and leave full screen. This is C3.
+5. In the Shortcut section type `Control+Alt+K` and press Save. Press Control+Option+K twice: the window hides and shows. Press Control+Option+Shift+Space: nothing happens. Put `Control+Alt+Shift+Space` back and Save. This is C5.
+6. Fill in SSH host and User for a machine you can reach with SSH and press New shell: it connects; run `hostname`; close the pane with its ×; `pgrep -l ssh` shows no `ssh` left from it. This is D9.
+7. Choose Quit from the menu-bar icon's menu. `pgrep -x open-sesame` prints nothing. This is B2.
 
 ### macOS, part B (about 25 minutes, after #72 and #77 close)
 
