@@ -20,8 +20,11 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const gateSource = readFileSync(path.join(root, 'crates/core/src/gate.rs'), 'utf8');
-// Comments are taken out before a list is looked for, so that a `];` in one does not end it early.
-const gateCode = gateSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+// Comments are taken out before a list is looked for, so that a `];` in one does not end it
+// early: line comments and, new with issue #116, block comments, in one pass that steps over
+// string literals and takes whichever comment starts first. A nested block comment, a raw
+// string and a character literal that holds a quote are still misread.
+const gateCode = gateSource.replace(/"(?:[^"\\]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
 
 // Rust lists are read as text: `pub const NAME: &[&str] = &[ "a", "b" ];` with optional comments.
 function rustList(name) {

@@ -167,9 +167,9 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
 // connected, on a stand-in host that says it is Linux, and the limit the page set for that
 // request is read from the timer. So the table in ui/bridge.js may be written in any way. What
 // this sees is that one request and nothing else: a limit that depends on a parameter, on the
-// bridge's state, on the system, on the order of requests or on anything the stand-in window
-// lacks, one given through another function or argument, and one for a method the gate has not
-// ported, are not seen.
+// bridge's state, on the order of requests or on anything the stand-in window lacks, one that
+// applies only on a system other than the stand-in's Linux, one given through another function
+// or argument, and one for a method the gate has not ported, are not seen.
 {
   const { bridge, invokes, timers } = await connected();
   let outcome = 'pending';
@@ -181,9 +181,12 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await signIn;
   assert.equal(outcome, 'resolved');
   assert.equal(timers.size, 0);
-  // Read as check-core-gate.mjs reads it: comments taken out first, so that a `];` in one does
-  // not end the list early, then up to the closing `];`, and nothing but string literals in it.
-  const gate = read('crates/core/src/gate.rs').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  // Read as check-core-gate.mjs reads it. Comments are taken out first, in one pass that steps
+  // over string literals and takes whichever comment starts first, so that neither a `];` in a
+  // comment nor a `/*` in a string or in a line comment changes what is read (a nested block
+  // comment, a raw string and a character literal that holds a quote are still misread). Then
+  // the list runs up to the closing `];` and holds nothing but plain string literals.
+  const gate = read('crates/core/src/gate.rs').replace(/"(?:[^"\\]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
   const list = gate.match(/pub const PORTED: &\[&str\] = &\[([\s\S]*?)\];/);
   assert.ok(list, 'crates/core/src/gate.rs declares PORTED as a list of string literals');
   const ported = [...list[1].matchAll(/"([^"\\]*)"/g)].map(match => match[1]);
