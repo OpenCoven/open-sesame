@@ -175,7 +175,7 @@ mod unix {
 #[cfg(windows)]
 mod windows {
     use super::*;
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
     use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
@@ -185,7 +185,8 @@ mod windows {
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
     /// How long `end` waits for a killed shell's process to end. A killed process ends within
-    /// milliseconds; the limit is for one that does not, so that closing a pane cannot hang.
+    /// milliseconds; the limit is for one that does not, so that closing a pane does not wait
+    /// for it without end.
     const ENDING: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Makes sure a shell started from here receives Control+C.
@@ -248,7 +249,8 @@ mod windows {
         }
 
         /// Kills every process in the job and collects the shell. Returns when the shell's
-        /// process has ended, or after [`ENDING`] if it has not.
+        /// process has ended, or after [`ENDING`] if it has not; in that case the shell is not
+        /// collected, because the library's `wait` has no limit of its own.
         ///
         /// Ending a process is not immediate on Windows, and the library's `wait` returns as
         /// soon as the shell's exit code is set, which is a moment before the process itself
@@ -262,13 +264,23 @@ mod windows {
                 TerminateJobObject(self.job, 1);
             }
             let _ = child.kill();
-            if let Some(process) = child.as_raw_handle() {
+            let ended = match child.as_raw_handle() {
                 // SAFETY: the handle belongs to `child`, which is borrowed for this call.
-                unsafe {
-                    WaitForSingleObject(process as HANDLE, ENDING.as_millis() as u32);
-                }
+                Some(process) => unsafe {
+                    WaitForSingleObject(process as HANDLE, ENDING.as_millis() as u32)
+                        == WAIT_OBJECT_0
+                },
+                // Without a handle there is nothing to wait on but the library, as before.
+                None => true,
+            };
+            // The library waits without a limit for a process whose exit code is not set, so
+            // it is asked only once the process is known to have ended.
+            if ended {
+                let _ = child.wait();
+            } else {
+                #[cfg(debug_assertions)]
+                eprintln!("open-sesame: a killed shell had not ended after {ENDING:?}");
             }
-            let _ = child.wait();
         }
     }
 
