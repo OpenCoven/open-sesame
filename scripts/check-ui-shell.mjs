@@ -25,25 +25,30 @@ assert(!/\bwindow\b|globalThis/.test(read('ui/manifest.js')));
 console.log('Manifest/palette: defaults, metadata-only discovery and scoped command identities pass.');
 
 // No module in ui/ writes to a global object, so no widget can share state through one. A write is
-// an assignment, update, delete or define on a member of window, globalThis, self or host (the
-// name widgets receive the window under). Reading a global, or naming a local variable window,
-// is not a write. The vendored terminal bundle lives in dist/vendor, outside this scan, and the
-// browser fixture checks the one global it is allowed to add.
-const GLOBALS = String.raw`(?<![\w$.])(?:window|globalThis|self|host)`;
+// an assignment, update, delete or define on a member of window, globalThis, self, top, frames or
+// host (the name widgets receive the window under), also when reached as a member such as
+// context.host. Reading a global, or naming a local variable window, is not a write. The scan is
+// textual: an alias (const g = globalThis; g.x = 1), a parenthesised object, a computed key with
+// nested brackets or a destructuring target escapes it, and the browser fixture's comparison of
+// the window's own keys catches those that run. The vendored terminal bundle lives in
+// dist/vendor, outside this scan, and the browser fixture checks the one global it may add.
+const GLOBALS = String.raw`(?<![\w$])(?:window|globalThis|self|top|frames|host)`;
 const MEMBER = String.raw`(?:\s*(?:\??\.\s*[\w$]+|\[[^\]]*\]))+`;
 const ASSIGN = String.raw`\s*(?:=(?![=>])|[-+*/%&|^]=|\*\*=|<<=|>>>?=|&&=|\|\|=|\?\?=|\+\+|--)`;
 const globalWrites = [
   new RegExp(GLOBALS + MEMBER + ASSIGN, 'g'),
   new RegExp(String.raw`(?:\+\+|--|\bdelete)\s*` + GLOBALS + MEMBER, 'g'),
-  new RegExp(String.raw`\b(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf)|Reflect\.(?:set|defineProperty|deleteProperty))\s*\(\s*` + GLOBALS + String.raw`\b`, 'g'),
+  new RegExp(String.raw`\b(?:Object\.(?:assign|defineProperty|defineProperties|setPrototypeOf)|Reflect\.(?:set|defineProperty|deleteProperty|setPrototypeOf))\s*\(\s*(?:[\w$]+\s*\.\s*)*` + GLOBALS + String.raw`\b`, 'g'),
 ];
 const writesGlobal = source => globalWrites.flatMap(pattern => [...source.matchAll(pattern)].map(match => match[0].trim()));
 for (const sample of ['window.shared = 1', 'globalThis["shared"] = 1', 'self.count += 1', 'host.OpenSesameXterm ??= {}', 'window.__TAURI__.core.x = 1',
-  'window.count++', '++globalThis.count', 'delete window.shared', 'Object.assign(window, {a: 1})', 'Object.defineProperty(globalThis, "a", {})', 'Reflect.set(self, "a", 1)']) {
+  'window.count++', '++globalThis.count', 'delete window.shared', 'Object.assign(window, {a: 1})', 'Object.defineProperty(globalThis, "a", {})', 'Reflect.set(self, "a", 1)',
+  'context.host.shared = 1', 'Object.defineProperty(context.host, "k", {value: 1})', 'top.shared = 1', 'frames.shared = 1', 'Reflect.setPrototypeOf(window, null)']) {
   assert.notDeepEqual(writesGlobal(sample), [], `the global-write scan must catch: ${sample}`);
 }
 for (const sample of ['const tauri = host.__TAURI__;', 'if (window.a === b) go();', 'let window = ""; window = window + "x";', 'request.host = value;',
-  'host.setTimeout(() => {}, 1)', 'const f = x => window.a;', 'globalThis.crypto.randomUUID()']) {
+  'host.setTimeout(() => {}, 1)', 'const f = x => window.a;', 'globalThis.crypto.randomUUID()', 'element.style.top = "1px";',
+  'const {top} = rect;', 'Object.assign(options, {host})']) {
   assert.deepEqual(writesGlobal(sample), [], `the global-write scan must allow: ${sample}`);
 }
 const modules = (function walk(directory) {
@@ -54,7 +59,7 @@ const modules = (function walk(directory) {
 })('ui');
 assert(modules.includes('ui/widgets/shells.js') && modules.includes('ui/main.js'), 'the scan covers the shell and its widgets');
 for (const file of modules) assert.deepEqual(writesGlobal(read(file)), [], `${file} writes to a global object`);
-console.log(`Globals: no module in ui/ (${modules.length} files) writes to window, globalThis, self or host.`);
+console.log(`Globals: no module in ui/ (${modules.length} files) writes to window, globalThis, self, top, frames or host.`);
 
 const {createLifecycle} = await load('ui/lifecycle.js');
 const deferred = () => {let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;}); return {promise, resolve, reject};};

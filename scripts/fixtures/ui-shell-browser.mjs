@@ -72,6 +72,8 @@ try {
         assert(await page.locator('[data-widget-view="today"]').isVisible());
         for(const part of ['shells.js','shells.css','terminal.js','xterm.js','xterm.css','declarative.js','definitions.js'])assert(!requests.some(r=>r.endsWith('/'+part)),part+' must not load');
         assert.deepEqual(await page.evaluate(()=>Object.keys(window).filter(k=>k.startsWith('OpenSesame'))),[]);
+        // Restoring the saved state is not a change: a clean start with no action writes nothing.
+        assert.deepEqual(await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='widgets.set'||c.method==='settings.set')),[],'startup writes no preference');
         const trace=await page.evaluate(()=>({paint:performance.getEntriesByType('paint').map(x=>({name:x.name,time:x.startTime})),resources:performance.getEntriesByType('resource').map(x=>({name:x.name,start:x.startTime,duration:x.duration,bytes:x.transferSize}))}));
         await writeFile(path.join(output,`${name}-startup.json`),JSON.stringify({requests:[...requests],...trace},null,2));
       });
@@ -193,9 +195,10 @@ try {
         // hand-over object, and only after that bundle has been loaded for a pane.
         const blank=await context.newPage();
         let defaults;
-        try {await blank.goto(origin+'/README.md');defaults=new Set(await blank.evaluate(()=>Object.keys(window)));}
+        try {await blank.goto(origin+'/README.md');defaults=new Set(await blank.evaluate(()=>Reflect.ownKeys(window).map(String)));}
         finally{await blank.close();}
-        const added=async()=>(await page.evaluate(()=>Object.keys(window))).filter(key=>!defaults.has(key)).sort();
+        // Own keys, so a non-enumerable define or a symbol counts as well as a plain assignment.
+        const added=async()=>(await page.evaluate(()=>Reflect.ownKeys(window).map(String))).filter(key=>!defaults.has(key)).sort();
         const allowed=()=>requests.some(r=>r.endsWith('/xterm.js'))?['OpenSesameXterm']:[];
         assert.deepEqual(await added(),allowed(),'the shell and the widgets loaded so far add no other global');
         const ids=await page.evaluate(async()=>(await import(location.origin+'/ui/manifest.js')).widgets.map(widget=>widget.id));
