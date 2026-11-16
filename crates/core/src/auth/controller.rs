@@ -127,8 +127,8 @@ pub struct AuthController {
 /// Release refresh admission even if the work of a refresh or the change callback panics. It
 /// is made before the host hears that a refresh was admitted, so that a change callback that
 /// panics there is covered too; the injected clock is read just before that, under no guard.
-/// What it releases is admission only: after such a panic the status stays busy until Cancel,
-/// sign-out or a new sign-in.
+/// What it releases is admission only: after a panic at that point the status stays busy
+/// until Cancel, sign-out or a new sign-in.
 struct RefreshFlight<'a>(&'a AuthController);
 
 impl Drop for RefreshFlight<'_> {

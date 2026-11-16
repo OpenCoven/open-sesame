@@ -448,6 +448,9 @@ fn sign_out_with_an_unsaved_replacement_leaves_nothing_for_a_later_save() {
         None,
         "the save retry wrote after sign-out"
     );
+    // With nothing left to save, that call must not leave the status busy.
+    assert_eq!(rig.status()["busy"], json!(false));
+    assert_eq!(rig.message(), "Signed out on this computer.");
     rig.auth.shutdown();
     assert_eq!(rig.store.saved(), None, "quit wrote after sign-out");
     assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
