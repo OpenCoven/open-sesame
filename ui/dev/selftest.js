@@ -178,13 +178,13 @@ export async function run({ launch, bridge, config }) {
   if (config.reload) {
     const before = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || 'null');
     sessionStorage.removeItem(RELOAD_KEY);
-    // The window's name survives a reload too. If it says the page was loaded again and what
-    // the page stored is gone, the pass says so once instead of loading the page for ever. The
-    // name carries the old process IDs, so the check after Quit still knows what to look for.
-    let named = null;
-    try { named = JSON.parse(window.name); } catch { /* not a name this pass wrote */ }
+    // The state of this history entry survives a reload too. If it says the page was loaded
+    // again and what the page stored is gone, the pass says so once instead of loading the page
+    // for ever. The state carries the old process IDs, so the check after Quit still knows what
+    // to look for. No module here may write to the window (scripts/check-ui-shell.mjs).
+    const named = history.state;
     const loadedAgain = named?.key === RELOAD_KEY;
-    window.name = '';
+    if (loadedAgain) history.replaceState(null, '');
     if (!before && loadedAgain) {
       await step('The page that loaded again finds what the page before it stored', async () => {
         throw new Error('Session storage did not survive the page load.');
@@ -208,7 +208,7 @@ export async function run({ launch, bridge, config }) {
       results.phase = 'reloading';
       await write();
       sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ started: results.started, steps: results.steps, pids }));
-      window.name = JSON.stringify({ key: RELOAD_KEY, pids });
+      history.replaceState({ key: RELOAD_KEY, pids }, '');
       location.reload();
       return;
     }
