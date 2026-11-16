@@ -192,9 +192,9 @@ impl WorkosApi for HttpApi {
 ///   more. That second answer stands.
 /// - Any other answer stands at once. In particular "no access", which is what gnome-keyring
 ///   gives for a locked keyring or a dismissed unlock prompt, is never asked twice: the person
-///   would be prompted twice. That was measured with gnome-keyring 46.1 only. By reading, the
-///   store crate turns some other failures of a prompt into a platform failure, which this
-///   rule would ask again.
+///   would be prompted twice. That was measured with gnome-keyring 46.1 only, and with a
+///   stand-in program in place of the unlock dialog. By reading, the store crate turns some
+///   other failures of a prompt into a platform failure, which this rule would ask again.
 ///
 /// Two cases this does not reach, both seen in a container: a keyring that was just installed
 /// and has no default collection passes the look and then refuses the save, and a keyring
