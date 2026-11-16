@@ -198,11 +198,11 @@ mod windows {
     ///
     /// The limit covers that wait and nothing after it. The caller then closes the
     /// pseudo-console. Microsoft's page for `ClosePseudoConsole` says the call returns at once
-    /// from Windows 11 24H2 (build 26100) on and that earlier builds wait for the
-    /// pseudo-console to exit, without a limit when its output pipe is neither closed nor
-    /// read. So on an earlier build a shell that outlived the limit, or a start that failed
-    /// before anything read the output, may still hold the caller up. No test produces either,
-    /// and the hosted runner is build 26100, so this is from reading only.
+    /// from Windows 11 24H2 (build 26100) on, that earlier builds wait for the pseudo-console
+    /// to exit with no limit, and that an output pipe neither closed nor read may be what
+    /// keeps it waiting. So on an earlier build a shell that outlived the limit, or a start
+    /// that failed before anything read the output, may still hold the caller up. No test
+    /// produces either, and the hosted runner is build 26100, so this is from reading only.
     const ENDING: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Makes sure a shell started from here receives Control+C.

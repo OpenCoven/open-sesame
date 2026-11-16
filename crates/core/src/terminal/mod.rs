@@ -49,8 +49,8 @@ pub enum Output {
     /// The stream broke for a reason other than the program ending. `Exit` follows.
     Error(&'static str),
     /// The pane has ended. What has become of its processes by then differs by system and is
-    /// said at `Tree::end` in `tree.rs`; on Windows a killed shell that did not end within
-    /// five seconds may still be there.
+    /// said in `tree.rs`, at its top and at `Tree::end`; on Windows a killed shell that did
+    /// not end within five seconds may still be there.
     Exit,
 }
 
