@@ -255,10 +255,16 @@ impl Terminals {
     }
 }
 
+/// Closes the panes side by side. A pane no thread can be started for is closed here, on the
+/// calling thread: `Scope::spawn` panics in that case, which would leave that pane and every
+/// pane after it running with nothing left that could close them.
 fn close_side_by_side(sessions: &[Arc<Session>]) {
     std::thread::scope(|scope| {
         for session in sessions {
-            scope.spawn(move || session.close());
+            let started = std::thread::Builder::new().spawn_scoped(scope, move || session.close());
+            if started.is_err() {
+                session.close();
+            }
         }
     });
 }

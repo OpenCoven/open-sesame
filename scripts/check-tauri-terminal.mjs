@@ -291,10 +291,14 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
 // page starts to load, in every build and not only a development one, without waiting on the
 // window's thread. The self-test's reload pass is what shows it in a launched window.
 {
-  const window = read('src-tauri/src/window.rs');
-  const handler = /let builder = builder\.on_page_load\(\|window, payload\| match payload\.event\(\) \{\s*PageLoadEvent::Started => crate::terminal::page_replaced\(window\.app_handle\(\)\),/.exec(window);
-  assert(handler, 'The window closes the panes of the page before when a page starts to load');
-  assert(!/#\[cfg\(debug_assertions\)\]\s*$/.test(window.slice(0, handler.index).trimEnd()), 'The page-load handler is not a development-only one');
+  // Comments are taken out first, so that neither a comment between an attribute and what it
+  // applies to, nor one inside the arm, changes what is found. The arm may be one call or a
+  // block with other calls beside this one (issue #115 adds one to the same arm).
+  const window = read('src-tauri/src/window.rs').replace(/^\s*\/\/.*$/gm, '');
+  const handler = /let builder = builder\.on_page_load\(\|window, payload\| match payload\.event\(\) \{([\s\S]*?)PageLoadEvent::Started =>([\s\S]*?)PageLoadEvent::Finished =>/.exec(window);
+  assert(handler, 'The window has a page-load handler with an arm for a page that starts to load');
+  assert(handler[2].includes('crate::terminal::page_replaced(window.app_handle())'), 'The window closes the panes of the page before when a page starts to load');
+  assert(!/#\[cfg\(debug_assertions\)\]\s*$/.test(window.slice(0, handler.index)) && !handler[1].includes('#[cfg') && !handler[2].includes('#[cfg'), 'Neither the page-load handler nor that arm nor the call is development-only');
   assert(/pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\s*if let Some\(state\) = app\.try_state::<crate::AppState>\(\) \{\s*state\.core\.terminals\.close_all_detached\(\);/.test(read('src-tauri/src/terminal.rs')));
   const selftest = read('ui/dev/selftest.js');
   assert(selftest.includes('if (config.reload) {') && selftest.includes('location.reload();'), 'The self-test has a reload pass');

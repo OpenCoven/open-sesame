@@ -160,11 +160,15 @@ export async function run({ launch, bridge, config }) {
   };
 
   // A shell with a long-running child, as a person would leave one. Returns both process IDs.
-  const shellWithChild = async name => {
+  // Each ID is also added to `known` as soon as it is known, so a pass that fails half way can
+  // still say which processes it started.
+  const shellWithChild = async (name, known = []) => {
     const output = watcher();
     const opened = await launch({ mode: 'local', name }, { onBytes: output.onBytes });
+    known.push(opened.result.pid);
     opened.pane.send("sleep 86400 & printf 'CHILD:%s\\n' $!\r");
     const child = await output.until(text => /CHILD:(\d+)\r?\n/.exec(text)?.[1], 15000, 'the child process ID');
+    known.push(Number(child));
     return { opened, pids: [opened.result.pid, Number(child)] };
   };
 
@@ -194,15 +198,19 @@ export async function run({ launch, bridge, config }) {
     }
     if (!before) {
       let pids;
+      const known = [];
       await step('Two panes are open, each with a long child process, before the page loads again', async () => {
-        const opened = [...(await shellWithChild('Reload one')).pids, ...(await shellWithChild('Reload two')).pids, report.result.pid];
+        await shellWithChild('Reload one', known);
+        await shellWithChild('Reload two', known);
+        const opened = [...known, report.result.pid];
         const running = await alive(opened);
         if (running.length !== opened.length) throw new Error(`Only ${running.length} of ${opened.length} processes are running.`);
         pids = opened;
         return { pids };
       });
       if (!pids) {
-        results.quit = { pids: [], reporter: report.result.pid };
+        // What this pass started is named, so the check after Quit can look for it.
+        results.quit = { pids: known, reporter: report.result.pid };
         return finish('Self-test failed before the page could load again.');
       }
       results.phase = 'reloading';
@@ -217,15 +225,16 @@ export async function run({ launch, bridge, config }) {
     // The old page's panes are closed when this page starts to load. This step starts only
     // after the page has loaded and opened its own report shell, so its time is not the time
     // the close took.
+    let left = before.pids;
     await step('After the page loaded again, the panes of the page before it are closed and their processes gone', async () => {
       const started = performance.now();
-      let left = before.pids;
       while ((left = await alive(before.pids)).length && performance.now() - started < 3000) await wait(100);
       const checkedGoneAfterMs = Math.round(performance.now() - started);
       if (left.length) throw new Error(`Still running ${checkedGoneAfterMs} ms after the new page looked: ${left.join(', ')}.`);
       return { pids: before.pids, checkedGoneAfterMs };
     });
-    results.quit = { pids: [], reporter: report.result.pid };
+    // Empty when the step passed; otherwise the old processes that were still running.
+    results.quit = { pids: left, reporter: report.result.pid };
     return finish('Self-test finished. This window is about to close.');
   }
 
