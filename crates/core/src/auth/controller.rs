@@ -358,18 +358,24 @@ impl AuthController {
     }
 
     /// Whether a store call was given up at the limit and has not returned since. While it
-    /// is so, every store call fails at once and no sign-in is begun; the host asks this
-    /// before it looks at the store for Sign in, so that the store is not asked for nothing.
+    /// is so, every store call fails at once and no sign-in is begun.
     pub fn store_given_up(&self) -> bool {
         unpoisoned(&self.store_out).stuck > 0
     }
 
     /// Whether a store call has been waited for longer than a moment and is waited for still,
-    /// which is when the status says the keychain is being waited for. The host asks this too
-    /// before it looks at the store for Sign in: a read made beside a call that waits would
-    /// wait behind the same prompt.
+    /// which is when the status says the keychain is being waited for.
     pub fn store_waited_for(&self) -> bool {
         self.store_waits.load(Ordering::SeqCst) > 0
+    }
+
+    /// Whether the store is held up: a call is being waited for past the first moment, or one
+    /// was given up and has not returned. The host asks this before it looks at the store for
+    /// Sign in.
+    pub fn store_busy(&self) -> bool {
+        // In this order: a call given up is counted as out before its wait is counted back,
+        // so a call that is out is seen by one question or the other.
+        self.store_waited_for() || self.store_given_up()
     }
 
     /// How long a store call is waited for before it is given up. The host gives its own look
@@ -474,20 +480,20 @@ impl AuthController {
         if started.is_err() {
             return Err(AuthError::Store);
         }
+        let mut waited = false;
         let answer = match told.recv_timeout(self.store_soon) {
             Err(RecvTimeoutError::Timeout) => {
                 self.store_waits.fetch_add(1, Ordering::SeqCst);
+                waited = true;
                 // The state's lock may be held here; a callback that panics must not unwind
                 // through whoever holds it.
                 let _ = catch_unwind(AssertUnwindSafe(|| self.changed()));
                 let rest = self.store_limit.saturating_sub(self.store_soon);
-                let answer = told.recv_timeout(rest);
-                self.store_waits.fetch_sub(1, Ordering::SeqCst);
-                answer
+                told.recv_timeout(rest)
             }
             answer => answer,
         };
-        match answer {
+        let answer = match answer {
             Ok(answer) => answer,
             // The call panicked: it will never answer, and it is not out either.
             Err(RecvTimeoutError::Disconnected) => Err(AuthError::Store),
@@ -502,7 +508,13 @@ impl AuthController {
                     Err(AuthError::Store)
                 }
             }
+        };
+        // Counted back only now, after a call given up has been counted as out: there is no
+        // moment at which a call that is out is neither waited for nor given up.
+        if waited {
+            self.store_waits.fetch_sub(1, Ordering::SeqCst);
         }
+        answer
     }
 
     fn now(&self) -> SystemTime {
@@ -546,8 +558,10 @@ impl AuthController {
     /// Starts a sign-in and returns the URL to open in the system browser.
     ///
     /// A sign-in the user asks for takes precedence over a background restore, which is
-    /// cancelled. While another sign-in is pending this returns [`AuthError::Busy`], and
-    /// while the credential store is being waited for, [`AuthError::StoreBusy`].
+    /// cancelled. While another sign-in is pending this returns [`AuthError::Busy`]; while a
+    /// store call given up is still out, or one that holds the state is being waited for,
+    /// [`AuthError::StoreBusy`]. The read at launch holds no state, so a sign-in is begun
+    /// while it waits; the host refuses that press itself ([`AuthController::store_busy`]).
     pub fn begin_sign_in(&self) -> Result<String, AuthError> {
         // With a store call given up and still out, a new sign-in could not be saved: the
         // browser is not opened for one.

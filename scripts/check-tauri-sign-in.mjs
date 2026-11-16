@@ -316,8 +316,9 @@ function fakeBridge(status, answers = {}) {
   // - outside the tests the file has no `(self.store_check)()`, `self.controller.cancel()`,
   //   `self.controller.sign_out()` or `.sign_out()?`: the store question and the controller's
   //   waiting forms, as they would be written on the calling thread;
-  // - Sign in asks the controller whether a call it gave up is still out, or one is being
-  //   waited for still, before it looks;
+  // - Sign in asks the controller whether the store is held up before it looks, and looks in
+  //   one place; the controller's answer asks about a call waited for first and a call given
+  //   up second, the order in which a call that is out is always seen by one of them;
   // - the look refuses while a look is out and younger than the limit, asks the store on a
   //   thread of its own, waits for it `self.soon` and answers a wait with the keychain
   //   sentence; a look given up neither ends the look after it nor has its answer kept; an
@@ -332,16 +333,20 @@ function fakeBridge(status, answers = {}) {
   //   cancel when the browser will not open), and that is below the page's default limit in
   //   ui/bridge.js, the shortest it gives any request (Sign in has a longer one of its own);
   // - the host takes its two times from the controller, whose own are `STORE_SOON` and
-  //   `STORE_LIMIT`, so the number compared is the one the look waits.
-  // The pieces read for shape (the handler, the look, the host's cancel and Sign out) have
-  // their comments taken out first, so a rule left behind as a comment is not read as kept.
+  //   `STORE_LIMIT` unless `store_limits` sets others, and the host calls that in one place,
+  //   for the limits a test hands to `with_limits`; `new` hands it none. So the number
+  //   compared is the one the application's look waits.
+  // The pieces read for shape (the handler, the look, the host's cancel, Sign out, the two
+  // constructors and the controller) have their comments taken out first, so a rule left
+  // behind as a comment is not read as kept. The spellings that must not occur, the thirty
+  // seconds and the sentences are read with comments in, which refuses more and not less.
   // Not read: what the controller does behind `begin_sign_in`, `cancel_now` and `sign_out_now`,
   // which the core's tests hold; the fallback in `sign_out` for when no thread can be started,
   // which waits as long as the store does; that the thread `cancel_unasked` starts cancels the
   // attempt it was started for and not a later one; and the limits beyond that comparison.
   for (const waits of ['(self.store_check)()', 'self.controller.cancel()', 'self.controller.sign_out()', '.sign_out()?']) assert.ok(!production.includes(waits), `auth.rs does not call ${waits} outside its tests`);
   const handler = strip(code.slice(code.indexOf('pub fn handle('), code.indexOf('fn look_at_store(')));
-  assert.match(handler, /if self\.controller\.store_given_up\(\) \|\| self\.controller\.store_waited_for\(\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
+  assert.match(handler, /if self\.controller\.store_busy\(\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
   assert.match(handler, /AuthError::StoreBusy => KEYCHAIN_WAITING,/);
   assert.match(handler, /"auth\.cancel" => match self\.controller\.cancel_now\(\) \{\n\s+Ok\(\(\)\) => Ok\(Value::Bool\(true\)\),\n\s+Err\(_\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
   assert.match(handler, /"auth\.signOut" => self\.sign_out\(\),/);
@@ -351,7 +356,7 @@ function fakeBridge(status, answers = {}) {
   assert.match(look, /\.spawn\(move \|\| \{\n\s+let answer = catch_unwind\(AssertUnwindSafe\(\|\| check\(\)\)\);/);
   assert.match(look, /match told\.recv_timeout\(self\.soon\) \{/);
   assert.match(look, /Err\(RecvTimeoutError::Timeout\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
-  assert.match(look, /if look\.turn != turn \{\n\s+return;\n\s+\}\n\s+look\.began = None;\n(\s+\/\/[^\n]*\n)*\s+if let Ok\(answer\) = answer \{\n\s+look\.kept = Some\(\(Instant::now\(\), answer\)\);/);
+  assert.match(look, /if look\.turn != turn \{\n\s+return;\n\s+\}\n\s+look\.began = None;\n\s+if let Ok\(answer\) = answer \{\n\s+look\.kept = Some\(\(Instant::now\(\), answer\)\);/);
   assert.match(look, /if came\.elapsed\(\) < LOOK_KEPT \{\n\s+return Ok\(answer\);/);
   assert.match(code, /^const LOOK_KEPT: Duration = Duration::from_secs\(30\);$/m);
   const unasked = strip(code.slice(code.indexOf('fn cancel_unasked('), code.indexOf('fn sign_out(&self)')));
@@ -362,6 +367,14 @@ function fakeBridge(status, answers = {}) {
   assert.ok(!signOut.includes('recv_timeout'), 'Sign out gives its first word no time of its own');
   assert.match(signOut, /let ended = controller\.sign_out_now\(move \|url\| \{\n\s+let _ = began\.send\(SignOut::Began\(url\)\);\n\s+\}\);/);
   const core = strip(read('crates/core/src/auth/controller.rs'));
+  assert.equal(handler.split('self.look_at_store()').length - 1, 1, 'Sign in looks at the store in one place');
+  assert.match(core, /pub fn store_busy\(&self\) -> bool \{\n\s+self\.store_waited_for\(\) \|\| self\.store_given_up\(\)\n\s+\}/);
+  const made = strip(code.slice(code.indexOf('pub fn new(\n        api: Arc<dyn WorkosApi>,'), code.indexOf('pub fn authenticated(')));
+  assert.ok(made.startsWith('pub fn new('), 'The host is made by `new`');
+  assert.match(made, /\) -> \(Arc<Auth>, Wakes\) \{\n\s+Auth::with_limits\(api, store, marker, browser, store_check, None\)\n\s+\}/);
+  assert.equal(made.split('with_limits(').length - 1, 2, 'The limits are handed over in one place');
+  assert.match(made, /Some\(\(soon, limit\)\) => controller\.store_limits\(soon, limit\),\n\s+None => controller,/);
+  assert.equal(strip(production).split('store_limits(').length - 1, 1, 'and set in one place');
   const soon = Number(core.match(/^const STORE_SOON: Duration = Duration::from_secs\((\d+)\);/m)?.[1]);
   assert.match(core, /store_soon: STORE_SOON,\n\s+store_limit: STORE_LIMIT,/);
   assert.match(core, /pub fn store_soon\(&self\) -> Duration \{\n\s+self\.store_soon\n\s+\}/);

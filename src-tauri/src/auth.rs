@@ -554,7 +554,7 @@ impl Auth {
                 // and another read would only wait behind it. One it is waiting for still is
                 // the same for this press: the status says so already, and a read made beside
                 // it would wait behind the same prompt, or fail there and name another trouble.
-                if self.controller.store_given_up() || self.controller.store_waited_for() {
+                if self.controller.store_busy() {
                     return Err(BridgeError::from(KEYCHAIN_WAITING));
                 }
                 if let Some(problem) = self.look_at_store()? {
@@ -1531,6 +1531,13 @@ mod tests {
         (auth, opened)
     }
 
+    /// Whether the status says the keychain is being waited for.
+    fn says_waiting(auth: &Auth) -> bool {
+        auth.status()["message"]
+            .as_str()
+            .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
+    }
+
     fn until_no_look_is_out(auth: &Auth) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while lock(&auth.look).began.is_some() {
@@ -1630,7 +1637,9 @@ mod tests {
         // The limit runs from when the look began, which is later than `began` by however
         // long the first press took to start.
         let look_began = lock(&auth.look).began.expect("a look is out");
-        // Not before: a press well into the limit, and still short of it, asks nothing.
+        // Not before: a press well into the limit, and still short of it, asks nothing. It
+        // is made 600 ms short so that a busy machine does not carry it past the limit, which
+        // leaves a look given up in the last 600 ms of its two seconds unseen here.
         let short = limit - Duration::from_millis(600);
         std::thread::sleep(short.saturating_sub(look_began.elapsed()));
         let late = answered(&auth, "auth.signIn");
@@ -1856,11 +1865,6 @@ mod tests {
             Some((Duration::from_millis(200), Duration::from_secs(60))),
         );
         auth.run(wakes, |_| {});
-        let says_waiting = |auth: &Arc<Auth>| {
-            auth.status()["message"]
-                .as_str()
-                .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
-        };
         assert_eq!(answered(&auth, "auth.signOut"), Ok(json!(true)));
         was_asked
             .recv_timeout(Duration::from_secs(10))
@@ -1893,6 +1897,85 @@ mod tests {
         );
         assert_eq!(looks.load(Ordering::SeqCst), 1);
         assert!(opened.lock().unwrap().is_empty());
+        auth.shutdown();
+    }
+
+    /// A store whose read waits until the test lets it go, as the read at launch does on a
+    /// locked keyring.
+    struct SlowRead {
+        asked: Sender<()>,
+        answer: Mutex<Receiver<()>>,
+    }
+    impl CredentialStore for SlowRead {
+        fn load(&self) -> Result<Option<String>, AuthError> {
+            let _ = self.asked.send(());
+            let _ = self.answer.lock().unwrap().recv();
+            Ok(None)
+        }
+        fn save(&self, _: &str) -> Result<(), AuthError> {
+            Ok(())
+        }
+        fn delete(&self) -> Result<(), AuthError> {
+            Ok(())
+        }
+    }
+
+    /// The controller's read at launch holds no state, so nothing but the host's question
+    /// refuses a press made while that read waits for the prompt: without it the look is
+    /// made, and when it answers a sign-in is begun beside the prompt.
+    #[test]
+    fn sign_in_does_not_ask_the_store_while_the_read_at_launch_is_waited_for() {
+        let (asked, was_asked) = channel();
+        let (answer, held) = channel();
+        let looks = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&looks);
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let browser: Browser = Arc::new(move |url| {
+            record.lock().unwrap().push(url.to_string());
+            true
+        });
+        let (auth, wakes) = Auth::with_limits(
+            Arc::new(api(&stand_in(vec![]))),
+            Arc::new(SlowRead {
+                asked,
+                answer: Mutex::new(held),
+            }),
+            Arc::new(Marker::new(None)),
+            browser,
+            Arc::new(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+                None
+            }),
+            Some((Duration::from_millis(200), Duration::from_secs(60))),
+        );
+        auth.run(wakes, |_| {});
+        auth.restore(|| true);
+        was_asked
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the store was read at launch");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !says_waiting(&auth) {
+            assert!(Instant::now() < deadline, "the status never said so");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            answered(&auth, "auth.signIn"),
+            Err(BridgeError::from(KEYCHAIN_WAITING))
+        );
+        assert_eq!(looks.load(Ordering::SeqCst), 0, "the store was asked");
+        assert!(opened.lock().unwrap().is_empty());
+        // The read returns: the next press is an ordinary one.
+        answer.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while says_waiting(&auth) {
+            assert!(Instant::now() < deadline, "the read never returned");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+        assert_eq!(looks.load(Ordering::SeqCst), 1);
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
         auth.shutdown();
     }
 

@@ -301,6 +301,48 @@ fn a_read_that_never_returns_is_given_up_at_the_limit() {
     assert!(rig.api.refresh_calls.lock().unwrap().is_empty());
 }
 
+/// From when a store call is said to be waited for until it has returned, the controller says
+/// the store is held up, with no moment in between where the wait has been counted back and
+/// the call is not yet counted as given up. The host refuses Sign in on this answer, and a
+/// press in such a moment would ask the store behind the prompt. The read at launch is used
+/// because it holds no state, so nothing else refuses a press then.
+#[test]
+fn the_store_is_held_up_from_the_wait_to_the_return_with_no_gap() {
+    let rig = rig_with(Some((
+        Duration::from_millis(20),
+        Duration::from_millis(150),
+    )));
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    let (held, hook) = waiter();
+    *rig.store.during_load.lock().unwrap() = Some(Box::new(move || hook()));
+    held.open_when_too_long();
+    assert!(!rig.auth.store_busy());
+    let auth = rig.auth.clone();
+    let restore = std::thread::spawn(move || auth.restore());
+    held.entered();
+    until("the read is said to be waited for", || {
+        rig.auth.store_waited_for()
+    });
+    assert!(!rig.auth.store_given_up());
+    let started = Instant::now();
+    let mut polls = 0_u64;
+    while !rig.auth.store_given_up() {
+        assert!(
+            rig.auth.store_busy(),
+            "neither waited for nor given up, at poll {polls}"
+        );
+        assert!(started.elapsed() < TOO_LONG, "the read was never given up");
+        polls += 1;
+    }
+    assert!(rig.auth.store_busy());
+    // Both can be so for a moment: the wait is counted back after the call is counted as out.
+    until("the wait is counted back", || !rig.auth.store_waited_for());
+    assert!(rig.auth.store_busy(), "given up, and still out");
+    held.open();
+    until("the read returns", || !rig.auth.store_busy());
+    restore.join().unwrap();
+}
+
 /// Quit makes one last attempt to save a replacement that could not be saved earlier. It
 /// does not wait for ever for it.
 #[test]
