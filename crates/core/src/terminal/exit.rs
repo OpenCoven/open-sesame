@@ -10,9 +10,16 @@
 //! So on Unix systems other than macOS the reader does not sit in the read. It waits for output
 //! for [`STEP`] at a time and, between waits, asks whether the shell has exited. Once it has,
 //! what is already in the terminal is still read, and the pane ends when the terminal has been
-//! quiet for one step or [`LAST_WORDS`] more bytes have been read, whichever is first. The pane
-//! then ends as it does on macOS: the sender delivers what was read and kills what is left in
-//! the session. macOS keeps the plain blocking read, which needs none of this.
+//! quiet for one step, when the reader has waited [`LAST_WAIT`] in all for output, or when
+//! [`LAST_WORDS`] more bytes have been read, whichever is first. A job that writes a little
+//! every few milliseconds is never quiet for a step and would take hours to write the byte
+//! bound, so the wait has a bound of its own. The pane then ends as it does on macOS: the
+//! sender delivers what was read and kills what is left in the session. macOS keeps the plain
+//! blocking read, which needs none of this.
+//!
+//! None of this runs while the reader is held back because the page has not acknowledged what
+//! it was sent: a pane whose output nobody takes stays open at the high-water mark on every
+//! system, whether or not its shell has exited.
 
 use super::tree::Tree;
 use portable_pty::MasterPty;
@@ -31,15 +38,20 @@ mod polled {
 
     /// How long one wait for output lasts, and so how often an idle pane's shell is looked at.
     const STEP: Duration = Duration::from_millis(50);
-    /// How much is still read once the shell has exited. A bound, so that a job which never
-    /// stops writing cannot keep the pane of an exited shell open.
+    /// How much is still read once the shell has exited. A bound, so that a job which writes
+    /// as fast as it is read cannot keep the pane of an exited shell open.
     const LAST_WORDS: usize = 1024 * 1024;
+    /// How long the reader waits for output in all once the shell has exited. A bound, so that
+    /// a job which writes a little at a time, more often than once a step, cannot either. Time
+    /// the reader spends held back by the page does not count.
+    const LAST_WAIT: Duration = Duration::from_millis(250);
 
     enum State {
         /// The shell runs, as far as the last look showed.
         Running,
-        /// The shell has exited; this many more bytes are read at most.
-        Leaving(usize),
+        /// The shell has exited; this many more bytes are read at most, and output is waited
+        /// for this much longer at most.
+        Leaving { bytes: usize, wait: Duration },
         /// Nothing more to notice: the pane has been told, or it was closed.
         Over,
     }
@@ -74,19 +86,18 @@ mod polled {
             loop {
                 match self.state {
                     State::Over => return false,
-                    State::Leaving(0) => {
-                        self.state = State::Over;
-                        return true;
-                    }
-                    State::Leaving(_) => {
-                        if self.readable() {
+                    State::Leaving { bytes, wait } => {
+                        let waiting = Instant::now();
+                        if bytes > 0 && !wait.is_zero() && self.readable(STEP.min(wait)) {
+                            let wait = wait.saturating_sub(waiting.elapsed());
+                            self.state = State::Leaving { bytes, wait };
                             return false;
                         }
                         self.state = State::Over;
                         return true;
                     }
                     State::Running => {
-                        let readable = self.readable();
+                        let readable = self.readable(STEP);
                         if !readable && closed() {
                             // Closing the pane ends the shell and collects it; from then on its
                             // process ID says nothing about this pane.
@@ -96,7 +107,10 @@ mod polled {
                         if !readable || self.looked.elapsed() >= STEP {
                             self.looked = Instant::now();
                             if tree.leader_exited() {
-                                self.state = State::Leaving(LAST_WORDS);
+                                self.state = State::Leaving {
+                                    bytes: LAST_WORDS,
+                                    wait: LAST_WAIT,
+                                };
                                 continue;
                             }
                         }
@@ -110,14 +124,14 @@ mod polled {
 
         /// Counts bytes read against what is still read after the shell's exit.
         pub(in super::super) fn took(&mut self, count: usize) {
-            if let State::Leaving(left) = &mut self.state {
-                *left = left.saturating_sub(count);
+            if let State::Leaving { bytes, .. } = &mut self.state {
+                *bytes = bytes.saturating_sub(count);
             }
         }
 
-        /// Whether the terminal has output, or has ended, within one step.
-        fn readable(&self) -> bool {
-            let until = Instant::now() + STEP;
+        /// Whether the terminal has output, or has ended, within `wait`.
+        fn readable(&self, wait: Duration) -> bool {
+            let until = Instant::now() + wait;
             loop {
                 let wait = until.saturating_duration_since(Instant::now());
                 let mut poll = libc::pollfd {

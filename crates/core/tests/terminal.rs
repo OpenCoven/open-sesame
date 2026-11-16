@@ -91,7 +91,9 @@ fn open(terminals: &Terminals, pane: &Arc<Pane>, value: Value) -> Result<Value, 
     {
         let id = request.get("id").and_then(Value::as_str).unwrap_or("");
         let asked_again = || pane.text().matches(CURSOR_QUERY).count() > asked;
-        if wait_for(Duration::from_secs(10), asked_again) {
+        // A pane that has already ended, because another open of its ID closed it, never asks.
+        wait_for(Duration::from_secs(10), || asked_again() || pane.exited());
+        if asked_again() {
             let _ = call(
                 terminals,
                 "terminal.input",
@@ -202,6 +204,13 @@ const MARKER_COMMAND: &str = "Write-Output ('open-' + 'sesame' + '-marker')\r";
 const CHILD_COMMAND: &str = "sleep 300 & printf 'CHILD:%s\\n' $!\r";
 #[cfg(windows)]
 const CHILD_COMMAND: &str = "$child = Start-Process ping -ArgumentList '-n','300','127.0.0.1' -PassThru -NoNewWindow; Write-Output ('CHILD:' + $child.Id)\r";
+
+/// As [`CHILD_COMMAND`], with a child that ignores the hang-up a closing pane sends first, so
+/// closing the pane takes its whole grace period before the child is killed.
+#[cfg(unix)]
+const STUBBORN_CHILD_COMMAND: &str = "(trap '' HUP; exec sleep 300) & printf 'CHILD:%s\\n' $!\r";
+#[cfg(windows)]
+const STUBBORN_CHILD_COMMAND: &str = CHILD_COMMAND;
 
 #[test]
 fn rejects_invalid_pane_id() {
@@ -357,6 +366,78 @@ fn rejects_seventeenth_session() {
     assert!(gone(&pids), "a shell outlived close_all");
 }
 
+/// Panes that open while others close all start. On macOS the system now and then refuses to
+/// open a pseudo-terminal with a number that means "try that again", and before issue #112
+/// that reached the page as "could not start the shell". This test did not bring that about
+/// by itself in 12 runs without the further tries; runs of the whole package did, and the
+/// unit tests beside `again` in `session.rs` cover the further tries themselves.
+#[test]
+fn panes_opened_while_others_close_all_start() {
+    let terminals = plain();
+    let failures: Vec<String> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..6)
+            .map(|worker| {
+                let terminals = &terminals;
+                scope.spawn(move || {
+                    let mut failures = Vec::new();
+                    for round in 0..20 {
+                        let id = format!("churn-{worker}");
+                        let pane = Pane::new();
+                        match terminals
+                            .open(&params(json!({"id": id, "mode": "local"})), pane.sink())
+                        {
+                            Ok(_) => {
+                                call(terminals, "terminal.close", json!({"id": id})).unwrap();
+                            }
+                            Err(error) => failures.push(format!("{worker}/{round}: {}", error.0)),
+                        }
+                    }
+                    failures
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect()
+    });
+    assert!(
+        failures.is_empty(),
+        "panes that did not start: {failures:?}"
+    );
+}
+
+/// Quit also waits for panes that another thread is, at that moment, closing without waiting.
+/// Before the review of pull request #117 the two could interleave so that Quit found neither
+/// the panes nor the thread that was closing them, and returned with the shells still there
+/// (10 of 60 rounds).
+#[test]
+fn quit_waits_for_panes_another_thread_is_closing_without_waiting() {
+    for round in 0..16 {
+        let terminals = plain();
+        let pane = Pane::new();
+        let shell = pid(&open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap());
+        input(&terminals, "main", STUBBORN_CHILD_COMMAND);
+        let child = number_after(&pane, "CHILD:");
+        let start = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                start.wait();
+                terminals.close_all_detached();
+            });
+            scope.spawn(|| {
+                start.wait();
+                terminals.close_all();
+            });
+        });
+        assert!(
+            !alive(shell),
+            "round {round}: closing every pane returned while a shell was still there"
+        );
+        assert!(gone(&[child]), "round {round}: a child was left");
+    }
+}
+
 #[test]
 fn input_before_open_is_refused() {
     let terminals = plain();
@@ -474,16 +555,51 @@ fn a_shell_that_exits_with_a_job_running_ends_its_pane() {
     }
 }
 
+/// The same when the job keeps writing a little at a time: the terminal is then never quiet
+/// for long, and a megabyte of such output would take hours, so neither can be what the pane
+/// waits for. On Linux such a job kept the pane of an exited shell open (review of pull
+/// request #117).
+#[cfg(unix)]
+#[test]
+fn a_shell_that_exits_with_a_job_still_writing_ends_its_pane() {
+    for shell in ["/bin/sh", "/bin/bash"] {
+        let terminals = Terminals::with(Config {
+            shell: Some(PathBuf::from(shell)),
+            ..Config::default()
+        });
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        input(
+            &terminals,
+            "main",
+            "(while :; do printf x; sleep 0.02; done) & printf 'CHILD:%s\\n' $!\r",
+        );
+        let job = number_after(&pane, "CHILD:");
+        assert!(alive(job), "{shell}: the job never ran");
+        input(&terminals, "main", "printf 'LAST-%s\\n' WORDS; exit\r");
+        assert!(
+            wait_for(Duration::from_secs(10), || pane.exited()),
+            "{shell}: no exit message after the shell exited with a job still writing"
+        );
+        assert!(
+            pane.text().contains("LAST-WORDS"),
+            "{shell}: what the shell printed before it exited was lost"
+        );
+        assert!(
+            gone(&[pid(&result), job]),
+            "{shell}: the shell or its job outlived the pane"
+        );
+        assert!(pane.errors.lock().unwrap().is_empty());
+    }
+}
+
 /// Two requests to open the same pane at the same moment leave one shell, and closing the pane
 /// reaches it. Before issue #112 the second to finish replaced the first in the list without
 /// closing it, and nothing could close that shell until the application quit.
 #[test]
 fn opening_one_pane_twice_at_once_leaves_one_shell() {
     let terminals = plain();
-    // Fewer rounds on Windows: the pane that loses is closed before its pseudo-console asks for
-    // the cursor, and `open` then waits its full ten seconds for that question in every round.
-    let rounds = if cfg!(windows) { 2 } else { 8 };
-    for round in 0..rounds {
+    for round in 0..8 {
         let panes = [Pane::new(), Pane::new()];
         let start = std::sync::Barrier::new(2);
         let pids: Vec<u32> = std::thread::scope(|scope| {
@@ -594,7 +710,9 @@ fn panes_closed_without_waiting_are_gone_by_the_time_quit_returns() {
             json!({"id": id, "mode": "local"}),
         )
         .unwrap()));
-        input(&terminals, &id, CHILD_COMMAND);
+        // Children that ignore the hang-up: closing these panes takes the grace period, so a
+        // Quit that did not wait would return with them running.
+        input(&terminals, &id, STUBBORN_CHILD_COMMAND);
         children.push(number_after(pane, "CHILD:"));
     }
     terminals.close_all_detached();
@@ -611,7 +729,8 @@ fn panes_closed_without_waiting_are_gone_by_the_time_quit_returns() {
     let after = Pane::new();
     let reopened = open(&terminals, &after, json!({"id": "pane-0", "mode": "local"})).unwrap();
     terminals.shut_down();
-    // Quit collected every shell before it returned, the detached ones included.
+    // Quit collected every shell before it returned, the detached ones included: looked at
+    // once, with no wait.
     let running: Vec<u32> = shells.iter().copied().filter(|pid| alive(*pid)).collect();
     assert!(running.is_empty(), "shells outlived Quit: {running:?}");
     assert!(gone(&children), "a child outlived Quit");

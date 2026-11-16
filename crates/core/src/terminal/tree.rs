@@ -79,8 +79,10 @@ mod unix {
 
         /// Looks at the shell without collecting it, so its process ID stays reserved.
         pub(in super::super) fn leader_exited(&self) -> bool {
-            // SAFETY: `info` is a valid, zeroed `siginfo_t` for `waitid` to fill, and the ID is
-            // this pane's child, which has not been collected.
+            // SAFETY: `info` is a valid, zeroed `siginfo_t` for `waitid` to fill. The ID is this
+            // pane's child. Once the pane's end has collected it, a late call from the reader
+            // either gets an error, read below as "gone", or finds another child of this process
+            // that was given the same ID, and only looks at it: nothing is collected or signalled.
             unsafe {
                 let mut info: libc::siginfo_t = std::mem::zeroed();
                 let options = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;

@@ -59,6 +59,11 @@ pub fn handle<R: Runtime>(
 /// them, and until issue #112 they ran on, counted against the limit, until Quit. They are
 /// closed here. This runs on the window's thread, so it does not wait for their processes; Quit
 /// does. The first load of a run finds no panes.
+///
+/// Two cases are not covered. Where the web content process ends and nothing loads the page
+/// again, which is so on Linux and Windows, no page load starts and the panes run until Quit.
+/// And a `terminal.open` that the old page sent, and that is handled after this close, starts a
+/// pane the new page cannot reach.
 pub fn page_replaced<R: Runtime>(app: &AppHandle<R>) {
     if let Some(state) = app.try_state::<crate::AppState>() {
         state.core.terminals.close_all_detached();

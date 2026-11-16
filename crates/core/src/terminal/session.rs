@@ -67,6 +67,67 @@ pub(super) const STREAM_ENDED: &str = "Terminal stream ended.";
 pub(super) const NOT_READING: &str =
     "This shell is not reading its input. Wait for it, or close the pane.";
 
+/// The reply for a pane that could not be started. The page gets one sentence whatever went
+/// wrong. A development build also says on standard error which step failed and why, as the
+/// system's error number or its own words for it, and nothing else: no path, argument or
+/// environment value. Without that, a start that fails once on a busy machine cannot be
+/// explained afterwards (issue #112).
+fn could_not_start(step: &str, why: String) -> BridgeError {
+    if cfg!(debug_assertions) {
+        eprintln!("open-sesame: no shell: {step} failed ({why})");
+    }
+    BridgeError::from(COULD_NOT_START)
+}
+
+fn number(system_error: Option<i32>) -> String {
+    match system_error {
+        Some(code) => format!("system error {code}"),
+        None => "no system error number".to_string(),
+    }
+}
+
+/// The operating system's error number behind a `portable-pty` error, when it kept one. The
+/// error's text is not used: it can name the program and the folder.
+fn system_error<E: AsRef<dyn std::error::Error + Send + Sync + 'static>>(error: &E) -> String {
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(error.as_ref());
+    while let Some(current) = cause {
+        if let Some(io) = current.downcast_ref::<std::io::Error>() {
+            return number(io.raw_os_error());
+        }
+        cause = current.source();
+    }
+    number(None)
+}
+
+/// The pauses before each further try at opening a pseudo-terminal.
+///
+/// macOS now and then refuses to open one with error -6, which is not an error a program is
+/// meant to see: the kernel uses that number for "start this open again" and passes it on when
+/// its own tries run out. On macOS 27.2 it reached this code in 5 of 14 runs of this package's
+/// tests on a busy machine, each time for one pane out of some hundreds, and the page was told
+/// the shell could not start (issue #112). A further try a few milliseconds later is what the
+/// number asks for. The library keeps the error as text only, so every failure of this step is
+/// tried again; one that lasts, such as no pseudo-terminal being left, is reported about 75 ms
+/// later than before.
+const OPEN_PAUSES: [Duration; 3] = [
+    Duration::from_millis(5),
+    Duration::from_millis(20),
+    Duration::from_millis(50),
+];
+
+/// Runs `attempt`, and after a failure once more after each of `pauses`; the last error stands.
+fn again<T, E>(pauses: &[Duration], mut attempt: impl FnMut() -> Result<T, E>) -> Result<T, E> {
+    let mut result = attempt();
+    for pause in pauses {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(*pause);
+        result = attempt();
+    }
+    result
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -119,14 +180,23 @@ impl Session {
         rows: u16,
         sink: Sink,
     ) -> Result<Session, BridgeError> {
-        let failed = |_| BridgeError::from(COULD_NOT_START);
         let size = PtySize {
             rows,
             cols,
             pixel_width: 0,
             pixel_height: 0,
         };
-        let pair = native_pty_system().openpty(size).map_err(failed)?;
+        let mut tries = 0;
+        let pair = again(&OPEN_PAUSES, || {
+            tries += 1;
+            native_pty_system().openpty(size)
+        })
+        // The library keeps this error as text, and the text names no path: it is the
+        // system's own description of why no pseudo-terminal could be had.
+        .map_err(|error| could_not_start("opening a pseudo-terminal", error.to_string()))?;
+        if cfg!(debug_assertions) && tries > 1 {
+            eprintln!("open-sesame: opening a pseudo-terminal worked on try {tries}");
+        }
         let mut command = CommandBuilder::new(&launch.program);
         command.args(&launch.args);
         command.cwd(&launch.cwd);
@@ -135,7 +205,10 @@ impl Session {
         // The shell inherits how this process treats Control+C; see `deliver_control_c`.
         #[cfg(windows)]
         super::tree::deliver_control_c();
-        let mut child = pair.slave.spawn_command(command).map_err(failed)?;
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .map_err(|error| could_not_start("starting the program", system_error(&error)))?;
         // Only the child may hold the other end, or the stream never reports its end.
         drop(pair.slave);
         let adopted = Tree::adopt(child.as_ref()).and_then(|tree| {
@@ -152,10 +225,13 @@ impl Session {
         });
         let (tree, reader, writer, exit, pid) = match adopted {
             Ok(parts) => parts,
-            Err(_) => {
+            Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(BridgeError::from(COULD_NOT_START));
+                return Err(could_not_start(
+                    "taking over the pseudo-terminal",
+                    number(error.raw_os_error()),
+                ));
             }
         };
         let shared = Arc::new(Shared {
@@ -438,3 +514,51 @@ const END_OF_TERMINAL: i32 = libc::EIO;
 /// `ERROR_BROKEN_PIPE`, in case it does not arrive as `ErrorKind::BrokenPipe`.
 #[cfg(windows)]
 const END_OF_TERMINAL: i32 = 109;
+
+#[cfg(test)]
+mod tests {
+    use super::again;
+    use std::time::{Duration, Instant};
+
+    const PAUSES: [Duration; 2] = [Duration::from_millis(1), Duration::from_millis(30)];
+
+    #[test]
+    fn a_step_that_fails_at_first_is_tried_again_and_its_result_used() {
+        let mut tries = 0;
+        let result: Result<u32, &str> = again(&PAUSES, || {
+            tries += 1;
+            if tries < 3 {
+                Err("not yet")
+            } else {
+                Ok(tries)
+            }
+        });
+        assert_eq!(result, Ok(3));
+        assert_eq!(tries, 3);
+    }
+
+    #[test]
+    fn a_step_that_works_is_run_once_and_without_a_pause() {
+        let mut tries = 0;
+        let started = Instant::now();
+        let result: Result<(), &str> = again(&[Duration::from_secs(30)], || {
+            tries += 1;
+            Ok(())
+        });
+        assert_eq!(result, Ok(()));
+        assert_eq!(tries, 1);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_step_that_keeps_failing_ends_with_its_last_error_after_every_pause() {
+        let mut tries = 0;
+        let started = Instant::now();
+        let result: Result<(), String> = again(&PAUSES, || {
+            tries += 1;
+            Err(format!("failure {tries}"))
+        });
+        assert_eq!(result, Err("failure 3".to_string()));
+        assert!(started.elapsed() >= PAUSES[0] + PAUSES[1]);
+    }
+}

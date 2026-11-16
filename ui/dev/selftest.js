@@ -177,6 +177,16 @@ export async function run({ launch, config }) {
   if (config.reload) {
     const before = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || 'null');
     sessionStorage.removeItem(RELOAD_KEY);
+    // The window's name survives a reload too. If it says the page was loaded again and what
+    // the page stored is gone, the pass says so once instead of loading the page for ever.
+    const loadedAgain = window.name === RELOAD_KEY;
+    window.name = '';
+    if (!before && loadedAgain) {
+      await step('The page that loaded again finds what the page before it stored', async () => {
+        throw new Error('Session storage did not survive the page load.');
+      });
+      return finish('Self-test failed: the reload pass lost its place.');
+    }
     if (!before) {
       let pids;
       await step('Two panes are open, each with a long child process, before the page loads again', async () => {
@@ -190,6 +200,7 @@ export async function run({ launch, config }) {
       results.phase = 'reloading';
       await write();
       sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ started: results.started, steps: results.steps, pids }));
+      window.name = RELOAD_KEY;
       location.reload();
       return;
     }
