@@ -54,7 +54,10 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         PageLoadEvent::Finished => {
             // Development evidence that hiding and showing the window does not load the page again.
             #[cfg(debug_assertions)]
-            eprintln!("open-sesame: page loaded {}", payload.url());
+            {
+                eprintln!("open-sesame: page loaded {}", payload.url());
+                crate::runtime_probe::record(window.app_handle(), "page-load");
+            }
         }
     });
     let window = builder.build()?;

@@ -91,14 +91,19 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
         window: window.label(),
         authenticated: authenticated(window.app_handle()),
     };
-    gate::dispatch(request, &caller, |request| match route(&request.method) {
+    let reply = gate::dispatch(request, &caller, |request| match route(&request.method) {
         Route::Auth => auth(window.app_handle(), &request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
         Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
         Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
         Route::Project => project::handle(window, &request.method, &request.params),
         Route::Core => core.handle(&request.method, &request.params),
-    })
+    });
+    #[cfg(debug_assertions)]
+    if reply.is_some() {
+        crate::runtime_probe::record(window.app_handle(), "bridge");
+    }
+    reply
 }
 
 #[cfg(test)]
@@ -115,12 +120,21 @@ mod tests {
     /// nothing. The real capability file is not loaded here, so only the command's own rules
     /// are under test.
     fn app() -> tauri::App<MockRuntime> {
+        app_with_core(Core::with_storage(
+            open_sesame_core::storage::Storage::open_in_memory(),
+        ))
+    }
+
+    fn app_with_core(core: Core) -> tauri::App<MockRuntime> {
         let app = mock_builder()
             .invoke_handler(tauri::generate_handler![bridge_request])
             .build(mock_context(noop_assets()))
             .unwrap();
         app.manage(AppState {
-            core: Arc::new(Core::new()),
+            core: Arc::new(core),
+            startup: crate::startup::Startup::start(
+                open_sesame_core::process::ShellEnv::from_vars(Default::default()),
+            ),
             emit: crate::events::emitter(app.handle()),
         });
         app
@@ -169,6 +183,121 @@ mod tests {
             },
         )
         .map(|body| body.deserialize::<Value>().unwrap())
+    }
+
+    #[test]
+    fn storage_open_errors_reach_the_page_without_reporting_saved_or_rejecting_other_local_requests(
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-directory");
+        std::fs::write(&file, b"keep").unwrap();
+        let app = app_with_core(Core::with_storage(
+            open_sesame_core::storage::Storage::open_in(&file.join("data")),
+        ));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        for (method, params) in [
+            ("items.list", json!({})),
+            (
+                "items.save",
+                json!({"item":{"kind":"note","text":"unsaved"}}),
+            ),
+        ] {
+            let reply = call(&main, method, params).unwrap();
+            assert_eq!(
+                reply["error"],
+                "Open Sesame could not open its data file. The file has not been changed."
+            );
+            assert!(reply.get("result").is_none());
+        }
+        assert!(call(&main, "system.info", json!({}))
+            .unwrap()
+            .get("result")
+            .is_some());
+        assert_eq!(std::fs::read(file).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn a_newer_schema_error_reaches_the_page_as_a_sentence() {
+        // The real newer-file refusal and unchanged bytes are exercised in core/tests/runtime.rs.
+        let app = app_with_core(Core::with_storage(Err(
+            open_sesame_core::storage::StorageError::NewerSchema {
+                found: 999,
+                supported: 1,
+            },
+        )));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let reply = call(&main, "items.list", json!({})).unwrap();
+        assert_eq!(
+            reply["error"],
+            "This data was saved by a newer version of Open Sesame. Update the app to open it."
+        );
+        assert!(reply.get("result").is_none());
+    }
+
+    #[test]
+    fn every_ported_method_reaches_a_handler_or_its_named_pending_issue() {
+        // An admitted method still waiting for its issue goes here as (method, issue). #72's
+        // sign-in now answers every auth action, so none is waiting.
+        const PENDING: &[(&str, u32)] = &[];
+        let app = app();
+        // Summon's handlers answer only once its state exists, as it does after `summon::start`.
+        // `None` keeps its settings in memory, so the audit writes no file.
+        app.manage(summon::Summon::new(summon::Session::Wayland, None));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        for (method, issue) in PENDING {
+            assert!(
+                PORTED.contains(method),
+                "stale pending exception {method} #{issue}"
+            );
+        }
+        for method in PORTED {
+            // Invalid typed input avoids native dialogs, clipboard access and pane creation,
+            // while still passing the gate and invoking the real route's handler.
+            let reply = call(&main, method, json!({"unexpected":true}))
+                .unwrap_or_else(|error| panic!("{method} did not return a reply: {error}"));
+            assert_ne!(
+                reply["error"], UNSUPPORTED,
+                "admitted method lost its handler: {method}"
+            );
+            if PENDING.iter().any(|(pending, _)| pending == method) {
+                assert_eq!(
+                    reply["error"], NOT_IN_VERSION,
+                    "remove the pending exception when {method} is implemented"
+                );
+            } else {
+                assert_ne!(
+                    reply["error"], NOT_IN_VERSION,
+                    "unrecorded pending handler: {method}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn folder_dialog_bad_input_is_refused_before_the_plugin_runs() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "project.chooseFolder", json!({"unexpected":true})),
+            Ok(json!({"requestId":"r1","error":"Invalid folder request."}))
+        );
+    }
+
+    #[test]
+    fn storage_save_and_list_reach_the_core_through_the_command() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let saved = call(
+            &main,
+            "items.save",
+            json!({"item": {"kind": "note", "text": "runtime wiring"}}),
+        )
+        .unwrap();
+        assert!(saved.get("error").is_none(), "{saved}");
+        let id = saved["result"]["item"]["id"].as_str().unwrap();
+        let listed = call(&main, "items.list", json!({})).unwrap();
+        assert_eq!(listed["result"]["items"][0]["id"], id);
+        assert_eq!(listed["result"]["items"][0]["text"], "runtime wiring");
     }
 
     #[test]

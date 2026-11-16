@@ -8,11 +8,10 @@
 //! The shortcut is a setting. Registering it can fail, because other launchers take the common
 //! ones, and the failure is kept and reported instead of swallowed.
 //!
-//! The setting is not kept between launches yet. The code that reads and writes its file is
-//! here and tested, but the folder Tauri derives for this application is still the installed
-//! Swift app's (the bundle identifier, issue #87), and where the restart keeps its data is
-//! issue #105's question. Until that is answered a release build keeps the setting in memory;
-//! a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`, if set.
+//! The setting is not kept between launches in a release build yet. The code that reads and
+//! writes its file is here and tested, and issue #105 gives the core's storage a restart data
+//! folder (`data.rs`), but this setting is not wired to it yet. So a release build keeps it in
+//! memory; a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`.
 
 use crate::window;
 use open_sesame_core::gate::UNSUPPORTED;
