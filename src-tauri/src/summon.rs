@@ -999,7 +999,7 @@ mod tests {
     fn a_shortcut_needs_a_modifier_and_a_key() {
         for good in [
             DEFAULT_SHORTCUT,
-            "Control+Alt+K",
+            "Control+Shift+K",
             "super+shift+o",
             " Alt+F1 ",
             "CmdOrCtrl+Shift+Space",
@@ -1296,7 +1296,7 @@ mod tests {
         assert_eq!(summon.status()["notice"], "");
 
         for quiet in [
-            r#"{"shortcut":"Control+Alt+K"}"#,
+            r#"{"shortcut":"Control+Shift+K"}"#,
             r#"{"shortcut":""}"#,
             r#"{"shortcut":7}"#,
             r#"{"hideOnBlur":true}"#,
@@ -1360,7 +1360,7 @@ mod tests {
         let path = folder.join("nested").join(SETTINGS_FILE);
         assert_eq!(Settings::load(&path), Settings::default());
         let saved = Settings {
-            shortcut: "Control+Alt+K".to_string(),
+            shortcut: "Control+Shift+K".to_string(),
             hide_on_blur: true,
         };
         saved.save(&path).unwrap();

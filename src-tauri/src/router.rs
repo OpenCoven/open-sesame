@@ -554,13 +554,13 @@ mod tests {
         let changed = result(call(
             &main,
             "summon.setShortcut",
-            json!({"shortcut": " Control+Alt+K "}),
+            json!({"shortcut": " Control+Shift+K "}),
         ));
-        assert_eq!(changed["shortcut"], json!("Control+Alt+K"));
+        assert_eq!(changed["shortcut"], json!("Control+Shift+K"));
         assert_eq!(changed["registered"], json!(false));
         assert_eq!(changed["message"], json!(summon::WAYLAND));
         let kept = summon::Settings::load(&folder.join("summon.json"));
-        assert_eq!(kept.shortcut, "Control+Alt+K");
+        assert_eq!(kept.shortcut, "Control+Shift+K");
 
         assert_eq!(
             error(call(
@@ -796,7 +796,7 @@ mod tests {
         let changed = result(call(
             &main,
             "summon.setShortcut",
-            json!({"shortcut": "Control+Alt+K"}),
+            json!({"shortcut": "Control+Shift+K"}),
         ));
         assert_eq!(changed["notice"], json!(""));
         assert_eq!(notice(), json!(""));
