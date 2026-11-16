@@ -25,6 +25,16 @@ impl Held {
         *self.gate.0.lock().unwrap() = true;
         self.gate.1.notify_all();
     }
+    /// Lets the store go by itself after `TOO_LONG`, so that a test of the limit whose call
+    /// was never given up ends on its own assertion about the time and does not wait for ever.
+    fn open_when_too_long(&self) {
+        let gate = self.gate.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(TOO_LONG);
+            *gate.0.lock().unwrap() = true;
+            gate.1.notify_all();
+        });
+    }
 }
 
 fn waiter() -> (Held, Arc<dyn Fn() + Send + Sync>) {
@@ -43,13 +53,15 @@ fn waiter() -> (Held, Arc<dyn Fn() + Send + Sync>) {
 }
 
 const WAITING: &str =
-    "Waiting for your system keychain. If it is asking for your password, answer it to continue.";
+    "Waiting for your system keychain. If it is asking for your password, answer it and this will finish.";
 /// A store call is said to be waited for after this long, in the tests that look at that.
 const SOON: Duration = Duration::from_millis(50);
 /// Longer than any test here waits before it lets the store go.
 const LONG: Duration = Duration::from_secs(60);
 /// The limit in the tests where the store never answers.
 const SHORT: Duration = Duration::from_millis(400);
+/// Far past that limit: a call still out by then was not given up.
+const TOO_LONG: Duration = Duration::from_secs(10);
 
 fn until(what: &str, holds: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -207,6 +219,7 @@ fn a_refresh_whose_save_waits_leaves_the_session_readable() {
 fn a_save_that_never_returns_is_given_up_at_the_limit() {
     let rig = rig_with(Some((SOON, SHORT)));
     let held = hold_writes(&rig);
+    held.open_when_too_long();
     let attempt = |refresh: &str| {
         rig.api
             .exchanges
@@ -220,7 +233,7 @@ fn a_save_that_never_returns_is_given_up_at_the_limit() {
     };
     let took = attempt("refresh-one");
     assert!(
-        took >= SHORT && took < Duration::from_secs(10),
+        took >= SHORT && took < TOO_LONG,
         "the sign-in returned after {took:?}"
     );
     assert!(!rig.auth.authenticated());
@@ -257,12 +270,13 @@ fn a_read_that_never_returns_is_given_up_at_the_limit() {
     *rig.store.token.lock().unwrap() = Some("refresh-one".into());
     let (held, hook) = waiter();
     *rig.store.during_load.lock().unwrap() = Some(Box::new(move || hook()));
+    held.open_when_too_long();
     let started = Instant::now();
     rig.auth.restore();
     let took = started.elapsed();
     held.open();
     assert!(
-        took >= SHORT && took < Duration::from_secs(10),
+        took >= SHORT && took < TOO_LONG,
         "the restore returned after {took:?}"
     );
     assert!(!rig.auth.authenticated());
@@ -282,12 +296,13 @@ fn quit_gives_the_last_save_up_at_the_limit() {
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
     rig.store.fail_save.store(false, Ordering::SeqCst);
     let held = hold_writes(&rig);
+    held.open_when_too_long();
     let started = Instant::now();
     rig.auth.shutdown();
     let took = started.elapsed();
     held.open();
     assert!(
-        took >= SHORT && took < Duration::from_secs(10),
+        took >= SHORT && took < TOO_LONG,
         "quit returned after {took:?}"
     );
 }

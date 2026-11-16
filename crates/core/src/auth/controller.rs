@@ -58,7 +58,7 @@ const SIGNED_OUT_NOT_REMOVED: &str =
 // Shown while a call to the credential store has been waited for longer than a moment: on a
 // locked keyring that is the time its unlock prompt is open (issue #130).
 const WAITING_FOR_STORE: &str =
-    "Waiting for your system keychain. If it is asking for your password, answer it to continue.";
+    "Waiting for your system keychain. If it is asking for your password, answer it and this will finish.";
 
 /// How long a call to the credential store is waited for before the status says so, and how
 /// long a request from the page waits for the state before it is told the store is busy. A
@@ -309,6 +309,12 @@ impl AuthController {
         self.store_soon = soon;
         self.store_limit = limit;
         self
+    }
+
+    /// How long a request from the page waits before it is told the store is busy. The host
+    /// measures its own look at the store against the same time.
+    pub fn store_soon(&self) -> Duration {
+        self.store_soon
     }
 
     fn lock(&self) -> Locked<'_> {

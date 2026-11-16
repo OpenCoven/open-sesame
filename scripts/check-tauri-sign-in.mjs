@@ -233,15 +233,35 @@ function fakeBridge(status, answers = {}) {
   assert.equal(code.split('tauri_plugin_opener::').length - 1, 1, 'auth.rs opens an address in one place');
 
   // Every address handed to the browser has passed the origin check first.
-  const opens = code.split('(self.browser)(').length - 1;
-  assert.equal(opens, 2, 'The browser is opened for sign-in and for ending the remote session');
+  const production = code.split('#[cfg(test)]')[0];
+  assert.equal(production.split('(self.browser)(').length - 1, 1, 'The browser is opened for sign-in in one place');
+  assert.equal(production.split(' browser(&url)').length - 1, 1, 'and for ending the remote session in one more');
   assert.match(code, /if !\(may_open\(&url\) && \(self\.browser\)\(&url\)\)/);
-  assert.match(code, /if may_open\(&url\) \{\n\s+let _ = \(self\.browser\)\(&url\);/);
+  assert.match(code, /fn end_remote_session\(browser: &Browser, url: Option<String>\) \{\n\s+if let Some\(url\) = url\.filter\(\|url\| may_open\(url\)\) \{\n\s+let _ = browser\(&url\);/);
   assert.match(code, /pub fn may_open\(url: &str\) -> bool \{\n    url\.strip_prefix\(API\)\n        \.is_some_and\(\|rest\| rest\.starts_with\('\/'\)\)\n\}/);
 
   // The store is checked before the browser opens, so nobody signs in to a session that cannot
   // be kept, and the Linux sentence names what to install.
-  assert.ok(code.indexOf('(self.store_check)()') < code.indexOf('self.controller.begin_sign_in()'));
+  assert.ok(code.indexOf('self.look_at_store()?') < code.indexOf('self.controller.begin_sign_in()'));
+  // A request from the page never waits for the credential store (issue #130): a locked
+  // keyring answers only when its unlock prompt is answered. The look before Sign in is made
+  // on a thread of its own, once at a time, and waited for only as long as the controller
+  // waits; Cancel and Sign out use the controller's forms that answer instead of waiting; and
+  // each refusal is the sentence about the keychain. The request handler itself never calls
+  // the store question, nor the controller's waiting forms.
+  const handler = code.slice(code.indexOf('pub fn handle('), code.indexOf('fn look_at_store('));
+  for (const waits of ['(self.store_check)()', 'self.controller.cancel()', 'self.controller.sign_out()', '.sign_out()?']) assert.ok(!handler.includes(waits), `The request handler does not call ${waits}`);
+  assert.match(handler, /AuthError::StoreBusy => KEYCHAIN_WAITING,/);
+  assert.match(handler, /"auth\.cancel" => match self\.controller\.cancel_now\(\) \{\n\s+Ok\(\(\)\) => Ok\(Value::Bool\(true\)\),\n\s+Err\(_\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
+  assert.match(handler, /"auth\.signOut" => self\.sign_out\(\),/);
+  const look = code.slice(code.indexOf('fn look_at_store('), code.indexOf('fn cancel_unasked('));
+  assert.match(look, /if self\.looking\.swap\(true, Ordering::SeqCst\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);/);
+  assert.match(look, /\.spawn\(move \|\| \{\n\s+let answer = check\(\);/);
+  assert.match(look, /told\.recv_timeout\(self\.soon\)/);
+  const signOut = code.slice(code.indexOf('fn sign_out(&self)'), code.indexOf('/// An address the system handed over.'));
+  assert.match(signOut, /end_remote_session\(browser, controller\.sign_out_now\(\)\?\);/);
+  assert.match(signOut, /Ok\(Err\(_\)\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
+  assert.match(code, /pub const KEYCHAIN_WAITING: &str = "[^"]*waiting for your system keychain[^"]*try again\."/);
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
   // On Linux the store is looked for again on every attempt (issue #116), so a keyring installed
   // or started later needs another press of Sign in, not a restart, and the sentence says so.

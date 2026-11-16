@@ -49,6 +49,11 @@ pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the syste
 /// locked, or whose prompt was dismissed.
 pub const NO_KEYCHAIN: &str = "Open Sesame could not reach the system's credential store to keep your sign-in. Unlock it and try again. Everything on this computer works without signing in.";
 
+/// Shown when Sign in, Cancel or Sign out is pressed while the credential store is being
+/// waited for, which on a locked keyring is while its unlock prompt is open (issue #130).
+/// Nothing was changed by the press, so it says to try again.
+pub const KEYCHAIN_WAITING: &str = "Open Sesame is waiting for your system keychain. If it is asking for your password, answer it, then try again.";
+
 /// The event the page receives whenever the sign-in status may have changed.
 pub const CHANGED_EVENT: &str = "auth.changed";
 
@@ -85,6 +90,16 @@ pub fn classify(url: &str) -> Link {
         Link::SignedOut
     } else {
         Link::Other
+    }
+}
+
+/// After a sign-out here: opens the address that ends the remote session too, when there is
+/// one. Signing out here is complete without the browser, so this is a courtesy and a browser
+/// that will not open is not an error. Like every address, it is opened only at the WorkOS
+/// origin.
+fn end_remote_session(browser: &Browser, url: Option<String>) {
+    if let Some(url) = url.filter(|url| may_open(url)) {
+        let _ = browser(&url);
     }
 }
 
@@ -414,6 +429,11 @@ pub struct Auth {
     controller: Arc<AuthController>,
     browser: Browser,
     store_check: StoreCheck,
+    /// Whether a look at the credential store, made for Sign in, has not answered yet.
+    looking: Arc<AtomicBool>,
+    /// How long a request from the page waits for the credential store before it is told the
+    /// store is being waited for.
+    soon: Duration,
     /// Keeps a window that hides on blur in place while the person is in the browser.
     hold: Mutex<Option<summon::Hold>>,
     /// Wakes the two threads once more at shutdown, so they see `stopped` and end.
@@ -436,6 +456,19 @@ impl Auth {
         browser: Browser,
         store_check: StoreCheck,
     ) -> (Arc<Auth>, Wakes) {
+        Auth::with_limits(api, store, marker, browser, store_check, None)
+    }
+
+    /// As [`Auth::new`], with the two times a store call is measured against replaced
+    /// (`AuthController::store_limits`). For tests; the application keeps the core's own.
+    fn with_limits(
+        api: Arc<dyn WorkosApi>,
+        store: Arc<dyn CredentialStore>,
+        marker: Arc<dyn SignedOutMarker>,
+        browser: Browser,
+        store_check: StoreCheck,
+        limits: Option<(Duration, Duration)>,
+    ) -> (Arc<Auth>, Wakes) {
         let (notify_tx, notify) = channel();
         let (refresh_tx, refresh) = channel();
         let senders = (notify_tx.clone(), refresh_tx.clone());
@@ -443,17 +476,23 @@ impl Auth {
             let _ = notify_tx.send(());
             let _ = refresh_tx.send(());
         });
-        let controller = Arc::new(AuthController::new(AuthParts {
+        let controller = AuthController::new(AuthParts {
             api,
             store,
             marker,
             clock: Arc::new(SystemTime::now),
             on_change,
-        }));
+        });
+        let controller = Arc::new(match limits {
+            Some((soon, limit)) => controller.store_limits(soon, limit),
+            None => controller,
+        });
         let auth = Arc::new(Auth {
+            soon: controller.store_soon(),
             controller,
             browser,
             store_check,
+            looking: Arc::new(AtomicBool::new(false)),
             hold: Mutex::new(None),
             wake: Mutex::new(Some(senders)),
             stopped: AtomicBool::new(false),
@@ -481,37 +520,117 @@ impl Auth {
             "auth.signIn" => {
                 // Checked before the browser opens: a sign-in that cannot be kept would send
                 // the person through the browser for a session that is gone at the next launch.
-                if let Some(problem) = (self.store_check)() {
+                if let Some(problem) = self.look_at_store()? {
                     return Err(BridgeError::from(problem));
                 }
                 let url = self.controller.begin_sign_in().map_err(|error| {
                     BridgeError::from(match error {
                         AuthError::Busy => BUSY,
+                        AuthError::StoreBusy => KEYCHAIN_WAITING,
                         _ => NOT_STARTED,
                     })
                 })?;
                 *lock(&self.hold) = hold();
                 if !(may_open(&url) && (self.browser)(&url)) {
-                    self.controller.cancel();
+                    self.cancel_unasked();
                     return Err(BridgeError::from(NO_BROWSER));
                 }
                 Ok(Value::Bool(true))
             }
-            "auth.cancel" => {
-                self.controller.cancel();
-                Ok(Value::Bool(true))
-            }
-            "auth.signOut" => {
-                // Signing out here is complete without the browser; ending the remote session
-                // as well is a courtesy, so a browser that will not open is not an error.
-                if let Some(url) = self.controller.sign_out() {
-                    if may_open(&url) {
-                        let _ = (self.browser)(&url);
-                    }
-                }
-                Ok(Value::Bool(true))
-            }
+            "auth.cancel" => match self.controller.cancel_now() {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(_) => Err(BridgeError::from(KEYCHAIN_WAITING)),
+            },
+            "auth.signOut" => self.sign_out(),
             _ => Err(BridgeError::from(open_sesame_core::gate::UNSUPPORTED)),
+        }
+    }
+
+    /// Asks whether a sign-in could be kept on this computer, for Sign in. The question reads
+    /// the credential store, and a locked keyring answers a read only when its unlock prompt
+    /// is answered, so it is asked on a thread of its own and waited for no longer than a
+    /// request from the page waits for the store anywhere (issue #130). While one such look
+    /// has not answered the store is not asked again: a second read would wait behind the
+    /// first. The press is then refused with the sentence about the keychain, and nothing was
+    /// started by it.
+    fn look_at_store(&self) -> Result<Option<&'static str>, BridgeError> {
+        /// Says the look is over when the thread ends, however it ends.
+        struct Looking(Arc<AtomicBool>);
+        impl Drop for Looking {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
+            }
+        }
+        if self.looking.swap(true, Ordering::SeqCst) {
+            return Err(BridgeError::from(KEYCHAIN_WAITING));
+        }
+        let looking = Looking(Arc::clone(&self.looking));
+        let check = Arc::clone(&self.store_check);
+        let (tell, told) = channel();
+        let started = std::thread::Builder::new()
+            .name("credential-store-look".into())
+            .spawn(move || {
+                let answer = check();
+                drop(looking);
+                let _ = tell.send(answer);
+            });
+        if started.is_err() {
+            // The closure was dropped with the thread that never started, and `looking` with it.
+            return Err(BridgeError::from(NOT_STARTED));
+        }
+        told.recv_timeout(self.soon).map_err(|error| {
+            BridgeError::from(match error {
+                RecvTimeoutError::Timeout => KEYCHAIN_WAITING,
+                // The question panicked; it is not being waited for.
+                RecvTimeoutError::Disconnected => NOT_STARTED,
+            })
+        })
+    }
+
+    /// The host's own cancel, when the browser would not open for a sign-in that had just
+    /// begun. The person has been told about the browser already, so this must not fail or
+    /// wait: when the store is being waited for it is left to a thread, which cancels when the
+    /// store has answered.
+    fn cancel_unasked(&self) {
+        if self.controller.cancel_now().is_err() {
+            let controller = Arc::clone(&self.controller);
+            let _ = std::thread::Builder::new()
+                .name("auth-cancel".into())
+                .spawn(move || controller.cancel());
+        }
+    }
+
+    /// Sign out, for a request from the page. Signing out removes the saved credential, and on
+    /// a locked keyring the removal waits for the unlock prompt (issue #130). So it runs on a
+    /// thread of its own. The person is signed out here as soon as it has begun, before the
+    /// store is asked; the request is answered when the removal is done, or after a wait when
+    /// it is not, and the status then says the keychain is being waited for. Only when
+    /// another store call already holds things up is the press refused, with nothing changed.
+    ///
+    /// The wait is the time the controller gives a request to begin and the same again, two
+    /// seconds at least: a refusal comes within the first, so past both the sign-out has begun.
+    fn sign_out(&self) -> BridgeResult {
+        let work = |controller: &AuthController, browser: &Browser| {
+            end_remote_session(browser, controller.sign_out_now()?);
+            Ok::<(), AuthError>(())
+        };
+        let (controller, browser) = (Arc::clone(&self.controller), Arc::clone(&self.browser));
+        let (tell, told) = channel();
+        let started = std::thread::Builder::new()
+            .name("auth-sign-out".into())
+            .spawn(move || {
+                let _ = tell.send(work(&controller, &browser));
+            });
+        let answer = match started {
+            Ok(_) => told.recv_timeout(self.soon + self.soon.max(Duration::from_secs(2))),
+            // No thread to be had: here, waiting as long as the store does.
+            Err(_) => Ok(work(&self.controller, &self.browser)),
+        };
+        match answer {
+            Ok(Err(_)) => Err(BridgeError::from(KEYCHAIN_WAITING)),
+            // Done, or begun and the removal still waited for. A thread that ended without
+            // an answer panicked in the browser call, after the sign-out.
+            Ok(Ok(())) | Err(_) => Ok(Value::Bool(true)),
         }
     }
 
@@ -705,6 +824,7 @@ mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn only_the_two_sign_in_addresses_are_links() {
@@ -1040,6 +1160,166 @@ mod tests {
         None
     }
 
+    /// A credential store whose removal waits until it is let go, as a locked keyring's does
+    /// while its unlock prompt is open.
+    struct Prompting {
+        asked: Sender<()>,
+        answer: Mutex<Receiver<()>>,
+    }
+    impl CredentialStore for Prompting {
+        fn load(&self) -> Result<Option<String>, AuthError> {
+            Ok(None)
+        }
+        fn save(&self, _: &str) -> Result<(), AuthError> {
+            Ok(())
+        }
+        fn delete(&self) -> Result<(), AuthError> {
+            let _ = self.asked.send(());
+            let _ = self.answer.lock().unwrap().recv();
+            Ok(())
+        }
+    }
+
+    /// How long a request from the page may take in these tests. The page's own limit is 15
+    /// seconds; the store calls here wait until the test lets them go.
+    const ANSWERED_WITHIN: Duration = Duration::from_secs(8);
+
+    /// Answers a request on a thread of its own and says how it was answered, or panics when
+    /// it was not answered in time.
+    fn answered(auth: &Arc<Auth>, method: &'static str) -> BridgeResult {
+        let (tell, told) = channel();
+        let auth = Arc::clone(auth);
+        std::thread::spawn(move || {
+            let _ = tell.send(auth.handle(method, no_hold));
+        });
+        told.recv_timeout(ANSWERED_WITHIN)
+            .unwrap_or_else(|_| panic!("{method} was not answered while the store waited"))
+    }
+
+    #[test]
+    fn while_the_keyring_prompt_is_open_for_sign_out_every_request_is_answered() {
+        let (asked, was_asked) = channel();
+        let (answer, held) = channel();
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let browser: Browser = Arc::new(move |url| {
+            record.lock().unwrap().push(url.to_string());
+            true
+        });
+        let (auth, wakes) = Auth::with_limits(
+            Arc::new(api(&stand_in(vec![]))),
+            Arc::new(Prompting {
+                asked,
+                answer: Mutex::new(held),
+            }),
+            Arc::new(Marker::new(None)),
+            browser,
+            Arc::new(|| None),
+            Some((Duration::from_millis(200), Duration::from_secs(60))),
+        );
+        let (tx, changes) = channel();
+        auth.run(wakes, move |status| {
+            let _ = tx.send(status);
+        });
+
+        // Sign out is answered though the store has not answered: the person is signed out
+        // here, and only the removal of the saved credential is still waited for.
+        assert_eq!(answered(&auth, "auth.signOut"), Ok(json!(true)));
+        was_asked
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the store was asked to remove the credential");
+        let waiting = until(&changes, |status| {
+            status["message"]
+                .as_str()
+                .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
+        });
+        assert_eq!(waiting["authenticated"], json!(false));
+        assert!(!auth.authenticated());
+
+        // Everything else is answered too, with a sentence about the keychain and never by
+        // waiting: nothing here may reach the page's own time limit.
+        for method in ["auth.signIn", "auth.cancel", "auth.signOut"] {
+            assert_eq!(
+                answered(&auth, method),
+                Err(BridgeError::from(KEYCHAIN_WAITING)),
+                "{method}"
+            );
+        }
+        assert_eq!(
+            answered(&auth, "auth.status").unwrap()["authenticated"],
+            json!(false)
+        );
+        assert!(opened.lock().unwrap().is_empty(), "no browser was opened");
+
+        // The prompt is answered: the removal ends and the next press is an ordinary one.
+        answer.send(()).unwrap();
+        let done = until(&changes, |status| {
+            status["message"] == json!("Signed out on this computer.")
+        });
+        assert_eq!(done["busy"], json!(false));
+        assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        auth.shutdown();
+    }
+
+    #[test]
+    fn a_look_at_the_store_that_waits_does_not_hold_sign_in() {
+        let (answer, held) = channel::<()>();
+        let held = Mutex::new(held);
+        let looks = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&looks);
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let browser: Browser = Arc::new(move |url| {
+            record.lock().unwrap().push(url.to_string());
+            true
+        });
+        // The first look waits until it is let go, as a read of a locked keyring does; the
+        // looks after it answer at once.
+        let (auth, wakes) = Auth::with_limits(
+            Arc::new(api(&stand_in(vec![]))),
+            Arc::new(Memory(Mutex::new(None))),
+            Arc::new(Marker::new(None)),
+            browser,
+            Arc::new(move || {
+                if count.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let _ = held.lock().unwrap().recv();
+                }
+                None
+            }),
+            Some((Duration::from_millis(200), Duration::from_secs(60))),
+        );
+        let (tx, _changes) = channel();
+        auth.run(wakes, move |status| {
+            let _ = tx.send(status);
+        });
+
+        for press in 1..=2 {
+            assert_eq!(
+                answered(&auth, "auth.signIn"),
+                Err(BridgeError::from(KEYCHAIN_WAITING)),
+                "press {press}"
+            );
+        }
+        assert_eq!(
+            looks.load(Ordering::SeqCst),
+            1,
+            "the store is not asked again while the first look is out"
+        );
+        assert!(opened.lock().unwrap().is_empty(), "no browser was opened");
+        assert_eq!(auth.status()["busy"], json!(false));
+
+        answer.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while auth.looking.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the look never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        auth.shutdown();
+    }
+
     /// Waits for a status the page would be sent that satisfies `wanted`.
     fn until(changes: &Receiver<Value>, wanted: impl Fn(&Value) -> bool) -> Value {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
@@ -1190,6 +1470,26 @@ mod tests {
         );
         assert!(parts.opened.lock().unwrap().is_empty());
         assert_eq!(parts.auth.status()["busy"], json!(false));
+    }
+
+    /// No host test has a verified session, which is what gives a sign-out an address to
+    /// open, so the opening is tested by itself; that Sign out calls it is held by
+    /// check-tauri-sign-in.mjs.
+    #[test]
+    fn a_sign_out_opens_only_the_address_that_ends_the_remote_session() {
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let browser: Browser = Arc::new(move |url| {
+            record.lock().unwrap().push(url.to_string());
+            false
+        });
+        let ends = open_sesame_core::auth::logout_url("session_01");
+        end_remote_session(&browser, None);
+        end_remote_session(&browser, Some("https://example.com/logout".to_string()));
+        assert!(opened.lock().unwrap().is_empty());
+        // A browser that will not open is not an error: nothing is returned to fail on.
+        end_remote_session(&browser, Some(ends.clone()));
+        assert_eq!(*opened.lock().unwrap(), vec![ends]);
     }
 
     #[test]
@@ -1654,6 +1954,188 @@ mod tests {
             assert_eq!(store.load(), Ok(Some("not-a-token-2".to_string())));
             store.delete().unwrap();
             assert_eq!(store.load(), Ok(None));
+            stop();
+        }
+
+        /// The login keyring locked and holding one value of this service: the state in
+        /// which removing the saved sign-in shows the keyring's unlock prompt first.
+        fn locked_with_a_value(store: &KeychainStore) {
+            if !running() {
+                start();
+            }
+            assert!(
+                eventually(|| store.available()),
+                "no Secret Service answered"
+            );
+            store.save("not-a-token-1").unwrap();
+            assert!(
+                sh("dbus-send --session --print-reply --dest=org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service.Lock array:objpath:/org/freedesktop/secrets/collection/login > /dev/null 2>&1"),
+                "the login keyring could not be locked"
+            );
+            assert!(
+                sh("dbus-send --session --print-reply --dest=org.freedesktop.secrets /org/freedesktop/secrets/collection/login org.freedesktop.DBus.Properties.Get string:org.freedesktop.Secret.Collection string:Locked | grep -q 'boolean true'"),
+                "the login keyring is not locked"
+            );
+        }
+
+        /// The wiring the application has, with this keyring as the store and as the look
+        /// before Sign in, a stand-in server that is never asked and a recording browser.
+        fn wired_to(
+            store: &Arc<KeychainStore>,
+            limits: Option<(Duration, Duration)>,
+        ) -> (Arc<Auth>, Receiver<Value>, Arc<Mutex<Vec<String>>>) {
+            let opened = Arc::new(Mutex::new(Vec::new()));
+            let record = Arc::clone(&opened);
+            let browser: Browser = Arc::new(move |url| {
+                record.lock().unwrap().push(url.to_string());
+                true
+            });
+            let probe = Arc::clone(store);
+            let (auth, wakes) = Auth::with_limits(
+                Arc::new(api(&stand_in(vec![]))),
+                Arc::clone(store) as Arc<dyn CredentialStore>,
+                Arc::new(Marker::new(None)),
+                browser,
+                Arc::new(move || store_problem(probe.available(), probe.exists())),
+                limits,
+            );
+            let (tx, changes) = channel();
+            auth.run(wakes, move |status| {
+                let _ = tx.send(status);
+            });
+            (auth, changes, opened)
+        }
+
+        fn within(
+            changes: &Receiver<Value>,
+            time: Duration,
+            wanted: impl Fn(&Value) -> bool,
+        ) -> Value {
+            let deadline = Instant::now() + time;
+            loop {
+                let left = deadline.saturating_duration_since(Instant::now());
+                let status = changes
+                    .recv_timeout(left)
+                    .expect("the status never arrived");
+                if wanted(&status) {
+                    return status;
+                }
+            }
+        }
+
+        fn says_waiting(status: &Value) -> bool {
+            status["message"]
+                .as_str()
+                .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
+        }
+
+        /// While the keyring's unlock prompt is left open after Sign out, every request is
+        /// answered, with the times the application has (issue #130). A stand-in prompter
+        /// must own the keyring's prompter name and answer "yes" with the password after
+        /// `OPEN_SESAME_PROMPT_SECONDS` seconds; it shows nothing and is not a person.
+        #[test]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
+        fn with_the_unlock_prompt_left_open_sign_out_and_every_request_are_answered() {
+            disposable();
+            let open_for = Duration::from_secs(
+                std::env::var("OPEN_SESAME_PROMPT_SECONDS")
+                    .ok()
+                    .and_then(|seconds| seconds.parse().ok())
+                    .expect("OPEN_SESAME_PROMPT_SECONDS says how long the prompter waits"),
+            );
+            let store = Arc::new(store("prompt"));
+            locked_with_a_value(&store);
+            let (auth, changes, opened) = wired_to(&store, None);
+
+            // Sign out is answered though the prompt is open: the person is signed out here.
+            let began = Instant::now();
+            assert_eq!(answered(&auth, "auth.signOut"), Ok(json!(true)));
+            let first = began.elapsed();
+            assert!(says_waiting(&within(
+                &changes,
+                Duration::from_secs(10),
+                says_waiting
+            )));
+
+            // For as long as the prompt stays open, every press and the status are answered.
+            let (mut rounds, mut slowest) = (0, first);
+            while began.elapsed() + Duration::from_secs(6) < open_for {
+                for method in ["auth.signIn", "auth.cancel", "auth.signOut"] {
+                    let asked = Instant::now();
+                    assert_eq!(
+                        answered(&auth, method),
+                        Err(BridgeError::from(KEYCHAIN_WAITING)),
+                        "{method} after {:?}",
+                        began.elapsed()
+                    );
+                    slowest = slowest.max(asked.elapsed());
+                }
+                let asked = Instant::now();
+                let status = answered(&auth, "auth.status").unwrap();
+                slowest = slowest.max(asked.elapsed());
+                assert_eq!(status["authenticated"], json!(false));
+                assert!(says_waiting(&status), "{status}");
+                assert!(!auth.authenticated());
+                rounds += 1;
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            assert!(rounds >= 3, "the prompt was open for too short a time");
+            assert!(opened.lock().unwrap().is_empty(), "no browser was opened");
+            println!(
+                "PROBE prompt open for {open_for:?}: Sign out answered in {first:?}; {rounds} rounds of Sign in, Cancel, Sign out and the status, the slowest answer {slowest:?}"
+            );
+
+            // The prompt is answered: the saved value is removed and a press is ordinary.
+            let done = within(&changes, open_for + Duration::from_secs(20), |status| {
+                status["message"] == json!("Signed out on this computer.")
+            });
+            assert_eq!(done["busy"], json!(false));
+            println!(
+                "PROBE the removal ended {:?} after Sign out",
+                began.elapsed()
+            );
+            assert_eq!(store.load(), Ok(None));
+            assert!(
+                eventually(|| !auth.looking.load(Ordering::SeqCst)),
+                "the look before Sign in never ended"
+            );
+            assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+            assert_eq!(opened.lock().unwrap().len(), 1);
+            assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
+            auth.shutdown();
+            stop();
+        }
+
+        /// A prompt that is never answered: the removal is given up at the limit, here ten
+        /// seconds in place of the application's two minutes, and the status says the saved
+        /// value could not be removed (issue #130). The stand-in prompter must wait longer
+        /// than this test runs.
+        #[test]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
+        fn a_prompt_that_is_never_answered_is_given_up_at_the_limit() {
+            disposable();
+            let store = Arc::new(store("never"));
+            locked_with_a_value(&store);
+            let limit = Duration::from_secs(10);
+            let (auth, changes, opened) = wired_to(&store, Some((Duration::from_secs(2), limit)));
+
+            let began = Instant::now();
+            assert_eq!(answered(&auth, "auth.signOut"), Ok(json!(true)));
+            let done = within(&changes, limit + Duration::from_secs(10), |status| {
+                status["message"]
+                    == json!("Signed out. The saved credential could not be removed; sign in again to replace it.")
+            });
+            let ended = began.elapsed();
+            println!("PROBE a prompt never answered: given up {ended:?} after Sign out");
+            assert!(ended >= limit, "given up before the limit: {ended:?}");
+            assert_eq!(done["authenticated"], json!(false));
+            assert_eq!(done["busy"], json!(false));
+            // The status is answered, and a press is no longer told to wait for the keychain.
+            assert!(!says_waiting(&answered(&auth, "auth.status").unwrap()));
+            assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
+            assert!(opened.lock().unwrap().is_empty());
+            // The call that was given up is still out, so the process is not shut down in an
+            // orderly way here: the keyring is ended, which is what ends that call.
             stop();
         }
     }
