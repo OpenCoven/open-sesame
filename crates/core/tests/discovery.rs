@@ -678,13 +678,27 @@ mod login_shell {
                 took
             };
             let (mut quickest_alone, mut quickest_with_helper) = (Duration::MAX, Duration::MAX);
-            for _ in 0..5 {
+            let close = |alone: Duration, with_helper: Duration| {
+                with_helper < alone + Duration::from_millis(125)
+            };
+            // Five rounds settle it where a shell starts in a steady time. Where it does not,
+            // ten more are run before the quickest of each are compared: zsh in a container
+            // took between 195 and 601 ms from one round to the next, with or without a
+            // helper, and five rounds of that once differed by more than the margin. More
+            // rounds bring both quickest times down to what the shell needs, so waiting for
+            // the helper still shows as its quarter of a second.
+            let mut rounds = 0;
+            for round in 0..15 {
+                if round == 5 && close(quickest_alone, quickest_with_helper) {
+                    break;
+                }
                 quickest_alone = quickest_alone.min(time(&alone));
                 quickest_with_helper = quickest_with_helper.min(time(&with_helper));
+                rounds = round + 1;
             }
             assert!(
-                quickest_with_helper < quickest_alone + Duration::from_millis(125),
-                "{}: {quickest_with_helper:?} with a helper, {quickest_alone:?} without",
+                close(quickest_alone, quickest_with_helper),
+                "{}: {quickest_with_helper:?} with a helper, {quickest_alone:?} without, the quickest of {rounds} rounds each",
                 shell.display()
             );
         }
