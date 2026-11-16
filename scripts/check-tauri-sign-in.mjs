@@ -11,6 +11,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = file => readFileSync(path.join(root, file), 'utf8');
+// Takes comments out of Rust text (a nested block comment is misread, and so is `//` in a string).
+const strip = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const { describe, mountAccount, CHANGED_EVENT, LOCAL } = await import(pathToFileURL(path.join(root, 'ui/account.js')));
 
 const element = () => {
@@ -192,7 +194,6 @@ function fakeBridge(status, answers = {}) {
 // out that never reaches the exit event (a direct process exit), a return before the match, or
 // a host whose sign-in state was never registered passes it.
 {
-  const strip = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const host = read('src-tauri/src/auth.rs');
   const entry = strip(read('src-tauri/src/lib.rs'));
   assert.equal((entry.match(/RunEvent::Exit\b/g) || []).length, 1, 'The exit event has one arm');
@@ -315,7 +316,8 @@ function fakeBridge(status, answers = {}) {
   // - outside the tests the file has no `(self.store_check)()`, `self.controller.cancel()`,
   //   `self.controller.sign_out()` or `.sign_out()?`: the store question and the controller's
   //   waiting forms, as they would be written on the calling thread;
-  // - Sign in asks the controller whether a call it gave up is still out before it looks;
+  // - Sign in asks the controller whether a call it gave up is still out, or one is being
+  //   waited for still, before it looks;
   // - the look refuses while a look is out and younger than the limit, asks the store on a
   //   thread of its own, waits for it `self.soon` and answers a wait with the keychain
   //   sentence; a look given up neither ends the look after it nor has its answer kept; an
@@ -328,19 +330,23 @@ function fakeBridge(status, answers = {}) {
   //   refuses when it says so;
   // - Sign in waits `STORE_SOON` three times at most (the look, the state, and the host's own
   //   cancel when the browser will not open), and that is below the page's default limit in
-  //   ui/bridge.js.
+  //   ui/bridge.js, the shortest it gives any request (Sign in has a longer one of its own);
+  // - the host takes its two times from the controller, whose own are `STORE_SOON` and
+  //   `STORE_LIMIT`, so the number compared is the one the look waits.
+  // The pieces read for shape (the handler, the look, the host's cancel and Sign out) have
+  // their comments taken out first, so a rule left behind as a comment is not read as kept.
   // Not read: what the controller does behind `begin_sign_in`, `cancel_now` and `sign_out_now`,
   // which the core's tests hold; the fallback in `sign_out` for when no thread can be started,
   // which waits as long as the store does; that the thread `cancel_unasked` starts cancels the
   // attempt it was started for and not a later one; and the limits beyond that comparison.
   for (const waits of ['(self.store_check)()', 'self.controller.cancel()', 'self.controller.sign_out()', '.sign_out()?']) assert.ok(!production.includes(waits), `auth.rs does not call ${waits} outside its tests`);
-  const handler = code.slice(code.indexOf('pub fn handle('), code.indexOf('fn look_at_store('));
-  assert.match(handler, /if self\.controller\.store_given_up\(\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
+  const handler = strip(code.slice(code.indexOf('pub fn handle('), code.indexOf('fn look_at_store(')));
+  assert.match(handler, /if self\.controller\.store_given_up\(\) \|\| self\.controller\.store_waited_for\(\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
   assert.match(handler, /AuthError::StoreBusy => KEYCHAIN_WAITING,/);
   assert.match(handler, /"auth\.cancel" => match self\.controller\.cancel_now\(\) \{\n\s+Ok\(\(\)\) => Ok\(Value::Bool\(true\)\),\n\s+Err\(_\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
   assert.match(handler, /"auth\.signOut" => self\.sign_out\(\),/);
   assert.match(handler, /if !\(may_open\(&url\) && \(self\.browser\)\(&url\)\) \{\n\s+self\.cancel_unasked\(\);/);
-  const look = code.slice(code.indexOf('fn look_at_store('), code.indexOf('fn cancel_unasked('));
+  const look = strip(code.slice(code.indexOf('fn look_at_store('), code.indexOf('fn cancel_unasked(')));
   assert.match(look, /if look\.began\.is_some_and\(\|began\| began\.elapsed\(\) < self\.limit\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);/);
   assert.match(look, /\.spawn\(move \|\| \{\n\s+let answer = catch_unwind\(AssertUnwindSafe\(\|\| check\(\)\)\);/);
   assert.match(look, /match told\.recv_timeout\(self\.soon\) \{/);
@@ -348,17 +354,22 @@ function fakeBridge(status, answers = {}) {
   assert.match(look, /if look\.turn != turn \{\n\s+return;\n\s+\}\n\s+look\.began = None;\n(\s+\/\/[^\n]*\n)*\s+if let Ok\(answer\) = answer \{\n\s+look\.kept = Some\(\(Instant::now\(\), answer\)\);/);
   assert.match(look, /if came\.elapsed\(\) < LOOK_KEPT \{\n\s+return Ok\(answer\);/);
   assert.match(code, /^const LOOK_KEPT: Duration = Duration::from_secs\(30\);$/m);
-  const unasked = code.slice(code.indexOf('fn cancel_unasked('), code.indexOf('fn sign_out(&self)'));
+  const unasked = strip(code.slice(code.indexOf('fn cancel_unasked('), code.indexOf('fn sign_out(&self)')));
   assert.match(unasked, /if self\.controller\.cancel_now\(\)\.is_err\(\) \{\n\s+let controller = Arc::clone\(&self\.controller\);\n\s+let _ = std::thread::Builder::new\(\)\n\s+\.name\("auth-cancel"\.into\(\)\)\n\s+\.spawn\(move \|\| controller\.cancel\(\)\);/);
-  const signOut = code.slice(code.indexOf('fn sign_out(&self)'), code.indexOf('/// An address the system handed over.'));
+  const signOut = strip(code.slice(code.indexOf('fn sign_out(&self)'), code.indexOf('/// An address the system handed over.')));
   assert.match(signOut, /match told\.recv\(\) \{\n\s+Ok\(SignOut::Began\(url\)\) => \{\n\s+end_remote_session\(&self\.browser, url\);\n\s+Ok\(Value::Bool\(true\)\)/);
   assert.match(signOut, /Ok\(SignOut::Refused\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
   assert.ok(!signOut.includes('recv_timeout'), 'Sign out gives its first word no time of its own');
   assert.match(signOut, /let ended = controller\.sign_out_now\(move \|url\| \{\n\s+let _ = began\.send\(SignOut::Began\(url\)\);\n\s+\}\);/);
-  const soon = Number(read('crates/core/src/auth/controller.rs').match(/^const STORE_SOON: Duration = Duration::from_secs\((\d+)\);/m)?.[1]);
+  const core = strip(read('crates/core/src/auth/controller.rs'));
+  const soon = Number(core.match(/^const STORE_SOON: Duration = Duration::from_secs\((\d+)\);/m)?.[1]);
+  assert.match(core, /store_soon: STORE_SOON,\n\s+store_limit: STORE_LIMIT,/);
+  assert.match(core, /pub fn store_soon\(&self\) -> Duration \{\n\s+self\.store_soon\n\s+\}/);
+  assert.match(core, /pub fn store_limit\(&self\) -> Duration \{\n\s+self\.store_limit\n\s+\}/);
+  assert.match(strip(code.slice(code.indexOf('fn with_limits('), code.indexOf('pub fn authenticated('))), /let auth = Arc::new\(Auth \{\n\s+soon: controller\.store_soon\(\),\n\s+limit: controller\.store_limit\(\),/);
   const pageLimit = Number(read('ui/bridge.js').match(/^const DEFAULT_LIMIT = (\d+);/m)?.[1]);
   assert.ok(soon > 0 && pageLimit > 0, 'STORE_SOON and the page default limit are read');
-  assert.ok(3 * soon * 1000 < pageLimit, `Sign in waits ${3 * soon} s at most, below the page's ${pageLimit} ms`);
+  assert.ok(3 * soon * 1000 < pageLimit, `Sign in waits ${3 * soon} s at most, below the shortest limit the page gives, ${pageLimit} ms`);
   assert.match(code, /pub const KEYCHAIN_WAITING: &str = "[^"]*waiting for your system keychain[^"]*try again\."/);
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
   // On Linux the store is looked for again on every attempt (issue #116), so a keyring installed

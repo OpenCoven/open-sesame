@@ -71,7 +71,8 @@ const STORE_SOON: Duration = Duration::from_secs(2);
 /// reading the keyring's prompt and typing a password. No request from the page waits this
 /// long: a request waits `STORE_SOON` for each thing it waits for, and Sign in waits for
 /// three at most (the host's look, the state, and the host's own cancel when the browser
-/// will not open). Three times `STORE_SOON` has to stay below the page's own limit.
+/// will not open). Three times `STORE_SOON` is kept below the shortest limit the page gives
+/// any request, which is more than Sign in needs: the page gives Sign in a longer one.
 const STORE_LIMIT: Duration = Duration::from_secs(120);
 
 /// Refresh this long before the access token expires.
@@ -361,6 +362,14 @@ impl AuthController {
     /// before it looks at the store for Sign in, so that the store is not asked for nothing.
     pub fn store_given_up(&self) -> bool {
         unpoisoned(&self.store_out).stuck > 0
+    }
+
+    /// Whether a store call has been waited for longer than a moment and is waited for still,
+    /// which is when the status says the keychain is being waited for. The host asks this too
+    /// before it looks at the store for Sign in: a read made beside a call that waits would
+    /// wait behind the same prompt.
+    pub fn store_waited_for(&self) -> bool {
+        self.store_waits.load(Ordering::SeqCst) > 0
     }
 
     /// How long a store call is waited for before it is given up. The host gives its own look
@@ -946,7 +955,8 @@ impl AuthController {
     /// Otherwise `began` is called once, with the URL that ends the remote session when there
     /// is one, as soon as the person is signed out here and before the saved credential is
     /// removed, which is the part that can wait for a prompt. It is called with the state
-    /// held and must not call the controller.
+    /// held and must not call anything of the controller that takes the state; `status` and
+    /// `authenticated` do not.
     pub fn sign_out_now(&self, began: impl FnOnce(Option<String>)) -> Result<(), AuthError> {
         self.sign_out_in(self.lock_soon().ok_or(AuthError::StoreBusy)?, began);
         Ok(())
