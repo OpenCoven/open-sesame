@@ -516,7 +516,7 @@ fn refresh_rotates_the_saved_token_and_extends_the_deadline() {
 }
 
 #[test]
-fn refresh_that_returns_another_user_is_rejected() {
+fn refresh_with_another_subject_preserves_rotation_but_does_not_extend_the_session() {
     let rig = rig();
     rig.sign_in();
     let mut other = tokens(jwt(&claims()), "refresh-two");
@@ -525,10 +525,15 @@ fn refresh_that_returns_another_user_is_rejected() {
     rig.auth.refresh();
     assert_eq!(
         rig.store.saved().as_deref(),
-        Some("refresh-one"),
-        "the unverified token is not saved"
+        Some("refresh-two"),
+        "the refresh credential rotates independently of session verification"
     );
     assert_eq!(rig.message(), GENERIC);
+    rig.advance(300);
+    assert!(
+        !rig.auth.authenticated(),
+        "the rejected access token never extended the session"
+    );
 }
 
 #[test]
@@ -562,7 +567,7 @@ fn sign_in_takes_precedence_over_a_restore_in_progress() {
     assert!(signed_out(&rig), "the restore result was discarded");
     assert_eq!(rig.status()["busy"], json!(true));
     assert_eq!(rig.message(), "Finish signing in in your browser.");
-    assert_eq!(rig.store.saved().as_deref(), Some("refresh-saved"));
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-rotated"));
 }
 
 #[test]
