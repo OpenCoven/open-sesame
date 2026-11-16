@@ -165,3 +165,57 @@ fn callback_rejects_an_empty_expected_state() {
         Err(AuthError::InvalidCallback)
     );
 }
+
+/// Whether a callback may end the waiting sign-in (issue #116): only one at the redirect that
+/// carries exactly one `state`, equal to the pending one. What else it carries does not matter,
+/// so a refusal from the browser still ends the attempt it belongs to.
+#[test]
+fn a_callback_carries_the_state_only_with_exactly_one_equal_state_at_the_redirect() {
+    for url in [
+        "opensesame://auth/callback?state=fixture-state&code=x",
+        "opensesame://auth/callback?code=x&state=fixture%2Dstate",
+        "opensesame://auth/callback?state=fixture-state&error=access_denied",
+        "opensesame://auth/callback?state=fixture-state",
+        "opensesame://auth/callback?state=fixture-state&code=",
+        "opensesame://auth/callback?state=fixture-state&code=x&code=y",
+        "opensesame://auth/callback?state=fixture-state&code=x#fragment",
+        "opensesame://auth/callback?code=x&state=fixture-state#fragment",
+    ] {
+        assert!(carries_state(url, S), "{url}");
+    }
+    for url in [
+        "https://auth/callback?state=fixture-state&code=x",
+        "opensesame://other/callback?state=fixture-state&code=x",
+        "opensesame://auth/login?state=fixture-state&code=x",
+        "opensesame://auth/callback?state=wrong&code=x",
+        "opensesame://auth/callback?code=x&state=FIXTURE-STATE",
+        "opensesame://auth/callback?code=x",
+        "opensesame://auth/callback?code=x&state",
+        "opensesame://auth/callback?code=x&state=",
+        "opensesame://auth/callback?state=fixture-state&state=fixture-state&code=x",
+        "opensesame://auth/callback?state=other&code=x&st%61te=fixture-state",
+        "opensesame://auth/callback?%zz=1&state=fixture-state",
+        "opensesame://auth/callback?state=fixture%zzstate",
+    ] {
+        assert!(!carries_state(url, S), "{url}");
+    }
+    assert!(
+        !carries_state("opensesame://auth/callback?state=&code=x", ""),
+        "an empty pending state is never carried"
+    );
+}
+
+/// Every callback the code is taken from carries the state, so the check in the controller
+/// never turns away a callback that `authorization_code` accepts.
+#[test]
+fn every_accepted_callback_carries_the_state() {
+    for url in [
+        "opensesame://auth/callback?state=fixture-state&code=fixture-code",
+        "opensesame://auth/callback?code=abc&state=fixture-state",
+        "opensesame://auth/callback?state=fixture%2Dstate&code=a%2Fb",
+        "opensesame://auth/callback?state=fixture-state&code=x&extra=1",
+    ] {
+        assert!(authorization_code(url, S).is_ok(), "{url}");
+        assert!(carries_state(url, S), "{url}");
+    }
+}

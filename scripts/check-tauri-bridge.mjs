@@ -160,6 +160,52 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await picker;
 }
 
+// 6b. Sign in waits for the person too: the host reads the saved sign-in before it opens the
+// browser, and with one saved in a locked keyring that read answers only after the unlock
+// prompt (issue #116). Every other method the host answers gets 15 seconds: each one in the
+// gate's list is sent through `bridge.request` with no parameters, after the bridge has
+// connected, on a stand-in host that says it is Linux, and the limit the page set for that
+// request is read from the timer. So the table in ui/bridge.js may be written in any way. What
+// this sees is that one request and nothing else: a limit that depends on a parameter, on the
+// bridge's state, on the order of requests or on anything the stand-in window lacks, one that
+// applies only on a system other than the stand-in's Linux, one given through another function
+// or argument, and one for a method the gate has not ported, are not seen.
+{
+  const { bridge, invokes, timers } = await connected();
+  let outcome = 'pending';
+  const signIn = bridge.request('auth.signIn').then(() => { outcome = 'resolved'; }, error => { outcome = error.message; });
+  await settle();
+  const [[, limit]] = [...timers];
+  assert.equal(limit.delay, 180000, 'Sign in waits for the keyring prompt, not for 15 seconds');
+  invokes[1].resolve({ requestId: invokes[1].args.message.requestId, result: true });
+  await signIn;
+  assert.equal(outcome, 'resolved');
+  assert.equal(timers.size, 0);
+  // Read as check-core-gate.mjs reads it. Comments are taken out first, in one pass that steps
+  // over string literals and takes whichever comment starts first, so that neither a `];` in a
+  // comment nor a `/*` in a string or in a line comment changes what is read (a nested block
+  // comment, a raw string and a character literal that holds a quote are still misread). Then
+  // the list runs up to the closing `];` and holds nothing but plain string literals.
+  const gate = read('crates/core/src/gate.rs').replace(/"(?:[^"\\]|\\[\s\S])*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
+  const list = gate.match(/pub const PORTED: &\[&str\] = &\[([\s\S]*?)\];/);
+  assert.ok(list, 'crates/core/src/gate.rs declares PORTED as a list of string literals');
+  const ported = [...list[1].matchAll(/"([^"\\]*)"/g)].map(match => match[1]);
+  assert.equal(list[1].replace(/"[^"\\]*"/g, '').replace(/[\s,]/g, ''), '', 'PORTED holds only string literals');
+  for (const method of ['auth.status', 'auth.signIn', 'auth.cancel', 'auth.signOut', 'project.chooseFolder', 'terminal.open']) assert.ok(ported.includes(method), `${method} is in the list read from the gate`);
+  const long = [];
+  for (const method of [...ported, 'nobody.answers']) {
+    const pending = bridge.request(method).catch(() => {});
+    await settle();
+    assert.equal(timers.size, 1, `${method} sets one limit`);
+    const [[, timer]] = [...timers];
+    if (timer.delay !== 15000) long.push(`${method}=${timer.delay}`);
+    timer.run();
+    await pending;
+    timers.clear(); // the fake keeps a timer that has fired
+  }
+  assert.deepEqual(long.sort(), ['auth.signIn=180000', 'project.chooseFolder=180000'], 'Every method the host answers waits 15 seconds, except the folder dialog and Sign in, which wait 180');
+}
+
 // 7. Events: host messages with an `event` key reach every subscriber, in order, until it unsubscribes.
 {
   const { bridge, listens } = await connected();

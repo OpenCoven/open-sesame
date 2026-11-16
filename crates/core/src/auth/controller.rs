@@ -12,8 +12,8 @@
 //! Shutdown closes admission and drains an already running refresh before the host exits.
 
 use super::{
-    authorization_code, authorize_url, generate_pkce, logout_url, verify_access_token, AuthError,
-    CredentialStore, SignedOutMarker, Tokens, User, WorkosApi,
+    authorization_code, authorize_url, carries_state, generate_pkce, logout_url,
+    verify_access_token, AuthError, CredentialStore, SignedOutMarker, Tokens, User, WorkosApi,
 };
 use serde_json::{json, Value};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -32,6 +32,9 @@ const CANCELLED: &str = "Sign-in cancelled.";
 const EXPIRED: &str = "Your session expired. Sign in again to use your account.";
 const ENDED: &str = "Your sign-in has ended. Sign in again to use your account.";
 const FAILED: &str = "Could not complete sign-in. Check your connection and try again.";
+/// A callback that carried the attempt's `state` and no usable code: the browser refused or
+/// the address was damaged. Nothing was asked of the network.
+const REFUSED: &str = "Sign-in was not completed in the browser. Try again.";
 const STORE_UNREADABLE: &str =
     "The saved sign-in could not be read from the system's credential store.";
 const STORE_UNWRITABLE: &str =
@@ -241,11 +244,21 @@ impl AuthController {
     /// Handles the callback URL the browser was redirected to.
     ///
     /// A callback with no sign-in pending (after cancel, sign-out, a completed attempt or a
-    /// failed one) is ignored and changes nothing. A callback that fails validation ends the
-    /// pending attempt and leaves the app signed out; no code is sent anywhere.
+    /// failed one) is ignored and changes nothing, and so is one that does not carry the
+    /// pending `state` ([`carries_state`]): another program, or an earlier attempt, cannot end
+    /// the attempt that is waiting (issue #116). A callback that carries the state and fails
+    /// the other rules, as a refusal in the browser does, ends the attempt and leaves the app
+    /// signed out. No code is sent anywhere unless the callback passes every rule.
     pub fn complete_sign_in(&self, callback: &str) {
         let (ticket, outcome) = {
             let mut state = self.lock();
+            let carried = state
+                .pending
+                .as_ref()
+                .is_some_and(|pending| carries_state(callback, &pending.state));
+            if !carried {
+                return;
+            }
             let Some(pending) = state.pending.take() else {
                 return;
             };
@@ -532,6 +545,8 @@ impl AuthController {
             STORE_UNWRITABLE
         } else if ended {
             ENDED
+        } else if error == AuthError::InvalidCallback {
+            REFUSED
         } else {
             FAILED
         };

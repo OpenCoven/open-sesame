@@ -6,7 +6,7 @@
 //! by the process runner, and reads the environment it ends up with. Any failure falls back to
 //! the inherited environment and says why; nothing here panics, and values are never logged.
 
-use super::{run, Run, RunError};
+use super::{execute, Run, RunError};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{BuildHasher, Hasher};
@@ -93,7 +93,12 @@ impl ShellEnv {
     /// Runs `shell` as an interactive login shell with exactly the `inherited` variables and
     /// returns the shell's effective environment, including variables removed by startup files.
     /// Shell-private values retain their inherited values. On any failure the result is
-    /// `inherited` unchanged, with the reason in [`ShellEnv::source`].
+    /// `inherited` unchanged, with the reason in [`ShellEnv::source`]. A variable the shell
+    /// reports with a name or value that is not valid Unicode is left out, as
+    /// [`ShellEnv::inherited`] leaves such variables out, and is never passed on with
+    /// replacement characters. Of a `PATH` that is not valid Unicode, the directories that are
+    /// valid are kept; one with no valid directory is left out, and a capture without a `PATH`
+    /// is given up for `inherited`.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -102,8 +107,10 @@ impl ShellEnv {
         Self::capture_cancellable(shell, inherited, timeout, super::Cancel::new())
     }
 
-    /// As [`ShellEnv::capture`], with the host's Quit cancellation flag. Cancellation kills and
-    /// collects the capture's entire process tree before returning the inherited fallback.
+    /// As [`ShellEnv::capture`], with the host's Quit cancellation flag. Cancellation kills every
+    /// process in the capture's process group and collects the shell before returning the
+    /// inherited fallback. A process the shell started is killed with the group, but it is the
+    /// shell's child, not this process's, so the system collects it a moment later.
     pub fn capture_cancellable(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -137,7 +144,28 @@ impl ShellEnv {
                 .finish()
         );
         // NUL-separated when `env` supports it, so values that contain newlines stay whole.
-        let script = format!("printf '%s' '{marker}'; /usr/bin/env -0 2>/dev/null || /usr/bin/env; printf '%s' '{marker}'");
+        let to_output = "/usr/bin/env -0 2>/dev/null || /usr/bin/env";
+        // The environment goes to a pipe of its own when there is one, because the startup
+        // files' own programs share the standard output and may still be printing. Printing it
+        // between the markers is what remains when that pipe cannot be had or written to.
+        #[cfg(unix)]
+        let report = super::Report::new();
+        #[cfg(not(unix))]
+        let report: Option<super::Report> = None;
+        #[cfg(unix)]
+        let print = match &report {
+            Some(report) => {
+                let pipe = report.path();
+                // Appending, because the bash that macOS ships (3.2), as `bash` and as `sh`,
+                // refuses a plain `>` to this pipe when `noclobber` is set. zsh, ksh and dash
+                // were seen to accept it.
+                format!("/usr/bin/env -0 >> {pipe} 2>/dev/null || /usr/bin/env >> {pipe} 2>/dev/null || {to_output}")
+            }
+            None => to_output.to_string(),
+        };
+        #[cfg(not(unix))]
+        let print = to_output.to_string();
+        let script = format!("printf '%s' '{marker}'; {print}; printf '%s' '{marker}'");
         let mut request = Run::new(shell);
         request.args = vec!["-i".into(), "-l".into(), "-c".into(), script];
         request.clear_env = true;
@@ -149,15 +177,22 @@ impl ShellEnv {
         request.cancel = Some(cancel);
         request.max_output = MAX_ENV_BYTES;
 
-        let output = match run(request, None) {
-            Ok(output) => output,
+        let (output, reported) = match execute(request, None, report) {
+            Ok(finished) => finished,
             Err(RunError::Cancelled) => return fallback(inherited, Fallback::Cancelled),
             Err(RunError::Timeout) => return fallback(inherited, Fallback::TimedOut),
             Err(_) => return fallback(inherited, Fallback::ShellFailed),
         };
-        let Some(captured) = between(&output.stdout, marker.as_bytes()).map(parse) else {
+        // Both markers still have to be there: they say the shell reached the command and
+        // finished it. The environment itself is what arrived on the pipe, when anything did.
+        let Some(printed) = between(&output.stdout, marker.as_bytes()) else {
             return fallback(inherited, Fallback::ShellFailed);
         };
+        let captured = parse(if reported.is_empty() {
+            printed
+        } else {
+            &reported
+        });
         if !captured.contains_key("PATH") {
             return fallback(inherited, Fallback::ShellFailed);
         }
@@ -231,39 +266,95 @@ fn between<'a>(output: &'a [u8], marker: &[u8]) -> Option<&'a [u8]> {
 /// Reads `NAME=value` entries. NUL-separated output is exact. Newline-separated output is the
 /// fallback for an `env` without `-0`: a line that does not start a new variable continues the
 /// previous value.
+///
+/// A variable whose name or value is not valid UTF-8 is left out whole. It is never kept with
+/// replacement characters: a child program would be handed a value the user never set. `PATH`
+/// is the one exception; see [`text`].
 fn parse(body: &[u8]) -> BTreeMap<String, String> {
+    // An entry split at its first `=`: the name as text, the value as the bytes it has.
+    let variable = |entry: &'_ [u8]| -> Option<(String, Result<String, ()>)> {
+        let equals = entry.iter().position(|byte| *byte == b'=')?;
+        let name = std::str::from_utf8(&entry[..equals]).ok()?;
+        Some((name.to_string(), text(name, &entry[equals + 1..])))
+    };
     let mut vars = BTreeMap::new();
-    if body.contains(&b'\0') {
+    if body.contains(&0) {
         for entry in body.split(|byte| *byte == 0) {
             // OS environment names may contain punctuation or Unicode. NUL framing makes
-            // their boundaries exact; omit non-Unicode entries just as `inherited` does.
-            let Ok(entry) = std::str::from_utf8(entry) else {
-                continue;
-            };
-            if let Some((name, value)) = entry.split_once('=').filter(|(name, _)| !name.is_empty())
-            {
-                vars.insert(name.to_string(), value.to_string());
+            // their boundaries exact, so any name that is not empty is taken.
+            if let Some((name, Ok(value))) = variable(entry).filter(|(name, _)| !name.is_empty()) {
+                vars.insert(name, value);
             }
         }
         return vars;
     }
-    let text = String::from_utf8_lossy(body);
+    // Lines as `str::lines` gives them: no empty piece after a final line end, and a carriage
+    // return is part of a line's end only when a line feed follows it.
+    let mut lines: Vec<&[u8]> = body.split(|byte| *byte == b'\n').collect();
+    let unfinished = lines.pop().filter(|line| !line.is_empty());
+    let lines = lines
+        .into_iter()
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+        .chain(unfinished);
+    // The variable the next continuation line belongs to; `None` before the first variable and
+    // while a variable that was left out is being skipped.
     let mut current: Option<String> = None;
-    for line in text.lines() {
-        match line.split_once('=').filter(|(name, _)| is_name(name)) {
-            Some((name, value)) => {
-                vars.insert(name.to_string(), value.to_string());
-                current = Some(name.to_string());
+    for line in lines {
+        // Without NUL framing only a line that starts with a shell name starts a variable.
+        match variable(line).filter(|(name, _)| is_name(name)) {
+            Some((name, Ok(value))) => {
+                vars.insert(name.clone(), value);
+                current = Some(name);
             }
-            None => {
-                if let Some(value) = current.as_ref().and_then(|name| vars.get_mut(name)) {
-                    value.push('\n');
-                    value.push_str(line);
+            Some((name, Err(()))) => {
+                vars.remove(&name);
+                current = None;
+            }
+            None => match (std::str::from_utf8(line), current.take()) {
+                (Ok(line), Some(name)) => {
+                    if let Some(value) = vars.get_mut(&name) {
+                        value.push('\n');
+                        value.push_str(line);
+                    }
+                    current = Some(name);
                 }
-            }
+                (Err(_), Some(name)) => {
+                    vars.remove(&name);
+                }
+                (_, None) => {}
+            },
         }
     }
     vars
+}
+
+/// A value as text, or `Err` when it is not valid UTF-8.
+///
+/// `PATH` is kept in part: the directories that are valid UTF-8, in their order. Each entry
+/// stands on its own, so none of what is kept is a value the user never set, and a directory
+/// that cannot be held as text could not be searched from here anyway. Leaving `PATH` out
+/// whole would throw away the capture, and with it every directory the startup files added,
+/// for one directory with an odd name (issue #97). When no directory is left, only empty
+/// entries or nothing, there is no `PATH` to keep and the variable is left out like any other.
+///
+/// The form `env` prints without `-0`, one variable to a line, is read less exactly: a
+/// continuation line with an invalid byte loses the whole variable there, and of a name that
+/// appears twice the later one decides.
+fn text(name: &str, value: &[u8]) -> Result<String, ()> {
+    if let Ok(value) = std::str::from_utf8(value) {
+        return Ok(value.to_string());
+    }
+    if name != "PATH" {
+        return Err(());
+    }
+    let kept: Vec<&str> = value
+        .split(|byte| *byte == b':')
+        .filter_map(|entry| std::str::from_utf8(entry).ok())
+        .collect();
+    if kept.iter().all(|entry| entry.is_empty()) {
+        return Err(());
+    }
+    Ok(kept.join(":"))
 }
 
 fn is_name(name: &str) -> bool {
@@ -366,5 +457,79 @@ mod tests {
         assert_eq!(get(&vars, "EMPTY"), Some(""));
         assert_eq!(vars.len(), 4);
         assert!(parse(b"").is_empty());
+    }
+
+    #[test]
+    fn the_newline_form_takes_shell_names_only() {
+        // Without NUL framing a line starts a variable only when it starts with a shell name;
+        // any other line, whatever it looks like, continues the value before it.
+        let vars = parse(b"A=1\nconfig.key=v\nwith-dash=w\nB=2\n=nameless\n");
+        assert_eq!(get(&vars, "A"), Some("1\nconfig.key=v\nwith-dash=w"));
+        assert_eq!(get(&vars, "B"), Some("2\n=nameless"));
+        assert_eq!(vars.len(), 2, "{:?}", vars.keys());
+        // With it, the same names are variables of their own.
+        let vars = parse(b"A=1\0config.key=v\0with-dash=w\0B=2\0");
+        assert_eq!(get(&vars, "config.key"), Some("v"));
+        assert_eq!(get(&vars, "with-dash"), Some("w"));
+        assert_eq!(vars.len(), 4, "{:?}", vars.keys());
+    }
+
+    /// A value, a name or a continuation line that is not UTF-8 leaves its variable out, in
+    /// both forms. In the NUL form it takes nothing else with it; in the newline form a line
+    /// with a damaged name continues the variable before it and takes that one too.
+    #[test]
+    fn entries_that_are_not_unicode_are_left_out() {
+        let vars = parse(b"A=1\0ODD=\xff\xfe\0MIXED=ok\xff\0N\xffME=x\0B=2\0");
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "B"), Some("2"));
+        assert_eq!(vars.len(), 2);
+
+        let vars = parse(
+            b"A=1\nODD=\xff\xfe\n still odd\nB=2\nMULTI=first\n second \xff line\nthird\nC=3\r\nN\xffME=x\nD=4\n",
+        );
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "B"), Some("2"));
+        // In this form a line that does not start a variable continues the one before it, so
+        // the line with the damaged name belongs to C's value, and C is left out with it.
+        assert_eq!(get(&vars, "C"), None);
+        assert_eq!(get(&vars, "D"), Some("4"));
+        assert_eq!(vars.len(), 3, "{:?}", vars.keys());
+    }
+
+    /// The search path is the one value that is kept in part: each directory in it stands on
+    /// its own, and without it the whole capture is of no use.
+    #[test]
+    fn a_search_path_keeps_the_entries_that_are_unicode() {
+        let vars = parse(b"A=1\0PATH=/first:/o\xffdd:/second::/third\0NOTPATH=/first:/o\xffdd\0");
+        assert_eq!(get(&vars, "PATH"), Some("/first:/second::/third"));
+        assert_eq!(get(&vars, "NOTPATH"), None);
+        assert_eq!(get(&vars, "A"), Some("1"));
+
+        let vars = parse(b"PATH=\xff\xfe\0A=1\0");
+        assert_eq!(get(&vars, "PATH"), None);
+
+        // Nothing left but empty entries is no search path at all: it must not come back as
+        // an empty `PATH` that replaces the one the application was launched with.
+        for nothing_valid in [&b"\xff:"[..], b":\xff", b"\xff::\xfe"] {
+            let vars = parse(&[b"PATH=", nothing_valid, b"\0A=1\0"].concat());
+            assert_eq!(get(&vars, "PATH"), None, "{nothing_valid:?}");
+            assert_eq!(get(&vars, "A"), Some("1"));
+        }
+        // An empty entry beside a directory is the user's own and stays.
+        let vars = parse(b"PATH=/first::\xff\0");
+        assert_eq!(get(&vars, "PATH"), Some("/first:"));
+
+        let vars = parse(b"A=1\nPATH=/first:/o\xffdd:/second\nB=2\n");
+        assert_eq!(get(&vars, "PATH"), Some("/first:/second"));
+        assert_eq!(get(&vars, "B"), Some("2"));
+    }
+
+    /// As `str::lines` reads them: a carriage return is part of a line's end only when a line
+    /// feed follows it.
+    #[test]
+    fn a_carriage_return_is_dropped_only_before_a_line_feed() {
+        let vars = parse(b"A=1\r\nB=2\r");
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "B"), Some("2\r"));
     }
 }
