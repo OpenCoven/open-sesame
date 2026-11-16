@@ -176,8 +176,10 @@ fn version_manager_folders_under_the_home_directory_are_searched() {
     install(&at(".volta/bin"), "tool-twice");
     // Volta's and mise's start by themselves, so they come before the system's folders, as
     // in a shell set up for them: a system copy does not hide the version the person chose.
-    let chosen = install(&at(".volta/bin"), "tool-chosen");
-    install(&at(".asdf/shims"), "tool-chosen");
+    // `env` stands for such a tool, because the system has one of that name.
+    assert!(Path::new("/usr/bin/env").is_file());
+    let chosen = install(&at(".volta/bin"), "env");
+    install(&at(".asdf/shims"), "env");
     let finder = Search::from_env(&launched_from(home.path(), &[]));
     assert!(finder.known_dirs.iter().all(|dir| dir.is_absolute()));
     for program in expected {
@@ -185,7 +187,7 @@ fn version_manager_folders_under_the_home_directory_are_searched() {
         assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
     }
     assert_eq!(finder.find("tool-twice", None), Some(real));
-    assert_eq!(finder.find("tool-chosen", None), Some(chosen));
+    assert_eq!(finder.find("env", None), Some(chosen));
     let place = |rest: &str| {
         let dir = if rest.starts_with('/') {
             PathBuf::from(rest)
@@ -389,11 +391,13 @@ fn the_nvm_folder_is_the_one_its_default_alias_names() {
         // nvm compares text: these are not 22.
         ("022", None),
         (" 22", None),
-        // Only one dot at the end is passed over, and only the spaces nvm drops are dropped:
-        // a no-break space is part of the name.
+        // Only one dot at the end is passed over.
         ("22..", None),
-        ("22\u{a0}\n", None),
-        ("\u{a0}\n22\n", None),
+        // The blanks nvm drops in a terminal's UTF-8 locale are dropped, at the end of a line
+        // and in a line that says nothing: a no-break space and a vertical tab among them.
+        ("22\u{a0}\n", Some("v22.11.0")),
+        ("\u{a0}\n22\n", Some("v22.11.0")),
+        ("22\u{b}\n", Some("v22.11.0")),
         ("22\t\u{c}\n", Some("v22.11.0")),
         ("9", Some("v20.1.0")),
         (long_comment.as_str(), Some("v22.3.0")),
@@ -1500,6 +1504,210 @@ mod login_shell {
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("AFTER"), Some("ok"));
         assert_eq!(env.get("BASH_FUNC_gone%%"), None);
+    }
+
+    /// How a stand-in leaves `config.key` out of what it starts, as dash and the zsh of macOS
+    /// leave out every name that is not a shell name.
+    const WITHOUT: &str = "/usr/bin/env -u config.key";
+
+    /// A stand-in for a shell, for the rules of the second run that no installed shell can
+    /// show: a script under the shell's name that notes each run in `log` beside it, with
+    /// whether it was given `ENV` and `BASH_ENV` and, for the second run, its arguments. A run
+    /// that starts with `-i` is the login run and does `login`; any other is the second run
+    /// and does `bare`. The script is copied into place by another program, so that no child
+    /// of a test running beside this one can hold it open for writing when it is started.
+    fn stand_in(name: &str, login: &str, bare: &str) -> (tempfile::TempDir, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let text = dir.path().join("text");
+        let shell = dir.path().join(name);
+        let script = format!(
+            "#!/bin/sh\nhere=${{0%/*}}\nnoted=\"ENV=${{ENV-unset}} BASH_ENV=${{BASH_ENV-unset}}\"\n\
+             if [ \"$1\" = -i ]; then\n  echo \"login $noted\" >> \"$here/log\"\n  {login}\nfi\n\
+             echo \"bare $noted $*\" >> \"$here/log\"\n{bare}\n"
+        );
+        std::fs::write(&text, script).unwrap();
+        let copied = std::process::Command::new("/bin/cp")
+            .args([&text, &shell])
+            .status()
+            .unwrap();
+        assert!(copied.success());
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, shell)
+    }
+
+    /// The login run of a stand-in: the capture's own command, with `config.key` left out.
+    fn login_run() -> String {
+        format!("exec {WITHOUT} /bin/sh -c \"$4\"")
+    }
+
+    fn noted(shell: &Path) -> Vec<String> {
+        std::fs::read_to_string(shell.with_file_name("log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// The launch a stand-in is captured from: one variable whose name is not a shell name,
+    /// and the two that name a file a shell reads even when it is not a login shell.
+    fn odd_launch() -> BTreeMap<String, String> {
+        let (_home, mut inherited) = home(&[]);
+        inherited.insert("config.key".into(), "launch".into());
+        inherited.insert("ENV".into(), "/nonexistent/env".into());
+        inherited.insert("BASH_ENV".into(), "/nonexistent/bash-env".into());
+        inherited
+    }
+
+    fn gone(pid: i32) -> bool {
+        let ended = Instant::now() + Duration::from_secs(5);
+        loop {
+            if unsafe { libc::kill(pid, 0) } == -1 {
+                return std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+            }
+            if Instant::now() > ended {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// The second run, for every shell name the capture knows: it is made once, with the
+    /// arguments that keep that shell from its startup files and without `ENV` and `BASH_ENV`,
+    /// which the login run still has; what it leaves out is put back. A launch with no such
+    /// variable makes no second run at all.
+    #[test]
+    fn the_second_run_is_made_as_each_shell_needs_and_only_for_a_missing_variable() {
+        let cases = [
+            ("zsh", "-f -c"),
+            ("bash", "--noprofile --norc -c"),
+            ("fish", "--no-config -c"),
+            ("sh", "-c"),
+            ("dash", "-c"),
+            ("ksh", "-c"),
+        ];
+        for (name, arguments) in cases {
+            let bare = format!("exec {WITHOUT} /usr/bin/env -0");
+            let (_dir, shell) = stand_in(name, &login_run(), &bare);
+            let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
+            assert_eq!(env.get("config.key"), Some("launch"), "{name}");
+            assert_eq!(
+                noted(&shell),
+                [
+                    "login ENV=/nonexistent/env BASH_ENV=/nonexistent/bash-env".to_string(),
+                    format!("bare ENV=unset BASH_ENV=unset {arguments} /usr/bin/env -0"),
+                ],
+                "{name}"
+            );
+            let mut plain = odd_launch();
+            plain.remove("config.key");
+            let env = ShellEnv::capture(Some(&shell), plain, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
+            assert_eq!(noted(&shell).len(), 3, "{name}: {:?}", noted(&shell));
+            assert!(noted(&shell)[2].starts_with("login "), "{name}");
+        }
+    }
+
+    /// Nothing is put back unless the second run ended well, printed the variables exactly
+    /// and left the variable out: not when it still has the variable (a startup file removed
+    /// it), not when it ends with a failure, and not when it prints them without the NUL
+    /// separators. And when the login run itself could print them only without those, which
+    /// cannot show such a name at all, no second run is made.
+    #[test]
+    fn a_second_run_that_keeps_the_variable_fails_or_cannot_be_read_puts_nothing_back() {
+        let cases = [
+            ("it keeps the variable", "exec /usr/bin/env -0".to_string()),
+            (
+                "it ends with a failure",
+                format!("{WITHOUT} /usr/bin/env -0; exit 3"),
+            ),
+            (
+                "it prints without NUL separators",
+                format!("exec {WITHOUT} /usr/bin/env"),
+            ),
+        ];
+        for (what, bare) in cases {
+            let (_dir, shell) = stand_in("zsh", &login_run(), &bare);
+            let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{what}");
+            assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"), "{what}");
+            assert_eq!(env.get("config.key"), None, "{what}");
+            assert_eq!(noted(&shell).len(), 2, "{what}: {:?}", noted(&shell));
+        }
+        let login = format!(
+            "exec {WITHOUT} /bin/sh -c \"$(printf '%s' \"$4\" | sed 's#/usr/bin/env -0#/usr/bin/false#g')\""
+        );
+        let bare = format!("exec {WITHOUT} /usr/bin/env -0");
+        let (_dir, shell) = stand_in("zsh", &login, &bare);
+        let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        assert_eq!(env.get("config.key"), None);
+        assert_eq!(noted(&shell).len(), 1, "{:?}", noted(&shell));
+    }
+
+    /// A second run that does not end is given up at its own limit of five seconds and
+    /// killed; the capture keeps what the login run gave and puts nothing back.
+    #[test]
+    fn a_second_run_that_hangs_is_given_up_at_its_limit_and_killed() {
+        let (dir, shell) = stand_in(
+            "zsh",
+            &login_run(),
+            "echo $$ > \"$here/pid\"\nexec sleep 600",
+        );
+        let started = Instant::now();
+        let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+        let took = started.elapsed();
+        assert!(
+            took >= Duration::from_secs(4) && took < Duration::from_secs(12),
+            "{took:?}"
+        );
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        assert_eq!(env.get("config.key"), None);
+        let pid: i32 = std::fs::read_to_string(dir.path().join("pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(gone(pid), "the second run is still there");
+    }
+
+    /// Quit during the second run ends it at once: the host's cancellation reaches that run
+    /// too.
+    #[test]
+    fn quitting_during_the_second_run_ends_it_at_once() {
+        let (dir, shell) = stand_in(
+            "zsh",
+            &login_run(),
+            "echo $$ > \"$here/pid\"\nexec sleep 600",
+        );
+        let cancel = open_sesame_core::process::Cancel::new();
+        let pid_file = dir.path().join("pid");
+        let quit = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                let ended = Instant::now() + Duration::from_secs(10);
+                let pid = loop {
+                    let read = std::fs::read_to_string(&pid_file).unwrap_or_default();
+                    if let Ok(pid) = read.trim().parse::<i32>() {
+                        break pid;
+                    }
+                    assert!(Instant::now() < ended, "the second run never started");
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                cancel.cancel();
+                (pid, Instant::now())
+            })
+        };
+        let env = ShellEnv::capture_cancellable(Some(&shell), odd_launch(), LIMIT, cancel);
+        let returned = Instant::now();
+        let (pid, cancelled) = quit.join().unwrap();
+        let after = returned.saturating_duration_since(cancelled);
+        assert!(after < Duration::from_secs(3), "{after:?}");
+        assert_eq!(env.get("config.key"), None);
+        assert!(gone(pid), "the second run is still there");
     }
 
     /// Startup files print banners, and may even print something that looks like a marker.

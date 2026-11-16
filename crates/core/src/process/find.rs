@@ -285,7 +285,14 @@ const NVM_ALIASES: usize = 16;
 /// alias file named like the version that a chain of aliases ends at, which nvm looks for a
 /// second time and this does not, so this takes the version where nvm follows the file. nvm
 /// refuses to work at all while npm's prefix variable is set; the folder is searched here
-/// all the same.
+/// all the same. Rarer, and seen by running nvm 0.40.8: nvm does not count a version folder
+/// that is a link to a folder elsewhere unless it is named in full, and this does, so the
+/// link can be taken as the highest version where nvm takes a real folder; a plain file named
+/// like a version is taken as the highest here, which then gives nothing, where nvm passes
+/// over it; of two prereleases of one version whose names differ only in the case of a letter
+/// the first by bytes is taken here and nvm, under a UTF-8 locale, takes the other; a chain of
+/// more than `NVM_ALIASES` aliases is given up here; and under the C locale nvm keeps a
+/// no-break space at the end of an alias line as part of the name, which is dropped here.
 fn nvm_default_bin(root: &Path) -> Option<PathBuf> {
     let versions = root.join("versions").join("node");
     // Folder names that start as a version does, with the three numbers nvm sorts by.
@@ -367,15 +374,17 @@ fn nvm_sort_key(folder: &str) -> Option<[u64; 3]> {
 }
 
 /// What an nvm alias names: the first line of its file that says anything, read as nvm reads
-/// it since 0.40.4 (each line ends at a `#`, and the spaces and tabs at its end are dropped;
-/// a no-break space is not one of them and stays in the name). The name is
+/// it since 0.40.4: each line ends at a `#`, and the blanks at its end are dropped. nvm drops
+/// what its shell calls a space, which in the UTF-8 locale a terminal has includes a vertical
+/// tab and a no-break space, so both are dropped here; the characters Unicode calls white
+/// space stand in for the system's list. The name is
 /// nvm's own or comes out of another alias file, so one that would leave the alias folder is
 /// not followed, and neither is a long-term name with a capital letter, which nvm refuses.
 /// Only a regular file is opened, so a pipe left under that name cannot hold up the search.
 fn read_alias(aliases: &Path, name: &str) -> Option<String> {
     use std::io::Read;
     use std::path::Component;
-    let blank = |character: char| character.is_ascii_whitespace();
+    let blank = char::is_whitespace;
     let relative = Path::new(name);
     let stays_inside = !name.is_empty()
         && relative
