@@ -103,9 +103,10 @@ fn system_error<E: AsRef<dyn std::error::Error + Send + Sync + 'static>>(error: 
 ///
 /// macOS now and then refuses to open one with error -6, which is not an error a program is
 /// meant to see: the kernel uses that number for "start this open again" and passes it on when
-/// its own tries run out. On macOS 27.2 it reached this code in 5 of 14 runs of this package's
-/// tests on a busy machine, each time for one pane out of some hundreds, and the page was told
-/// the shell could not start (issue #112). A further try a few milliseconds later is what the
+/// its own tries run out. On macOS 27.2, on a busy machine, it reached this code in 2 of 8
+/// runs of this package's tests and in 1 of 12 processes when two copies of the terminal
+/// tests ran at once, each time for one pane out of some hundreds, and the page was told the
+/// shell could not start (issue #112). A further try a few milliseconds later is what the
 /// number asks for. The library keeps the error as text only, so every failure of this step is
 /// tried again; one that lasts, such as no pseudo-terminal being left, is reported about 75 ms
 /// later than before.

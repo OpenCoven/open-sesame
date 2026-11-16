@@ -605,6 +605,25 @@ fn close_kills_the_whole_process_tree() {
     );
 }
 
+/// `terminal.close` returns only when the shell is gone: one look straight after it, with no
+/// wait, finds no shell (issue #112). On Windows the library's wait for the shell returns as
+/// soon as the exit code is set, which is a moment before the process has ended.
+#[test]
+fn the_shell_is_gone_when_close_returns() {
+    let terminals = plain();
+    for round in 0..12 {
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        let shell = pid(&result);
+        assert!(alive(shell), "round {round}: the shell never ran");
+        call(&terminals, "terminal.close", json!({"id": "main"})).unwrap();
+        assert!(
+            !alive(shell),
+            "round {round}: the shell was still there when close returned"
+        );
+    }
+}
+
 /// A child that ignores the hang-up signal and sits in its own process group, as a job started
 /// by an interactive shell does, is still killed: the whole session is, not one group.
 #[cfg(unix)]
