@@ -291,14 +291,20 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
 // page starts to load, in every build and not only a development one, without waiting on the
 // window's thread. The self-test's reload pass is what shows it in a launched window.
 {
-  // Comments are taken out first, so that neither a comment between an attribute and what it
-  // applies to, nor one inside the arm, changes what is found. The arm may be one call or a
-  // block with other calls beside this one (issue #115 adds one to the same arm).
-  const window = read('src-tauri/src/window.rs').replace(/^\s*\/\/.*$/gm, '');
-  const handler = /let builder = builder\.on_page_load\(\|window, payload\| match payload\.event\(\) \{([\s\S]*?)PageLoadEvent::Started =>([\s\S]*?)PageLoadEvent::Finished =>/.exec(window);
-  assert(handler, 'The window has a page-load handler with an arm for a page that starts to load');
-  assert(handler[2].includes('crate::terminal::page_replaced(window.app_handle())'), 'The window closes the panes of the page before when a page starts to load');
-  assert(!/#\[cfg\(debug_assertions\)\]\s*$/.test(window.slice(0, handler.index)) && !handler[1].includes('#[cfg') && !handler[2].includes('#[cfg'), 'Neither the page-load handler nor that arm nor the call is development-only');
+  // This reads text, so it cannot show that the call runs. What it holds, with every comment
+  // taken out first: the window sets one page-load handler; neither that statement nor the arm
+  // for a page that starts to load carries an attribute; and in that arm nothing stands before
+  // the call but other plain calls (issue #115 adds one), so no condition, macro or attribute
+  // can decide whether it is reached. A statement that is not a plain call goes after it.
+  const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const window = bare(read('src-tauri/src/window.rs'));
+  assert.equal(window.split('.on_page_load(').length - 1, 1, 'The window sets one page-load handler: a second would replace the first');
+  assert(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(window), 'The page-load handler\'s statement carries no attribute');
+  const hook = window.slice(window.indexOf('builder.on_page_load('), window.indexOf('let window = builder.build()?;'));
+  assert(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*crate::terminal::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(hook), 'The arm for a page that starts to load carries no attribute and reaches the call that closes the old page\'s panes through plain calls only');
+  const host = bare(read('src-tauri/src/terminal.rs'));
+  assert.equal(host.split('fn page_replaced').length - 1, 1, 'page_replaced is one function, not one per kind of build');
+  assert(/[;}]\s*pub fn page_replaced</.test(host), 'page_replaced carries no attribute');
   assert(/pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\s*if let Some\(state\) = app\.try_state::<crate::AppState>\(\) \{\s*state\.core\.terminals\.close_all_detached\(\);/.test(read('src-tauri/src/terminal.rs')));
   const selftest = read('ui/dev/selftest.js');
   assert(selftest.includes('if (config.reload) {') && selftest.includes('location.reload();'), 'The self-test has a reload pass');
