@@ -18,13 +18,14 @@ use crate::window;
 use open_sesame_core::gate::UNSUPPORTED;
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// The summon methods this crate answers. Each is also listed in the gate's `PORTED`.
 pub const METHODS: &[&str] = &[
@@ -48,6 +49,12 @@ pub const DEFAULT_SHORTCUT: &str = "Control+Alt+Shift+Space";
 pub const INVALID_SHORTCUT: &str =
     "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Control+Alt+Shift+Space.";
 pub const INVALID_REQUEST: &str = "Invalid summon request.";
+/// How many reasons the page may hold the window for at once.
+pub const MAX_PAGE_HOLDS: usize = 8;
+/// The reason of a hold the page gives no reason for. A drag was the only reason when the
+/// method was written, and the page still sends it without a name.
+const DRAG: &str = "drag";
+const MAX_REASON_LENGTH: usize = 32;
 pub const NOT_SAVED: &str = "Open Sesame could not save the shortcut setting.";
 pub const WAYLAND: &str =
     "Global shortcuts are not available to applications in this Wayland session. Bind a desktop shortcut to the command: open-sesame --toggle";
@@ -139,7 +146,9 @@ pub fn session_from(
 }
 
 /// Parses a shortcut a person typed. It needs a modifier, so a bare key that every application
-/// uses is never taken from them. An empty string is not a shortcut; it means "none".
+/// uses is never taken from them. Shift alone is not enough for a key that types: Shift with a
+/// letter is how a capital is written, and registering it would take that character from every
+/// application (issue #115). An empty string is not a shortcut; it means "none".
 pub fn parse_shortcut(text: &str) -> Result<Shortcut, BridgeError> {
     let invalid = || BridgeError::from(INVALID_SHORTCUT);
     let shortcut = Shortcut::from_str(text.trim()).map_err(|_| invalid())?;
@@ -147,7 +156,97 @@ pub fn parse_shortcut(text: &str) -> Result<Shortcut, BridgeError> {
     if !shortcut.mods.intersects(needed) {
         return Err(invalid());
     }
+    let beside_shift = Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER;
+    if !shortcut.mods.intersects(beside_shift) && types_a_character(shortcut.key) {
+        return Err(invalid());
+    }
     Ok(shortcut)
+}
+
+/// Whether pressing the key, with Shift or without, puts a character into the text a person is
+/// writing: letters, digits, punctuation, the space bar, Enter and Tab, on the main block and on
+/// the number pad. Keys that move, delete or do something else are not in the list; whether
+/// Shift alone should be refused for those too is left to issue #115.
+fn types_a_character(key: Code) -> bool {
+    use Code::*;
+    matches!(
+        key,
+        KeyA | KeyB
+            | KeyC
+            | KeyD
+            | KeyE
+            | KeyF
+            | KeyG
+            | KeyH
+            | KeyI
+            | KeyJ
+            | KeyK
+            | KeyL
+            | KeyM
+            | KeyN
+            | KeyO
+            | KeyP
+            | KeyQ
+            | KeyR
+            | KeyS
+            | KeyT
+            | KeyU
+            | KeyV
+            | KeyW
+            | KeyX
+            | KeyY
+            | KeyZ
+            | Digit0
+            | Digit1
+            | Digit2
+            | Digit3
+            | Digit4
+            | Digit5
+            | Digit6
+            | Digit7
+            | Digit8
+            | Digit9
+            | Backquote
+            | Backslash
+            | BracketLeft
+            | BracketRight
+            | Comma
+            | Equal
+            | Minus
+            | Period
+            | Quote
+            | Semicolon
+            | Slash
+            | Space
+            | Enter
+            | Tab
+            | Numpad0
+            | Numpad1
+            | Numpad2
+            | Numpad3
+            | Numpad4
+            | Numpad5
+            | Numpad6
+            | Numpad7
+            | Numpad8
+            | Numpad9
+            | NumpadAdd
+            | NumpadDecimal
+            | NumpadDivide
+            | NumpadEnter
+            | NumpadEqual
+            | NumpadMultiply
+            | NumpadSubtract
+    )
+}
+
+/// A hold's reason is a short name: lower-case letters, digits and hyphens.
+fn is_reason(reason: &str) -> bool {
+    !reason.is_empty()
+        && reason.len() <= MAX_REASON_LENGTH
+        && reason
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 /// The sentence shown when the system refuses a shortcut.
@@ -272,8 +371,10 @@ pub struct Summon {
     registration: Mutex<Registration>,
     /// Features that have taken focus away on purpose: a native dialog, a browser sign-in.
     holds: Arc<AtomicUsize>,
-    /// The page says a drag is in progress.
-    held_by_page: AtomicBool,
+    /// The reasons the page holds the window for: a drag in progress, and whatever else the
+    /// page comes to name. Each is released by name, so the end of one does not release
+    /// another (issue #115).
+    held_by_page: Mutex<BTreeSet<String>>,
     pinned: AtomicBool,
     /// When the window last hid because it lost focus.
     hid_on_blur: Mutex<Option<Instant>>,
@@ -312,7 +413,7 @@ impl Summon {
             settings: Mutex::new(settings),
             registration: Mutex::new(Registration::default()),
             holds: Arc::new(AtomicUsize::new(0)),
-            held_by_page: AtomicBool::new(false),
+            held_by_page: Mutex::default(),
             pinned: AtomicBool::new(false),
             hid_on_blur: Mutex::new(None),
         }
@@ -329,6 +430,22 @@ impl Summon {
         Hold(Arc::clone(&self.holds))
     }
 
+    /// Takes or releases the page's hold for one reason. Taking one that is held, or releasing
+    /// one that is not, changes nothing. The page may hold for [`MAX_PAGE_HOLDS`] reasons at
+    /// once; one more is refused, so a page cannot make this list grow without end.
+    fn hold_for_page(&self, reason: &str, held: bool) -> Result<(), BridgeError> {
+        let mut reasons = lock(&self.held_by_page);
+        if !held {
+            reasons.remove(reason);
+        } else if !reasons.contains(reason) {
+            if reasons.len() >= MAX_PAGE_HOLDS {
+                return Err(BridgeError::from(INVALID_REQUEST));
+            }
+            reasons.insert(reason.to_string());
+        }
+        Ok(())
+    }
+
     /// Records that the person pinned or unpinned the window (`window.keepOpen`).
     pub fn set_pinned(&self, pinned: bool) {
         self.pinned.store(pinned, Ordering::SeqCst);
@@ -339,7 +456,7 @@ impl Summon {
         hides_on_blur(
             lock(&self.settings).hide_on_blur,
             self.holds.load(Ordering::SeqCst),
-            self.held_by_page.load(Ordering::SeqCst),
+            !lock(&self.held_by_page).is_empty(),
             self.pinned.load(Ordering::SeqCst),
         )
     }
@@ -566,7 +683,12 @@ pub fn handle<R: Runtime>(
             let Some(Value::Bool(held)) = params.get("held") else {
                 return Err(invalid());
             };
-            summon.held_by_page.store(*held, Ordering::SeqCst);
+            let reason = match params.get("reason") {
+                None => DRAG,
+                Some(Value::String(reason)) if is_reason(reason) => reason,
+                Some(_) => return Err(invalid()),
+            };
+            summon.hold_for_page(reason, *held)?;
             Ok(json!({"held": held}))
         }
         _ => Err(BridgeError::from(UNSUPPORTED)),
@@ -658,6 +780,57 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    /// Shift with a key that types is what a person presses while writing, so taking it as a
+    /// shortcut takes that character from every application (issue #115). Shift is still a
+    /// modifier beside another one, and enough by itself for a key that types nothing.
+    #[test]
+    fn shift_alone_is_not_enough_for_a_key_that_types() {
+        for bad in [
+            "Shift+A",
+            "shift+space",
+            "Shift+1",
+            "Shift+/",
+            "Shift+Quote",
+            "Shift+Enter",
+            "Shift+Tab",
+            "Shift+Num5",
+            "Shift+NumpadAdd",
+            "Shift+NumpadEnter",
+        ] {
+            assert_eq!(
+                parse_shortcut(bad).map_err(|error| error.0),
+                Err(INVALID_SHORTCUT.to_string()),
+                "{bad}"
+            );
+        }
+        for good in [
+            "Shift+F5",
+            "Shift+F13",
+            "Control+Shift+A",
+            "Alt+Shift+Space",
+            "Super+Shift+1",
+            "Control+A",
+            "Alt+Space",
+        ] {
+            assert!(parse_shortcut(good).is_ok(), "{good}");
+        }
+    }
+
+    /// A saved shortcut that is no longer one gives the default, like any other the file
+    /// cannot keep.
+    #[test]
+    fn a_saved_shift_only_shortcut_gives_the_default() {
+        let folder =
+            std::env::temp_dir().join(format!("open-sesame-summon-shift-{}", std::process::id()));
+        let path = folder.join(SETTINGS_FILE);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(&path, r#"{"shortcut":"Shift+A","hideOnBlur":true}"#).unwrap();
+        let loaded = Settings::load(&path);
+        let _ = std::fs::remove_dir_all(&folder);
+        assert_eq!(loaded.shortcut, DEFAULT_SHORTCUT);
+        assert!(loaded.hide_on_blur);
     }
 
     #[test]
@@ -799,7 +972,7 @@ mod tests {
         summon.set_pinned(true);
         assert!(!summon.should_hide_on_blur());
         summon.set_pinned(false);
-        summon.held_by_page.store(true, Ordering::SeqCst);
+        summon.hold_for_page(DRAG, true).unwrap();
         assert!(!summon.should_hide_on_blur());
     }
 

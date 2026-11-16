@@ -485,6 +485,67 @@ mod tests {
             json!(summon::INVALID_REQUEST)
         );
 
+        // Two reasons at once: the end of one does not release the other (issue #115). A hold
+        // with no reason is the drag.
+        let hold = |held: bool, reason: Option<&str>| {
+            let params = match reason {
+                Some(reason) => json!({"held": held, "reason": reason}),
+                None => json!({"held": held}),
+            };
+            call(&main, "summon.hold", params).unwrap()
+        };
+        assert_eq!(hold(true, Some("menu"))["result"], json!({"held": true}));
+        hold(true, None);
+        assert_eq!(hold(false, None)["result"], json!({"held": false}));
+        assert!(
+            !hides(),
+            "the end of a drag released a hold it did not take"
+        );
+        hold(true, Some("drag"));
+        hold(false, Some("menu"));
+        assert!(
+            !hides(),
+            "a drag named as one is the same hold as an unnamed one"
+        );
+        hold(false, None);
+        assert!(hides());
+        // Releasing what is not held, or holding twice, changes nothing.
+        hold(false, Some("menu"));
+        hold(true, Some("menu"));
+        hold(true, Some("menu"));
+        hold(false, Some("menu"));
+        assert!(hides());
+        // A reason is a short name, and the page cannot make the host keep an endless list.
+        for bad in [
+            json!(""),
+            json!(7),
+            json!("with space"),
+            json!("x".repeat(33)),
+        ] {
+            assert_eq!(
+                call(&main, "summon.hold", json!({"held": true, "reason": bad})).unwrap()["error"],
+                json!(summon::INVALID_REQUEST)
+            );
+        }
+        for index in 0..summon::MAX_PAGE_HOLDS {
+            hold(true, Some(&format!("reason-{index}")));
+        }
+        assert_eq!(
+            call(
+                &main,
+                "summon.hold",
+                json!({"held": true, "reason": "one-more"})
+            )
+            .unwrap()["error"],
+            json!(summon::INVALID_REQUEST)
+        );
+        // One already held can still be named, and all can be released.
+        hold(true, Some("reason-0"));
+        for index in 0..summon::MAX_PAGE_HOLDS {
+            hold(false, Some(&format!("reason-{index}")));
+        }
+        assert!(hides());
+
         // A native dialog or a browser sign-in, held by the feature that opened it.
         let dialog = summon::hold(app.handle()).unwrap();
         assert!(!hides());
