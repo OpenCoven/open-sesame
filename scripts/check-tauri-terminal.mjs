@@ -287,4 +287,8 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
   for (const method of ['project.chooseFolder', 'project.reveal']) assert(main.includes(`'${method}'`) && gate.includes(`"${method}"`));
 }
 
+// 12. The flood step of the self-test records the gaps between timers and frames and judges
+// none of them (issue #112), so its name must not say the window did not freeze.
+assert(!read('ui/dev/selftest.js').includes('does not freeze'), 'The flood step does not claim a limit it does not check');
+
 console.log('Tauri terminal pane: requests, acknowledgements, input order, exit, clipboard keys and the vendored emulator passed.');

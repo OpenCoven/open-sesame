@@ -9,6 +9,7 @@
 //!
 //! Validation, limits and messages are those of `desktop/bridge.py`, which this replaces.
 
+mod exit;
 mod launch;
 mod session;
 mod tree;
@@ -47,7 +48,9 @@ pub enum Output {
     Data(Vec<u8>),
     /// The stream broke for a reason other than the program ending. `Exit` follows.
     Error(&'static str),
-    /// The pane has ended and its processes are gone.
+    /// The pane has ended. What has become of its processes by then differs by system and is
+    /// said in `tree.rs`, at its top and at `Tree::end`; on Windows a killed shell that did
+    /// not end within five seconds may still be there.
     Exit,
 }
 
@@ -111,7 +114,7 @@ impl Terminals {
     }
 
     /// `terminal.open`: starts a pane and returns `{"id", "pid", "machine"}`. Reopening an ID
-    /// closes the pane that had it first.
+    /// closes the pane that had it first, also when two requests for one ID arrive together.
     pub fn open(&self, params: &Map<String, Value>, sink: Sink) -> BridgeResult {
         let id = pane_id(params)?;
         let previous = self.sessions().remove(id);
@@ -134,9 +137,20 @@ impl Terminals {
         {
             return Err(BridgeError::from(TOO_MANY));
         }
+        // The panes stay locked while the shell starts, which keeps the count above true and
+        // makes every other request for any pane wait: some milliseconds for a start, about
+        // 75 ms more when no pseudo-terminal can be opened and every further try fails too, and
+        // for as long as discarding the shell takes when one was started and cannot be taken
+        // over (on Windows that has the limit and the caveat said at `ENDING` in `tree.rs`).
         let session = Session::start(&launch, cols, rows, sink)?;
         let pid = session.pid;
-        sessions.insert(id.to_string(), Arc::new(session));
+        let displaced = sessions.insert(id.to_string(), Arc::new(session));
+        drop(sessions);
+        // Another open of the same ID got in after this one looked for a pane to replace. The
+        // later of the two keeps the ID, and the earlier pane is closed like any replaced pane.
+        if let Some(displaced) = displaced {
+            displaced.close();
+        }
         Ok(json!({"id": id, "pid": pid, "machine": launch.machine}))
     }
 
@@ -166,15 +180,28 @@ impl Terminals {
             }
             "terminal.close" => {
                 session.close();
-                self.sessions().remove(id);
+                self.forget(id, &session);
             }
             _ => return Err(BridgeError::from(crate::gate::UNSUPPORTED)),
         }
         Ok(Value::Bool(true))
     }
 
-    /// Closes every pane and returns when all their processes are gone. Panes close side by
-    /// side, so quitting with many panes takes as long as the slowest one.
+    /// Takes a closed pane off the list, unless a `terminal.open` of the same ID has put another
+    /// pane there since: that one is running, and the list is the only way to close it.
+    fn forget(&self, id: &str, closed: &Arc<Session>) {
+        let mut sessions = self.sessions();
+        if sessions
+            .get(id)
+            .is_some_and(|listed| Arc::ptr_eq(listed, closed))
+        {
+            sessions.remove(id);
+        }
+    }
+
+    /// Closes every pane and returns when every pane's `Session::close` has returned; what
+    /// that says about a pane's processes differs by system and is said there. Panes close
+    /// side by side, so quitting with many panes takes as long as the slowest one.
     pub fn close_all(&self) {
         let sessions: Vec<Arc<Session>> = self
             .sessions()
@@ -188,7 +215,6 @@ impl Terminals {
         });
     }
 }
-
 impl Terminals {
     /// Quit: closes every pane as [`Terminals::close_all`] does and refuses every later
     /// `terminal.open`. The application opens panes here directly, not through `Core::handle`,
@@ -260,6 +286,32 @@ mod tests {
 
     fn params(value: Value) -> Map<String, Value> {
         value.as_object().cloned().unwrap()
+    }
+
+    /// `terminal.close` closes a pane and then takes it off the list. A `terminal.open` of the
+    /// same ID that lands between the two must stay on the list, or nothing can close its shell
+    /// (issue #112). The steps of the close are taken by hand here so the open lands exactly
+    /// between them.
+    #[cfg(unix)]
+    #[test]
+    fn closing_a_pane_does_not_forget_the_one_that_replaced_it() {
+        let terminals = Terminals::with(Config {
+            shell: Some(PathBuf::from("/bin/sh")),
+            ..Config::default()
+        });
+        let request = params(json!({"id": "main", "mode": "local"}));
+        let nowhere: Sink = Arc::new(|_| {});
+        terminals.open(&request, Arc::clone(&nowhere)).unwrap();
+        let first = terminals.sessions().get("main").cloned().unwrap();
+        first.close();
+        let second = terminals.open(&request, nowhere).unwrap();
+        terminals.forget("main", &first);
+        let listed = terminals.sessions().get("main").cloned();
+        let listed = listed.expect("the pane opened during the close was taken off the list");
+        assert_eq!(u64::from(listed.pid), second["pid"].as_u64().unwrap());
+        assert!(!listed.closed());
+        terminals.close_all();
+        assert!(listed.closed());
     }
 
     #[test]

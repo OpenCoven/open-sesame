@@ -198,7 +198,9 @@ export async function run({ launch, bridge, config }) {
         return -1;
       };
       try {
-        split.pane.send("stty -echo; printf 'S:\\303'; sleep 0.4; printf '\\251:\\342\\202'; sleep 0.4; printf '\\254:\\360\\237'; sleep 0.4; printf '\\246\\212:E\\n'\r");
+        // `set +m`: with job control on, the macOS `sh` now and then prints a line of its own
+        // when it starts a `sleep` on a busy machine, between the two halves of a character.
+        split.pane.send("stty -echo; set +m; printf 'S:\\303'; sleep 0.4; printf '\\251:\\342\\202'; sleep 0.4; printf '\\254:\\360\\237'; sleep 0.4; printf '\\246\\212:E\\n'\r");
         const end = performance.now() + 15000;
         while (find() < 0) {
           if (performance.now() > end) throw new Error('The characters did not arrive byte for byte.');
@@ -223,7 +225,9 @@ export async function run({ launch, bridge, config }) {
       }
     });
 
-    await step(`A command that prints ${lines} numbered lines does not freeze the window or drop output`, async () => {
+    // The gaps between timers and between frames are recorded, not judged: no limit for them
+    // has been set (issue #112), so this step says nothing about whether the window froze.
+    await step(`A command that prints ${lines} numbered lines arrives complete and in order, with the longest timer and frame gaps recorded`, async () => {
       const checker = floodChecker(lines);
       const flood = await launch({ mode: 'local', name: 'Flood' }, { onBytes: checker.onBytes });
       const stop = responsiveness();
