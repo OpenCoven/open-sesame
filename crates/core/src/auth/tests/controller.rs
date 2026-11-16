@@ -1,7 +1,7 @@
 use super::*;
 
 const GENERIC: &str = "Could not complete sign-in. Check your connection and try again.";
-const ENDED: &str = "Your sign-in has ended. Sign in again to continue.";
+const ENDED: &str = "Your sign-in has ended. Sign in again to use your account.";
 
 fn signed_out(rig: &Rig) -> bool {
     !rig.auth.authenticated()
@@ -14,7 +14,7 @@ fn starts_signed_out() {
     let rig = rig();
     assert_eq!(
         rig.status(),
-        json!({ "authenticated": false, "busy": false, "message": "Sign in to use Open Sesame.", "name": "", "email": "" })
+        json!({ "authenticated": false, "busy": false, "message": "", "name": "", "email": "" })
     );
     assert_eq!(rig.auth.next_refresh_in(), None);
 }
@@ -155,12 +155,12 @@ fn cancel_then_late_callback_is_ignored() {
         .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     rig.auth.cancel();
-    assert_eq!(rig.message(), "Sign in to continue.");
+    assert_eq!(rig.message(), "Sign-in cancelled.");
     let before = rig.changes.load(Ordering::SeqCst);
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
     assert_eq!(rig.status()["busy"], json!(false));
-    assert_eq!(rig.message(), "Sign in to continue.");
+    assert_eq!(rig.message(), "Sign-in cancelled.");
     assert!(rig.api.exchange_calls.lock().unwrap().is_empty());
     assert_eq!(rig.store.saved(), None);
     assert_eq!(
@@ -194,7 +194,7 @@ fn callback_without_a_pending_sign_in_is_ignored() {
     rig.auth
         .complete_sign_in("opensesame://auth/callback?code=x&state=anything");
     assert!(signed_out(&rig));
-    assert_eq!(rig.message(), "Sign in to use Open Sesame.");
+    assert_eq!(rig.message(), "");
     assert_eq!(rig.changes.load(Ordering::SeqCst), 0);
     assert!(rig.api.exchange_calls.lock().unwrap().is_empty());
 }
@@ -224,7 +224,7 @@ fn cancel_during_the_code_exchange_discards_the_result() {
     rig.auth.complete_sign_in(&callback);
     assert!(signed_out(&rig));
     assert_eq!(rig.store.saved(), None);
-    assert_eq!(rig.message(), "Sign in to continue.");
+    assert_eq!(rig.message(), "Sign-in cancelled.");
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn restore_without_a_saved_token_stays_signed_out() {
     rig.auth.restore();
     assert!(signed_out(&rig));
     assert!(rig.api.refresh_calls.lock().unwrap().is_empty());
-    assert_eq!(rig.message(), "Sign in to use Open Sesame.");
+    assert_eq!(rig.message(), "");
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn restore_with_an_unreadable_store_reports_it() {
     assert!(signed_out(&rig));
     assert_eq!(
         rig.message(),
-        "The saved sign-in could not be opened. Sign in again."
+        "The saved sign-in could not be read from the system's credential store."
     );
 }
 
@@ -486,7 +486,10 @@ fn transient_failure_keeps_a_live_session_until_it_expires() {
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
     rig.advance(60);
     assert!(signed_out(&rig));
-    assert_eq!(rig.message(), "Your session expired. Sign in to continue.");
+    assert_eq!(
+        rig.message(),
+        "Your session expired. Sign in again to use your account."
+    );
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
 }
 

@@ -73,7 +73,7 @@ fn refresh_after_cancel_saves_the_rotation_without_completing_the_restore() {
     rig.auth.restore();
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
     assert!(!rig.auth.authenticated());
-    assert_eq!(rig.message(), "Sign in to continue.");
+    assert_eq!(rig.message(), "Sign-in cancelled.");
     assert_eq!(rig.auth.next_refresh_in(), None);
 }
 
@@ -252,7 +252,7 @@ fn cancel_does_not_admit_a_second_refresh_while_the_first_is_still_in_flight() {
     rig.auth.refresh();
     assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
-    assert_eq!(rig.message(), "Sign in to continue.");
+    assert_eq!(rig.message(), "Sign-in cancelled.");
 }
 
 #[test]
