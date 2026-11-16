@@ -99,3 +99,7 @@ Shared presentation uses [content-focus.js](../dist/content-focus.js), [content-
 [Workspace recovery review](../scripts/review-workspace-recovery.mjs) exercises inactive playlist callbacks, explicit transcription activation, compact Familiar controls and the Widgets/Tools flows with a synthetic host. It does not send a provider prompt, capture audio or signal a real agent.
 
 Speaker attribution spans [the native sidecar](../desktop/SpeakerDiarization.swift), [the local worker](../desktop/diarization_worker.py), [the alignment model](../dist/speaker-model.js) and [the transcript UI](../dist/speaker-transcript.js). Read [the speaker contract](speaker-diarization.md) before changing retention or setup. [Media pop-outs](../dist/media-popout.js) use [isolated external surfaces](../desktop/EmbeddedWebSurface.swift), and [Protected Share](../desktop/ProtectedShare.swift) retains capture exclusion while adapting its resolution.
+
+## Restart runtime wiring
+
+[Core ownership and discovery](../crates/core/src/handler.rs), [development data directories](../src-tauri/src/data.rs) and [asynchronous startup](../src-tauri/src/startup.rs) connect the existing SQLite commands and login-shell capture to the Tauri application. [Runtime regressions](../crates/core/tests/runtime.rs) and the [windowless command inventory](../src-tauri/src/router.rs) cover their contracts; native launch, first paint and Quit/relaunch remain separate acceptance evidence.

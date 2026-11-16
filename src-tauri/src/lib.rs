@@ -6,11 +6,15 @@
 //! bundled pages and no third-party script may ever be loaded there.
 
 mod auth;
+mod data;
 mod events;
 #[cfg(target_os = "macos")]
 mod panel;
 mod project;
 mod router;
+#[cfg(debug_assertions)]
+mod runtime_probe;
+mod startup;
 mod summon;
 mod terminal;
 mod tray;
@@ -19,6 +23,7 @@ mod window;
 pub use open_sesame_core as core;
 
 use open_sesame_core::protocol::Emit;
+use open_sesame_core::storage::{Storage, StorageError};
 use open_sesame_core::Core;
 use std::sync::Arc;
 use tauri::{Manager, RunEvent};
@@ -26,9 +31,20 @@ use tauri::{Manager, RunEvent};
 /// What the command and the features share.
 pub struct AppState {
     pub core: Arc<Core>,
+    pub startup: startup::Startup,
     /// Sends a host message to the main window. Features that report something later, such as
     /// a pane exiting, send it through this.
     pub emit: Emit,
+}
+
+impl AppState {
+    /// Host features use the startup snapshot and the persisted per-tool path together.
+    pub fn find_tool(
+        &self,
+        name: &str,
+    ) -> Result<Option<std::path::PathBuf>, core::protocol::BridgeError> {
+        self.core.find_tool(name, &self.startup.environment())
+    }
 }
 
 /// Builds and runs the application. Returns when the application exits.
@@ -52,8 +68,29 @@ pub fn run() {
     let app = builder
         .invoke_handler(tauri::generate_handler![router::bridge_request])
         .setup(|app| {
+            let override_dir =
+                std::env::var_os("OPEN_SESAME_DEV_CONFIG_DIR").map(std::path::PathBuf::from);
+            let roots = app
+                .path()
+                .data_dir()
+                .and_then(|data| {
+                    app.path().home_dir().map(|home| data::Roots {
+                        data,
+                        home,
+                        legacy_xdg_data: std::env::var_os("XDG_DATA_HOME")
+                            .map(std::path::PathBuf::from),
+                    })
+                })
+                .map_err(|error| StorageError::Unreadable(error.to_string()));
+            let core = Arc::new(Core::new());
+            data::start_storage(Arc::clone(&core), move || {
+                roots
+                    .and_then(|roots| data::directory(&roots, override_dir.as_deref()))
+                    .and_then(|dir| Storage::open_in(&dir))
+            });
             app.manage(AppState {
-                core: Arc::new(Core::new()),
+                core,
+                startup: startup::Startup::start(core::process::ShellEnv::inherited()),
                 emit: events::emitter(app.handle()),
             });
             // Before the window, so the page's first question about the session has an answer.
@@ -73,6 +110,7 @@ pub fn run() {
                 auth.shutdown();
             }
             if let Some(state) = app.try_state::<AppState>() {
+                state.startup.shutdown();
                 state.core.shutdown();
             }
         }
