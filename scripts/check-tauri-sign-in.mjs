@@ -219,13 +219,25 @@ function fakeBridge(status, answers = {}) {
     const text = read(`src-tauri/src/${file}`).split('#[cfg(test)]')[0].split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
     for (const forbidden of ['on_open_url', 'handle_cli_arguments', 'deep-link://']) assert.ok(!text.includes(forbidden), `src-tauri/src/${file} does not use ${forbidden}`);
   }
-  // A launch that carries only a link has nothing to show: it exits before the window exists,
-  // which is what holds on a Linux session with no session bus, where the running application
-  // cannot be found (issue #116).
+  // A launch that carries only one of sign-in's links has nothing to show: it exits before
+  // the window exists, which is what holds on a Linux session with no session bus, where the
+  // running application cannot be found (issue #116). It also exits before anything is opened
+  // or started: such a launch manages no state, so the exit handler would shut nothing down,
+  // and storage opened before the question would be left open.
   const setup = entry.slice(entry.indexOf('.setup(|app| {'));
   assert.ok(setup.includes('link::only_a_link('), 'setup asks whether the launch carries only a link');
-  assert.ok(setup.indexOf('link::only_a_link(') < setup.indexOf('window::create_main('), 'and asks before the window is created');
   assert.match(setup, /if link::only_a_link\(&arguments\) \{\n\s+link::exit_without_window\(app\.handle\(\)\);\n\s+return Ok\(\(\)\);\n\s+\}/);
+  const asked = setup.indexOf('return Ok(());', setup.indexOf('link::only_a_link('));
+  for (const later of ['Core::new(', 'data::start_storage(', 'Storage::open_in(', 'startup::Startup::start(', 'app.manage(', 'auth::start(', 'link::register(', 'window::create_main(', 'tray::create(', 'summon::start(']) {
+    assert.ok(setup.includes(later), `setup still calls ${later}`);
+    assert.ok(asked < setup.indexOf(later), `the link-only launch has returned before ${later}`);
+  }
+  // Only sign-in's two links end a launch or are taken from a second one. Any other address
+  // on the scheme, the login page's "Open in app" among them, is an ordinary launch.
+  const taken = read('src-tauri/src/link.rs').split('#[cfg(test)]')[0];
+  assert.match(taken, /fn for_sign_in<S: AsRef<str>>\(arguments: &\[S\]\) -> Option<Url> \{\n\s+argument\(arguments\)\.filter\(\|url\| classify\(url\.as_str\(\)\) != Link::Other\)\n\}/);
+  assert.match(taken, /pub fn only_a_link<S: AsRef<str>>\(arguments: &\[S\]\) -> bool \{\n\s+for_sign_in\(arguments\)\.is_some\(\)\n\}/);
+  assert.match(taken, /pub fn handed_over<R: Runtime>\(app: &AppHandle<R>, arguments: &\[String\]\) -> bool \{\n\s+match for_sign_in\(arguments\) \{/);
   assert.match(read('src-tauri/src/link.rs'), /pub fn exit_without_window<R: Runtime>\(app: &AppHandle<R>\) \{\n(?:\s+(?:\/\/|#\[cfg|eprintln)[^\n]*\n)*\s+app\.exit\(0\);\n\}/);
 
   // One scheme, the one the WorkOS application already redirects to.

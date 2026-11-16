@@ -968,14 +968,12 @@ mod tests {
     #[test]
     fn a_callback_without_the_pending_state_sends_nothing_to_the_server() {
         let parts = wired(vec![("200 OK", SESSION.into())], true, None);
+        // `link` hands a callback to the core on a thread of its own. The core is called here
+        // on this thread instead, so the test knows it has finished and waits for nothing.
+        let forged = "opensesame://auth/callback?code=stolen&state=guess";
+        assert_eq!(classify(forged), Link::Callback);
         // No sign-in is pending: a callback from any process changes nothing.
-        assert_eq!(
-            parts
-                .auth
-                .link("opensesame://auth/callback?code=stolen&state=guess"),
-            Link::Callback
-        );
-        std::thread::sleep(Duration::from_millis(200));
+        parts.auth.controller.complete_sign_in(forged);
         assert!(parts.requests.lock().unwrap().is_empty());
         assert_eq!(parts.auth.status()["busy"], json!(false));
 
@@ -983,13 +981,7 @@ mod tests {
         // the attempt keeps waiting for the browser's own callback (issue #116).
         parts.auth.handle("auth.signIn", no_hold).unwrap();
         until(&parts.changes, |status| status["busy"] == json!(true));
-        assert_eq!(
-            parts
-                .auth
-                .link("opensesame://auth/callback?code=stolen&state=guess"),
-            Link::Callback
-        );
-        std::thread::sleep(Duration::from_millis(200));
+        parts.auth.controller.complete_sign_in(forged);
         let status = parts.auth.status();
         assert_eq!(status["busy"], json!(true), "the sign-in is still waiting");
         assert_eq!(

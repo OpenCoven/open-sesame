@@ -16,12 +16,18 @@
 //!   scheme ([`register`]). There it announces a link only while it starts, before any page
 //!   exists, and nothing listens for it.
 //!
-//! A launch that carries only a link, and that the single-instance plugin did not hand to a
-//! running application, exits before it creates a window ([`only_a_link`]). The sign-in the
-//! link belongs to waits in another process or in none: when no application is running, or on
-//! a Linux session with no D-Bus session bus, where the plugin cannot find the running one.
+//! A launch that carries only one of sign-in's two links, and that the single-instance plugin
+//! did not hand to a running application, exits before it creates a window or opens anything
+//! ([`only_a_link`]). The sign-in the link belongs to waits in another process or in none: when
+//! no application is running, or on a Linux session with no D-Bus session bus, where the plugin
+//! cannot find the running one.
+//!
+//! Any other address on the scheme is not sign-in's to take. The hosted login page's "Open in
+//! app" is one (`opensesame://auth/login`): a launch with it is an ordinary launch, and a
+//! second launch with it is left to summon, which shows the window. On macOS the system hands
+//! it to the running application, which ignores it, as it did before this module.
 
-use crate::auth::{Auth, Link};
+use crate::auth::{classify, Auth, Link};
 use crate::window;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime, Url};
@@ -40,15 +46,22 @@ pub fn argument<S: AsRef<str>>(arguments: &[S]) -> Option<Url> {
     }
 }
 
-/// Whether a launch carries only a link, and so has nothing to show.
+/// The link in a process's arguments when it is one sign-in takes: the callback or the address
+/// that says the remote session ended.
+fn for_sign_in<S: AsRef<str>>(arguments: &[S]) -> Option<Url> {
+    argument(arguments).filter(|url| classify(url.as_str()) != Link::Other)
+}
+
+/// Whether a launch carries only a link for sign-in, and so has nothing to show.
 pub fn only_a_link<S: AsRef<str>>(arguments: &[S]) -> bool {
-    argument(arguments).is_some()
+    for_sign_in(arguments).is_some()
 }
 
 /// A second launch: the second process has exited and its arguments arrive here. Returns
-/// whether they were a link, which is then all the launch asked for.
+/// whether they were a link for sign-in, which is then all the launch asked for. Anything
+/// else, another address on the scheme included, is left to the caller.
 pub fn handed_over<R: Runtime>(app: &AppHandle<R>, arguments: &[String]) -> bool {
-    match argument(arguments) {
+    match for_sign_in(arguments) {
         Some(url) => {
             deliver(app, url.as_str());
             true
@@ -141,8 +154,11 @@ mod tests {
     struct Waiting {
         app: tauri::App<MockRuntime>,
         codes: Receiver<String>,
-        /// How many times anything announced a link as the deep-link plugin's event. A page
-        /// listener is sent exactly what a listener registered here is sent.
+        /// How many times anything announced a link under the deep-link plugin's event name.
+        /// A page listener is sent exactly what a listener registered here is sent. This
+        /// application has no deep-link plugin, so the count shows only that taking a link
+        /// announces nothing by itself; that the plugin is not registered where it would
+        /// announce is held by check-tauri-sign-in.mjs, which reads lib.rs.
         announced: Arc<AtomicUsize>,
         callback: String,
     }
@@ -223,6 +239,29 @@ mod tests {
         assert_eq!(waiting.announced.load(Ordering::SeqCst), 0);
     }
 
+    /// The hosted login page's "Open in app" is a link on the scheme that is not sign-in's
+    /// (issue #116, review of #129). A second launch with it is left to summon, which shows
+    /// the window, and nothing is sent anywhere.
+    #[test]
+    fn a_link_on_the_scheme_that_is_not_sign_ins_is_left_to_summon() {
+        let waiting = waiting();
+        for link in [
+            "opensesame://auth/login",
+            "opensesame://auth/login?code=the-code&state=x",
+            "opensesame:anything",
+        ] {
+            let arguments = vec!["open-sesame".to_string(), link.to_string()];
+            assert!(!handed_over(waiting.app.handle(), &arguments), "{link}");
+        }
+        assert!(
+            waiting
+                .codes
+                .recv_timeout(Duration::from_millis(300))
+                .is_err(),
+            "no code was sent"
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn a_link_the_system_opens_on_macos_reaches_sign_in_and_is_never_announced() {
@@ -245,14 +284,21 @@ mod tests {
     fn only_one_address_on_the_scheme_after_the_program_name_is_a_link() {
         for arguments in [
             ["open-sesame", "opensesame://auth/callback?code=x&state=y"],
+            ["open-sesame", "opensesame://auth/callback"],
             ["open-sesame", "opensesame://auth/signed-out"],
             ["open-sesame", "OPENSESAME://auth/callback?code=x"],
-            ["open-sesame", "opensesame:anything"],
         ] {
             assert!(only_a_link(&arguments), "{arguments:?}");
         }
-        let others: [&[&str]; 11] = [
+        let others: [&[&str]; 16] = [
             &[],
+            // On the scheme, and not sign-in's: the login page's "Open in app" among them. Such
+            // a launch is an ordinary one.
+            &["open-sesame", "opensesame://auth/login"],
+            &["open-sesame", "opensesame://auth/login?next=x"],
+            &["open-sesame", "opensesame://auth/callbacks"],
+            &["open-sesame", "opensesame://AUTH/callback?code=x"],
+            &["open-sesame", "opensesame:anything"],
             &["opensesame://auth/callback?code=x"],
             &["open-sesame"],
             &["open-sesame", "--toggle"],
