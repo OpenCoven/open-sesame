@@ -244,7 +244,8 @@ try {
         try {
           let release;const held=new Promise(resolve=>release=resolve);
           await loading.route('**/ui/widgets/pending.js',async route=>{await held;await route.continue();});
-          await loading.goto(origin+'/ui/index.html');
+          // WebKit holds the load event while the first view's import is pending; the page is ready to use before it.
+          await loading.goto(origin+'/ui/index.html',{waitUntil:'domcontentloaded'});
           await loading.locator('[data-widget="reader"]:not([disabled])').waitFor({state:'attached'});
           assert.notEqual(await loading.locator('.shell').getAttribute('data-ready'),'true','the first view is still loading');
           await loading.getByRole('button',{name:'Widgets',exact:true}).click();
@@ -262,7 +263,8 @@ try {
           await runner.addInitScript(()=>Object.defineProperty(window,'__OPEN_SESAME_SELFTEST__',{value:Object.freeze({kind:'runtime',phase:'save',text:'Fixture runtime qualification'})}));
           // The first view never finishes loading: the qualification must not wait for it.
           await runner.route('**/ui/widgets/pending.js',()=>{});
-          await runner.goto(origin+'/ui/index.html');
+          // WebKit holds the load event while the first view's import is pending; the page is ready to use before it.
+          await runner.goto(origin+'/ui/index.html',{waitUntil:'domcontentloaded'});
           const result=runner.locator('[data-runtime-result]');
           await runner.locator('[data-runtime-result]:not([data-runtime-result="pending"])').waitFor({timeout:10000});
           assert.equal(await result.getAttribute('data-runtime-result'),'passed',await result.textContent());
