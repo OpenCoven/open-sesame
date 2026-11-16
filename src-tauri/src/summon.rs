@@ -780,9 +780,9 @@ pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option
 
 /// Whether a press on the tray icon is one that opens its menu, and so one to note for the
 /// menu item ([`tray_pressed`]). On Windows the left button is the popover and only the right
-/// one opens the menu; elsewhere either does. A press of the middle button, where it is
-/// reported, opens no menu and is noted all the same: that note is used only if a menu is
-/// then opened within `TRAY_MENU_OPEN` by some way that reports no press.
+/// one opens the menu; elsewhere either does. Off Windows a press of the middle button, where
+/// it is reported, opens no menu and is noted all the same: that note is used only if a menu
+/// is then opened within `TRAY_MENU_OPEN` by some way that reports no press.
 pub fn opens_the_tray_menu(windows: bool, right_button: bool) -> bool {
     !windows || right_button
 }
@@ -995,13 +995,16 @@ mod tests {
 
     /// What `blurred` noted is made to read as this instant for as long as the test runs, so
     /// that a slow machine cannot let `BLUR_GRACE` pass between two statements. The note that
-    /// the window lost the keyboard has to be there already, and be recent.
+    /// the window lost the keyboard has to be there already, and be no older than two
+    /// seconds, so a `blurred` that noted an earlier time still fails here. The time is moved
+    /// ahead, which reads as no time gone: `Instant::elapsed` gives zero for a later instant
+    /// on the toolchain in use, and its documentation keeps the right to panic there again.
     fn the_blur_was_this_instant(app: &tauri::App<MockRuntime>) {
         let summon = app.state::<Summon>();
         let later = Instant::now() + Duration::from_secs(3600);
         let mut lost = lock(&summon.lost_focus);
         assert!(
-            lost.is_some_and(|at| at.elapsed() < Duration::from_secs(60)),
+            lost.is_some_and(|at| at.elapsed() < Duration::from_secs(2)),
             "losing the keyboard is noted with the time"
         );
         *lost = Some(later);

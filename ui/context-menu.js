@@ -14,7 +14,9 @@
 // (only Copy, when text is selected on the page), a paste made here is not one step of the
 // field's own undo, and with the native menu gone a development build no longer offers Inspect
 // Element on a right click. Copy for selected text is offered wherever on the page the menu is
-// asked for, not only over the selection.
+// asked for, not only over the selection; that menu belongs to the element that was pressed,
+// so when that element is itself what scrolls, scrolling it leaves the menu where it is while
+// the text moves under it. Copy still writes the text that was selected when the menu opened.
 //
 // The native menu is cancelled while the event is captured, so no part of the page can let it
 // through. The menu itself is built when the event has bubbled back to the document, after
