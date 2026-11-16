@@ -160,8 +160,9 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await picker;
 }
 
-// 6b. Sign in waits for the person too: on Linux the host asks the keyring before it opens the
-// browser, and a locked keyring answers only after its unlock prompt (issue #116).
+// 6b. Sign in waits for the person too: the host reads the saved sign-in before it opens the
+// browser, and with one saved in a locked keyring that read answers only after the unlock
+// prompt (issue #116). No other method of the account gets the longer limit.
 {
   const { bridge, invokes, timers } = await connected();
   let outcome = 'pending';
@@ -169,10 +170,12 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await settle();
   const [[, limit]] = [...timers];
   assert.equal(limit.delay, 180000, 'Sign in waits for the keyring prompt, not for 15 seconds');
-  invokes[1].resolve({ requestId: invokes[1].args.message.requestId, result: { signedIn: false } });
+  invokes[1].resolve({ requestId: invokes[1].args.message.requestId, result: { signedIn: true } });
   await signIn;
   assert.equal(outcome, 'resolved');
   assert.equal(timers.size, 0);
+  const limits = read('ui/bridge.js').match(/const LIMITS = \{([^}]*)\};/)[1];
+  assert.deepEqual([...limits.matchAll(/'([^']+)': (\d+)/g)].map(match => `${match[1]}=${match[2]}`), ['project.chooseFolder=180000', 'auth.signIn=180000'], 'Only the folder dialog and Sign in wait longer than 15 seconds');
 }
 
 // 7. Events: host messages with an `event` key reach every subscriber, in order, until it unsubscribes.

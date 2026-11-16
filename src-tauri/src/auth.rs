@@ -190,8 +190,16 @@ impl WorkosApi for HttpApi {
 /// - If a store that was opened earlier answers with a platform failure, which is what a lost
 ///   connection or a restarted service gives, it is dropped, opened again, and asked once
 ///   more. That second answer stands.
-/// - Any other answer stands at once. In particular "no access", which is a locked keyring or
-///   a dismissed unlock prompt, is never asked twice: the person would be prompted twice.
+/// - Any other answer stands at once. In particular "no access", which is what gnome-keyring
+///   gives for a locked keyring or a dismissed unlock prompt, is never asked twice: the person
+///   would be prompted twice. That was measured with gnome-keyring 46.1 only. By reading, the
+///   store crate turns some other failures of a prompt into a platform failure, which this
+///   rule would ask again.
+///
+/// Two cases this does not reach, both seen in a container: a keyring that was just installed
+/// and has no default collection passes the look and then refuses the save, and a keyring
+/// that dies while its unlock prompt is open leaves the call waiting, because the library
+/// waits for the prompt with no limit.
 ///
 /// Nothing here keeps a secret, and there is no other place a secret is written when the store
 /// cannot be reached.
@@ -1412,9 +1420,6 @@ mod tests {
         auth.shutdown();
     }
 
-    /// Asks the real WorkOS API for this application's public signing keys: one request with
-    /// no credential in it, to show that the HTTPS client and its certificate roots work
-    /// against the real server. Ignored by default because it needs the network.
     /// A stand-in for a store that is a connection: each opening gets the next number, the
     /// first `refused` openings fail, and both openings and questions are counted.
     struct Connections {
@@ -1531,9 +1536,13 @@ mod tests {
         assert_eq!(connections.opened.load(Ordering::SeqCst), 1);
     }
 
-    /// For the two tests below, which start and stop a real keyring service. They are run by
-    /// the Linux container check, one test to a process, on a session bus where the service
-    /// is installed, is not started on demand, and unlocks with the word the check gave it.
+    /// For the two tests below, which start and stop a real keyring service. Nothing in the
+    /// repository or in hosted CI runs them: they are run by hand in a disposable Linux
+    /// container, one test to a process (`cargo test -- --ignored --exact <name>`), on a
+    /// private session bus (`dbus-launch`) where gnome-keyring is installed and is not started
+    /// on demand (its D-Bus service files moved aside). They end every `gnome-keyring-daemon`
+    /// of the user and write to whatever keyring is running, so they refuse to run unless
+    /// `OPEN_SESAME_DISPOSABLE_KEYRING` is `1`; never set it on a desktop.
     #[cfg(target_os = "linux")]
     mod with_a_real_keyring {
         use super::*;
@@ -1577,6 +1586,15 @@ mod tests {
             );
         }
 
+        /// A failure and not a silent pass: a test that did not run shows nothing.
+        fn disposable() {
+            assert_eq!(
+                std::env::var("OPEN_SESAME_DISPOSABLE_KEYRING").as_deref(),
+                Ok("1"),
+                "this test ends the user's keyring service; it runs only in a disposable container with OPEN_SESAME_DISPOSABLE_KEYRING=1"
+            );
+        }
+
         fn store(name: &str) -> KeychainStore {
             KeychainStore::new(format!(
                 "open-sesame-test-{name}-{}.tauri.workos.test",
@@ -1587,8 +1605,9 @@ mod tests {
         /// With no Secret Service at the first look, one that starts afterwards is used by
         /// the next attempt, without the application being started again (issue #116).
         #[test]
-        #[ignore = "starts and stops gnome-keyring-daemon; for the Linux container check"]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
         fn a_keyring_started_after_the_first_look_is_used() {
+            disposable();
             assert!(
                 !running(),
                 "this test starts with no keyring service running"
@@ -1609,8 +1628,9 @@ mod tests {
         /// A keyring service that is restarted while the application runs is reached again,
         /// and what was saved before the restart is read after it (issue #116).
         #[test]
-        #[ignore = "starts and stops gnome-keyring-daemon; for the Linux container check"]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
         fn a_keyring_that_restarts_is_reached_again() {
+            disposable();
             if !running() {
                 start();
             }
@@ -1636,6 +1656,9 @@ mod tests {
         }
     }
 
+    /// Asks the real WorkOS API for this application's public signing keys: one request with
+    /// no credential in it, to show that the HTTPS client and its certificate roots work
+    /// against the real server. Ignored by default because it needs the network.
     #[test]
     #[ignore = "contacts the real WorkOS API"]
     fn the_real_key_set_is_reachable_over_tls() {
