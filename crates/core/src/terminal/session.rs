@@ -301,8 +301,10 @@ impl Session {
     }
 
     /// Ends the pane: kills its whole process tree and collects the shell. Returns when that is
-    /// done; on Windows a killed shell is given five seconds to end, and this returns without
-    /// it after that. Safe to call more than once and from any thread.
+    /// done; on Windows a killed shell is given five seconds to end, and this goes on without
+    /// it after that to close the pseudo-console, which on Windows builds before 26100 may
+    /// itself wait for such a shell (see `ENDING` in `tree.rs`). Safe to call more than once
+    /// and from any thread.
     pub(super) fn close(&self) {
         self.shared.end();
     }
