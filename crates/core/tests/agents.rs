@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::sync::{Mutex, PoisonError};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -18,6 +19,12 @@ const LIMIT: Duration = Duration::from_secs(10);
 /// An argument the fixture ignores, which must never appear in what the list reports.
 const PRIVATE: &str = "--private-fixture-argument";
 
+/// Tests copy and start their program one at a time. On Linux, a child that another test forks
+/// while a copy is still open for writing keeps that copy open, and running it then fails with
+/// "Text file busy". `spawn` returns only once the child has started the program, so holding this
+/// across the copy and the start leaves no copy open in any fork.
+static STARTING: Mutex<()> = Mutex::new(());
+
 struct FakeAgent {
     child: Child,
     program: PathBuf,
@@ -26,6 +33,7 @@ struct FakeAgent {
 
 impl FakeAgent {
     fn start() -> Self {
+        let _one_at_a_time = STARTING.lock().unwrap_or_else(PoisonError::into_inner);
         let folder = tempfile::tempdir().unwrap();
         let program = folder
             .path()
