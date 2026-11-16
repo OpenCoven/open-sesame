@@ -7,6 +7,7 @@
 
 mod auth;
 mod events;
+mod link;
 #[cfg(target_os = "macos")]
 mod panel;
 mod project;
@@ -36,28 +37,45 @@ pub fn run() {
     let builder = tauri::Builder::default()
         // First, as the plugin requires: a second launch hands its arguments to the running
         // application and exits before it creates a window of its own.
-        // On Windows and Linux the browser's sign-in callback arrives this way too: the plugin's
-        // deep-link feature passes it to the deep-link plugin before this callback runs.
+        // On Windows and Linux the browser's sign-in callback arrives this way too, as the second
+        // process's only argument. The plugin is built without its deep-link feature, which would
+        // announce the link to every page listener; link.rs takes it out of the arguments.
         .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
-            summon::launched_again(app, &arguments);
+            if !link::handed_over(app, &arguments) {
+                summon::launched_again(app, &arguments);
+            }
         }))
         .plugin(summon::shortcut_plugin())
-        .plugin(tauri_plugin_deep_link::init())
         // Used from Rust only. The capability grants the page none of these plugins' commands.
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
+    // Only to register the scheme in a development build (link.rs). It is not registered on
+    // macOS, where it would announce every link the system opens as an event the page hears.
+    #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
     let app = builder
         .invoke_handler(tauri::generate_handler![router::bridge_request])
         .setup(|app| {
+            // A launch that carries only a link, which the single-instance plugin did not hand to
+            // a running application, has nothing to show and no sign-in waiting in it (link.rs).
+            let arguments: Vec<String> = std::env::args_os()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect();
+            if link::only_a_link(&arguments) {
+                link::exit_without_window(app.handle());
+                return Ok(());
+            }
             app.manage(AppState {
                 core: Arc::new(Core::new()),
                 emit: events::emitter(app.handle()),
             });
             // Before the window, so the page's first question about the session has an answer.
             auth::start(app.handle(), events::emitter(app.handle()));
+            #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+            link::register(app.handle());
             window::create_main(app.handle())?;
             tray::create(app.handle())?;
             // After the window exists, so a press that arrives at once has something to show.
@@ -79,6 +97,9 @@ pub fn run() {
         // Clicking the Dock icon brings back the window that closing only hid.
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => window::show(app),
+        // A link the system opens: on macOS it reaches the running application this way.
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => link::opened(app, urls),
         _ => {}
     });
 }

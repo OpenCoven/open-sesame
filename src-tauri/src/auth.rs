@@ -21,7 +21,7 @@
 //!   beyond the status. A development build prints two lines: the status flags with the
 //!   fixed sentence, and the kind of a link that arrived.
 
-use crate::{summon, window};
+use crate::summon;
 use open_sesame_core::auth::{
     authenticate_url, error_from_response, exchange_body, jwks_url, parse_jwks, parse_tokens,
     refresh_body, AuthController, AuthError, AuthParts, CredentialStore, Jwks, SignedOutMarker,
@@ -575,31 +575,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     // The store is asked on the restore thread and never here: this runs on the main thread
     // before the window exists, and a locked keyring answers only after its prompt does.
     auth.restore(move || !cfg!(target_os = "linux") || saved.available());
-    app.manage(Arc::clone(&auth));
-    listen(app, auth);
-}
-
-/// Passes each address the system hands over to [`Auth::link`], and brings the window forward
-/// when the browser comes back, since on macOS no second launch does that.
-fn listen<R: Runtime>(app: &AppHandle<R>, auth: Arc<Auth>) {
-    use tauri_plugin_deep_link::DeepLinkExt;
-    // In a development build on Windows and Linux nothing has installed the scheme, so it is
-    // registered here, for the current user, and stays registered after the run ends. A failure
-    // only means callbacks will not arrive.
-    #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
-    let _ = app.deep_link().register_all();
-    let handle = app.clone();
-    app.deep_link().on_open_url(move |event| {
-        for url in event.urls() {
-            let kind = auth.link(url.as_str());
-            // Only what kind of address it was; the address itself carries the code.
-            #[cfg(debug_assertions)]
-            eprintln!("open-sesame: link {kind:?}");
-            if kind != Link::Other {
-                window::show(&handle);
-            }
-        }
-    });
+    // Links reach `Auth::link` through link.rs, which finds this in the application's state.
+    app.manage(auth);
 }
 
 #[cfg(test)]
