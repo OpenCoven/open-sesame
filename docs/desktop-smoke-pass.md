@@ -8,7 +8,7 @@ A result cell is filled only by a person or agent who observed that line in that
 
 **`7dc2c31860735240da2c07cd77eaa7fec43112e8`**, `main` after [#120][120] ([#76][76], the views) merged on 16 November 2026, with [#119][119] ([#105][105], storage and the login-shell environment) and [#118][118] ([#94][94]) before it.
 
-This is a partial run: only the macOS lines an agent can reach without a person, a real account or a tray click. The full pass runs at one later commit, once [#77][77] is closed; [#71][71] and [#72][72] closed on 16 November 2026, and their code is in the tested commit. To start it, move the [Environments](#environments) table and the checklist with its results to [Earlier runs](#earlier-runs), write the new commit here, and start again from empty cells, including macOS. A table never mixes results from two commits.
+This is a partial run: only the macOS lines an agent can reach without a person, a real account or a tray click. The full pass runs at one later commit, once [#77][77] is closed; [#71][71] and [#72][72] closed on 16 November 2026, and their code is in the tested commit. To start it, move the [Environments](#environments) table and the checklist with its results to [Earlier runs](#earlier-runs), write the new commit here, and start again from empty cells, including macOS. A table never mixes results from two commits. A row that is pending on another issue at that commit stays pending there and runs in a later pass once that issue's change is on `main`.
 
 ### Environments
 
@@ -54,6 +54,8 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | C5 | Save another shortcut in the Shortcut section: the new keys work at once and the old ones no longer do | hand check from [#71][71] | pass: [M9](#m9-the-shortcut-pressed-as-synthetic-key-events) | | | n/a: see C4 |
 | C6 | Save a shortcut that another application already holds: the section says Open Sesame could not register it, and the previous shortcut still works | hand check from [#71][71] | n/a: macOS accepts a held shortcut and reports nothing; owner question on [#71][71] | | | n/a: see C4 |
 | C7 | A left click on the tray icon places the window against the icon; with "Hide the window when it loses focus" on, a tray click hides a shown window and a click inside the page does not | hand check from [#71][71] | n/a: Windows only | | n/a: Windows only | n/a: Windows only |
+| C8 | With the window open but behind another window (on a Mac also when it was left on another Space), one press of the shortcut, one `open-sesame --toggle`, the tray menu item and, on Windows, a tray click each bring it in front with the keyboard in it; with it in front, one press hides it; both with "Hide the window when it loses focus" on and off. Write in the cell what counted as in front on that system | moved from [#115][115] by [owner decision][115-decision] | pending [#115][115] | pending [#115][115] | pending [#115][115] | pending [#115][115] |
+| C9 | With "Hide the window when it loses focus" on, the page's context menu, a select list and an input-method window each leave the window shown | moved from [#115][115] | pending [#115][115] | pending [#115][115] | pending [#115][115] | pending [#115][115] |
 
 ### Shells
 
@@ -63,14 +65,28 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | D2 | Resize the window: the shell's size follows (`stty size`; PowerShell `$Host.UI.RawUI.WindowSize`) | [#78][78] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | | | |
 | D3 | Tab completion completes a path or command | [#78][78] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | | | |
 | D4 | Control+C stops a running program (`sleep 600`; Windows `ping -t 127.0.0.1`), the program is gone, and the prompt returns | [#78][78]; Windows moved from [#74][74] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | | | |
-| D5 | Print about 50 MB: the window does not freeze and no output is lost | Windows and a real Linux desktop moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
+| D5 | Print about 50 MB: the window does not freeze and no output is lost | Windows and a real Linux desktop moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test), and again in [M10](#m10-floods-frame-gaps-and-a-hidden-window) | | | |
 | D6 | Close a pane over a long-running child: neither the shell nor the child remains three seconds later | Windows moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
 | D7 | Quit with three panes open: no shell or SSH process remains | Windows moved from [#74][74] | pass: [M5](#m5-quit-with-shells-open) | | | |
 | D8 | A project folder named `open sesame ünï` opens as the shell's working folder | Windows moved from [#74][74] | pass by the self-test: [M4](#m4-shells-driven-by-the-development-self-test) | | | |
 | D9 | SSH pane: with SSH host and User filled in, New shell connects and runs a command; closing it leaves no `ssh` process | [#78][78] | | | | |
 | D10 | A CLI installed only on the login-shell `PATH` is found when the built app is started from the desktop | moved from [#73][73] | pass: [M6](#m6-a-shell-typed-into-in-an-app-started-from-the-desktop) | n/a: the core reads no login shell on Windows (`Fallback::NotNeeded` in [env.rs](../crates/core/src/process/env.rs)) | | |
+| D11 | Record the development self-test's flood step with the window on screen and not covered: its `longestFrameGapMs`, `longestTimerGapMs` and `frames`. The number from a real Linux desktop with WebKitGTK sets the frame-gap limit that [#112][112] asks for | moved from [#112][112], items 4 and 6, by [owner decision][112-decision] | recorded: at most 20 ms between frames and 15 ms between timers, 611 frames in 9.6 seconds, with the window on screen but half to two thirds under other windows: [M10](#m10-floods-frame-gaps-and-a-hidden-window) | n/a: the self-test drives a Unix shell (`stty`, `awk` and a here-document) | | |
+| D12 | Run a flood once with the window shown and note the time it prints (macOS and Linux `s=$(date +%s); awk 'BEGIN { for (i = 1; i <= 7000000; i++) print i }'; echo "flood took $(( $(date +%s) - s )) s"`; PowerShell `$s = 'x' * 70; $t = Get-Date; 1..700000 \| ForEach-Object { "$_ $s" }; "flood took $([int]((Get-Date) - $t).TotalSeconds) s"`). Run it again, hide the window at once for twice that time and at least a minute, then show it: the last line before the time is the last number, the window responds at once, and the second time says whether the flood ran on while the window was hidden (about the first time) or waited for it (about the time hidden). Write both times in the cell | moved from [#112][112], item 8 | pass: 9 seconds shown and 11 seconds hidden, so it ran on while the window was hidden: [M10](#m10-floods-frame-gaps-and-a-hidden-window) | | | |
+| D13 | Paste about 5,000 characters into a shell with the paste keys (Command+V on a Mac, Control+Shift+V elsewhere): all of them arrive | Windows moved from [#112][112], item 7 | | | | |
+| D14 | On a Windows build before 26100 (Windows 10, or Windows 11 before 24H2): close a pane over `ping -t 127.0.0.1`, and close a pane the moment New shell has opened it; each close returns within about five seconds and the other panes keep taking typing meanwhile. Write the build number in the cell | moved from [#112][112], item 7 | n/a: Windows only | | n/a: Windows only | n/a: Windows only |
 
 At the tested commit the application reads the login-shell environment at startup ([#105][105]), but no feature looks a tool up with it yet; only a development probe (`OPEN_SESAME_RUNTIME_PROBE_DIR`) does. D10 is therefore observed through a shell pane, which is a login shell on macOS and Linux.
+
+D14 is [#112][112]'s question from reading: Microsoft documents that `ClosePseudoConsole` waits for the pseudo-console to exit on builds before 26100, and the hosted runner is 26100, so only such a machine shows whether a close can hold the pane list up. On build 26100 or later write `n/a` and the build number.
+
+### Programs the app runs
+
+| ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
+| --- | --- | --- | --- | --- | --- | --- |
+| P1 | A command the app runs through the core runner that opens the browser with `xdg-open` leaves the browser open after the command returns, once with a browser already running and once with none | moved from [#97][97], decision 4, by [owner decision][97-decision] | n/a: Linux only | n/a: Linux only | pending [#83][83], [#84][84] | pending [#83][83], [#84][84] |
+
+At the tested commit nothing in the app runs a program through the core runner except the login-shell capture at startup, so P1 waits for the first feature that opens a browser that way; [#83][83] and [#84][84] decide whether they need an exception to the rule that a finished program's helpers are killed.
 
 ### Sign-in with a real account
 
@@ -100,8 +116,8 @@ These are [#116][116]'s hand checks for sign-in links, [added to this list on #7
 | L5 | On a real GNOME or KDE desktop, L2's check with `gio open` and with a browser | [#116][116], [added on #78][116-checks] | n/a: Linux only | n/a: Linux only; see L2 | pending [#116][116] | pending [#116][116] |
 | L6 | Installed bundle, after [#87][87] settles the identifier: with a sign-in waiting in the browser, finish it there; the app comes forward signed in (the `RunEvent::Opened` path, which no macOS development build receives). Needs a real account | [#116][116], [added on #78][116-checks] | pending [#116][116], [#87][87] | n/a: macOS only | n/a: macOS only | n/a: macOS only |
 | L7 | With a sign-in waiting in the browser, deliver the callback address as in L1: the control still says "Finish signing in in your browser." and nothing changes; finishing in the browser then signs in, which needs a real account | [#116][116], [added on #78][116-checks] | pending [#116][116] | pending [#116][116] | pending [#116][116] | pending [#116][116] |
-| L8 | After a real sign-in, record the persistence that Credential Manager (Windows Credentials) shows for the Open Sesame entry; [#116][116] asks whether it should be Local computer | [#116][116], [added on #78][116-checks] | n/a: Windows only | pending [#116][116] | n/a: Windows only | n/a: Windows only |
-| L9 | After one development run, record what is left registered (Windows: `reg query HKCU\Software\Classes\opensesame`; Linux: `~/.local/share/applications/open-sesame-handler.desktop` and its line in `~/.config/mimeapps.list`), and that with no build running the callback address starts the development binary, which exits without a window; [#116][116] asks whether a clean exit should remove the registration | [#116][116], [added on #78][116-checks] | n/a: Windows and Linux only | pending [#116][116] | pending [#116][116] | pending [#116][116] |
+| L8 | After a real sign-in, record the persistence that Credential Manager (Windows Credentials) shows for the Open Sesame entry; the owner chose Local computer in [#131][131], so once its change merges it should say that | [#116][116], [added on #78][116-checks]; [#131][131] | n/a: Windows only | pending [#131][131] | n/a: Windows only | n/a: Windows only |
+| L9 | After one development run, record what is left registered (Windows: `reg query HKCU\Software\Classes\opensesame`; Linux: `~/.local/share/applications/open-sesame-handler.desktop` and its line in `~/.config/mimeapps.list`), and that with no build running the callback address starts the development binary, which exits without a window; the owner chose in [#132][132] that a clean exit removes it, so once that change merges a clean exit leaves nothing and only a killed build leaves the registration, which [#72's checklist][72-checklist] removes by hand | [#116][116], [added on #78][116-checks]; [#132][132] | n/a: Windows and Linux only | pending [#116][116], [#132][132] | pending [#116][116], [#132][132] | pending [#116][116], [#132][132] |
 
 ### Views and data
 
@@ -147,7 +163,7 @@ With the app from M2 running, `open-sesame --toggle` was run six times from a te
 
 ### M4 Shells driven by the development self-test
 
-From a terminal, the binary was started with a new disposable settings folder and `OPEN_SESAME_SELFTEST` set, which makes a development build run the terminal self-test of [#74][74] (`ui/dev/selftest.js`). It opened the Shells view by itself and drove real shells through the product's own pane launcher, sending text as the keyboard would but without keystrokes. Its report: the marker `open-sesame-marker` came back intact through a zsh pane in 1.7 seconds; a pane opened in a folder named `open sesame ünï` printed that folder as `$PWD`; characters whose bytes arrived in two messages were drawn whole (`S:é:€:🦊:E`); `awk` printed 7,000,000 numbered lines, 54,888,896 bytes, in 12.8 seconds, each line checked in order, while the page's timers never stopped for more than 18 ms (drawing paused for up to 2.1 seconds once; whether the window was covered at that moment is not known); and closing a pane over `sleep 86400` left neither the shell nor the child 44 ms later, checked through a separate shell.
+From a terminal, the binary was started with a new disposable settings folder and `OPEN_SESAME_SELFTEST` set, which makes a development build run the terminal self-test of [#74][74] (`ui/dev/selftest.js`). It opened the Shells view by itself and drove real shells through the product's own pane launcher, sending text as the keyboard would but without keystrokes. Its report: the marker `open-sesame-marker` came back intact through a zsh pane in 1.7 seconds; a pane opened in a folder named `open sesame ünï` printed that folder as `$PWD`; characters whose bytes arrived in two messages were drawn whole (`S:é:€:🦊:E`); `awk` printed 7,000,000 numbered lines, 54,888,896 bytes, in 12.8 seconds, each line checked in order, while the page's timers never stopped for more than 18 ms (drawing paused for up to 2.1 seconds once; whether the window was covered at that moment is not known, but this run's log has the window hidden once by "Hide the window when it loses focus", which outside input had switched on, and M10 measured 20 ms with the window on screen); and closing a pane over `sleep 86400` left neither the shell nor the child 44 ms later, checked through a separate shell.
 
 The same self-test in an app started from the desktop never started, in three launches, two of them with the window on screen throughout: the page was ready on the Today view and no shell was opened. The same bundle script run from a terminal passed. This is [#141][141]; no line is counted from or against it.
 
@@ -184,6 +200,12 @@ The app was started from the desktop with a new disposable settings folder and a
 
 Typing through the system's keyboard path was tried in two runs and then stopped: people were using the Mac, and keys that missed Open Sesame could have reached their applications. Text was therefore posted to Open Sesame's process only. That path reached the shell in M6 whenever the page had the focus.
 
+### M10 Floods: frame gaps and a hidden window
+
+From a terminal, with a new disposable settings folder, the development self-test ran again with 7,000,000 lines while a sampler read the system's window list every quarter second (bounds and layers only). The window stayed on screen throughout, with half to two thirds of it under other people's windows and never all of it. All six steps passed. In the flood step 54,888,896 bytes arrived in 9.6 seconds and were drawn in 611 frames, with at most 20 ms between frames and 15 ms between timers (D11).
+
+Then the app was started again from a terminal with another new settings folder; Shells and New shell were pressed through the accessibility API, and commands were typed as keyboard events posted to the app's process. The D12 command for macOS, which also wrote its start and end times to a file, took 9 seconds with the window shown. It was typed again, and 0.7 seconds after Return the window's close button was pressed through the accessibility API, which hid it. The window stayed off screen for 61 seconds and was then shown by a plain second launch. The flood's file had appeared 10.8 seconds after the window was hidden, and it reported 11 seconds, so the flood ran on while the window was hidden. After the window was shown, the pane ended with `7000000` and `flood took 11 s`, one page load remained, and `echo back`, typed next, came back in the shell; the whole step, including the tool's own typing, took 2.7 seconds. Command-Q, posted to the app's process, left no process. People were using the Mac during this run as well. Receipts: `macos-7dc2c31/08-flood-frames/`.
+
 ### Outside input during the run
 
 The Mac was in use by others throughout: keyboard and pointer input arrived within a second of most steps, the front app changed, and the window was moved to another Space. Each line above is counted only from a try whose result was checked after it ran. One outside input switched on "Hide the window when it loses focus" in a disposable settings folder during M4; that folder was not used again.
@@ -195,7 +217,7 @@ These are the numbered steps for each system, written for a person at the machin
 ### Before the clock starts, on every system
 
 1. Check out the tested commit: `git fetch origin` and `git checkout --detach <commit>`.
-2. Install the prerequisites once: Rust 1.95.0 through rustup, the Tauri CLI (`cargo install tauri-cli --locked`), Node.js with npm, and Git. Windows also needs the Visual Studio Build Tools with "Desktop development with C++" and the WebView2 runtime, which Windows 11 includes. Linux needs the packages the hosted workflow installs (`libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`), plus `xdg-utils` and an unlocked GNOME Keyring or KWallet for part B, on a GNOME or KDE session.
+2. Install the prerequisites once: Rust 1.95.0 through rustup, the Tauri CLI (`cargo install tauri-cli --locked`), Node.js with npm, and Git. Windows also needs the Visual Studio Build Tools with "Desktop development with C++" and the WebView2 runtime, which Windows 11 includes. Linux needs the packages the hosted workflow installs (`libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`), plus `xdg-utils` and an unlocked GNOME Keyring or KWallet for part B, on a GNOME or KDE session, and `xclip` on X11 or `wl-clipboard` on Wayland for part C.
 3. Make a disposable settings folder and name it in the terminal you start the app from, so nothing is written to the app data in your home folder. macOS and Linux: `export OPEN_SESAME_DEV_CONFIG_DIR="$(mktemp -d)"`. Windows PowerShell: `$env:OPEN_SESAME_DEV_CONFIG_DIR = (New-Item -ItemType Directory -Force "$env:TEMP\os78-config").FullName`.
 4. Make a project folder named `open sesame ünï` in your home folder (`mkdir -p ~/"open sesame ünï"`; PowerShell `New-Item -ItemType Directory "$env:USERPROFILE\open sesame ünï"`).
 5. From the repository root run `npm run dev:app`. The first build takes several minutes. Keep that terminal visible: the app prints `open-sesame:` lines there, and the number of `open-sesame: page loaded` lines is how you see whether the page loaded again. This is A1 and A2.
@@ -204,7 +226,7 @@ These are the numbered steps for each system, written for a person at the machin
 
 ### macOS, part A (about 10 minutes)
 
-An agent observed A1 to A3, C1, C5, D1 to D8, D10, F4, F5 and G1 at the tested commit, and saw C2 and C3 fail on [#142][142]; see [macOS observations](#macos-observations). These steps need a person's hands; steps 3 and 4 also settle whether #142 happens with a real keyboard.
+An agent observed A1 to A3, C1, C5, D1 to D8, D10 to D12, F4, F5 and G1 at the tested commit, and saw C2 and C3 fail on [#142][142]; see [macOS observations](#macos-observations). These steps need a person's hands; steps 3 and 4 also settle whether #142 happens with a real keyboard.
 
 1. With the app started by `npm run dev:app`, open the Shells view and press New shell.
 2. Click the Open Sesame icon in the menu bar and choose Show or Hide: the window hides. Choose it again: the window shows. Do it twice; the terminal still has one `page loaded` line. This is B1.
@@ -300,6 +322,17 @@ Each row under [Sign-in links](#sign-in-links) says what to deliver and what to 
 2. Windows: L1, L2, L3 and L7; L8 after part B's sign-in; L9 after one development run.
 3. Linux, in the X11 session and again in the Wayland session: L1, L3, L4, L5, L7 and L9.
 
+### Every system, part C (about 20 minutes; C8 and C9 after #115, P1 after #83 or #84)
+
+These are the checks the owner moved here on 16 November 2026 from [#97][97], [#112][112] and [#115][115]. Steps 1 to 4 can run now at the tested commit; step 5 waits for [#115][115]'s change, and step 6 for the first feature that opens a browser through the core runner. On macOS an agent has run steps 1 and 2 ([M10](#m10-floods-frame-gaps-and-a-hidden-window)); a person runs step 3 there, because it writes the clipboard.
+
+1. macOS and Linux (each Linux session): quit the app, run `rm -f /tmp/os78-selftest.json`, then `export OPEN_SESAME_SELFTEST="{\"out\":\"/tmp/os78-selftest.json\",\"cwd\":\"$HOME/open sesame ünï\",\"cwdName\":\"open sesame ünï\",\"lines\":7000000}"` and `npm run dev:app`. Keep the window on screen with nothing over it until it says the self-test finished. In `/tmp/os78-selftest.json` the flood step reports `longestFrameGapMs`, `longestTimerGapMs` and `frames`; write the three numbers in the D11 cell. Quit, run `unset OPEN_SESAME_SELFTEST`, and start the app again with `npm run dev:app`. On Linux this also covers X11 part A step 15.
+2. Every system: in a shell pane run the D12 command for your system with the window shown and note the time it prints. Run it again and, as soon as numbers scroll, close the window with its close button, which hides it. Wait twice that time and at least a minute, then show the window (the Dock icon on a Mac, Show or Hide in the tray menu elsewhere) and wait for the flood to end if it has not. The last line before the time is the last number; type `echo back` and Return: it appears at once. Write both times in the D12 cell.
+3. Every system: copy a 5,000-character command to the clipboard from a terminal outside the app. macOS: ``printf "p='%s'; echo \${#p}" "$(printf '0123456789%.0s' $(seq 500))" | pbcopy``; Linux: the same with `| xclip -selection clipboard` on X11 or `| wl-copy` on Wayland in place of `| pbcopy`; Windows PowerShell: ``Set-Clipboard ("`$p = '" + ('0123456789' * 500) + "'; `$p.Length")``. Click into a shell pane, press Command+V on a Mac or Control+Shift+V elsewhere, then Return: it prints `5000`. This is D13.
+4. Windows: `(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuild` prints the build. At 26100 or above, write `n/a` and the build in D14. Below it, open three panes, run `ping -t 127.0.0.1` in one, close that pane with its × and at once type `echo still-here` and Return in another: the close finishes within about five seconds and the text appears. Then press New shell and close the new pane at once, and check the same. Write the build and what you saw in D14.
+5. After [#115][115]'s change merges: show the window, then click a window of another app that covers it (on a Mac, also leave the window on one Space and switch to another). Press the shortcut once: the window comes in front, and `echo front` typed without clicking appears in the shell. Press it again: it hides. Do the same with `open-sesame --toggle` from a terminal, with Show or Hide in the tray menu and, on Windows, with a left click on the tray icon; then tick "Hide the window when it loses focus" and do it all again. Write in C8 what counted as in front. With the box still ticked, right-click in the page, open a select list where the page has one, and type with an input method that opens a window of its own (for example Japanese input): the window stays shown each time. Untick the box. This is C9.
+6. Linux, after [#83][83] or [#84][84] adds a command that opens the browser through the core runner: with the browser running, use that command; the page opens and the browser is still open a minute later. Quit the browser and do it again. This is P1.
+
 ## Earlier runs
 
 ### `0d65d43`, 16 November 2026, macOS only
@@ -317,10 +350,18 @@ Commit `0d65d4341b97311f6c031016d2af57a8f4aebe5d` (`main` after [#113][113]), be
 [76]: https://github.com/OpenCoven/open-sesame/issues/76
 [77]: https://github.com/OpenCoven/open-sesame/issues/77
 [78]: https://github.com/OpenCoven/open-sesame/issues/78
+[83]: https://github.com/OpenCoven/open-sesame/issues/83
+[84]: https://github.com/OpenCoven/open-sesame/issues/84
 [87]: https://github.com/OpenCoven/open-sesame/issues/87
 [94]: https://github.com/OpenCoven/open-sesame/issues/94
+[97]: https://github.com/OpenCoven/open-sesame/issues/97
+[97-decision]: https://github.com/OpenCoven/open-sesame/issues/97#issuecomment-6910963289
 [105]: https://github.com/OpenCoven/open-sesame/issues/105
+[112]: https://github.com/OpenCoven/open-sesame/issues/112
+[112-decision]: https://github.com/OpenCoven/open-sesame/issues/112#issuecomment-6910962644
 [113]: https://github.com/OpenCoven/open-sesame/pull/113
+[115]: https://github.com/OpenCoven/open-sesame/issues/115
+[115-decision]: https://github.com/OpenCoven/open-sesame/issues/115#issuecomment-6910965635
 [116]: https://github.com/OpenCoven/open-sesame/issues/116
 [117]: https://github.com/OpenCoven/open-sesame/pull/117
 [116-checks]: https://github.com/OpenCoven/open-sesame/issues/78#issuecomment-6906616293
@@ -328,6 +369,8 @@ Commit `0d65d4341b97311f6c031016d2af57a8f4aebe5d` (`main` after [#113][113]), be
 [119]: https://github.com/OpenCoven/open-sesame/pull/119
 [120]: https://github.com/OpenCoven/open-sesame/pull/120
 [129]: https://github.com/OpenCoven/open-sesame/pull/129
+[131]: https://github.com/OpenCoven/open-sesame/issues/131
+[132]: https://github.com/OpenCoven/open-sesame/issues/132
 [140]: https://github.com/OpenCoven/open-sesame/issues/140
 [141]: https://github.com/OpenCoven/open-sesame/issues/141
 [142]: https://github.com/OpenCoven/open-sesame/issues/142
