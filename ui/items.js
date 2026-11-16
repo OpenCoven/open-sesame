@@ -69,7 +69,23 @@ export function title(item) {
   } catch { return item.url; }
 }
 
+// The fields a captured draft is saved with, as the prototype's capture form saved them: a note
+// of several lines is titled by its first line and keeps the rest as its body; a task keeps its
+// lines in its text; a bookmark needs an address and is named by it when it has no text. Null
+// for a draft with nothing to save.
+export function draftItem({kind, text = '', url = '', projectId = ''}) {
+  const value = String(text).trim(), address = String(url).trim();
+  if (!['note', 'task', 'bookmark'].includes(kind) || (kind === 'bookmark' ? !address : !value)) return null;
+  const lines = value.split(/\r?\n/), split = kind === 'note' && lines.length > 1;
+  // Trimmed text starts with a visible character, so a first line is never empty.
+  const first = split ? lines[0].trim() : '';
+  return {kind, text: split ? first : value || address, title: first, body: split ? lines.slice(1).join('\n').trim() : '', url: kind === 'bookmark' ? address : '', projectId: String(projectId), done: false};
+}
+
 const byChange = (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+const byName = (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+// A stored row replaces the listed one unless the list already holds that row or a later one.
+const merge = (rows, row) => rows.some(entry => entry.id === row.id && entry.updatedAt >= row.updatedAt) ? rows : [...rows.filter(entry => entry.id !== row.id), row];
 
 export function counts(items) {
   const archived = items.filter(isArchived).length;
@@ -106,12 +122,14 @@ const freeze = rows => Object.freeze(rows.map(row => Object.freeze({...row})));
 
 export function createItemStore({bridge, uuid}) {
   if (typeof bridge?.request !== 'function' || typeof uuid !== 'function') throw TypeError('The item store needs a bridge and a UUID source.');
-  let items = [], projects = [], problem = 'Your items are still loading.';
-  const creates = new Map(), edits = new Map(), listeners = new Set();
+  let items = [], projects = [], problem = 'Your items are still loading.', reads = 0;
+  const creates = new Map(), edits = new Map(), listeners = new Set(), journals = new Set();
   const snapshot = () => Object.freeze({items: freeze(items), projects: freeze(projects)});
   const notify = () => { const value = snapshot(); for (const listener of [...listeners]) listener(value); };
-  const keep = row => { items = [...items.filter(item => item.id !== row.id), row].sort(byChange); };
-  const keepProject = row => { projects = [...projects.filter(project => project.id !== row.id), row].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())); };
+  // Every change this store makes is also noted for each read still waiting for its reply.
+  const note = change => { for (const journal of journals) journal.push(change); };
+  const keep = row => { items = merge(items, row).sort(byChange); note(['items', row]); };
+  const keepProject = row => { projects = merge(projects, row).sort(byName); note(['projects', row]); };
   const failure = (error, conflictSentence) => ({saved: false, error: sentence(error), conflict: sentence(error) === conflictSentence});
   const refused = (error, extra = {}) => ({saved: false, error, ...extra});
   // The stored row for an ID, or null. The core serves items.get; for projects it serves only the list.
@@ -127,17 +145,26 @@ export function createItemStore({bridge, uuid}) {
     return id;
   };
 
+  // Reads both lists. A change this store made while the read was out is applied on top of it,
+  // since the read may have been answered before the change committed; a read that a later one
+  // overtook is ignored.
   async function load() {
+    const ticket = ++reads, journal = [];
+    journals.add(journal);
     try {
       const [listed, grouped] = await Promise.all([bridge.request('items.list', {}), bridge.request('projects.list', {})]);
+      if (ticket !== reads) return {ok: true};
       if (!Array.isArray(listed?.items) || !Array.isArray(grouped?.projects)) throw Error('Could not read your saved data. Try again.');
-      [items, projects, problem] = [[...listed.items].sort(byChange), grouped.projects, null];
+      const next = {items: [...listed.items], projects: [...grouped.projects]};
+      for (const [table, row, removed] of journal) next[table] = removed ? next[table].filter(entry => entry.id !== row) : merge(next[table], row);
+      [items, projects, problem] = [next.items.sort(byChange), next.projects.sort(byName), null];
       notify();
       return {ok: true};
     } catch (error) {
+      if (ticket !== reads) return {ok: true};
       problem = sentence(error);
       return {ok: false, error: problem};
-    }
+    } finally { journals.delete(journal); }
   }
 
   // A create keeps its ID with its draft until the core confirms it; see the header.
@@ -227,6 +254,7 @@ export function createItemStore({bridge, uuid}) {
       await bridge.request('items.delete', {id});
     } catch (error) { return failure(error, ITEM_CONFLICT); }
     items = items.filter(item => item.id !== id);
+    note(['items', id, true]);
     creates.forEach((attempt, key) => { if (attempt.id === id) creates.delete(key); });
     edits.delete(id);
     notify();
@@ -261,6 +289,7 @@ export function createItemStore({bridge, uuid}) {
   async function removeProject(id) {
     try { await bridge.request('projects.delete', {id}); } catch (error) { return failure(error, PROJECT_CONFLICT); }
     projects = projects.filter(project => project.id !== id);
+    note(['projects', id, true]);
     const reread = await load();
     if (!reread.ok) notify();
     return reread.ok ? {saved: true} : {saved: true, warning: reread.error};

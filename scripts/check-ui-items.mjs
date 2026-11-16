@@ -283,6 +283,74 @@ const loaded = async (core, options = {}) => { const store = I.createItemStore({
   assert.equal(saves(core).length, 0);
 }
 
+// A view reads the lists again whenever it is shown. A read that was answered before a save or a
+// delete committed, and arrives after it, must not undo it on screen; of two reads, the later
+// one asked wins.
+{
+  const core = createStorageCore();
+  const held = [];
+  const bridge = {request: async (method, params) => {
+    const reply = await core.bridge.request(method, params);
+    if (method === 'items.list' && held.hold) await new Promise(resolve => held.push(resolve));
+    return reply;
+  }};
+  const store = I.createItemStore({bridge, uuid});
+  await store.load();
+  const kept = (await store.create({kind: 'note', text: 'kept'}, {draft: 'a'})).item;
+  const gone = (await store.create({kind: 'task', text: 'gone'}, {draft: 'b'})).item;
+  held.hold = true;
+  const reading = store.load();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(held.length, 1, 'the read was answered and is held');
+  const added = (await store.create({kind: 'note', text: 'added while reading'}, {draft: 'c'})).item;
+  const edited = (await store.update(kept.id, {text: 'kept, edited'})).item;
+  assert.equal((await store.remove(gone.id)).saved, true);
+  held.hold = false;
+  held.shift()();
+  assert.deepEqual(await reading, {ok: true});
+  const rows = store.snapshot().items;
+  assert(rows.some(item => item.id === added.id), 'a row saved during the read stays');
+  assert.equal(rows.find(item => item.id === kept.id).text, 'kept, edited', 'an edit made during the read stays');
+  assert(!rows.some(item => item.id === gone.id), 'a row deleted during the read stays deleted');
+  // An older read that arrives last is ignored.
+  held.hold = true;
+  const older = store.load();
+  await new Promise(resolve => setImmediate(resolve));
+  held.hold = false;
+  await core.bridge.request('items.save', {item: {...plain(I.draftItem({kind: 'note', text: 'from another writer'})), id: '00000000-0000-4000-8000-0000000000ff'}});
+  assert.deepEqual(await store.load(), {ok: true});
+  held.shift()();
+  assert.deepEqual(await older, {ok: true});
+  assert(store.snapshot().items.some(item => item.text === 'from another writer'), 'the newer read is kept');
+}
+
+// A captured draft becomes the fields the prototype's capture form saved (dist/app.js, its submit
+// handler): a note of several lines is titled by its first line, a bookmark without text is
+// named by its address, and nothing else is set.
+{
+  const fields = I.draftItem;
+  assert.deepEqual(fields({kind: 'note', text: '  buy milk  '}), {kind: 'note', text: 'buy milk', title: '', body: '', url: '', projectId: '', done: false});
+  assert.deepEqual(fields({kind: 'note', text: 'Plan\n\n- one\n- two\n', projectId: 'p1'}), {kind: 'note', text: 'Plan', title: 'Plan', body: '- one\n- two', url: '', projectId: 'p1', done: false});
+  assert.deepEqual(fields({kind: 'note', text: '\n  \nonly line\n'}), {kind: 'note', text: 'only line', title: '', body: '', url: '', projectId: '', done: false}, 'Text is trimmed before it is split into lines');
+  assert.deepEqual(fields({kind: 'note', text: 'Title\n\n\nbody'}).body, 'body');
+  assert.deepEqual(fields({kind: 'note', text: 'a\r\nb'}), {kind: 'note', text: 'a', title: 'a', body: 'b', url: '', projectId: '', done: false});
+  assert.deepEqual(fields({kind: 'task', text: 'call Sam\nabout the lease'}), {kind: 'task', text: 'call Sam\nabout the lease', title: '', body: '', url: '', projectId: '', done: false}, 'A task keeps its lines in its text');
+  assert.deepEqual(fields({kind: 'bookmark', text: '', url: ' https://example.com/a '}), {kind: 'bookmark', text: 'https://example.com/a', title: '', body: '', url: 'https://example.com/a', projectId: '', done: false});
+  assert.deepEqual(fields({kind: 'bookmark', text: 'Read later', url: 'https://example.com'}).text, 'Read later');
+  assert.equal(fields({kind: 'note', text: '   '}), null, 'An empty draft is not saved');
+  assert.equal(fields({kind: 'bookmark', text: 'no address'}), null, 'A bookmark needs an address');
+  assert.equal(fields({kind: 'video', text: 'x'}), null);
+  // Saved through the store, the captured note is Today's latest note and its excerpt.
+  const core = createStorageCore();
+  const store = I.createItemStore({bridge: core.bridge, uuid});
+  await store.load();
+  const saved = await store.create(fields({kind: 'note', text: 'Plan\nfirst step'}), {draft: 'capture'});
+  assert.equal(saved.saved, true);
+  const shown = I.today(store.snapshot().items, []);
+  assert.equal(shown.latest.title, 'Plan');
+  assert.equal(shown.latest.excerpt, 'first step');
+}
+
 // 4. The module is pure: no global, storage, network or clock of its own. Timestamps come from
 // the core, IDs from the injected source.
 const source = read('ui/items.js');
