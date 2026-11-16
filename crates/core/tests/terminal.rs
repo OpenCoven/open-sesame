@@ -34,7 +34,6 @@ impl Pane {
         })
     }
 
-    #[cfg(unix)]
     fn len(&self) -> usize {
         self.bytes.lock().unwrap().len()
     }
@@ -92,7 +91,9 @@ fn open(terminals: &Terminals, pane: &Arc<Pane>, value: Value) -> Result<Value, 
     {
         let id = request.get("id").and_then(Value::as_str).unwrap_or("");
         let asked_again = || pane.text().matches(CURSOR_QUERY).count() > asked;
-        if wait_for(Duration::from_secs(10), asked_again) {
+        // A pane that has already ended, because another open of its ID closed it, never asks.
+        wait_for(Duration::from_secs(10), || asked_again() || pane.exited());
+        if asked_again() {
             let _ = call(
                 terminals,
                 "terminal.input",
@@ -358,6 +359,47 @@ fn rejects_seventeenth_session() {
     assert!(gone(&pids), "a shell outlived close_all");
 }
 
+/// Panes that open while others close all start. On macOS the system now and then refuses to
+/// open a pseudo-terminal with a number that means "try that again", and before issue #112
+/// that reached the page as "could not start the shell". This test did not bring that about
+/// by itself in 12 runs without the further tries; runs of the whole package did, and the
+/// unit tests beside `again` in `session.rs` cover the further tries themselves.
+#[test]
+fn panes_opened_while_others_close_all_start() {
+    let terminals = plain();
+    let failures: Vec<String> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..6)
+            .map(|worker| {
+                let terminals = &terminals;
+                scope.spawn(move || {
+                    let mut failures = Vec::new();
+                    for round in 0..20 {
+                        let id = format!("churn-{worker}");
+                        let pane = Pane::new();
+                        match terminals
+                            .open(&params(json!({"id": id, "mode": "local"})), pane.sink())
+                        {
+                            Ok(_) => {
+                                call(terminals, "terminal.close", json!({"id": id})).unwrap();
+                            }
+                            Err(error) => failures.push(format!("{worker}/{round}: {}", error.0)),
+                        }
+                    }
+                    failures
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect()
+    });
+    assert!(
+        failures.is_empty(),
+        "panes that did not start: {failures:?}"
+    );
+}
+
 #[test]
 fn input_before_open_is_refused() {
     let terminals = plain();
@@ -432,6 +474,122 @@ fn exit_emits_terminal_exit() {
     assert!(gone(&[pid(&again)]));
 }
 
+/// A shell that exits while one of its jobs still runs ends its pane, as it does when nothing is
+/// left. On Linux the job keeps the pseudo-terminal open, so the end of the stream alone never
+/// says the shell has gone (issue #112). The job is ended with the pane, as it is when the pane
+/// is closed.
+#[cfg(unix)]
+#[test]
+fn a_shell_that_exits_with_a_job_running_ends_its_pane() {
+    for shell in ["/bin/sh", "/bin/bash"] {
+        let terminals = Terminals::with(Config {
+            shell: Some(PathBuf::from(shell)),
+            ..Config::default()
+        });
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        input(&terminals, "main", CHILD_COMMAND);
+        let child = number_after(&pane, "CHILD:");
+        assert!(alive(child), "{shell}: the job never ran");
+        input(&terminals, "main", "printf 'LAST-%s\\n' WORDS; exit\r");
+        assert!(
+            wait_for(Duration::from_secs(10), || pane.exited()),
+            "{shell}: no exit message after the shell exited with a job running"
+        );
+        assert!(
+            pane.text().contains("LAST-WORDS"),
+            "{shell}: what the shell printed before it exited was lost"
+        );
+        assert!(
+            gone(&[pid(&result), child]),
+            "{shell}: the shell or its job outlived the pane"
+        );
+        assert!(pane.errors.lock().unwrap().is_empty());
+        assert_eq!(
+            call(
+                &terminals,
+                "terminal.input",
+                json!({"id": "main", "data": "x"})
+            )
+            .unwrap_err(),
+            "This shell has ended. Reopen the pane to reconnect."
+        );
+    }
+}
+
+/// The same when the job keeps writing a little at a time: the terminal is then never quiet
+/// for long, and a megabyte of such output would take hours, so neither can be what the pane
+/// waits for. On Linux such a job kept the pane of an exited shell open (review of pull
+/// request #117).
+#[cfg(unix)]
+#[test]
+fn a_shell_that_exits_with_a_job_still_writing_ends_its_pane() {
+    for shell in ["/bin/sh", "/bin/bash"] {
+        let terminals = Terminals::with(Config {
+            shell: Some(PathBuf::from(shell)),
+            ..Config::default()
+        });
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        input(
+            &terminals,
+            "main",
+            "(while :; do printf x; sleep 0.02; done) & printf 'CHILD:%s\\n' $!\r",
+        );
+        let job = number_after(&pane, "CHILD:");
+        assert!(alive(job), "{shell}: the job never ran");
+        input(&terminals, "main", "printf 'LAST-%s\\n' WORDS; exit\r");
+        assert!(
+            wait_for(Duration::from_secs(10), || pane.exited()),
+            "{shell}: no exit message after the shell exited with a job still writing"
+        );
+        assert!(
+            pane.text().contains("LAST-WORDS"),
+            "{shell}: what the shell printed before it exited was lost"
+        );
+        assert!(
+            gone(&[pid(&result), job]),
+            "{shell}: the shell or its job outlived the pane"
+        );
+        assert!(pane.errors.lock().unwrap().is_empty());
+    }
+}
+
+/// Two requests to open the same pane at the same moment leave one shell, and closing the pane
+/// reaches it. Before issue #112 the second to finish replaced the first in the list without
+/// closing it, and nothing could close that shell until the application quit.
+#[test]
+fn opening_one_pane_twice_at_once_leaves_one_shell() {
+    let terminals = plain();
+    for round in 0..8 {
+        let panes = [Pane::new(), Pane::new()];
+        let start = std::sync::Barrier::new(2);
+        let pids: Vec<u32> = std::thread::scope(|scope| {
+            let opened: Vec<_> = panes
+                .iter()
+                .map(|pane| {
+                    scope.spawn(|| {
+                        start.wait();
+                        pid(
+                            &open(&terminals, pane, json!({"id": "main", "mode": "local"}))
+                                .unwrap(),
+                        )
+                    })
+                })
+                .collect();
+            opened
+                .into_iter()
+                .map(|thread| thread.join().unwrap())
+                .collect()
+        });
+        call(&terminals, "terminal.close", json!({"id": "main"})).unwrap();
+        assert!(
+            gone(&pids),
+            "round {round}: a shell was left that closing its pane did not reach"
+        );
+    }
+}
+
 #[test]
 fn close_kills_the_whole_process_tree() {
     let terminals = plain();
@@ -445,6 +603,25 @@ fn close_kills_the_whole_process_tree() {
         gone(&[pid(&result), child]),
         "the shell or its child outlived the pane"
     );
+}
+
+/// `terminal.close` returns only when the shell is gone: one look straight after it, with no
+/// wait, finds no shell (issue #112). On Windows the library's wait for the shell returns as
+/// soon as the exit code is set, which is a moment before the process has ended.
+#[test]
+fn the_shell_is_gone_when_close_returns() {
+    let terminals = plain();
+    for round in 0..12 {
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        let shell = pid(&result);
+        assert!(alive(shell), "round {round}: the shell never ran");
+        call(&terminals, "terminal.close", json!({"id": "main"})).unwrap();
+        assert!(
+            !alive(shell),
+            "round {round}: the shell was still there when close returned"
+        );
+    }
 }
 
 /// A child that ignores the hang-up signal and sits in its own process group, as a job started
@@ -1032,11 +1209,15 @@ mod unix {
         let result = terminals
             .open(&params(json!({"id": "main", "mode": "local"})), sink)
             .unwrap();
-        // é, € and 🦊, each written in two halves 300 ms apart.
+        // é, € and 🦊, each written in two halves 300 ms apart. `set +m` turns job control off,
+        // as in the test above: with it on, the macOS `sh` now and then prints
+        // `sh: child setpgid (N to N): Operation not permitted` when it starts a `sleep`, and
+        // that line then sits between the two halves of a character. Seen in 10 runs of 70 on
+        // a busy Mac, every time with all the test's own bytes unchanged around it (issue #112).
         input(
             &terminals,
             "main",
-            "stty -echo; printf 'S:\\303'; sleep 0.3; printf '\\251:\\342\\202'; sleep 0.3; printf '\\254:\\360\\237'; sleep 0.3; printf '\\246\\212:E\\n'\r",
+            "stty -echo; set +m; printf 'S:\\303'; sleep 0.3; printf '\\251:\\342\\202'; sleep 0.3; printf '\\254:\\360\\237'; sleep 0.3; printf '\\246\\212:E\\n'\r",
         );
         let expected = "S:é:€:🦊:E".as_bytes();
         let found = |pane: &Split| {
@@ -1046,7 +1227,8 @@ mod unix {
         };
         assert!(
             wait_for(Duration::from_secs(10), || found(&pane).is_some()),
-            "the characters did not arrive byte for byte"
+            "the characters did not arrive byte for byte within 10 seconds; what arrived: {:?}",
+            String::from_utf8_lossy(&pane.messages.lock().unwrap().concat())
         );
         let at = found(&pane).unwrap();
         let mut end = 0;
@@ -1089,6 +1271,83 @@ mod unix {
         let started = Instant::now();
         call(&terminals, "terminal.close", json!({"id": "main"})).unwrap();
         assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(gone(&[pid(&result)]));
+    }
+}
+
+/// Windows had no test of a flood or of output pacing (issue #112). The Unix tests check a flood
+/// byte for byte; that is not possible here, because the pseudo-console redraws what a program
+/// prints and adds control sequences of its own. So this checks what can be checked: the stream
+/// stops near the high-water mark while nothing is acknowledged, starts again when the emulator
+/// catches up, and every numbered line then arrives, in order.
+#[cfg(windows)]
+mod windows {
+    use super::*;
+    use open_sesame_core::terminal::HIGH_WATER;
+
+    const LINES: usize = 40_000;
+
+    #[test]
+    fn a_flood_pauses_until_acknowledged_and_every_line_arrives() {
+        let terminals = plain();
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        // Each line is `L<number>` and 56 equals signs: about 2.6 MB, well past the mark. The
+        // end marker is built from two pieces so the typed line does not contain it.
+        input(
+            &terminals,
+            "main",
+            &format!("1..{LINES} | ForEach-Object {{ 'L' + $_ + ('=' * 56) }}; Write-Output ('__E' + 'ND__')\r"),
+        );
+        let limit = HIGH_WATER as usize + 256 * 1024;
+        assert!(
+            wait_for(Duration::from_secs(120), || pane.len()
+                >= HIGH_WATER as usize),
+            "output never reached the high-water mark: {} bytes arrived",
+            pane.len()
+        );
+        // Nothing acknowledged: the stream has to stop near the mark and stay stopped.
+        std::thread::sleep(Duration::from_millis(500));
+        let paused_at = pane.len();
+        assert!(
+            paused_at <= limit,
+            "{paused_at} bytes were sent without any acknowledgement"
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(pane.len(), paused_at, "output kept flowing while paused");
+        assert!(!pane.text().contains("__END__"));
+
+        // Acknowledge as an emulator does, and the rest arrives.
+        let finished = wait_for(Duration::from_secs(180), || {
+            let received = pane.len();
+            call(
+                &terminals,
+                "terminal.ack",
+                json!({"id": "main", "bytes": received}),
+            )
+            .unwrap();
+            pane.text().contains("__END__")
+        });
+        assert!(
+            finished,
+            "output did not resume after acknowledgement: {} bytes arrived",
+            pane.len()
+        );
+        // Every line, in order. Whatever the pseudo-console puts between them is skipped.
+        let text = pane.text();
+        let mut from = 0;
+        for line in 1..=LINES {
+            let token = format!("L{line}=");
+            match text[from..].find(&token) {
+                Some(at) => from += at + token.len(),
+                None => panic!(
+                    "line {line} of {LINES} did not arrive after line {}; {} bytes arrived",
+                    line - 1,
+                    text.len()
+                ),
+            }
+        }
+        terminals.close_all();
         assert!(gone(&[pid(&result)]));
     }
 }
