@@ -11,6 +11,7 @@
 //! once even when the program is not reading. On macOS it is typed in small pieces with a pause
 //! between them: see [`Pace`].
 
+use super::exit::ShellExit;
 use super::launch::Launch;
 use super::tree::Tree;
 use super::{Output, Sink, HIGH_WATER, LOW_WATER};
@@ -143,12 +144,13 @@ impl Session {
                 .try_clone_reader()
                 .map_err(std::io::Error::other)?;
             let writer = pair.master.take_writer().map_err(std::io::Error::other)?;
+            let exit = ShellExit::watch(pair.master.as_ref())?;
             let pid = child
                 .process_id()
                 .ok_or_else(|| std::io::Error::other("the shell has no process ID"))?;
-            Ok((tree, reader, writer, pid))
+            Ok((tree, reader, writer, exit, pid))
         });
-        let (tree, reader, writer, pid) = match adopted {
+        let (tree, reader, writer, exit, pid) = match adopted {
             Ok(parts) => parts,
             Err(_) => {
                 let _ = child.kill();
@@ -167,7 +169,7 @@ impl Session {
             sink,
         });
         let for_reader = Arc::clone(&shared);
-        std::thread::spawn(move || for_reader.read(reader));
+        std::thread::spawn(move || for_reader.read(reader, exit));
         let for_sender = Arc::clone(&shared);
         std::thread::spawn(move || for_sender.send());
         let for_typist = Arc::clone(&shared);
@@ -299,9 +301,18 @@ impl Shared {
 
     /// Reads the pseudo-terminal until it ends. Keeps reading after the pane is closed so the
     /// program's last writes never block the kill, and discards what it reads then.
-    fn read(&self, mut reader: Box<dyn Read + Send>) {
+    ///
+    /// The stream also ends when `exit` says the shell has exited and left something running
+    /// that keeps the terminal open (see `exit.rs`). The sender then ends the pane, and this
+    /// goes on reading, and discarding, until the kill has closed the terminal.
+    fn read(&self, mut reader: Box<dyn Read + Send>, mut exit: ShellExit) {
         let mut chunk = vec![0u8; READ_BYTES];
         loop {
+            if exit.ended(&self.tree, || lock(&self.stream).closed) {
+                lock(&self.stream).eof = true;
+                self.changed.notify_all();
+                continue;
+            }
             let read = reader.read(&mut chunk);
             let mut stream = lock(&self.stream);
             match read {
@@ -310,13 +321,15 @@ impl Shared {
                     break;
                 }
                 Ok(count) => {
-                    while !stream.closed && stream.buffer.len() >= BUFFER_BYTES {
+                    exit.took(count);
+                    let over = |stream: &Stream| stream.closed || stream.eof;
+                    while !over(&stream) && stream.buffer.len() >= BUFFER_BYTES {
                         stream = self
                             .changed
                             .wait(stream)
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
                     }
-                    if !stream.closed {
+                    if !over(&stream) {
                         stream.buffer.extend_from_slice(&chunk[..count]);
                         self.changed.notify_all();
                     }
@@ -327,7 +340,7 @@ impl Shared {
                     // Linux and a closed pipe on Windows; anything else is a real failure.
                     let ended = error.kind() == std::io::ErrorKind::BrokenPipe
                         || error.raw_os_error() == Some(END_OF_TERMINAL);
-                    stream.failed = !ended && !stream.closed;
+                    stream.failed = !ended && !stream.closed && !stream.eof;
                     stream.eof = true;
                     break;
                 }

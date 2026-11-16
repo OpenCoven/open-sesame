@@ -1,7 +1,9 @@
 // Acceptance pass for terminal panes (issue #74). It runs only in a development build started
 // with OPEN_SESAME_SELFTEST set to a JSON object: {"out": file to write, "cwd": folder to open a
 // shell in, "cwdName": text that must appear in its working directory, "lines": how many
-// numbered lines the flood prints}. A release build never loads this file.
+// numbered lines the flood prints}. With "reload": true it runs a short separate pass instead
+// (issue #112): two panes, the page loaded again, and a check from the new page that the old
+// page's processes are gone. A release build never loads this file.
 //
 // It uses nothing but the product's own panes. It types into real shells, watches the bytes that
 // come back, checks the process list through a shell, and writes what it found to `out` through
@@ -109,6 +111,10 @@ function responsiveness() {
   };
 }
 
+// Carries the first half of the reload pass across the page load. Session storage belongs to
+// this window and survives a reload; nothing else in the page uses it.
+const RELOAD_KEY = 'open-sesame-selftest-reload';
+
 export async function run({ launch, config }) {
   const results = { started: new Date().toISOString(), agent: navigator.userAgent, phase: 'running', steps: [] };
   const lines = Number(config.lines) || 7000000;
@@ -161,6 +167,49 @@ export async function run({ launch, config }) {
     return { opened, pids: [opened.result.pid, Number(child)] };
   };
 
+  const finish = async text => {
+    banner(text);
+    results.phase = 'ready-to-quit';
+    results.finished = new Date().toISOString();
+    await write().catch(() => {});
+  };
+
+  if (config.reload) {
+    const before = JSON.parse(sessionStorage.getItem(RELOAD_KEY) || 'null');
+    sessionStorage.removeItem(RELOAD_KEY);
+    if (!before) {
+      let pids;
+      await step('Two panes are open, each with a long child process, before the page loads again', async () => {
+        const opened = [...(await shellWithChild('Reload one')).pids, ...(await shellWithChild('Reload two')).pids, report.result.pid];
+        const running = await alive(opened);
+        if (running.length !== opened.length) throw new Error(`Only ${running.length} of ${opened.length} processes are running.`);
+        pids = opened;
+        return { pids };
+      });
+      if (!pids) return finish('Self-test failed before the page could load again.');
+      results.phase = 'reloading';
+      await write();
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ started: results.started, steps: results.steps, pids }));
+      location.reload();
+      return;
+    }
+    results.started = before.started;
+    results.steps = before.steps;
+    // The old page's panes are closed when this page starts to load. This step starts only
+    // after the page has loaded and opened its own report shell, so its time is not the time
+    // the close took.
+    await step('After the page loaded again, the panes of the page before it are closed and their processes gone', async () => {
+      const started = performance.now();
+      let left = before.pids;
+      while ((left = await alive(before.pids)).length && performance.now() - started < 3000) await wait(100);
+      const checkedGoneAfterMs = Math.round(performance.now() - started);
+      if (left.length) throw new Error(`Still running ${checkedGoneAfterMs} ms after the new page looked: ${left.join(', ')}.`);
+      return { pids: before.pids, checkedGoneAfterMs };
+    });
+    results.quit = { pids: [], reporter: report.result.pid };
+    return finish('Self-test finished. This window is about to close.');
+  }
+
   try {
     await write();
 
@@ -197,7 +246,9 @@ export async function run({ launch, config }) {
         return -1;
       };
       try {
-        split.pane.send("stty -echo; printf 'S:\\303'; sleep 0.4; printf '\\251:\\342\\202'; sleep 0.4; printf '\\254:\\360\\237'; sleep 0.4; printf '\\246\\212:E\\n'\r");
+        // `set +m`: with job control on, the macOS `sh` now and then prints a line of its own
+        // when it starts a `sleep` on a busy machine, between the two halves of a character.
+        split.pane.send("stty -echo; set +m; printf 'S:\\303'; sleep 0.4; printf '\\251:\\342\\202'; sleep 0.4; printf '\\254:\\360\\237'; sleep 0.4; printf '\\246\\212:E\\n'\r");
         const end = performance.now() + 15000;
         while (find() < 0) {
           if (performance.now() > end) throw new Error('The characters did not arrive byte for byte.');
@@ -222,7 +273,9 @@ export async function run({ launch, config }) {
       }
     });
 
-    await step(`A command that prints ${lines} numbered lines does not freeze the window or drop output`, async () => {
+    // The gaps between timers and between frames are recorded, not judged: no limit for them
+    // has been set (issue #112), so this step says nothing about whether the window froze.
+    await step(`A command that prints ${lines} numbered lines arrives complete and in order, with the longest timer and frame gaps recorded`, async () => {
       const checker = floodChecker(lines);
       const flood = await launch({ mode: 'local', name: 'Flood' }, { onBytes: checker.onBytes });
       const stop = responsiveness();
@@ -270,8 +323,5 @@ export async function run({ launch, config }) {
   } catch (error) {
     results.error = String(error?.message || error);
   }
-  banner('Self-test finished. This window is about to close.');
-  results.phase = 'ready-to-quit';
-  results.finished = new Date().toISOString();
-  await write().catch(() => {});
+  await finish('Self-test finished. This window is about to close.');
 }

@@ -34,7 +34,6 @@ impl Pane {
         })
     }
 
-    #[cfg(unix)]
     fn len(&self) -> usize {
         self.bytes.lock().unwrap().len()
     }
@@ -432,6 +431,84 @@ fn exit_emits_terminal_exit() {
     assert!(gone(&[pid(&again)]));
 }
 
+/// A shell that exits while one of its jobs still runs ends its pane, as it does when nothing is
+/// left. On Linux the job keeps the pseudo-terminal open, so the end of the stream alone never
+/// says the shell has gone (issue #112). The job is ended with the pane, as it is when the pane
+/// is closed.
+#[cfg(unix)]
+#[test]
+fn a_shell_that_exits_with_a_job_running_ends_its_pane() {
+    for shell in ["/bin/sh", "/bin/bash"] {
+        let terminals = Terminals::with(Config {
+            shell: Some(PathBuf::from(shell)),
+            ..Config::default()
+        });
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        input(&terminals, "main", CHILD_COMMAND);
+        let child = number_after(&pane, "CHILD:");
+        assert!(alive(child), "{shell}: the job never ran");
+        input(&terminals, "main", "printf 'LAST-%s\\n' WORDS; exit\r");
+        assert!(
+            wait_for(Duration::from_secs(10), || pane.exited()),
+            "{shell}: no exit message after the shell exited with a job running"
+        );
+        assert!(
+            pane.text().contains("LAST-WORDS"),
+            "{shell}: what the shell printed before it exited was lost"
+        );
+        assert!(
+            gone(&[pid(&result), child]),
+            "{shell}: the shell or its job outlived the pane"
+        );
+        assert!(pane.errors.lock().unwrap().is_empty());
+        assert_eq!(
+            call(
+                &terminals,
+                "terminal.input",
+                json!({"id": "main", "data": "x"})
+            )
+            .unwrap_err(),
+            "This shell has ended. Reopen the pane to reconnect."
+        );
+    }
+}
+
+/// Two requests to open the same pane at the same moment leave one shell, and closing the pane
+/// reaches it. Before issue #112 the second to finish replaced the first in the list without
+/// closing it, and nothing could close that shell until the application quit.
+#[test]
+fn opening_one_pane_twice_at_once_leaves_one_shell() {
+    let terminals = plain();
+    for round in 0..8 {
+        let panes = [Pane::new(), Pane::new()];
+        let start = std::sync::Barrier::new(2);
+        let pids: Vec<u32> = std::thread::scope(|scope| {
+            let opened: Vec<_> = panes
+                .iter()
+                .map(|pane| {
+                    scope.spawn(|| {
+                        start.wait();
+                        pid(
+                            &open(&terminals, pane, json!({"id": "main", "mode": "local"}))
+                                .unwrap(),
+                        )
+                    })
+                })
+                .collect();
+            opened
+                .into_iter()
+                .map(|thread| thread.join().unwrap())
+                .collect()
+        });
+        call(&terminals, "terminal.close", json!({"id": "main"})).unwrap();
+        assert!(
+            gone(&pids),
+            "round {round}: a shell was left that closing its pane did not reach"
+        );
+    }
+}
+
 #[test]
 fn close_kills_the_whole_process_tree() {
     let terminals = plain();
@@ -496,6 +573,49 @@ fn close_all_leaves_no_children() {
         .unwrap_err(),
         "Open this shell before sending input."
     );
+}
+
+/// What the application does when its page is replaced: the panes are off the list at once,
+/// their processes end without the caller waiting, and Quit still waits for them.
+#[test]
+fn panes_closed_without_waiting_are_gone_by_the_time_quit_returns() {
+    let terminals = plain();
+    let mut shells = Vec::new();
+    let mut children = Vec::new();
+    let panes: Vec<Arc<Pane>> = (0..3).map(|_| Pane::new()).collect();
+    for (index, pane) in panes.iter().enumerate() {
+        let id = format!("pane-{index}");
+        shells.push(pid(&open(
+            &terminals,
+            pane,
+            json!({"id": id, "mode": "local"}),
+        )
+        .unwrap()));
+        input(&terminals, &id, CHILD_COMMAND);
+        children.push(number_after(pane, "CHILD:"));
+    }
+    terminals.close_all_detached();
+    assert_eq!(
+        call(
+            &terminals,
+            "terminal.input",
+            json!({"id": "pane-0", "data": "x"})
+        )
+        .unwrap_err(),
+        "Open this shell before sending input."
+    );
+    // The limit counts listed panes only, so a new page can open its own at once.
+    let after = Pane::new();
+    let reopened = open(&terminals, &after, json!({"id": "pane-0", "mode": "local"})).unwrap();
+    terminals.shut_down();
+    // Quit collected every shell before it returned, the detached ones included.
+    let running: Vec<u32> = shells.iter().copied().filter(|pid| alive(*pid)).collect();
+    assert!(running.is_empty(), "shells outlived Quit: {running:?}");
+    assert!(gone(&children), "a child outlived Quit");
+    assert!(gone(&[pid(&reopened)]));
+    assert!(wait_for(Duration::from_secs(3), || panes
+        .iter()
+        .all(|pane| pane.exited())));
 }
 
 #[test]
@@ -1032,11 +1152,15 @@ mod unix {
         let result = terminals
             .open(&params(json!({"id": "main", "mode": "local"})), sink)
             .unwrap();
-        // é, € and 🦊, each written in two halves 300 ms apart.
+        // é, € and 🦊, each written in two halves 300 ms apart. `set +m` turns job control off,
+        // as in the test above: with it on, the macOS `sh` now and then prints
+        // `sh: child setpgid (N to N): Operation not permitted` when it starts a `sleep`, and
+        // that line then sits between the two halves of a character. Seen in 10 runs of 70 on
+        // a busy Mac, every time with all the test's own bytes unchanged around it (issue #112).
         input(
             &terminals,
             "main",
-            "stty -echo; printf 'S:\\303'; sleep 0.3; printf '\\251:\\342\\202'; sleep 0.3; printf '\\254:\\360\\237'; sleep 0.3; printf '\\246\\212:E\\n'\r",
+            "stty -echo; set +m; printf 'S:\\303'; sleep 0.3; printf '\\251:\\342\\202'; sleep 0.3; printf '\\254:\\360\\237'; sleep 0.3; printf '\\246\\212:E\\n'\r",
         );
         let expected = "S:é:€:🦊:E".as_bytes();
         let found = |pane: &Split| {
@@ -1046,7 +1170,8 @@ mod unix {
         };
         assert!(
             wait_for(Duration::from_secs(10), || found(&pane).is_some()),
-            "the characters did not arrive byte for byte"
+            "the characters did not arrive byte for byte within 10 seconds; what arrived: {:?}",
+            String::from_utf8_lossy(&pane.messages.lock().unwrap().concat())
         );
         let at = found(&pane).unwrap();
         let mut end = 0;
@@ -1089,6 +1214,83 @@ mod unix {
         let started = Instant::now();
         call(&terminals, "terminal.close", json!({"id": "main"})).unwrap();
         assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(gone(&[pid(&result)]));
+    }
+}
+
+/// Windows had no test of a flood or of output pacing (issue #112). The Unix tests check a flood
+/// byte for byte; that is not possible here, because the pseudo-console redraws what a program
+/// prints and adds control sequences of its own. So this checks what can be checked: the stream
+/// stops near the high-water mark while nothing is acknowledged, starts again when the emulator
+/// catches up, and every numbered line then arrives, in order.
+#[cfg(windows)]
+mod windows {
+    use super::*;
+    use open_sesame_core::terminal::HIGH_WATER;
+
+    const LINES: usize = 40_000;
+
+    #[test]
+    fn a_flood_pauses_until_acknowledged_and_every_line_arrives() {
+        let terminals = plain();
+        let pane = Pane::new();
+        let result = open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap();
+        // Each line is `L<number>` and 56 equals signs: about 2.6 MB, well past the mark. The
+        // end marker is built from two pieces so the typed line does not contain it.
+        input(
+            &terminals,
+            "main",
+            &format!("1..{LINES} | ForEach-Object {{ 'L' + $_ + ('=' * 56) }}; Write-Output ('__E' + 'ND__')\r"),
+        );
+        let limit = HIGH_WATER as usize + 256 * 1024;
+        assert!(
+            wait_for(Duration::from_secs(120), || pane.len()
+                >= HIGH_WATER as usize),
+            "output never reached the high-water mark: {} bytes arrived",
+            pane.len()
+        );
+        // Nothing acknowledged: the stream has to stop near the mark and stay stopped.
+        std::thread::sleep(Duration::from_millis(500));
+        let paused_at = pane.len();
+        assert!(
+            paused_at <= limit,
+            "{paused_at} bytes were sent without any acknowledgement"
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(pane.len(), paused_at, "output kept flowing while paused");
+        assert!(!pane.text().contains("__END__"));
+
+        // Acknowledge as an emulator does, and the rest arrives.
+        let finished = wait_for(Duration::from_secs(180), || {
+            let received = pane.len();
+            call(
+                &terminals,
+                "terminal.ack",
+                json!({"id": "main", "bytes": received}),
+            )
+            .unwrap();
+            pane.text().contains("__END__")
+        });
+        assert!(
+            finished,
+            "output did not resume after acknowledgement: {} bytes arrived",
+            pane.len()
+        );
+        // Every line, in order. Whatever the pseudo-console puts between them is skipped.
+        let text = pane.text();
+        let mut from = 0;
+        for line in 1..=LINES {
+            let token = format!("L{line}=");
+            match text[from..].find(&token) {
+                Some(at) => from += at + token.len(),
+                None => panic!(
+                    "line {line} of {LINES} did not arrive after line {}; {} bytes arrived",
+                    line - 1,
+                    text.len()
+                ),
+            }
+        }
+        terminals.close_all();
         assert!(gone(&[pid(&result)]));
     }
 }

@@ -78,7 +78,7 @@ mod unix {
         }
 
         /// Looks at the shell without collecting it, so its process ID stays reserved.
-        fn leader_exited(&self) -> bool {
+        pub(in super::super) fn leader_exited(&self) -> bool {
             // SAFETY: `info` is a valid, zeroed `siginfo_t` for `waitid` to fill, and the ID is
             // this pane's child, which has not been collected.
             unsafe {
