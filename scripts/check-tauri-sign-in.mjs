@@ -225,13 +225,20 @@ function fakeBridge(status, answers = {}) {
   // be kept, and the Linux sentence names what to install.
   assert.ok(code.indexOf('(self.store_check)()') < code.indexOf('self.controller.begin_sign_in()'));
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
-  // The store is opened once per run, so a keyring installed later needs a restart, not a retry.
-  assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*start it again[^"]*"/);
+  // On Linux the store is looked for again on every attempt (issue #116), so a keyring installed
+  // or started later needs another press of Sign in, not a restart, and the sentence says so.
+  assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*then try again\.[^"]*"/);
+  assert.doesNotMatch(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*start it again[^"]*"/);
+  // The Linux store is this file's own, opened again after a failure; the `keyring` crate's
+  // store, which is opened once for the whole run, answers only on the other systems.
+  assert.match(code, /#\[cfg\(target_os = "linux"\)\]\n    secrets: Reopening<Arc<zbus_secret_service_keyring_store::Store>>,/);
+  assert.match(code, /Err\(keyring::Error::PlatformFailure\(_\)\) if !opened_now => \{/);
+  assert.equal(code.split('keyring::Entry::store_status()').length - 1, 1, 'The once-per-run answer is used in one place');
   // At launch the store is asked on the restore thread, never in `start`, which runs on the main
   // thread before the window exists: a locked keyring answers only after its unlock prompt.
   const start = code.slice(code.indexOf('pub fn start<'), code.indexOf('fn listen<'));
   assert.equal(start.split('.available()').length - 1, 2, 'The store is asked in two closures only');
-  assert.match(start, /Arc::new\(move \|\| store_problem\(probe\.available\(\), KeychainStore::exists\(\)\)\);/);
+  assert.match(start, /Arc::new\(move \|\| store_problem\(probe\.available\(\), probe\.exists\(\)\)\);/);
   assert.match(start, /auth\.restore\(move \|\| !cfg!\(target_os = "linux"\) \|\| saved\.available\(\)\);/);
   // A refresh that is due before the next attempt is allowed is waited for, not spun on.
   assert.match(code, /recv_timeout\(pause\(due, allowed_in\)\)/);
