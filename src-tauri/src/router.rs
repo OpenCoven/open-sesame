@@ -480,10 +480,7 @@ mod tests {
 
     /// The application with summon state for `session` and a settings file in a folder of its
     /// own. The shortcut plugin is not loaded, so the system refuses every registration.
-    fn app_in(
-        session: summon::Session,
-        name: &str,
-    ) -> (tauri::App<MockRuntime>, std::path::PathBuf) {
+    fn app_in(session: summon::Session, name: &str) -> (tauri::App<MockRuntime>, Folder) {
         let app = app();
         let folder =
             std::env::temp_dir().join(format!("open-sesame-router-{name}-{}", std::process::id()));
@@ -492,7 +489,30 @@ mod tests {
             session,
             Some(folder.join("summon.json")),
         ));
-        (app, folder)
+        (app, Folder(folder))
+    }
+
+    /// A test's settings folder. It is removed when the test ends, also when an assertion
+    /// fails before the test's own last line.
+    struct Folder(std::path::PathBuf);
+
+    impl AsRef<std::path::Path> for Folder {
+        fn as_ref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl std::ops::Deref for Folder {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Folder {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -614,15 +634,102 @@ mod tests {
             json!(summon::INVALID_REQUEST)
         );
 
-        // A native dialog or a browser sign-in, held by the feature that opened it.
+        // Two reasons at once: the end of one does not release the other (issue #115). A hold
+        // with no reason is the drag.
+        let hold = |held: bool, reason: Option<&str>| {
+            let params = match reason {
+                Some(reason) => json!({"held": held, "reason": reason}),
+                None => json!({"held": held}),
+            };
+            call(&main, "summon.hold", params).unwrap()
+        };
+        assert_eq!(hold(true, Some("menu"))["result"], json!({"held": true}));
+        hold(true, None);
+        assert_eq!(hold(false, None)["result"], json!({"held": false}));
+        assert!(
+            !hides(),
+            "the end of a drag released a hold it did not take"
+        );
+        hold(true, Some("drag"));
+        hold(false, Some("menu"));
+        assert!(
+            !hides(),
+            "a drag named as one is the same hold as an unnamed one"
+        );
+        hold(false, None);
+        assert!(hides());
+        // Releasing what is not held, or holding twice, changes nothing, and neither is an
+        // error: the answer is the state that was asked for.
+        assert_eq!(hold(false, Some("menu"))["result"], json!({"held": false}));
+        assert_eq!(hold(false, None)["result"], json!({"held": false}));
+        hold(true, Some("menu"));
+        hold(true, Some("menu"));
+        hold(false, Some("menu"));
+        assert!(hides());
+        // A reason is a short name, and the page cannot make the host keep an endless list.
+        for bad in [
+            json!(""),
+            json!(7),
+            json!(null),
+            json!("with space"),
+            json!("x".repeat(33)),
+        ] {
+            assert_eq!(
+                call(&main, "summon.hold", json!({"held": true, "reason": bad})).unwrap()["error"],
+                json!(summon::INVALID_REQUEST)
+            );
+        }
+        let longest = "x".repeat(32);
+        assert_eq!(hold(true, Some(&longest))["result"], json!({"held": true}));
+        hold(false, Some(&longest));
+        assert!(hides());
+        for index in 0..summon::MAX_PAGE_HOLDS {
+            hold(true, Some(&format!("reason-{index}")));
+        }
+        assert_eq!(
+            call(
+                &main,
+                "summon.hold",
+                json!({"held": true, "reason": "one-more"})
+            )
+            .unwrap()["error"],
+            json!(summon::INVALID_REQUEST)
+        );
+        // One already held can still be named, and all can be released.
+        assert_eq!(
+            hold(true, Some("reason-0"))["result"],
+            json!({"held": true})
+        );
+        for index in 0..summon::MAX_PAGE_HOLDS {
+            hold(false, Some(&format!("reason-{index}")));
+        }
+        assert!(hides());
+
+        // A page that loads takes none of the holds of the page before it: that page is gone
+        // and cannot release them.
+        hold(true, Some("menu"));
+        hold(true, None);
+        assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(
+            hides(),
+            "a hold of the page before this one outlived the page load"
+        );
+
+        // A native dialog or a browser sign-in, held by the feature that opened it. It is not
+        // the page's, so a page load leaves it.
         let dialog = summon::hold(app.handle()).unwrap();
+        assert!(!hides());
+        summon::page_replaced(app.handle());
         assert!(!hides());
         drop(dialog);
         assert!(hides());
 
-        // The pin.
+        // The pin. It is the person's, not the page's, so a page load leaves it too.
         call(&main, "window.keepOpen", json!({"pinned": true})).unwrap();
         assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(!hides(), "a page load took the pin off");
         call(&main, "window.keepOpen", json!({"pinned": false})).unwrap();
         assert!(hides());
         std::fs::remove_dir_all(&folder).unwrap();
@@ -695,6 +802,35 @@ mod tests {
         for method in ["project.chooseFolder", "project.reveal"] {
             assert_eq!(route(method), Route::Project, "{method}");
         }
+    }
+
+    /// When the window loads a page again, the panes the page before it opened are closed: the
+    /// new page has no way to reach them.
+    #[test]
+    fn a_page_that_loads_again_finds_no_panes_of_the_page_before() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let opened = call(
+            &main,
+            "terminal.open",
+            json!({"id": "main", "mode": "local", "channel": "__CHANNEL__:7"}),
+        )
+        .unwrap();
+        let pid = opened["result"]["pid"].as_u64().expect("no process ID") as u32;
+        assert!(crate::test_support::alive(pid));
+        crate::terminal::page_replaced(app.handle());
+        assert_eq!(
+            call(&main, "terminal.input", json!({"id": "main", "data": "x"})),
+            Ok(json!({"requestId": "r1", "error": "Open this shell before sending input."}))
+        );
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::test_support::alive(pid) && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            !crate::test_support::alive(pid),
+            "the shell of the page before is still running"
+        );
     }
 
     /// A pane opened through the command is a real shell, and closing it through the command

@@ -18,7 +18,7 @@ export const NO_RESPONSE = 'The desktop connection did not respond.';
 
 const DEFAULT_LIMIT = 15000;
 // Methods that wait for the person rather than the machine.
-const LIMITS = { 'project.chooseFolder': 180000 };
+const LIMITS = { 'project.chooseFolder': 180000, 'auth.signIn': 180000 };
 
 const sentence = error => (typeof error === 'string' && error) || (error && typeof error.message === 'string' && error.message) || NO_RESPONSE;
 
