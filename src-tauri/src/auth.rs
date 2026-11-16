@@ -979,8 +979,8 @@ mod tests {
         assert!(parts.requests.lock().unwrap().is_empty());
         assert_eq!(parts.auth.status()["busy"], json!(false));
 
-        // A sign-in is pending, and the callback carries the wrong state: the attempt ends and
-        // still nothing is sent.
+        // A sign-in is pending, and the callback carries the wrong state: nothing is sent, and
+        // the attempt keeps waiting for the browser's own callback (issue #116).
         parts.auth.handle("auth.signIn", no_hold).unwrap();
         until(&parts.changes, |status| status["busy"] == json!(true));
         assert_eq!(
@@ -989,8 +989,13 @@ mod tests {
                 .link("opensesame://auth/callback?code=stolen&state=guess"),
             Link::Callback
         );
-        let ended = until(&parts.changes, |status| status["busy"] == json!(false));
-        assert_eq!(ended["authenticated"], json!(false));
+        std::thread::sleep(Duration::from_millis(200));
+        let status = parts.auth.status();
+        assert_eq!(status["busy"], json!(true), "the sign-in is still waiting");
+        assert_eq!(
+            status["message"],
+            json!("Finish signing in in your browser.")
+        );
         assert!(
             parts.requests.lock().unwrap().is_empty(),
             "no code left the application"
