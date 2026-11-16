@@ -172,3 +172,36 @@ impl Tree {
         status.and_then(|status| status.code())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// `resume` reads a snapshot of every thread on the system to find the new process's own.
+    /// From reading alone nobody could say what that costs (issue #97), so this measures it on
+    /// the machine that runs the test, prints it, and fails only when it is out of all
+    /// proportion to starting a process. CI runs it again with its output shown and keeps it.
+    #[test]
+    fn resuming_a_new_process_on_windows_is_quick() {
+        let mut times = Vec::new();
+        for _ in 0..20 {
+            let mut command = Command::new("cmd.exe");
+            command
+                .args(["/d", "/c", "exit 0"])
+                .creation_flags(CREATE_SUSPENDED | CREATE_NO_WINDOW);
+            let mut child = command.spawn().unwrap();
+            let started = Instant::now();
+            resume(child.id()).unwrap();
+            times.push(started.elapsed());
+            let _ = child.wait();
+        }
+        times.sort();
+        let (median, slowest) = (times[times.len() / 2], times[times.len() - 1]);
+        eprintln!(
+            "WINDOWS-97 resume: median {median:?}, slowest {slowest:?}, {} processes",
+            times.len()
+        );
+        assert!(median < Duration::from_millis(500), "{times:?}");
+    }
+}

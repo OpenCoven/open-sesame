@@ -5,6 +5,7 @@
 //! a tool cannot wait unseen for a password on `/dev/tty`.
 
 use std::io;
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
@@ -41,6 +42,58 @@ pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
             retired: Arc::new(Mutex::new(false)),
         },
     ))
+}
+
+/// A pipe the child can write to through a path, apart from its standard output and error.
+///
+/// The login-shell capture reads the environment from it. Standard output is shared with
+/// everything the user's startup files run, so a background job that is still printing when
+/// the environment is printed there can add a variable or swallow one (issue #97). Nothing
+/// writes to this pipe unless the command line names it.
+///
+/// The child gets the writing end under the number it has in this process, so nothing the
+/// standard library set up for the child is replaced, and the end stays closed to every other
+/// program this process starts.
+pub(super) struct Report {
+    reader: io::PipeReader,
+    writer: io::PipeWriter,
+}
+
+impl Report {
+    /// `None` when the system has no pipe to give, or gives one under a number the child's
+    /// standard streams use.
+    pub(super) fn new() -> Option<Report> {
+        let (reader, writer) = io::pipe().ok()?;
+        (writer.as_raw_fd() > 2).then_some(Report { reader, writer })
+    }
+
+    /// The path that names the pipe inside the child.
+    pub(super) fn path(&self) -> String {
+        format!("/dev/fd/{}", self.writer.as_raw_fd())
+    }
+
+    /// Lets the child of `command` keep the writing end across its `exec`.
+    pub(super) fn attach(&self, command: &mut Command) {
+        let writer = self.writer.as_raw_fd();
+        // SAFETY: the closure runs in the child between fork and exec and calls only `fcntl`,
+        // which is async-signal-safe. It clears close-on-exec on the child's own copy of the
+        // descriptor; this process's copy keeps the flag.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fcntl(writer, libc::F_SETFD, 0) == -1 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            });
+        }
+    }
+
+    /// After the child has started: gives up this process's writing end, so the pipe closes
+    /// when the last process holding the child's copy has gone, and returns the reading end.
+    pub(super) fn into_reader(self) -> io::PipeReader {
+        self.reader
+    }
 }
 
 impl Tree {

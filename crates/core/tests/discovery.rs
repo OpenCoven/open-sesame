@@ -255,7 +255,9 @@ mod login_shell {
     fn home(files: &[(&str, String)]) -> (tempfile::TempDir, BTreeMap<String, String>) {
         let dir = tempfile::tempdir().unwrap();
         for (name, content) in files {
-            std::fs::write(dir.path().join(name), content).unwrap();
+            let file = dir.path().join(name);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, content).unwrap();
         }
         let inherited = vars(&[
             ("HOME", dir.path().to_str().unwrap()),
@@ -265,14 +267,51 @@ mod login_shell {
         (dir, inherited)
     }
 
-    /// The shell, or `None` with a note when this machine does not have it.
+    /// Names the shells that must be installed where the tests run, as paths separated like a
+    /// search path. CI sets it, so a runner without one of them fails instead of passing these
+    /// tests without running them (issue #97). Unset, a missing shell is only noted.
+    const REQUIRED: &str = "OPEN_SESAME_REQUIRE_SHELLS";
+
+    fn required() -> Vec<PathBuf> {
+        std::env::var_os(REQUIRED)
+            .map(|paths| std::env::split_paths(&paths).collect())
+            .unwrap_or_default()
+    }
+
+    /// The shell, or `None` with a note when this machine does not have it and need not.
     fn shell(path: &'static str) -> Option<&'static Path> {
         let found = Path::new(path).is_file();
         if !found {
+            assert!(
+                !required().iter().any(|needed| needed == Path::new(path)),
+                "{path} is named in {REQUIRED} and is not installed"
+            );
             eprintln!("NOT RUN: {path} is not installed on this machine");
         }
         found.then(|| Path::new(path))
     }
+
+    /// A required shell that no test happens to ask for is still checked, and so is a path
+    /// that was mistyped in the workflow.
+    #[test]
+    fn every_shell_the_run_requires_is_installed() {
+        let missing: Vec<PathBuf> = required()
+            .into_iter()
+            .filter(|path| !path.is_file())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "named in {REQUIRED} and not installed: {missing:?}"
+        );
+    }
+
+    /// Where fish is installed by the systems these tests run on: Linux packages, and Homebrew
+    /// on either kind of Mac.
+    const FISH: [&str; 3] = [
+        "/usr/bin/fish",
+        "/opt/homebrew/bin/fish",
+        "/usr/local/bin/fish",
+    ];
 
     fn login_path_case(shell_path: &'static str, startup_file: &str) {
         let Some(shell) = shell(shell_path) else {
@@ -320,6 +359,83 @@ mod login_shell {
     #[test]
     fn a_tool_only_on_the_bash_login_path_is_found() {
         login_path_case("/bin/bash", ".bash_profile");
+    }
+
+    /// fish is in the supported list and reads a different startup file in a different
+    /// language, so it gets a case of its own wherever it is installed.
+    #[test]
+    fn a_tool_only_on_the_fish_login_path_is_found() {
+        let Some(fish) = FISH.into_iter().find(|path| shell(path).is_some()) else {
+            return;
+        };
+        let tools = tempfile::tempdir().unwrap();
+        let bin = tools.path().join("login only bin");
+        let tool = install(&bin, "only-on-login-path");
+        let (_home, inherited) = home(&[(
+            ".config/fish/config.fish",
+            format!(
+                "set -gx PATH \"{}\" $PATH\nset -gx FROM_PROFILE set\n",
+                bin.display()
+            ),
+        )]);
+        let env = ShellEnv::capture(Some(Path::new(fish)), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell, "{fish}");
+        assert_eq!(env.get("FROM_PROFILE"), Some("set"));
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        let mut finder = Search::from_env(&env);
+        finder.known_dirs.clear();
+        assert_eq!(finder.find("only-on-login-path", None), Some(tool));
+    }
+
+    /// A variable the shell exports with a value that is not Unicode is left out of what was
+    /// captured, as it is left out of the inherited environment, and is never passed on with
+    /// replacement characters in it (issue #97).
+    #[test]
+    fn a_value_that_is_not_unicode_is_left_out() {
+        let Some(shell) = shell("/bin/bash") else {
+            return;
+        };
+        let (_home, inherited) = home(&[(
+            ".bash_profile",
+            "export ODD=\"$(printf '\\377\\376')\"\nexport MIXED=\"ok$(printf '\\377')\"\nexport AFTER=ok\n"
+                .to_string(),
+        )]);
+        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("ODD"), None);
+        assert_eq!(env.get("MIXED"), None);
+        assert_eq!(env.get("AFTER"), Some("ok"));
+        assert!(
+            env.vars().values().all(|value| !value.contains('\u{fffd}')),
+            "a value was passed on with replacement characters"
+        );
+    }
+
+    /// A background job that a startup file leaves printing shares the shell's output. What it
+    /// prints while the environment is read must neither become a variable nor swallow one
+    /// (issue #97): the environment travels on a channel of its own.
+    #[test]
+    fn background_output_from_a_startup_file_does_not_reach_the_result() {
+        let Some(shell) = shell("/bin/zsh") else {
+            return;
+        };
+        let noisy = "export REAL=value\n( i=0; while [ $i -lt 3000 ]; do echo \"NOISE$i=x\"; i=$((i+1)); done ) &\nexport LAST=kept\n";
+        for round in 0..12 {
+            let (_home, inherited) = home(&[(".zprofile", noisy.to_string())]);
+            let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "round {round}");
+            assert_eq!(env.get("REAL"), Some("value"), "round {round}");
+            assert_eq!(env.get("LAST"), Some("kept"), "round {round}");
+            let noise: Vec<&String> = env
+                .vars()
+                .keys()
+                .filter(|name| name.starts_with("NOISE"))
+                .collect();
+            assert!(
+                noise.is_empty(),
+                "round {round}: background output became variables: {noise:?}"
+            );
+        }
     }
 
     /// Startup files print banners, and may even print something that looks like a marker.

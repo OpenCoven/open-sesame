@@ -6,7 +6,7 @@
 //! by the process runner, and reads the environment it ends up with. Any failure falls back to
 //! the inherited environment and says why; nothing here panics, and values are never logged.
 
-use super::{run, Run, RunError};
+use super::{execute, Run, RunError};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::hash::{BuildHasher, Hasher};
@@ -90,7 +90,9 @@ impl ShellEnv {
 
     /// Runs `shell` as an interactive login shell with exactly the `inherited` variables and
     /// returns them overlaid with what the shell's startup files set. On any failure the result
-    /// is `inherited` unchanged, with the reason in [`ShellEnv::source`].
+    /// is `inherited` unchanged, with the reason in [`ShellEnv::source`]. A variable the shell
+    /// reports with a name or value that is not valid Unicode is left out of what is overlaid,
+    /// as [`ShellEnv::inherited`] leaves such variables out.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -123,7 +125,25 @@ impl ShellEnv {
                 .finish()
         );
         // NUL-separated when `env` supports it, so values that contain newlines stay whole.
-        let script = format!("printf '%s' '{marker}'; /usr/bin/env -0 2>/dev/null || /usr/bin/env; printf '%s' '{marker}'");
+        let to_output = "/usr/bin/env -0 2>/dev/null || /usr/bin/env";
+        // The environment goes to a pipe of its own when there is one, because the startup
+        // files' own programs share the standard output and may still be printing. Printing it
+        // between the markers is what remains when that pipe cannot be had or written to.
+        #[cfg(unix)]
+        let report = super::Report::new();
+        #[cfg(not(unix))]
+        let report: Option<super::Report> = None;
+        #[cfg(unix)]
+        let print = match &report {
+            Some(report) => {
+                let pipe = report.path();
+                format!("/usr/bin/env -0 > {pipe} 2>/dev/null || /usr/bin/env > {pipe} 2>/dev/null || {to_output}")
+            }
+            None => to_output.to_string(),
+        };
+        #[cfg(not(unix))]
+        let print = to_output.to_string();
+        let script = format!("printf '%s' '{marker}'; {print}; printf '%s' '{marker}'");
         let mut request = Run::new(shell);
         request.args = vec!["-i".into(), "-l".into(), "-c".into(), script];
         request.clear_env = true;
@@ -134,14 +154,21 @@ impl ShellEnv {
         request.timeout = timeout;
         request.max_output = MAX_ENV_BYTES;
 
-        let output = match run(request, None) {
-            Ok(output) => output,
+        let (output, reported) = match execute(request, None, report) {
+            Ok(finished) => finished,
             Err(RunError::Timeout) => return fallback(inherited, Fallback::TimedOut),
             Err(_) => return fallback(inherited, Fallback::ShellFailed),
         };
-        let Some(captured) = between(&output.stdout, marker.as_bytes()).map(parse) else {
+        // Both markers still have to be there: they say the shell reached the command and
+        // finished it. The environment itself is what arrived on the pipe, when anything did.
+        let Some(printed) = between(&output.stdout, marker.as_bytes()) else {
             return fallback(inherited, Fallback::ShellFailed);
         };
+        let captured = parse(if reported.is_empty() {
+            printed
+        } else {
+            &reported
+        });
         if !captured.contains_key("PATH") {
             return fallback(inherited, Fallback::ShellFailed);
         }
@@ -210,30 +237,58 @@ fn between<'a>(output: &'a [u8], marker: &[u8]) -> Option<&'a [u8]> {
 /// Reads `NAME=value` entries. NUL-separated output is exact. Newline-separated output is the
 /// fallback for an `env` without `-0`: a line that does not start a new variable continues the
 /// previous value.
+///
+/// A variable whose name or value is not valid UTF-8 is left out whole. It is never kept with
+/// replacement characters: a child program would be handed a value the user never set.
 fn parse(body: &[u8]) -> BTreeMap<String, String> {
-    let text = String::from_utf8_lossy(body);
+    let variable = |entry: &[u8]| -> Option<(String, Result<String, ()>)> {
+        let equals = entry.iter().position(|byte| *byte == b'=')?;
+        let name = std::str::from_utf8(&entry[..equals]).ok()?;
+        let value = std::str::from_utf8(&entry[equals + 1..]);
+        is_name(name).then(|| (name.to_string(), value.map(str::to_string).map_err(|_| ())))
+    };
     let mut vars = BTreeMap::new();
-    if text.contains('\0') {
-        for entry in text.split('\0') {
-            if let Some((name, value)) = entry.split_once('=').filter(|(name, _)| is_name(name)) {
-                vars.insert(name.to_string(), value.to_string());
+    if body.contains(&0) {
+        for entry in body.split(|byte| *byte == 0) {
+            if let Some((name, Ok(value))) = variable(entry) {
+                vars.insert(name, value);
             }
         }
         return vars;
     }
+    // Lines as `str::lines` gives them: no empty piece after a final line end, and a carriage
+    // return before a line end is part of the ending.
+    let mut lines: Vec<&[u8]> = body.split(|byte| *byte == b'\n').collect();
+    if lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    // The variable the next continuation line belongs to; `None` before the first variable and
+    // while a variable that was left out is being skipped.
     let mut current: Option<String> = None;
-    for line in text.lines() {
-        match line.split_once('=').filter(|(name, _)| is_name(name)) {
-            Some((name, value)) => {
-                vars.insert(name.to_string(), value.to_string());
-                current = Some(name.to_string());
+    for line in lines {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        match variable(line) {
+            Some((name, Ok(value))) => {
+                vars.insert(name.clone(), value);
+                current = Some(name);
             }
-            None => {
-                if let Some(value) = current.as_ref().and_then(|name| vars.get_mut(name)) {
-                    value.push('\n');
-                    value.push_str(line);
+            Some((name, Err(()))) => {
+                vars.remove(&name);
+                current = None;
+            }
+            None => match (std::str::from_utf8(line), current.take()) {
+                (Ok(line), Some(name)) => {
+                    if let Some(value) = vars.get_mut(&name) {
+                        value.push('\n');
+                        value.push_str(line);
+                    }
+                    current = Some(name);
                 }
-            }
+                (Err(_), Some(name)) => {
+                    vars.remove(&name);
+                }
+                (_, None) => {}
+            },
         }
     }
     vars
@@ -313,5 +368,26 @@ mod tests {
         assert_eq!(get(&vars, "EMPTY"), Some(""));
         assert_eq!(vars.len(), 4);
         assert!(parse(b"").is_empty());
+    }
+
+    /// A value, a name or a continuation line that is not UTF-8 leaves its variable out, in
+    /// both forms, and takes nothing else with it.
+    #[test]
+    fn entries_that_are_not_unicode_are_left_out() {
+        let vars = parse(b"A=1\0ODD=\xff\xfe\0MIXED=ok\xff\0N\xffME=x\0B=2\0");
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "B"), Some("2"));
+        assert_eq!(vars.len(), 2);
+
+        let vars = parse(
+            b"A=1\nODD=\xff\xfe\n still odd\nB=2\nMULTI=first\n second \xff line\nthird\nC=3\r\nN\xffME=x\nD=4\n",
+        );
+        assert_eq!(get(&vars, "A"), Some("1"));
+        assert_eq!(get(&vars, "B"), Some("2"));
+        // In this form a line that does not start a variable continues the one before it, so
+        // the line with the damaged name belongs to C's value, and C is left out with it.
+        assert_eq!(get(&vars, "C"), None);
+        assert_eq!(get(&vars, "D"), Some("4"));
+        assert_eq!(vars.len(), 3, "{:?}", vars.keys());
     }
 }
