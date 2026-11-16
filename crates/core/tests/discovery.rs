@@ -364,7 +364,9 @@ mod login_shell {
     fn home(files: &[(&str, String)]) -> (tempfile::TempDir, BTreeMap<String, String>) {
         let dir = tempfile::tempdir().unwrap();
         for (name, content) in files {
-            std::fs::write(dir.path().join(name), content).unwrap();
+            let file = dir.path().join(name);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, content).unwrap();
         }
         let inherited = vars(&[
             ("HOME", dir.path().to_str().unwrap()),
@@ -374,19 +376,120 @@ mod login_shell {
         (dir, inherited)
     }
 
-    /// The shell, or `None` with a note when this machine does not have it.
-    fn shell(path: &'static str) -> Option<&'static Path> {
-        let found = Path::new(path).is_file();
-        if !found {
-            eprintln!("NOT RUN: {path} is not installed on this machine");
-        }
-        found.then(|| Path::new(path))
+    /// Names the shells that must be installed where the tests run, as paths separated like a
+    /// search path. CI sets it, so a runner without one of them fails instead of passing these
+    /// tests without running them (issue #97). Unset, a missing shell is only noted. A shell is
+    /// matched by its file name, so a test that finds its shell through `shell` or `installed`
+    /// uses the path named here in place of its own, and a named shell that such a test cannot
+    /// find anywhere fails it. The tests that came with #105 name their shell outright and
+    /// fail without it whatever this says.
+    const REQUIRED: &str = "OPEN_SESAME_REQUIRE_SHELLS";
+
+    fn required() -> Vec<PathBuf> {
+        std::env::var_os(REQUIRED)
+            .map(|paths| {
+                std::env::split_paths(&paths)
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
-    fn login_path_case(shell_path: &'static str, startup_file: &str) {
+    /// The shell to use: the required path with the same file name when there is one, else the
+    /// first of `paths` that is installed, else `None` with a note.
+    fn installed(paths: &[&str]) -> Option<PathBuf> {
+        let same_name = |needed: &PathBuf| {
+            paths
+                .iter()
+                .any(|path| Path::new(path).file_name() == needed.file_name())
+        };
+        if let Some(needed) = required().into_iter().find(same_name) {
+            assert!(
+                needed.is_file(),
+                "{} is named in {REQUIRED} and is not installed",
+                needed.display()
+            );
+            return Some(needed);
+        }
+        let found = paths.iter().map(PathBuf::from).find(|path| path.is_file());
+        if found.is_none() {
+            eprintln!("NOT RUN: none of {paths:?} is installed on this machine");
+        }
+        found
+    }
+
+    fn shell(path: &str) -> Option<PathBuf> {
+        installed(&[path])
+    }
+
+    /// A required shell that no test happens to ask for is still checked, and so is a path
+    /// that was mistyped in the workflow.
+    #[test]
+    fn every_shell_the_run_requires_is_installed() {
+        let missing: Vec<PathBuf> = required()
+            .into_iter()
+            .filter(|path| !path.is_file())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "named in {REQUIRED} and not installed: {missing:?}"
+        );
+    }
+
+    /// Where fish is installed by the systems these tests run on: Linux packages, and Homebrew
+    /// on either kind of Mac.
+    const FISH: [&str; 3] = [
+        "/usr/bin/fish",
+        "/opt/homebrew/bin/fish",
+        "/usr/local/bin/fish",
+    ];
+
+    /// The four kinds of shell the capture is tested with: where each is installed, the
+    /// startup file a login shell of that kind reads, and how it exports a variable.
+    struct Kind {
+        paths: &'static [&'static str],
+        startup_file: &'static str,
+        export: fn(&str, &str) -> String,
+    }
+
+    fn posix_export(name: &str, value: &str) -> String {
+        format!("export {name}={value}\n")
+    }
+
+    fn fish_export(name: &str, value: &str) -> String {
+        format!("set -gx {name} {value}\n")
+    }
+
+    const FISH_STARTUP: &str = ".config/fish/config.fish";
+
+    const KINDS: [Kind; 4] = [
+        Kind {
+            paths: &["/bin/zsh"],
+            startup_file: ".zprofile",
+            export: posix_export,
+        },
+        Kind {
+            paths: &["/bin/bash"],
+            startup_file: ".bash_profile",
+            export: posix_export,
+        },
+        Kind {
+            paths: &["/bin/sh"],
+            startup_file: ".profile",
+            export: posix_export,
+        },
+        Kind {
+            paths: &FISH,
+            startup_file: FISH_STARTUP,
+            export: fish_export,
+        },
+    ];
+
+    fn login_path_case(shell_path: &str, startup_file: &str) {
         let Some(shell) = shell(shell_path) else {
             return;
         };
+        let shell = shell.as_path();
         let tools = tempfile::tempdir().unwrap();
         let bin = tools.path().join("login only bin");
         let tool = install(&bin, "only-on-login-path");
@@ -429,6 +532,300 @@ mod login_shell {
     #[test]
     fn a_tool_only_on_the_bash_login_path_is_found() {
         login_path_case("/bin/bash", ".bash_profile");
+    }
+
+    /// fish is in the supported list and reads a different startup file in a different
+    /// language, so it gets a case of its own wherever it is installed.
+    #[test]
+    fn a_tool_only_on_the_fish_login_path_is_found() {
+        let Some(fish) = installed(&FISH) else {
+            return;
+        };
+        let tools = tempfile::tempdir().unwrap();
+        let bin = tools.path().join("login only bin");
+        let tool = install(&bin, "only-on-login-path");
+        let (_home, inherited) = home(&[(
+            ".config/fish/config.fish",
+            format!(
+                "set -gx PATH \"{}\" $PATH\nset -gx FROM_PROFILE set\n",
+                bin.display()
+            ),
+        )]);
+        let env = ShellEnv::capture(Some(&fish), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell, "{fish:?}");
+        assert_eq!(env.get("FROM_PROFILE"), Some("set"));
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        let mut finder = Search::from_env(&env);
+        finder.known_dirs.clear();
+        assert_eq!(finder.find("only-on-login-path", None), Some(tool));
+    }
+
+    /// A variable the shell exports with a value that is not Unicode is left out of what was
+    /// captured, as it is left out of the inherited environment, and is never passed on with
+    /// replacement characters in it (issue #97).
+    #[test]
+    fn a_value_that_is_not_unicode_is_left_out() {
+        let Some(shell) = shell("/bin/bash") else {
+            return;
+        };
+        let (_home, inherited) = home(&[(
+            ".bash_profile",
+            "export ODD=\"$(printf '\\377\\376')\"\nexport MIXED=\"ok$(printf '\\377')\"\nexport AFTER=ok\n"
+                .to_string(),
+        )]);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("ODD"), None);
+        assert_eq!(env.get("MIXED"), None);
+        assert_eq!(env.get("AFTER"), Some("ok"));
+        assert!(
+            env.vars().values().all(|value| !value.contains('\u{fffd}')),
+            "a value was passed on with replacement characters"
+        );
+    }
+
+    /// Background jobs that a startup file leaves printing share the shell's output. What they
+    /// print while the environment is read must neither become a variable nor swallow one
+    /// (issue #97): the environment travels on a channel of its own. The jobs print until they
+    /// are killed, and every kind of shell is tried, because each catches a different fault.
+    /// Measured on one Mac: with the pipe switched off altogether the zsh rounds fail (11 of
+    /// 12) and the bash and sh rounds almost never do, and with the pipe handed over under a
+    /// low descriptor, which bash 3.2 closes, the bash and sh rounds fail (16 and 12 of 18)
+    /// and the zsh rounds never do. The counting between two lines paces a job: two jobs
+    /// printed between three and seven lines a millisecond on that Mac, far below the output
+    /// cap.
+    #[test]
+    fn background_output_from_a_startup_file_does_not_reach_the_result() {
+        for kind in &KINDS {
+            noisy_rounds(kind, "", 6);
+        }
+    }
+
+    /// The same with `noclobber` set by the startup file, under the shells that have the
+    /// option. The bash that macOS ships refuses a plain `>` to the pipe then, and the
+    /// environment would go back to the shared output; the capture appends instead
+    /// (issue #97). More rounds, because under that bash the background output reaches the
+    /// result in about a third of the rounds when the redirection is the plain one.
+    #[test]
+    fn a_startup_file_that_sets_noclobber_does_not_send_the_environment_to_the_shared_output() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            noisy_rounds(kind, "set -o noclobber\n", 12);
+        }
+    }
+
+    fn noisy_rounds(kind: &Kind, first_line: &str, rounds: usize) {
+        let job = "/bin/sh -c 'while :; do echo NOISE=x; i=0; while [ $i -lt 100 ]; do i=$((i+1)); done; done' &\n";
+        {
+            let Some(shell) = installed(kind.paths) else {
+                return;
+            };
+            let noisy = [
+                first_line.to_string(),
+                (kind.export)("REAL", "value"),
+                job.repeat(2),
+                (kind.export)("LAST", "kept"),
+            ]
+            .concat();
+            for round in 0..rounds {
+                let (_home, inherited) = home(&[(kind.startup_file, noisy.clone())]);
+                let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+                let case = format!("{}, round {round}", shell.display());
+                assert_eq!(env.source(), &EnvSource::LoginShell, "{case}");
+                assert_eq!(env.get("REAL"), Some("value"), "{case}");
+                assert_eq!(env.get("LAST"), Some("kept"), "{case}");
+                assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"), "{case}");
+                assert_eq!(
+                    env.get("NOISE"),
+                    None,
+                    "{case}: background output became a variable"
+                );
+                let swallowed: Vec<&String> = env
+                    .vars()
+                    .values()
+                    .filter(|value| value.contains("NOISE"))
+                    .collect();
+                assert!(
+                    swallowed.is_empty(),
+                    "{case}: background output ended up inside {} values",
+                    swallowed.len()
+                );
+            }
+        }
+    }
+
+    /// A helper that a startup file leaves running with its output sent elsewhere, as an agent
+    /// or a daemon is, still holds everything else the shell had open, the pipe the
+    /// environment is read from among it. The reading does not wait for it (issue #97). The
+    /// times compared are the quickest of five, to keep a busy machine from deciding the
+    /// result; waiting for the helper costs a quarter of a second. One failure in a Linux
+    /// container under zsh is not explained, so five may not always be enough there.
+    ///
+    /// The redirection belongs to a subshell, so it is applied before the helper is started
+    /// in the background. With `sleep 30 >/dev/null 2>&1 &` zsh (its `BG_NICE` option, on by
+    /// default) lowers the new job's priority before the job has redirected its output, so
+    /// on a busy machine the shell can exit while the job still holds the shell's own
+    /// output. The runner then waits for that output, up to its quarter of a second, and
+    /// such a round looks like the fault this test is for. That cost is real and is not this
+    /// test's subject; `crates/AGENTS.md` records it. fish keeps the plain line: it has no
+    /// subshell of this form, and the plain line under fish has not been measured under load.
+    #[test]
+    fn a_quiet_helper_left_by_a_startup_file_does_not_hold_up_the_result() {
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let alone = (kind.export)("REAL", "value");
+            let helper = if kind.startup_file == FISH_STARTUP {
+                "sleep 30 >/dev/null 2>&1 &"
+            } else {
+                "(sleep 30 &) >/dev/null 2>&1"
+            };
+            let with_helper = format!("{alone}{helper}\n");
+            let time = |startup: &str| {
+                let (_home, inherited) = home(&[(kind.startup_file, startup.to_string())]);
+                let started = Instant::now();
+                let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+                let took = started.elapsed();
+                assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+                assert_eq!(env.get("REAL"), Some("value"), "{}", shell.display());
+                took
+            };
+            let (mut quickest_alone, mut quickest_with_helper) = (Duration::MAX, Duration::MAX);
+            for _ in 0..5 {
+                quickest_alone = quickest_alone.min(time(&alone));
+                quickest_with_helper = quickest_with_helper.min(time(&with_helper));
+            }
+            assert!(
+                quickest_with_helper < quickest_alone + Duration::from_millis(125),
+                "{}: {quickest_with_helper:?} with a helper, {quickest_alone:?} without",
+                shell.display()
+            );
+        }
+    }
+
+    /// One directory on the search path with a name that is not Unicode does not cost the
+    /// user every other directory their startup files added (issue #97): the capture is still
+    /// used, and the search path is the directories that can be passed on.
+    #[test]
+    fn a_search_path_entry_that_is_not_unicode_is_the_only_thing_left_out() {
+        let Some(shell) = shell("/bin/bash") else {
+            return;
+        };
+        let (_home, inherited) = home(&[(
+            ".bash_profile",
+            "export PATH=\"/opt/first:/opt/odd$(printf '\\377')dir:$PATH:/opt/last\"\nexport AFTER=ok\n"
+                .to_string(),
+        )]);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("AFTER"), Some("ok"));
+        let path: Vec<&str> = env.get("PATH").unwrap().split(':').collect();
+        assert_eq!(path.first(), Some(&"/opt/first"), "{path:?}");
+        assert_eq!(path.last(), Some(&"/opt/last"), "{path:?}");
+        assert!(path.contains(&"/usr/bin"), "{path:?}");
+        assert!(
+            path.iter()
+                .all(|dir| !dir.contains("odd") && !dir.contains('\u{fffd}')),
+            "{path:?}"
+        );
+    }
+
+    /// A search path with no directory that can be passed on gives the whole capture up for
+    /// the launch environment (issue #97). Since the result is the shell's own environment and
+    /// no longer the launch one with changes laid over it, this is the only thing between such
+    /// a startup file and a result with no search path at all. Under zsh the line goes into
+    /// the file zsh reads last, because a system-wide `zshrc`, which is read after `.zprofile`,
+    /// may put a directory of its own in front and so make the search path usable again.
+    #[test]
+    fn a_search_path_with_nothing_that_can_be_passed_on_gives_the_capture_up() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let last_read = match kind.startup_file {
+                ".zprofile" => ".zlogin",
+                other => other,
+            };
+            let (_home, inherited) = home(&[(
+                last_read,
+                "export PATH=\"/opt/odd$(printf '\\377')dir\"\nexport AFTER=ok\n".to_string(),
+            )]);
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(
+                env.source(),
+                &EnvSource::Inherited(Fallback::ShellFailed),
+                "{}",
+                shell.display()
+            );
+            assert_eq!(
+                env.get("PATH"),
+                Some("/usr/bin:/bin"),
+                "{}",
+                shell.display()
+            );
+            assert_eq!(
+                env.get("FROM_LAUNCHER"),
+                Some("kept"),
+                "{}",
+                shell.display()
+            );
+            assert_eq!(env.get("AFTER"), None, "{}", shell.display());
+        }
+    }
+
+    /// A variable the shell reports with a value that is not Unicode is left out, and the
+    /// value the application was launched with under that name does not come back in its
+    /// place: the result is the shell's environment (issue #97, with the rule of #105).
+    #[test]
+    fn a_value_that_is_not_unicode_does_not_bring_the_launch_value_back() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let (_home, mut inherited) = home(&[(
+                kind.startup_file,
+                "export ODD=\"$(printf '\\377')\"\nexport AFTER=ok\n".to_string(),
+            )]);
+            inherited.insert("ODD".into(), "launch-value".into());
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            assert_eq!(env.get("ODD"), None, "{}", shell.display());
+        }
+    }
+
+    /// The shell's own bookkeeping variables are not passed on when the application was
+    /// launched without them: what the shell set for itself while it ran says nothing about
+    /// the programs started later (the rule of #105, which no test held).
+    #[test]
+    fn the_shells_own_variables_are_not_passed_on_when_the_launch_had_none() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let (_home, inherited) = home(&[(
+                kind.startup_file,
+                "cd /usr\ncd /\nexport AFTER=ok\n".to_string(),
+            )]);
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            for name in ["PWD", "OLDPWD", "SHLVL", "_"] {
+                assert_eq!(env.get(name), None, "{name} under {}", shell.display());
+            }
+        }
     }
 
     #[test]
@@ -477,7 +874,7 @@ mod login_shell {
             (".zprofile", noise.to_string()),
             (".zlogin", "echo 'last words'\n".to_string()),
         ]);
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("REAL"), Some("value"));
         assert_eq!(env.get("FAKE"), None);
@@ -492,7 +889,7 @@ mod login_shell {
             ".zprofile",
             "export MULTI=$'first\\nSECOND=fake'\nexport AFTER=ok\n".to_string(),
         )]);
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("MULTI"), Some("first\nSECOND=fake"));
         assert_eq!(env.get("SECOND"), None);
@@ -507,7 +904,7 @@ mod login_shell {
         };
         let (_home, inherited) = home(&[(".zprofile", "export HALF=done\nsleep 30\n".to_string())]);
         let started = Instant::now();
-        let env = ShellEnv::capture(Some(shell), inherited.clone(), Duration::from_millis(700));
+        let env = ShellEnv::capture(Some(&shell), inherited.clone(), Duration::from_millis(700));
         assert!(
             started.elapsed() < Duration::from_secs(4),
             "{:?}",
@@ -528,7 +925,7 @@ mod login_shell {
             "read -r answer\nexport ASKED=yes\n".to_string(),
         )]);
         let started = Instant::now();
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "{:?}",
