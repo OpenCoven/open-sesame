@@ -10,7 +10,10 @@ const entry = (id, name, defaultOn, issue, commands = []) => Object.freeze({
   ]),
 });
 export const widgets = Object.freeze([
-  entry('today', 'Today', true, 77),
+  entry('today', 'Today', true, 77, [
+    {id: 'today.capture-note', label: 'Capture a note', action: 'capture-note'},
+    {id: 'today.capture-task', label: 'Capture a task', action: 'capture-task'},
+  ]),
   entry('projects', 'Projects', true, 77),
   entry('focus', 'Focus', true, 77),
   entry('shells', 'Shells', true, null, [{id: 'shells.new', label: 'New shell', action: 'new'}]),

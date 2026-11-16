@@ -1,7 +1,7 @@
 import { CHANGED_EVENT, mountAccount } from './account.js';
 import { createBridge } from './bridge.js';
 import { widgets, paletteIndex } from './manifest.js';
-import { searchCommands } from './palette.js';
+import { paletteView } from './palette.js';
 import { loaders, styles } from './widget-loaders.js';
 import { createLifecycle } from './lifecycle.js';
 import { createPreferences } from './preferences.js';
@@ -29,6 +29,9 @@ let commands = paletteIndex;
 let manager;
 let state;
 let restoring = true;
+// A palette capture that was not saved (issue #77): its text comes back each time the palette
+// opens, and its error stays shown, until it is saved or the person clears it.
+let unsaved = '', unsavedError = '';
 const navButtons = new Map();
 const switches = new Map();
 const run = promise => promise.catch(error => report(message(error)));
@@ -41,20 +44,50 @@ function closePalette() {
 function openPalette() {
   palette.hidden = false;
   paletteToggle.setAttribute('aria-expanded','true');
-  query.value = '';
+  query.value = unsaved;
   renderCommands();
   query.focus();
 }
+// A calculator or world-clock answer (issue #77) comes first. It invokes no command: choosing it
+// copies the result, or says why it could not.
+function renderAnswer(found) {
+  if (found.error) {
+    const line = element('p',found.error);
+    line.dataset.commandAnswer = 'error';
+    return line;
+  }
+  const button = element('button');
+  button.type = 'button';
+  button.dataset.commandAnswer = found.kind;
+  button.append(element('strong',found.result),element('span',` ${found.expression} · Copy`));
+  button.addEventListener('click',() => {
+    const copied = navigator.clipboard?.writeText(found.result) ?? Promise.reject(Error('unavailable'));
+    copied.then(() => {button.lastChild.textContent = ` ${found.expression} · Copied`;},
+      () => {button.lastChild.textContent = ` ${found.expression} · Could not copy. Select the result to copy it.`;});
+  });
+  return button;
+}
 function renderCommands() {
   results.replaceChildren();
-  for (const command of searchCommands(commands,query.value)) {
+  const view = paletteView(commands,query.value);
+  if (view.answer) results.append(renderAnswer(view.answer));
+  for (const command of view.commands) {
     const button = element('button',`${command.label}${state?.on[command.widget] === false ? ' · Off' : ''}`);
     button.type = 'button';
     button.dataset.command = command.id;
     button.disabled = !manager;
     button.addEventListener('click',() => {
+      // A capture that is not saved puts its text back in the palette, with the reason.
+      const typed = query.value;
       closePalette();
-      run(manager.show(command.widget,command.action));
+      run(manager.show(command.widget,command.action).then(() => {
+        if (!command.capture) return;
+        if (unsavedError && notice.textContent === unsavedError) report('');
+        unsaved = unsavedError = '';
+      },error => {
+        if (command.capture) {unsaved = typed;unsavedError = message(error);openPalette();}
+        throw error;
+      }));
     });
     results.append(button);
   }
@@ -118,7 +151,10 @@ widgetToggle.addEventListener('click',() => {
   settings.hidden=!settings.hidden;
   widgetToggle.setAttribute('aria-expanded',String(!settings.hidden));
 });
-query.addEventListener('input',renderCommands);
+query.addEventListener('input',() => {
+  if (unsaved) unsaved = query.value;
+  renderCommands();
+});
 query.addEventListener('keydown',event => {
   if (event.key === 'ArrowDown') {event.preventDefault();results.querySelector('button')?.focus();}
   if (event.key === 'Enter') {event.preventDefault();results.querySelector('button')?.click();}

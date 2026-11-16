@@ -24,6 +24,56 @@ assert(!/\bimport\s*\(/.test(read('ui/manifest.js')));
 assert(!/\bwindow\b|globalThis/.test(read('ui/manifest.js')));
 console.log('Manifest/palette: defaults, metadata-only discovery and scoped command identities pass.');
 
+// Issue #77: Today, Projects and Focus replace their pending loaders, and nothing else does. The
+// palette captures a note or a task into Today and shows calculator and world-clock answers,
+// which invoke no command.
+{
+  const loaders = read('ui/widget-loaders.js');
+  for (const id of ['today', 'projects', 'focus']) {
+    assert.match(loaders, new RegExp(String.raw`\b${id}: \(\) => import\('\./widgets/${id}\.js'\)`), `${id} loads its port`);
+    assert.match(loaders, new RegExp(String.raw`\b${id}: '\./widgets/views\.css'`), `${id} loads the views' style`);
+  }
+  for (const id of ['agents', 'reader', 'github', 'familiars', 'local-media', 'desktops', 'transcription']) {
+    assert.match(loaders, new RegExp(String.raw`'?${id}'?: \(\) => import\('\./widgets/pending\.js'\)`), `${id} is still pending`);
+  }
+  const today = widgets.find(widget => widget.id === 'today');
+  assert.deepEqual(today.commands.map(command => [command.id, command.label, command.action]), [
+    ['today.open', 'Open Today', 'open'], ['today.capture-note', 'Capture a note', 'capture-note'], ['today.capture-task', 'Capture a task', 'capture-task'],
+  ]);
+  const {paletteView, captureCommands} = await load('ui/palette.js');
+  const at = {now: new Date('2026-11-16T04:00:00Z'), localZone: 'Europe/London'};
+  assert.deepEqual(paletteView(paletteIndex, '', at), {answer: null, commands: searchCommands(paletteIndex, '')});
+  const capture = query => paletteView(paletteIndex, query, at).commands.filter(command => command.id.endsWith('.text')).map(command => [command.id, command.label, command.widget, command.group, command.action]);
+  assert.deepEqual(capture('buy milk'), [
+    ['today.capture-note.text', 'Capture note: buy milk', 'today', 'Today', 'capture-note:buy milk'],
+    ['today.capture-task.text', 'Capture task: buy milk', 'today', 'Today', 'capture-task:buy milk'],
+  ]);
+  assert.deepEqual(capture('  task:  call Sam '), [['today.capture-task.text', 'Capture task: call Sam', 'today', 'Today', 'capture-task:call Sam']]);
+  assert.deepEqual(capture('TODO: call Sam').map(row => row[4]), ['capture-task:call Sam']);
+  assert.deepEqual(capture('Note: idea').map(row => row[4]), ['capture-note:idea']);
+  for (const query of ['note:', 'task:   ', '/new', '!ls', '   ']) assert.deepEqual(capture(query), [], `nothing to capture for ${JSON.stringify(query)}`);
+  const long = 'x'.repeat(100);
+  assert.equal(capture(long)[0][1], `Capture note: ${'x'.repeat(59)}…`, 'a long draft is shortened in its label');
+  assert.equal(capture(long)[0][4], `capture-note:${long}`, 'but captured in full');
+  // Commands that match come before the captures, so Enter on a command's name opens it.
+  const shell = paletteView(paletteIndex, 'new shell', at).commands;
+  assert.equal(shell[0].id, 'shells.new');
+  assert.deepEqual(shell.slice(-2).map(command => command.id), ['today.capture-note.text', 'today.capture-task.text']);
+  // An answer replaces the captures: Enter never turns a sum or a time question into a note.
+  const sum = paletteView(paletteIndex, '2+2', at);
+  assert.equal(sum.answer.kind, 'calculation');
+  assert.equal(sum.answer.result, '4');
+  assert.deepEqual(sum.commands, []);
+  const time = paletteView(paletteIndex, 'time in Tokyo', at);
+  assert.deepEqual([time.answer.kind, time.answer.result, time.answer.timeZone], ['time', '1:00:00 PM GMT+9', 'Asia/Tokyo']);
+  assert.deepEqual(time.commands.filter(command => command.id.endsWith('.text')), []);
+  assert.equal(paletteView(paletteIndex, '(1+', at).answer.error, 'Finish the expression to calculate.');
+  assert.deepEqual(captureCommands('note: x').map(command => [Object.isFrozen(command), command.capture]), [[true, true]]);
+  assert(!paletteIndex.some(command => command.capture), 'only typed drafts are captures');
+  assert(!/\b(?:window|globalThis|document|localStorage|fetch)\b/.test(read('ui/palette.js')), 'The palette is pure');
+}
+console.log('Views (#77): Today, Projects and Focus replace only their loaders; the palette captures a note or a task and shows answers that invoke nothing.');
+
 // No module in ui/ writes to a global object, so no widget can share state through one. A write is
 // an assignment, update, delete or define on a member of window, globalThis, self, top, frames or
 // host (the name widgets receive the window under), also when reached as a member such as
