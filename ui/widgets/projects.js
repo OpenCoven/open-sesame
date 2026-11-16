@@ -4,12 +4,14 @@
 // a new or renamed project) stays in its field until the core has saved it. An edit is saved
 // only over the row it was opened from. A row changed since is reported, the fields the person
 // did not edit show the newer row, and saving again writes only the fields the person edited.
-import { LIMITS, collection, counts, draftItem, excerpt, isArchived, title } from '../items.js';
+// A draft is never saved over an item another writer changed to another kind.
+import { LIMITS, collection, counts, draftItem, editChanges, excerpt, isArchived, title } from '../items.js';
 import { itemStore, maker, redraw, statusLine, whenShown } from './view-kit.js';
 
 const KINDS = {note: 'Note', task: 'Task', bookmark: 'Bookmark'};
 const CHANGED = 'That item was changed after you opened it. Your changes were not saved. Save again to apply them to the newer version.';
 const MISSING = 'That item no longer exists.';
+const KIND_CHANGED = kind => `That item was changed to a ${kind} after you opened it. Your changes were not saved; copy them if you need them, then choose Discard changes to edit the ${kind}.`;
 
 export async function mount({surface, signal, bridge, host}) {
   const document = surface.ownerDocument;
@@ -17,7 +19,7 @@ export async function mount({surface, signal, bridge, host}) {
   const alive = () => !signal.aborted;
   const options = (pairs, chosen) => pairs.map(([value, label]) => h('option', {value, text: label, selected: value === chosen}));
   const filter = {projectId: 'all', kind: 'all', archived: false};
-  const drafts = new Map(); // item ID → {opened, fields, edited}: an edit not yet saved, and the names of the fields the person changed
+  const drafts = new Map(); // item ID → {opened, kind, fields, edited}: an edit not yet saved, the kind it was opened as, and the names of the fields the person changed
   const renames = new Map(); // project ID → a new name not yet saved
   let selected = null, confirming = null, rows = [], projects = [], addNumber = 0, projectNumber = 0;
 
@@ -100,7 +102,7 @@ export async function mount({surface, signal, bridge, host}) {
   function open(id) {
     const item = rows.find(entry => entry.id === id);
     if (!item) return;
-    if (!drafts.has(id)) drafts.set(id, {opened: item.updatedAt, fields: fieldsFor(item), edited: new Set()});
+    if (!drafts.has(id)) drafts.set(id, {opened: item.updatedAt, kind: item.kind, fields: fieldsFor(item), edited: new Set()});
     selected = id;
     editorStatus = statusLine(h, {'data-editor-status': true});
     drawEditor({build: true});
@@ -120,7 +122,9 @@ export async function mount({surface, signal, bridge, host}) {
       project.replaceChildren(...options(projectChoices(), draft.fields.projectId));
       return;
     }
-    const kind = item?.kind ?? 'note';
+    // The form follows the kind the draft was opened as, so a draft is never shown in another
+    // kind's fields.
+    const kind = draft.kind ?? item?.kind ?? 'note';
     const field = (label, control) => h('label', {class: 'field'}, [label, control]);
     const input = (name, attributes = {}) => h('input', {type: 'text', name, value: draft.fields[name] ?? '', 'data-edit-field': name, ...attributes});
     const fields = kind === 'note' ? [field('Title', input('title')), field('Body', h('textarea', {name: 'body', rows: 6, 'data-edit-field': 'body', text: draft.fields.body ?? ''}))]
@@ -146,25 +150,20 @@ export async function mount({surface, signal, bridge, host}) {
     drawEditor({build: true});
     if (focused) editor.querySelector(`[data-edit-field="${focused}"]`)?.focus();
   }
-  // Only the fields the person edited, so a field another writer changed is never written back.
-  function editedChanges(current, draft) {
-    const values = draft.fields, edited = name => draft.edited.has(name), changes = {};
-    if (edited('projectId')) changes.projectId = values.projectId;
-    if (current.kind === 'note') {
-      if (edited('title')) Object.assign(changes, {title: values.title.trim(), text: values.title.trim() || current.text});
-      if (edited('body')) changes.body = values.body;
-    } else if (current.kind === 'bookmark') {
-      if (edited('text') || edited('url')) changes.text = values.text.trim() || values.url.trim();
-      if (edited('url')) changes.url = values.url.trim();
-    } else if (edited('text')) changes.text = values.text.trim();
-    return changes;
+  // Another writer changed the item's kind: its fields no longer match the draft's, so nothing is
+  // sent and the draft stays shown in its own fields for the person to copy.
+  function kindChanged(draft, item) {
+    if (item.kind === draft.kind) return false;
+    editorStatus.say(KIND_CHANGED(KINDS[item.kind]?.toLowerCase() ?? 'item'), true);
+    return true;
   }
   async function saveEdit() {
     const id = selected, draft = drafts.get(id), current = rows.find(entry => entry.id === id);
     if (!draft) return;
     if (!current) { editorStatus.say(MISSING, true); return; }
+    if (kindChanged(draft, current)) return;
     if (current.updatedAt !== draft.opened) { rebase(draft, current); editorStatus.say(CHANGED, true); return; }
-    const changes = editedChanges(current, draft);
+    const changes = editChanges(current, draft.fields, draft.edited);
     if (current.kind === 'task' && draft.edited.has('text') && !changes.text) { editorStatus.say('Write the task first.', true); return; }
     if (current.kind === 'bookmark' && draft.edited.has('url') && !changes.url) { editorStatus.say('Add the page address.', true); return; }
     editorStatus.say('Saving…');
@@ -172,7 +171,7 @@ export async function mount({surface, signal, bridge, host}) {
     if (!alive()) return;
     if (result.saved) {
       drafts.delete(id);
-      drafts.set(id, {opened: result.item.updatedAt, fields: fieldsFor(result.item), edited: new Set()});
+      drafts.set(id, {opened: result.item.updatedAt, kind: result.item.kind, fields: fieldsFor(result.item), edited: new Set()});
       editorStatus.say('Saved.');
       draw();
       return;
@@ -181,8 +180,10 @@ export async function mount({surface, signal, bridge, host}) {
       await store.load();
       if (!alive()) return;
       const latest = rows.find(entry => entry.id === id);
-      if (latest) rebase(draft, latest);
-      editorStatus.say(latest ? CHANGED : MISSING, true);
+      if (!latest) { editorStatus.say(MISSING, true); return; }
+      if (kindChanged(draft, latest)) return;
+      rebase(draft, latest);
+      editorStatus.say(CHANGED, true);
       return;
     }
     editorStatus.say(result.error, true);

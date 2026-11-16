@@ -12,7 +12,8 @@
 //   draft is sent again under the same ID, so the core keeps one row; if the draft changed in
 //   between, the stored row is looked up first and edited rather than duplicated.
 // - Every edit names the updatedAt it started from. A conflict is reported and overwrites
-//   nothing; reading again picks up the other change.
+//   nothing; reading again picks up the other change. An edit from Projects sends only the
+//   fields the person edited (editChanges).
 // - Nothing is shown as saved until the core answers with the stored row. Timestamps are never
 //   sent; they are the core's.
 
@@ -48,9 +49,10 @@ export function patch(item, value) {
   return {stage: value, done: value === 'done' && item.kind === 'task', previousStage: value === 'done' ? (known(item.stage) ? item.stage : known(item.previousStage) ? item.previousStage : 'inbox') : value};
 }
 
-// Plain text from a note's Markdown, at most 180 characters, for textContent only. Unlike the
-// prototype, a tag is replaced by a space rather than removed, so taking one out never joins the
-// text around it into another tag.
+// Plain text from a note's Markdown, at most 180 characters. It can still hold text shaped like a
+// tag, such as one left unclosed or one that a later Markdown removal joins together, so it is
+// only ever shown with textContent. Unlike the prototype, the tag step replaces a tag with a space
+// rather than removing it, so that step never joins the text around a tag into another one.
 export function excerpt(body) {
   const text = String(body || '').replace(/```[^\n]*\n?|~~~[^\n]*\n?/g, ' ')
     .replace(/!\[([^\]]*)\]\([^\n]*?\)/g, '$1').replace(/\[([^\]]+)\]\([^\n]*?\)/g, '$1')
@@ -69,6 +71,22 @@ export function title(item) {
     const address = new URL(item.url);
     return address.hostname.replace(/^www\./, '') + (address.pathname === '/' ? '' : address.pathname);
   } catch { return item.url; }
+}
+
+// What an edit of `current` sends: only the fields named in `edited`, from the editor's `fields`,
+// so a field another writer changed is never written back. A note's title is also its text, and a
+// bookmark with no name is named by its address, as the editor has always saved them.
+export function editChanges(current, fields, edited) {
+  const names = new Set(edited), changes = {};
+  if (names.has('projectId')) changes.projectId = fields.projectId;
+  if (current.kind === 'note') {
+    if (names.has('title')) Object.assign(changes, {title: fields.title.trim(), text: fields.title.trim() || current.text});
+    if (names.has('body')) changes.body = fields.body;
+  } else if (current.kind === 'bookmark') {
+    if (names.has('text') || names.has('url')) changes.text = fields.text.trim() || fields.url.trim();
+    if (names.has('url')) changes.url = fields.url.trim();
+  } else if (names.has('text')) changes.text = fields.text.trim();
+  return changes;
 }
 
 // The fields a captured draft is saved with, as the prototype's capture form saved them: a note

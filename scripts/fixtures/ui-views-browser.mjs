@@ -38,6 +38,7 @@ const MINUTE = 60_000;
 const SAVE_FAILED = 'Could not save. Your changes were not stored; try again.';
 const OVERTAKEN = 'That capture was not saved because another view opened first. The palette keeps it; try again.';
 const NO_RESPONSE = 'The desktop connection did not respond.';
+const KIND_CHANGED = 'That item was changed to a task after you opened it. Your changes were not saved; copy them if you need them, then choose Discard changes to edit the task.';
 
 // The host: the shell's own commands in the shapes src-tauri answers, settings and widget
 // states as the core keeps them, and items and projects through the stand-in.
@@ -386,6 +387,29 @@ try {
         await status.getByText('Saved.', {exact: true}).waitFor();
         assert.equal(editing.core.items.get(seeded.id).title, 'Plan, second draft', 'saving again applies the person’s edit');
         assert.equal(editing.core.items.get(seeded.id).body, 'changed elsewhere', 'and keeps the other writer’s change to the field the person did not edit');
+        await editor.getByRole('button', {name: 'Close', exact: true}).click();
+      });
+      await step('a Projects edit is not saved across another writer’s change of kind', async () => {
+        const projects = view(page, 'projects'), editor = projects.locator('[data-editor]'), status = projects.locator('[data-editor-status]');
+        const other = editing.core.seed({kind: 'note', text: 'Shopping', title: 'Shopping', body: 'milk', id: '00000000-0000-4000-8000-000000000002'});
+        await page.locator('[data-view="focus"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await projects.locator('[data-item-list]').getByRole('button', {name: 'Shopping', exact: true}).click();
+        const title = editor.locator('[data-edit-field="title"]');
+        await title.fill('Shopping list');
+        editing.core.write({...editing.core.items.get(other.id), kind: 'task', text: 'Shopping', title: ''});
+        const saves = () => editing.calls.filter(([method]) => method === 'items.save').length;
+        await editor.getByRole('button', {name: 'Save', exact: true}).click();
+        await status.getByText(KIND_CHANGED).waitFor();
+        assert.equal(await title.inputValue(), 'Shopping list', 'the person’s edit stays to copy');
+        const before = saves();
+        await editor.getByRole('button', {name: 'Save', exact: true}).click();
+        await status.getByText(KIND_CHANGED).waitFor();
+        assert.equal(saves(), before, 'saving again sends nothing');
+        assert.equal(await status.textContent(), KIND_CHANGED, 'and never says Saved.');
+        assert.deepEqual([editing.core.items.get(other.id).kind, editing.core.items.get(other.id).text], ['task', 'Shopping'], 'the other writer’s change stays');
+        await editor.getByRole('button', {name: 'Discard changes', exact: true}).click();
+        assert.equal(await editor.locator('[data-edit-field="text"]').inputValue(), 'Shopping', 'Discard changes opens the task');
         await editor.getByRole('button', {name: 'Close', exact: true}).click();
       });
       await step('projects group items; archive, restore and delete need the core’s answer', async () => {
