@@ -18,10 +18,10 @@
 //!   `state`; a callback from another process with no sign-in pending changes nothing.
 //! - The refresh token is saved only through the operating system's credential store. No
 //!   token, address, name or email is logged, printed, put in an error or sent to the page
-//!   beyond the status. A development build prints two lines: the status flags with the
-//!   fixed sentence, and the kind of a link that arrived.
+//!   beyond the status. A development build prints one line here, the status flags with the
+//!   fixed sentence; link.rs prints the kind of a link that arrived and nothing of the link.
 
-use crate::{summon, window};
+use crate::summon;
 use open_sesame_core::auth::{
     authenticate_url, error_from_response, exchange_body, jwks_url, parse_jwks, parse_tokens,
     refresh_body, AuthController, AuthError, AuthParts, CredentialStore, Jwks, SignedOutMarker,
@@ -518,13 +518,19 @@ impl Auth {
     /// An address the system handed over. Returns what it was. A callback is exchanged on a
     /// thread of its own, because that is a network call.
     pub fn link(self: &Arc<Self>, url: &str) -> Link {
+        self.link_started(url).0
+    }
+
+    /// [`Auth::link`], and the thread a callback was given to, so that a test can wait for the
+    /// core to have finished with it instead of waiting a fixed time.
+    fn link_started(self: &Arc<Self>, url: &str) -> (Link, Option<std::thread::JoinHandle<()>>) {
         let kind = classify(url);
-        if kind == Link::Callback {
+        let thread = (kind == Link::Callback).then(|| {
             let auth = Arc::clone(self);
             let url = url.to_string();
-            std::thread::spawn(move || auth.controller.complete_sign_in(&url));
-        }
-        kind
+            std::thread::spawn(move || auth.controller.complete_sign_in(&url))
+        });
+        (kind, thread)
     }
 
     /// At launch: restores the saved session, off the calling thread. `ready` is asked on
@@ -671,31 +677,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     // The store is asked on the restore thread and never here: this runs on the main thread
     // before the window exists, and a locked keyring answers only after its prompt does.
     auth.restore(move || !cfg!(target_os = "linux") || saved.available());
-    app.manage(Arc::clone(&auth));
-    listen(app, auth);
-}
-
-/// Passes each address the system hands over to [`Auth::link`], and brings the window forward
-/// when the browser comes back, since on macOS no second launch does that.
-fn listen<R: Runtime>(app: &AppHandle<R>, auth: Arc<Auth>) {
-    use tauri_plugin_deep_link::DeepLinkExt;
-    // In a development build on Windows and Linux nothing has installed the scheme, so it is
-    // registered here, for the current user, and stays registered after the run ends. A failure
-    // only means callbacks will not arrive.
-    #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
-    let _ = app.deep_link().register_all();
-    let handle = app.clone();
-    app.deep_link().on_open_url(move |event| {
-        for url in event.urls() {
-            let kind = auth.link(url.as_str());
-            // Only what kind of address it was; the address itself carries the code.
-            #[cfg(debug_assertions)]
-            eprintln!("open-sesame: link {kind:?}");
-            if kind != Link::Other {
-                window::show(&handle);
-            }
-        }
-    });
+    // Links reach `Auth::link` through link.rs, which finds this in the application's state.
+    app.manage(auth);
 }
 
 #[cfg(test)]
@@ -1087,29 +1070,33 @@ mod tests {
     #[test]
     fn a_callback_without_the_pending_state_sends_nothing_to_the_server() {
         let parts = wired(vec![("200 OK", SESSION.into())], true, None);
+        // The callback goes in where the host takes one, `link`, which hands it to the core on
+        // a thread of its own; the test waits for that thread to end, not for a fixed time.
+        let forged = "opensesame://auth/callback?code=stolen&state=guess";
+        let through_the_host = || {
+            let (kind, thread) = parts.auth.link_started(forged);
+            assert_eq!(kind, Link::Callback);
+            thread
+                .expect("a callback is given to a thread")
+                .join()
+                .unwrap();
+        };
         // No sign-in is pending: a callback from any process changes nothing.
-        assert_eq!(
-            parts
-                .auth
-                .link("opensesame://auth/callback?code=stolen&state=guess"),
-            Link::Callback
-        );
-        std::thread::sleep(Duration::from_millis(200));
+        through_the_host();
         assert!(parts.requests.lock().unwrap().is_empty());
         assert_eq!(parts.auth.status()["busy"], json!(false));
 
-        // A sign-in is pending, and the callback carries the wrong state: the attempt ends and
-        // still nothing is sent.
+        // A sign-in is pending, and the callback carries the wrong state: nothing is sent, and
+        // the attempt keeps waiting for the browser's own callback (issue #116).
         parts.auth.handle("auth.signIn", no_hold).unwrap();
         until(&parts.changes, |status| status["busy"] == json!(true));
+        through_the_host();
+        let status = parts.auth.status();
+        assert_eq!(status["busy"], json!(true), "the sign-in is still waiting");
         assert_eq!(
-            parts
-                .auth
-                .link("opensesame://auth/callback?code=stolen&state=guess"),
-            Link::Callback
+            status["message"],
+            json!("Finish signing in in your browser.")
         );
-        let ended = until(&parts.changes, |status| status["busy"] == json!(false));
-        assert_eq!(ended["authenticated"], json!(false));
         assert!(
             parts.requests.lock().unwrap().is_empty(),
             "no code left the application"
