@@ -87,6 +87,22 @@ These rows are [#72][72]'s [owner checklist][72-checklist] and stay empty until 
 | E7 | Quit and start again: still "Not signed in", and the browser does not open | [#72][72] step 9 | | | | |
 | E8 | On a session with no Secret Service, Sign in is refused before the browser opens and names GNOME Keyring and KWallet | [#72][72] step 10 (optional) | n/a: Linux only | n/a: Linux only | | |
 
+### Sign-in links
+
+These are [#116][116]'s hand checks for sign-in links, [added to this list on #78][116-checks]. The change is pull request [#129][129], a draft at the tested commit, so every row waits for it. Only L6, L7 and L8 need a real account; the others need the application and the link shown.
+
+| ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
+| --- | --- | --- | --- | --- | --- | --- |
+| L1 | Development build: a page cannot hear a link. In the main window's developer tools run `window.__TAURI__.event.listen('deep-link://new-url', e => console.log(e))`, then deliver `opensesame://auth/callback?code=x&state=y` (a second launch with it as the only argument on Windows and Linux, `open` on a macOS bundle): nothing is logged | [#116][116], [added on #78][116-checks] | pending [#116][116] | pending [#116][116] | pending [#116][116] | pending [#116][116] |
+| L2 | A callback reaches the running application and leaves no second one: with the app running, start `open-sesame.exe "opensesame://auth/callback?code=x&state=y"`, then open the same address from a browser or `start` in `cmd`; each time one Open Sesame process remains and the window comes forward | [#116][116], [added on #78][116-checks] | n/a: Windows only | pending [#116][116] | n/a: Windows only; see L5 | n/a: Windows only; see L5 |
+| L3 | A link with nothing running opens nothing: with the app quit, open the callback address from a browser; no window appears and no process remains | [#116][116], [added on #78][116-checks] | n/a: Windows and Linux only | pending [#116][116] | pending [#116][116] | pending [#116][116] |
+| L4 | A real desktop session with no D-Bus session bus (a bare X session without `dbus-launch`, or `env -u DBUS_SESSION_BUS_ADDRESS` in a terminal): start the app, then start it again with the callback address as its only argument; the second process exits by itself and one window remains | [#116][116], [added on #78][116-checks] | n/a: Linux only | n/a: Linux only | pending [#116][116] | pending [#116][116] |
+| L5 | On a real GNOME or KDE desktop, L2's check with `gio open` and with a browser | [#116][116], [added on #78][116-checks] | n/a: Linux only | n/a: Linux only; see L2 | pending [#116][116] | pending [#116][116] |
+| L6 | Installed bundle, after [#87][87] settles the identifier: with a sign-in waiting in the browser, finish it there; the app comes forward signed in (the `RunEvent::Opened` path, which no macOS development build receives). Needs a real account | [#116][116], [added on #78][116-checks] | pending [#116][116], [#87][87] | n/a: macOS only | n/a: macOS only | n/a: macOS only |
+| L7 | With a sign-in waiting in the browser, deliver the callback address as in L1: the control still says "Finish signing in in your browser." and nothing changes; finishing in the browser then signs in, which needs a real account | [#116][116], [added on #78][116-checks] | pending [#116][116] | pending [#116][116] | pending [#116][116] | pending [#116][116] |
+| L8 | After a real sign-in, record the persistence that Credential Manager (Windows Credentials) shows for the Open Sesame entry; [#116][116] asks whether it should be Local computer | [#116][116], [added on #78][116-checks] | n/a: Windows only | pending [#116][116] | n/a: Windows only | n/a: Windows only |
+| L9 | After one development run, record what is left registered (Windows: `reg query HKCU\Software\Classes\opensesame`; Linux: `~/.local/share/applications/open-sesame-handler.desktop` and its line in `~/.config/mimeapps.list`), and that with no build running the callback address starts the development binary, which exits without a window; [#116][116] asks whether a clean exit should remove the registration | [#116][116], [added on #78][116-checks] | n/a: Windows and Linux only | pending [#116][116] | pending [#116][116] | pending [#116][116] |
+
 ### Views and data
 
 | ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
@@ -247,6 +263,14 @@ Log in to a Wayland session (on GNOME, the default "GNOME" entry; `echo $XDG_SES
 
 Run X11 part B on the Wayland session, for E1 to E8 and F1 to F4 in the Wayland column.
 
+### Sign-in links, every system (about 15 minutes, after #129 merges)
+
+Each row under [Sign-in links](#sign-in-links) says what to deliver and what to see. Use the same disposable settings folder as part A.
+
+1. macOS: L1 and L7 with the bundle of part B's step 1, and L6 once #87 is settled. L6 and the end of L7 need the real account of part B.
+2. Windows: L1, L2, L3 and L7; L8 after part B's sign-in; L9 after one development run.
+3. Linux, in the X11 session and again in the Wayland session: L1, L3, L4, L5, L7 and L9.
+
 ## Earlier runs
 
 ### `0d65d43`, 16 November 2026, macOS only
@@ -268,6 +292,9 @@ Commit `0d65d4341b97311f6c031016d2af57a8f4aebe5d` (`main` after [#113][113]), be
 [94]: https://github.com/OpenCoven/open-sesame/issues/94
 [105]: https://github.com/OpenCoven/open-sesame/issues/105
 [113]: https://github.com/OpenCoven/open-sesame/pull/113
+[116]: https://github.com/OpenCoven/open-sesame/issues/116
+[116-checks]: https://github.com/OpenCoven/open-sesame/issues/78#issuecomment-6906616293
 [118]: https://github.com/OpenCoven/open-sesame/pull/118
 [119]: https://github.com/OpenCoven/open-sesame/pull/119
 [120]: https://github.com/OpenCoven/open-sesame/pull/120
+[129]: https://github.com/OpenCoven/open-sesame/pull/129
