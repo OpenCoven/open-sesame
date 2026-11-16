@@ -3,7 +3,7 @@
 use open_sesame_core::gate::{MAIN_WINDOW, UNSUPPORTED};
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
-use tauri::webview::{NewWindowResponse, PageLoadEvent};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, LogicalSize, Manager, Runtime, Url, WebviewUrl, WebviewWindow};
 use tauri::{WebviewWindowBuilder, WindowEvent};
 
@@ -42,11 +42,10 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         })
         // The page may not open another window; nothing in the shell needs one.
         .on_new_window(|_, _| NewWindowResponse::Deny);
-    let builder = builder.on_page_load(|window, payload| match payload.event() {
-        PageLoadEvent::Started => crate::terminal::page_replaced(window.app_handle()),
-        PageLoadEvent::Finished => {
+    #[cfg(debug_assertions)]
+    let builder = builder.on_page_load(|_, payload| {
+        if payload.event() == tauri::webview::PageLoadEvent::Finished {
             // Development evidence that hiding and showing the window does not load the page again.
-            #[cfg(debug_assertions)]
             eprintln!("open-sesame: page loaded {}", payload.url());
         }
     });

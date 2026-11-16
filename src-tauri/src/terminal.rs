@@ -14,7 +14,7 @@ use open_sesame_core::Core;
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 use tauri::ipc::{Channel, InvokeResponseBody, JavaScriptChannelId};
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{Runtime, WebviewWindow};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Methods answered here and not by the core.
@@ -51,22 +51,6 @@ pub fn handle<R: Runtime>(
                 .map(|()| Value::Bool(true))
                 .map_err(|_| BridgeError::from(CLIPBOARD_UNAVAILABLE))
         }
-    }
-}
-
-/// The main window has started to load a page. Every pane belongs to the page before it: the
-/// IDs were that page's and so were the channels, so the new page can neither show nor close
-/// them, and until issue #112 they ran on, counted against the limit, until Quit. They are
-/// closed here. This runs on the window's thread, so it does not wait for their processes; Quit
-/// does. The first load of a run finds no panes.
-///
-/// Two cases are not covered. Where the web content process ends and nothing loads the page
-/// again, which is so on Linux and Windows, no page load starts and the panes run until Quit.
-/// And a `terminal.open` that the old page sent, and that is handled after this close, starts a
-/// pane the new page cannot reach.
-pub fn page_replaced<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(state) = app.try_state::<crate::AppState>() {
-        state.core.terminals.close_all_detached();
     }
 }
 

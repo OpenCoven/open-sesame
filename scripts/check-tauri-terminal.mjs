@@ -284,18 +284,8 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
   for (const method of ['project.chooseFolder', 'project.reveal']) assert(main.includes(`'${method}'`) && gate.includes(`"${method}"`));
 }
 
-// 12. Panes do not outlive the page that opened them (issue #112): the window closes them when a
-// page starts to load, in every build and not only a development one, without waiting on the
-// window's thread. The self-test's reload pass is what shows it in a launched window.
-{
-  const window = read('src-tauri/src/window.rs');
-  const handler = /let builder = builder\.on_page_load\(\|window, payload\| match payload\.event\(\) \{\s*PageLoadEvent::Started => crate::terminal::page_replaced\(window\.app_handle\(\)\),/.exec(window);
-  assert(handler, 'The window closes the panes of the page before when a page starts to load');
-  assert(!/#\[cfg\(debug_assertions\)\]\s*$/.test(window.slice(0, handler.index).trimEnd()), 'The page-load handler is not a development-only one');
-  assert(/pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\s*if let Some\(state\) = app\.try_state::<crate::AppState>\(\) \{\s*state\.core\.terminals\.close_all_detached\(\);/.test(read('src-tauri/src/terminal.rs')));
-  const selftest = read('ui/dev/selftest.js');
-  assert(selftest.includes('if (config.reload) {') && selftest.includes('location.reload();'), 'The self-test has a reload pass');
-  assert(!selftest.includes('does not freeze'), 'The flood step does not claim a limit it does not check');
-}
+// 12. The flood step of the self-test records the gaps between timers and frames and judges
+// none of them (issue #112), so its name must not say the window did not freeze.
+assert(!read('ui/dev/selftest.js').includes('does not freeze'), 'The flood step does not claim a limit it does not check');
 
-console.log('Tauri terminal pane: requests, acknowledgements, input order, exit, clipboard keys, the vendored emulator and the page-load rule passed.');
+console.log('Tauri terminal pane: requests, acknowledgements, input order, exit, clipboard keys and the vendored emulator passed.');
