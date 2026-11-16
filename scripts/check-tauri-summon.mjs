@@ -199,14 +199,20 @@ function fakeBridge(status, answers = {}) {
   assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
   assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
   // A page that loads takes none of the old page's holds with it (issue #115), in every build.
-  // Comments are taken out first, so that neither a comment between an attribute and what it
-  // applies to, nor one inside the arm, changes what is found. The arm may be one call or a
-  // block with other calls beside this one (the proposal for issue #112 adds one).
-  const bare = window.replace(/^\s*\/\/.*$/gm, '');
-  const loads = /let builder = builder\.on_page_load\(\|window, payload\| match payload\.event\(\) \{([\s\S]*?)PageLoadEvent::Started =>([\s\S]*?)PageLoadEvent::Finished =>/.exec(bare);
-  assert.ok(loads, 'The window has a page-load hook with an arm for a page that starts to load');
-  assert.ok(loads[2].includes('summon::page_replaced(window.app_handle())'), 'The page-load hook releases the page\'s holds');
-  assert.ok(!/#\[cfg\(debug_assertions\)\]\s*$/.test(bare.slice(0, loads.index)) && !loads[1].includes('#[cfg') && !loads[2].includes('#[cfg'), 'Neither the page-load hook nor that arm nor the call is development-only');
+  // This reads text, so it cannot show that the call runs. What it holds, with every comment
+  // taken out first: the window sets one page-load hook; neither that statement nor the arm for
+  // a page that starts to load carries an attribute; and in that arm nothing stands before the
+  // call but other plain calls (the proposal for issue #112 adds one), so no condition, macro
+  // or attribute can decide whether it is reached. A statement that is not a plain call goes
+  // after it.
+  const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const source = bare(window);
+  assert.equal(source.split('.on_page_load(').length - 1, 1, 'The window sets one page-load hook: a second would replace the first');
+  assert.ok(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(source), 'The page-load hook\'s statement carries no attribute');
+  const loads = source.slice(source.indexOf('builder.on_page_load('), source.indexOf('let window = builder.build()?;'));
+  assert.ok(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*summon::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(loads), 'The arm for a page that starts to load carries no attribute and reaches the call that releases the page\'s holds through plain calls only');
+  assert.equal(bare(host).split('fn page_replaced').length - 1, 1, 'page_replaced is one function, not one per kind of build');
+  assert.ok(/[;}]\s*pub fn page_replaced</.test(bare(host)), 'page_replaced carries no attribute');
   assert.match(host, /pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\n    if let Some\(summon\) = app\.try_state::<Summon>\(\) \{\n        summon\.release_page_holds\(\);/);
   assert.match(window, /Session::Wayland\)\n            \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/);
   // AppKit aborts the process if a window is ordered off the main thread, and a second launch,
