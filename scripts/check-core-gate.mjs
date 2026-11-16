@@ -20,12 +20,14 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const gateSource = readFileSync(path.join(root, 'crates/core/src/gate.rs'), 'utf8');
+// Comments are taken out before a list is looked for, so that a `];` in one does not end it early.
+const gateCode = gateSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
 // Rust lists are read as text: `pub const NAME: &[&str] = &[ "a", "b" ];` with optional comments.
 function rustList(name) {
-  const match = gateSource.match(new RegExp(`pub const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
+  const match = gateCode.match(new RegExp(`pub const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
   assert(match, `crates/core/src/gate.rs declares ${name} as a list of string literals`);
-  const body = match[1].replace(/\/\/[^\n]*/g, '');
+  const body = match[1];
   const entries = [...body.matchAll(/"([^"\\]*)"/g)].map(entry => entry[1]);
   assert.equal(body.replace(/"[^"\\]*"/g, '').replace(/[\s,]/g, ''), '', `${name} holds only string literals`);
   return entries;

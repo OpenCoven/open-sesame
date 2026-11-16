@@ -162,11 +162,14 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
 
 // 6b. Sign in waits for the person too: the host reads the saved sign-in before it opens the
 // browser, and with one saved in a locked keyring that read answers only after the unlock
-// prompt (issue #116). No other method the host answers gets the longer limit: each one is
-// requested here once, with no parameters, after the bridge has connected, and the limit the
-// page set for that request is read from the timer. So the table in ui/bridge.js may be written
-// in any way; a limit that depended on a parameter, on the bridge's state or on the order of
-// requests would not be seen here.
+// prompt (issue #116). Every other method the host answers gets 15 seconds: each one in the
+// gate's list is sent through `bridge.request` with no parameters, after the bridge has
+// connected, on a stand-in host that says it is Linux, and the limit the page set for that
+// request is read from the timer. So the table in ui/bridge.js may be written in any way. What
+// this sees is that one request and nothing else: a limit that depends on a parameter, on the
+// bridge's state, on the system, on the order of requests or on anything the stand-in window
+// lacks, one given through another function or argument, and one for a method the gate has not
+// ported, are not seen.
 {
   const { bridge, invokes, timers } = await connected();
   let outcome = 'pending';
@@ -178,10 +181,13 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await signIn;
   assert.equal(outcome, 'resolved');
   assert.equal(timers.size, 0);
-  // Read as check-core-gate.mjs reads it: up to the closing `];`, with comments taken out.
-  const list = read('crates/core/src/gate.rs').match(/pub const PORTED: &\[&str\] = &\[([\s\S]*?)\];/);
+  // Read as check-core-gate.mjs reads it: comments taken out first, so that a `];` in one does
+  // not end the list early, then up to the closing `];`, and nothing but string literals in it.
+  const gate = read('crates/core/src/gate.rs').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const list = gate.match(/pub const PORTED: &\[&str\] = &\[([\s\S]*?)\];/);
   assert.ok(list, 'crates/core/src/gate.rs declares PORTED as a list of string literals');
-  const ported = [...list[1].replace(/\/\/[^\n]*/g, '').matchAll(/"([^"\\]*)"/g)].map(match => match[1]);
+  const ported = [...list[1].matchAll(/"([^"\\]*)"/g)].map(match => match[1]);
+  assert.equal(list[1].replace(/"[^"\\]*"/g, '').replace(/[\s,]/g, ''), '', 'PORTED holds only string literals');
   for (const method of ['auth.status', 'auth.signIn', 'auth.cancel', 'auth.signOut', 'project.chooseFolder', 'terminal.open']) assert.ok(ported.includes(method), `${method} is in the list read from the gate`);
   const long = [];
   for (const method of [...ported, 'nobody.answers']) {
@@ -194,7 +200,7 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
     await pending;
     timers.clear(); // the fake keeps a timer that has fired
   }
-  assert.deepEqual(long.sort(), ['auth.signIn=180000', 'project.chooseFolder=180000'], 'Only the folder dialog and Sign in wait longer than 15 seconds');
+  assert.deepEqual(long.sort(), ['auth.signIn=180000', 'project.chooseFolder=180000'], 'Every method the host answers waits 15 seconds, except the folder dialog and Sign in, which wait 180');
 }
 
 // 7. Events: host messages with an `event` key reach every subscriber, in order, until it unsubscribes.
