@@ -48,7 +48,7 @@ impl Search {
         Self {
             path,
             extensions,
-            known_dirs: known_dirs(home.as_deref()),
+            known_dirs: known_dirs(env, home.as_deref()),
         }
     }
 
@@ -108,34 +108,56 @@ impl Search {
 }
 
 /// Usual install locations, most specific first. `home` adds the per-user ones.
-fn known_dirs(home: Option<&Path>) -> Vec<PathBuf> {
-    if cfg!(windows) {
-        return Vec::new();
-    }
+fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
     let home = home.filter(|home| home.is_absolute());
-    let mut dirs: Vec<PathBuf> = home
-        .map(|home| home.join(".local/bin"))
-        .into_iter()
-        .collect();
-    dirs.extend(
-        [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/snap/bin",
-            "/usr/bin",
-            "/bin",
-        ]
-        .map(PathBuf::from),
-    );
-    dirs.extend(home.map(|home| home.join(".coven/bin")));
-    dirs
+    let install_bin = |key: &str, default: &str| {
+        env.get(key)
+            .map(Path::new)
+            .filter(|path| path.is_absolute())
+            .map(|path| path.join("bin"))
+            .or_else(|| home.map(|home| home.join(default).join("bin")))
+    };
+    let mut dirs = Vec::new();
+    if !cfg!(windows) {
+        dirs.extend(home.map(|home| home.join(".local/bin")));
+    }
+    dirs.extend(install_bin("CARGO_HOME", ".cargo"));
+    dirs.extend(install_bin("BUN_INSTALL", ".bun"));
+    if !cfg!(windows) {
+        dirs.extend(
+            [
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/snap/bin",
+                "/usr/bin",
+                "/bin",
+            ]
+            .map(PathBuf::from),
+        );
+        dirs.extend(home.map(|home| home.join(".coven/bin")));
+    }
+    let mut unique = Vec::new();
+    for dir in dirs {
+        if !unique.contains(&dir) {
+            unique.push(dir);
+        }
+    }
+    unique
 }
 
 #[cfg(unix)]
 fn is_program(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+    let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: the path is NUL-terminated and lives through the call. Check the effective
+    // user's access, including ACLs, rather than execute bits belonging to another user.
+    unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
 
 #[cfg(not(unix))]

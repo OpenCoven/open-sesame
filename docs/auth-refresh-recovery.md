@@ -1,0 +1,27 @@
+# Rust authentication refresh recovery
+
+This is the recovery contract of the restart's [authentication controller](../crates/core/src/auth/controller.rs), not a change to the shipped Swift host. The [native login guide](workos-login.md) describes that existing host. Authentication state, credential persistence, launched-app behavior and real-provider acceptance are separate evidence.
+
+## Rotation and verification
+
+WorkOS [documents refresh-token rotation and session resilience](https://workos.com/docs/authkit/session-resilience): exchanging a refresh token retires it and returns a replacement. Replaying it within 30 seconds returns the same rotated tokens; after that window it returns `invalid_grant`. This contract was checked on November 16, 2026. Recovery after receiving a successful response must not rely on that short grace period.
+
+For a refresh, the controller retains the replacement in memory and attempts to save it through `CredentialStore` before fetching the signing keys. Saving this opaque credential does not authenticate the user. Only verification of the access token's signature, subject and expiry opens or extends a session. New browser sign-ins still verify before saving any credential. Neither path puts a credential in a status, an error or a log.
+
+If saving fails, the response stays in memory and the next attempt retries saving before making another exchange. If fetching the keys fails transiently, the response stays in memory and the next attempt retries only verification. These failures schedule a retry after 20 seconds; direct calls to `refresh` also respect that delay. A malformed, mismatched or expired access token is rejected and discarded, while the rotated refresh credential survives for the next exchange. The last verified session remains valid only until its original expiry. An unsaved replacement keeps the fixed keychain error visible even after that expiry.
+
+## Interruption policy
+
+Only one refresh can be in progress, even if Cancel clears the page's busy state. Cancel and a new pending sign-in invalidate the earlier operation's session update, but an already sent refresh may still save its replacement. A cancelled restore never opens a session from that late answer, clears an already scheduled session retry and refuses a stale scheduler tick. A new explicit `restore` may start it again; renewal of an existing verified session still follows its deadline. If its save fails, retries save only the credential and do not authenticate or exchange it. Starting another sign-in discards any earlier cached verification response; a failed sign-in leaves the latest credential available for a later refresh and preserves a save-only retry if an older rotation is still unsaved.
+
+Sign-out and a successfully saved, verified new sign-in invalidate the earlier credential lineage too. A late refresh cannot save over sign-out, replace a newer account, change the pending browser attempt or reopen its session. The signed-out marker continues to prevent restore if deleting a credential fails.
+
+`shutdown` is terminal: it closes admission, invalidates pending session work and waits for an already running refresh to finish its credential-save attempt. It also makes one final attempt to save a replacement whose earlier save failed. It starts no new exchange and does not wait for an unanswered browser callback. The host must call it from its exit thread, keep the process alive until it returns and never call it reentrantly from `WorkosApi` or `on_change`. The network implementation must honor the existing 20-second timeout per request. A keychain unlock prompt can delay a secure-store operation; the controller does not impose a timeout on that host operation.
+
+The replacement cannot be made durable when the operating system's protected store keeps refusing writes. It remains in memory while the process lives, and failed final saving leaves the fixed keychain error in the status. Forced termination, a network response lost before the controller receives it, and a permanently unavailable secure store cannot promise recovery across process exit. Credentials are never written to plaintext files to work around that limit.
+
+## Host integration and checks
+
+The host's refresh thread continues to use `next_refresh_in` and `refresh`; notifications are sent after refresh admission is released so the scheduler sees the next due time. Preserve the synchronous call to `shutdown` on the exit path and the thread-safe, bounded HTTP implementation. No wire method, status field or trait signature changes.
+
+Run `cargo test -p open-sesame-core --locked --offline --lib auth::tests` for the [controller regressions](../crates/core/src/auth/tests/controller.rs) and [refresh recovery tests](../crates/core/src/auth/tests/refresh.rs). They execute the real controller with fake HTTP and credential-store boundaries, ephemeral signed tokens, a controlled clock and a coordinated refresh/exit thread test. They prove neither real Keychain availability nor provider behavior on a device. Run the workspace Rust checks and [full Mac verifier](development-workflow.md#implement--verify--review) separately.

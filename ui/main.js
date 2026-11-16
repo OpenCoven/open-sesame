@@ -165,5 +165,5 @@ bridge.ready.then(info => {
   // A development build started with OPEN_SESAME_SELFTEST runs the acceptance pass in
   // ui/dev/selftest.js. A release build never sets the flag.
   const selftest = window.__OPEN_SESAME_SELFTEST__;
-  if (selftest) import('./dev/selftest.js').then(module => module.run({ launch, config: selftest }));
+  if (selftest) import('./dev/selftest.js').then(module => module.run({ launch, bridge, config: selftest }));
 });
