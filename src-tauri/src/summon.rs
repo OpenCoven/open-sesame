@@ -370,7 +370,11 @@ impl Settings {
             }
             // A key combination the rules now refuse was the person's own, and they are told.
             // Text that never was a key combination is a damaged file and says nothing.
-            Some(Value::String(refused)) if Shortcut::from_str(refused.trim()).is_ok() => {
+            // A key with no modifier was never taken, so it is not one that is "no longer".
+            Some(Value::String(refused))
+                if Shortcut::from_str(refused.trim())
+                    .is_ok_and(|shortcut| !shortcut.mods.is_empty()) =>
+            {
                 (defaults.shortcut, Some(refused.trim().to_string()))
             }
             _ => (defaults.shortcut, None),
@@ -761,8 +765,8 @@ fn pressed<R: Runtime>(app: &AppHandle<R>) -> Option<Press> {
     window::toggle(app)
 }
 
-/// The tray icon was clicked, which only Windows reports: the popover, unless this click is
-/// what just hid the window. Pressing the button on the taskbar takes the focus from the
+/// The tray icon was clicked, which is acted on only on Windows (macOS reports the click too,
+/// and there it opens the menu): the popover, unless this click is what just hid the window. Pressing the button on the taskbar takes the focus from the
 /// window before the click is reported, so with hide-on-blur on the window has already hidden
 /// and showing it again would mean the icon could never hide it. This is the rule the shortcut
 /// follows on X11; on Windows it is reasoned from how the taskbar takes focus and has not been
@@ -776,7 +780,9 @@ pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option
 
 /// Whether a press on the tray icon is one that opens its menu, and so one to note for the
 /// menu item ([`tray_pressed`]). On Windows the left button is the popover and only the right
-/// one opens the menu; elsewhere either does.
+/// one opens the menu; elsewhere either does. A press of the middle button, where it is
+/// reported, opens no menu and is noted all the same: that note is used only if a menu is
+/// then opened within `TRAY_MENU_OPEN` by some way that reports no press.
 pub fn opens_the_tray_menu(windows: bool, right_button: bool) -> bool {
     !windows || right_button
 }
@@ -987,6 +993,25 @@ mod tests {
         *lock(&app.state::<Summon>().lost_focus) = at;
     }
 
+    /// What `blurred` noted is made to read as this instant for as long as the test runs, so
+    /// that a slow machine cannot let `BLUR_GRACE` pass between two statements. The note that
+    /// the window lost the keyboard has to be there already, and be recent.
+    fn the_blur_was_this_instant(app: &tauri::App<MockRuntime>) {
+        let summon = app.state::<Summon>();
+        let later = Instant::now() + Duration::from_secs(3600);
+        let mut lost = lock(&summon.lost_focus);
+        assert!(
+            lost.is_some_and(|at| at.elapsed() < Duration::from_secs(60)),
+            "losing the keyboard is noted with the time"
+        );
+        *lost = Some(later);
+        drop(lost);
+        let mut hid = lock(&summon.hid_on_blur);
+        if hid.is_some() {
+            *hid = Some(later);
+        }
+    }
+
     /// The window losing the keyboard is what a press goes by a moment later: without the
     /// note, a press that takes the keyboard itself could only ever bring the window forward.
     #[test]
@@ -994,6 +1019,7 @@ mod tests {
         let (app, window) = windowless(false);
         assert_eq!(press_on(app.handle(), &window), Press::Forward);
         blurred(app.handle());
+        the_blur_was_this_instant(&app);
         assert_eq!(press_on(app.handle(), &window), Press::Hide);
         assert_eq!(pressed(app.handle()), Some(Press::Hide));
         assert_eq!(window::toggle(app.handle()), Some(Press::Hide));
@@ -1010,18 +1036,21 @@ mod tests {
         let (app, _window) = windowless(true);
         blurred(app.handle());
         assert!(lock(&app.state::<Summon>().hid_on_blur).is_some());
+        the_blur_was_this_instant(&app);
         assert_eq!(pressed(app.handle()), None);
         assert!(
             pressed(app.handle()).is_some(),
             "one hide excuses one press"
         );
         blurred(app.handle());
+        the_blur_was_this_instant(&app);
         assert_eq!(tray_clicked(app.handle(), icon), None);
         assert!(tray_clicked(app.handle(), icon).is_some());
         // With the setting off nothing hid, so the press acts at once.
         let (app, _window) = windowless(false);
         blurred(app.handle());
         assert!(lock(&app.state::<Summon>().hid_on_blur).is_none());
+        the_blur_was_this_instant(&app);
         assert_eq!(pressed(app.handle()), Some(Press::Hide));
     }
 
@@ -1048,10 +1077,19 @@ mod tests {
         // The icon was pressed while the window was in front, and the menu stayed open longer
         // than the allowance for a missing press: the item still hides.
         lost_the_keyboard(&app, Some(Duration::ZERO));
+        the_blur_was_this_instant(&app);
         tray_pressed(handle);
         lost_the_keyboard(&app, Some(TRAY_MENU_GRACE + Duration::from_secs(5)));
         assert_eq!(tray_item_on(handle, &window), Press::Hide);
         assert_eq!(tray_item_on(handle, &window), Press::Forward);
+    }
+
+    /// The sentence for Shift alone names what to add, and not Alt: on a Mac, Alt and Shift
+    /// with a letter is refused in turn.
+    #[test]
+    fn the_shift_sentence_suggests_control_or_command_and_not_alt() {
+        assert!(SHIFT_ALONE.contains("Add Control or Command"));
+        assert!(!SHIFT_ALONE.contains("Alt") && !SHIFT_ALONE.contains("Option"));
     }
 
     #[test]
@@ -1426,6 +1464,9 @@ mod tests {
             r#"{"shortcut":"   "}"#,
             r#"{"shortcut":"hello there"}"#,
             r#"{"shortcut":"Shift+"}"#,
+            // A key with no modifier was never taken, so nothing says it no longer is.
+            r#"{"shortcut":"Space"}"#,
+            r#"{"shortcut":"K"}"#,
         ] {
             let summon = load(quiet);
             assert_eq!(summon.status()["notice"], "", "{quiet}");

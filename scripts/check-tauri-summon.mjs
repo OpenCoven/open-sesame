@@ -199,7 +199,17 @@ function fakeBridge(status, answers = {}) {
   // a press that opens its menu, a press that hid the window on blur does nothing more for the
   // shortcut and the tray click, losing the keyboard is noted for the next press, only a press
   // that hides conceals the window, and only a hidden window is moved against the tray icon.
+  // And the ways in call them: the shortcut's handler, the tray click and `--toggle` each go
+  // to their own function, and each of the three functions in window.rs decides by its own
+  // rule and then acts on the window.
   const tray = read('src-tauri/src/tray.rs');
+  assert.match(host, /if event\.state == ShortcutState::Pressed \{\n                pressed\(app\);\n            \}/);
+  assert.match(host, /Launch::Toggle => \{\n            window::toggle\(app\);\n        \}/);
+  assert.match(tray, /\) = \(cfg!\(windows\), event\)\s*\{\s*summon::tray_clicked\(tray\.app_handle\(\), rect\);/);
+  assert.equal(tray.split('window::toggle_at').length - 1, 0, 'The tray click goes through summon::tray_clicked');
+  assert.match(window, /pub fn toggle<R: Runtime>\(app: &AppHandle<R>\) -> Option<summon::Press> \{\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
+  assert.match(window, /pub fn toggle_from_tray_menu<R: Runtime>\(app: &AppHandle<R>\) -> Option<summon::Press> \{\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::tray_item_on\(app, &window\);\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
+  assert.match(window, /pub fn toggle_at<R: Runtime>\(app: &AppHandle<R>, icon: tauri::Rect\) -> Option<summon::Press> \{\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let kept_in_place =\n        window\.is_fullscreen\(\)\.unwrap_or\(false\) \|\| window\.is_maximized\(\)\.unwrap_or\(false\);\n    if places\(press, kept_in_place\) \{\n        let _ = place_against\(&window, icon\);\n    \}\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
   assert.match(tray, /button_state: MouseButtonState::Down,\n[^}]*\}\s*= &event\s*\{\s*if summon::opens_the_tray_menu\(cfg!\(windows\), \*button == MouseButton::Right\) \{\s*summon::tray_pressed\(tray\.app_handle\(\)\);/);
   assert.match(tray, /TOGGLE => \{\s*window::toggle_from_tray_menu\(app\);/);
   assert.match(host, /fn pressed<R: Runtime>\(app: &AppHandle<R>\) -> Option<Press> \{\n    if blur_just_hid\(app\) \{\n        return None;\n    \}\n    window::toggle\(app\)\n\}/);
@@ -434,11 +444,20 @@ function fakeBridge(status, answers = {}) {
     key('Home');
     assert.equal(doc.activeElement, box.children[0]);
     key('a');
-    assert.deepEqual([stopped, kept, menu.isOpen()], [4, 2, true], 'Any other key is left alone');
+    assert.deepEqual([stopped, kept, menu.isOpen()], [4, 3, true], 'Any other key does nothing here and goes no further: a shortcut of the page must not open a panel over the menu');
     key('Escape');
-    assert.deepEqual([stopped, kept], [5, 3]);
+    assert.deepEqual([stopped, kept], [5, 4]);
     assert.equal(menu.isOpen(), false);
     assert.equal(doc.activeElement, input, 'The field has the keyboard again');
+    // From the menu itself, up is the last item and down the first.
+    ask(doc, input);
+    menuOf(doc).focus();
+    menuOf(doc).fire('keydown', { key: 'ArrowUp', preventDefault: () => {} });
+    assert.equal(doc.activeElement, menuOf(doc).children[3]);
+    menuOf(doc).focus();
+    menuOf(doc).fire('keydown', { key: 'ArrowDown', preventDefault: () => {} });
+    assert.equal(doc.activeElement, menuOf(doc).children[0]);
+    menu.close();
     ask(doc, input);
     menuOf(doc).fire('keydown', { key: 'Tab', preventDefault: () => {}, stopPropagation: () => {} });
     assert.equal(menu.isOpen(), false, 'Tab closes the menu');
@@ -595,6 +614,37 @@ function fakeBridge(status, answers = {}) {
     doc.fire('scroll', { target: pane });
     assert.equal(menu.isOpen(), true, 'The pane scrolling does not close its menu');
     menu.close();
+    // So does a scroll somewhere else on the page, for a field's menu and for Copy over
+    // selected text: a terminal beside them prints. A scroll of what holds the field or the
+    // text moves it, and closes the menu.
+    {
+      const holder = doc.node('div');
+      const input = field(doc, 'hello', 0, 5);
+      const words = doc.node('p');
+      holder.append(input, words);
+      doc.body.append(holder);
+      doc.selection = '';
+      for (const [target, label] of [[input, 'Cut'], [words, 'Copy']]) {
+        if (target === words) doc.selection = 'page text';
+        ask(doc, target);
+        assert.equal(menuOf(doc).children[0].textContent, label);
+        doc.fire('scroll', { target: inner });
+        doc.fire('scroll', { target: pane });
+        assert.equal(menu.isOpen(), true, `${label}: a scroll elsewhere leaves the menu open`);
+        doc.fire('scroll', { target: holder });
+        assert.equal(menu.isOpen(), false, `${label}: a scroll of what holds it closes the menu`);
+        ask(doc, target);
+        doc.fire('scroll', { target: doc });
+        assert.equal(menu.isOpen(), false, `${label}: the page scrolling closes the menu`);
+      }
+      // A field inside a part with a menu of its own gets that part's menu, not the field's.
+      const inside = field(doc, 'typed', 0, 5);
+      pane.append(inside);
+      ask(doc, inside);
+      assert.deepEqual(menuOf(doc).children.map(child => child.textContent), ['Copy', 'Paste'], 'The nearest part that provides a menu decides, before the field');
+      menu.close();
+      doc.selection = 'page text';
+    }
     // The pane is asked what it offers after it has heard the event itself: here its own
     // listener makes the selection the menu then finds, as the emulator does on a Mac.
     {
@@ -643,6 +693,9 @@ function fakeBridge(status, answers = {}) {
   assert.match(shells, /provideMenu\(panel, \(\) => \[\n\s+\{ label: 'Copy', enabled: pane\.hasSelection\(\), run: \(\) => \{ pane\.copy\(\); \} \},\n\s+\{ label: 'Paste', enabled: !pane\.ended, run: \(\) => pane\.paste\(\) \},\n\s+\]\);/);
   assert.match(read('ui/terminal.js'), /hasSelection: \(\) => Boolean\(term\.getSelection\(\)\),/);
   assert.match(read('ui/shell.css'), /^\.context-menu \{ position: fixed;/m);
+  // The menu shows which item has the keyboard, and draws no ring around itself.
+  assert.match(read('ui/shell.css'), /^\.context-menu:focus \{ outline: none; \}$/m);
+  assert.match(read('ui/shell.css'), /^\.context-menu button:hover:not\(:disabled\), \.context-menu button:focus-visible \{ background: var\(--page\); \}$/m);
 }
 
 console.log('Tauri summon: the shortcut settings section, drag reporting, the in-page context menu and the source rules for Wayland, the default shortcut and plugin order passed.');

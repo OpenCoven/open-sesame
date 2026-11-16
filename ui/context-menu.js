@@ -147,7 +147,7 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     }
     if (isTextField(target)) return { items: forField(target), within: target, back: target };
     const selected = String(doc.getSelection?.() ?? '');
-    return { items: selected ? [{ label: 'Copy', enabled: true, run: () => write(selected) }] : [], within: null, back: null };
+    return { items: selected ? [{ label: 'Copy', enabled: true, run: () => write(selected) }] : [], within: target ?? null, back: null };
   };
 
   const show = ({ items, within, back }, x, y) => {
@@ -176,15 +176,17 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     const usable = buttons.filter(button => !button.disabled);
     box.addEventListener('keydown', event => {
       const at = usable.indexOf(doc.activeElement);
-      const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: usable.length - 1 }[event.key];
-      // A key the menu takes goes no further: Escape must not also close a panel behind it.
+      // From the menu itself, which has the keyboard when it was put there by a script or no
+      // item can be chosen, up is the last item and down the first.
+      const to = { ArrowDown: at + 1, ArrowUp: at < 0 ? usable.length - 1 : at - 1, Home: 0, End: usable.length - 1 }[event.key];
+      // No key goes further than the menu while it has the keyboard: Escape must not also
+      // close a panel behind it, and a shortcut of the page's must not open one over it.
+      event.stopPropagation?.();
       if (to !== undefined && usable.length) {
         event.preventDefault();
-        event.stopPropagation?.();
         usable[(to + usable.length) % usable.length].focus();
       } else if (event.key === 'Escape' || event.key === 'Tab') {
         event.preventDefault();
-        event.stopPropagation?.();
         close();
       }
     });
@@ -219,9 +221,16 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     if (found.items.length) show(found, ...place(event));
   });
   doc.addEventListener('pointerdown', event => { if (menu && !menu.contains(event.target)) close({ restore: false }); }, true);
-  // A scroll inside the part of the page the menu belongs to leaves it open: a terminal
-  // scrolls by itself whenever a program prints.
-  doc.addEventListener('scroll', event => { if (!anchor?.contains?.(event?.target)) close(); }, true);
+  // A scroll closes the menu when it moves the part of the page the menu belongs to: a scroll
+  // of something that part is inside, or one that does not say what scrolled. A scroll inside
+  // that part leaves the menu open, because a terminal scrolls by itself whenever a program
+  // prints, and so does a scroll somewhere else on the page, for the same reason: a field's
+  // menu must not close because a terminal beside it printed.
+  doc.addEventListener('scroll', event => {
+    const scrolled = event?.target;
+    const stays = anchor && scrolled?.contains && (scrolled === anchor || !scrolled.contains(anchor));
+    if (!stays) close();
+  }, true);
   view.addEventListener('resize', () => close());
   view.addEventListener('blur', () => close({ restore: false }));
 
