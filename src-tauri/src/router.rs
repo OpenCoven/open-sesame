@@ -1,20 +1,23 @@
 //! The one command the UI can call, and where each allowed request goes.
 
-use crate::{project, terminal, window, AppState};
-use open_sesame_core::gate::{self, Caller, NOT_IN_VERSION};
+use crate::auth::{self, Auth};
+use crate::{project, summon, terminal, window, AppState};
+use open_sesame_core::gate::{self, Caller};
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
 use open_sesame_core::Core;
 use serde_json::json;
 use std::sync::Arc;
-use tauri::{Manager, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
 /// Who answers an allowed method.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
-    /// Sign-in. Wired to the sign-in logic in issue #72.
+    /// Sign-in: the application's wiring around the core's sign-in logic (issue #72).
     Auth,
     /// Needs the window, so the application answers it.
     Host,
+    /// The shortcut and the other ways to make the window appear (issue #71).
+    Summon,
     /// A pane's output channel and the clipboard (issue #74).
     Terminal,
     /// The folder dialog and the file manager (issue #74).
@@ -28,6 +31,8 @@ pub fn route(method: &str) -> Route {
         Route::Auth
     } else if window::METHODS.contains(&method) {
         Route::Host
+    } else if summon::METHODS.contains(&method) {
+        Route::Summon
     } else if terminal::METHODS.contains(&method) {
         Route::Terminal
     } else if project::METHODS.contains(&method) {
@@ -37,17 +42,22 @@ pub fn route(method: &str) -> Route {
     }
 }
 
-/// Whether a session is verified. Nothing signs in until issue #72, and no method in the first
-/// release needs a session (issue #60), so every local feature runs with this `false`.
-fn authenticated() -> bool {
-    false
+/// Whether a verified session is within its deadline. No method in the first release needs one
+/// (issue #60), so every local feature runs whatever this says.
+fn authenticated<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<Arc<Auth>>()
+        .is_some_and(|auth| auth.authenticated())
 }
 
-/// Sign-in before issue #72: the status is honest and the actions say they are not here yet.
-fn auth(method: &str) -> BridgeResult {
-    match method {
-        "auth.status" => Ok(json!({"authenticated": false})),
-        _ => Err(BridgeError::from(NOT_IN_VERSION)),
+/// Sign-in. Before the wiring has started there is no session and nothing to start one with.
+fn auth<R: Runtime>(app: &AppHandle<R>, method: &str) -> BridgeResult {
+    match app.try_state::<Arc<Auth>>() {
+        // The guard keeps a window that hides on blur in place while the person is in the browser.
+        Some(auth) => auth.handle(method, || summon::hold(app)),
+        None if method == "auth.status" => Ok(json!({
+            "authenticated": false, "busy": false, "message": "", "name": "", "email": "",
+        })),
+        None => Err(BridgeError::from(auth::NOT_STARTED)),
     }
 }
 
@@ -79,11 +89,12 @@ pub async fn bridge_request<R: Runtime>(
 fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request) -> Option<Reply> {
     let caller = Caller {
         window: window.label(),
-        authenticated: authenticated(),
+        authenticated: authenticated(window.app_handle()),
     };
     gate::dispatch(request, &caller, |request| match route(&request.method) {
-        Route::Auth => auth(&request.method),
+        Route::Auth => auth(window.app_handle(), &request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
+        Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
         Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
         Route::Project => project::handle(window, &request.method, &request.params),
         Route::Core => core.handle(&request.method, &request.params),
@@ -93,7 +104,7 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_sesame_core::gate::{Gate, MAIN_WINDOW, PORTED, UNSUPPORTED};
+    use open_sesame_core::gate::{Gate, MAIN_WINDOW, NOT_IN_VERSION, PORTED, UNSUPPORTED};
     use serde_json::Value;
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime};
@@ -173,7 +184,10 @@ mod tests {
         );
         assert_eq!(
             call(&main, "auth.status", json!({})),
-            Ok(json!({"requestId": "r1", "result": {"authenticated": false}}))
+            Ok(json!({
+                "requestId": "r1",
+                "result": {"authenticated": false, "busy": false, "message": "", "name": "", "email": ""},
+            }))
         );
         assert_eq!(
             call(&main, "window.keepOpen", json!({"pinned": true})),
@@ -194,7 +208,11 @@ mod tests {
             call(&main, "speech.start", json!({})),
             error(NOT_IN_VERSION)
         );
-        assert_eq!(call(&main, "auth.signIn", json!({})), error(NOT_IN_VERSION));
+        // Without the sign-in wiring there is nothing to start a sign-in with.
+        assert_eq!(
+            call(&main, "auth.signIn", json!({})),
+            error(auth::NOT_STARTED)
+        );
         assert_eq!(call(&main, "nope.nothing", json!({})), error(UNSUPPORTED));
         // Requests the application answers refuse bad input before they touch a plugin.
         assert_eq!(
@@ -320,6 +338,210 @@ mod tests {
     }
 
     #[test]
+    fn summon_methods_go_to_summon() {
+        for method in summon::METHODS {
+            assert_eq!(route(method), Route::Summon, "{method}");
+            assert!(PORTED.contains(method), "{method} must be ported");
+        }
+        // A method the gate allows must not fall through because the application forgot it.
+        for method in PORTED.iter().filter(|method| method.starts_with("summon.")) {
+            assert_eq!(route(method), Route::Summon, "{method}");
+        }
+    }
+
+    /// The application with summon state for `session` and a settings file in a folder of its
+    /// own. The shortcut plugin is not loaded, so the system refuses every registration.
+    fn app_in(
+        session: summon::Session,
+        name: &str,
+    ) -> (tauri::App<MockRuntime>, std::path::PathBuf) {
+        let app = app();
+        let folder =
+            std::env::temp_dir().join(format!("open-sesame-router-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        app.manage(summon::Summon::new(
+            session,
+            Some(folder.join("summon.json")),
+        ));
+        (app, folder)
+    }
+
+    #[test]
+    fn the_page_reads_and_changes_the_summon_settings() {
+        let (app, folder) = app_in(summon::Session::Wayland, "wayland");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let result = |reply: Result<Value, Value>| reply.unwrap()["result"].clone();
+        let error = |reply: Result<Value, Value>| reply.unwrap()["error"].clone();
+
+        let status = result(call(&main, "summon.status", json!({})));
+        assert_eq!(status["session"], json!("wayland"));
+        assert_eq!(status["shortcut"], json!(summon::DEFAULT_SHORTCUT));
+        assert_eq!(status["registered"], json!(false));
+        assert_eq!(status["hideOnBlur"], json!(false));
+        assert_eq!(status["toggleCommand"], json!("open-sesame --toggle"));
+
+        // A shortcut that cannot be one is refused and nothing changes.
+        for bad in [
+            json!({"shortcut": "Space"}),
+            json!({"shortcut": "Alt+Nothing"}),
+        ] {
+            assert_eq!(
+                error(call(&main, "summon.setShortcut", bad)),
+                json!(summon::INVALID_SHORTCUT)
+            );
+        }
+        for bad in [json!({}), json!({"shortcut": 7}), json!({"shortcut": null})] {
+            assert_eq!(
+                error(call(&main, "summon.setShortcut", bad)),
+                json!(summon::INVALID_REQUEST)
+            );
+        }
+        assert_eq!(
+            result(call(&main, "summon.status", json!({})))["shortcut"],
+            json!(summon::DEFAULT_SHORTCUT)
+        );
+
+        // A good one is kept for the next launch, and on Wayland the reply names the command.
+        let changed = result(call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": " Control+Alt+K "}),
+        ));
+        assert_eq!(changed["shortcut"], json!("Control+Alt+K"));
+        assert_eq!(changed["registered"], json!(false));
+        assert_eq!(changed["message"], json!(summon::WAYLAND));
+        let kept = summon::Settings::load(&folder.join("summon.json"));
+        assert_eq!(kept.shortcut, "Control+Alt+K");
+
+        assert_eq!(
+            error(call(
+                &main,
+                "summon.setHideOnBlur",
+                json!({"enabled": "yes"})
+            )),
+            json!(summon::INVALID_REQUEST)
+        );
+        let blur = result(call(
+            &main,
+            "summon.setHideOnBlur",
+            json!({"enabled": true}),
+        ));
+        assert_eq!(blur["hideOnBlur"], json!(true));
+        assert!(summon::Settings::load(&folder.join("summon.json")).hide_on_blur);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_refused_shortcut_reaches_the_page_and_the_old_one_is_kept() {
+        let (app, folder) = app_in(summon::Session::X11, "refused");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let reply = call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": "Alt+Space"}),
+        )
+        .unwrap();
+        assert_eq!(reply["error"], json!(summon::refused("Alt+Space")));
+        let status = call(&main, "summon.status", json!({})).unwrap()["result"].clone();
+        assert_eq!(
+            status["shortcut"],
+            json!(summon::DEFAULT_SHORTCUT),
+            "the setting did not change"
+        );
+        assert!(!folder.join("summon.json").exists(), "nothing was saved");
+
+        // None is a choice: it registers nothing, is not an error, and is kept.
+        let none =
+            call(&main, "summon.setShortcut", json!({"shortcut": ""})).unwrap()["result"].clone();
+        assert_eq!(none["shortcut"], json!(""));
+        assert_eq!(none["registered"], json!(false));
+        assert_eq!(none["message"], json!(""));
+        assert_eq!(
+            summon::Settings::load(&folder.join("summon.json")).shortcut,
+            ""
+        );
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_dialog_a_drag_and_a_pin_each_keep_the_window_on_blur() {
+        let (app, folder) = app_in(summon::Session::X11, "blur");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let hides = || app.state::<summon::Summon>().should_hide_on_blur();
+        assert!(!hides(), "off unless turned on");
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        assert!(hides());
+
+        // A drag, reported by the page.
+        assert_eq!(
+            call(&main, "summon.hold", json!({"held": true})).unwrap()["result"],
+            json!({"held": true})
+        );
+        assert!(!hides());
+        call(&main, "summon.hold", json!({"held": false})).unwrap();
+        assert!(hides());
+        assert_eq!(
+            call(&main, "summon.hold", json!({})).unwrap()["error"],
+            json!(summon::INVALID_REQUEST)
+        );
+
+        // A native dialog or a browser sign-in, held by the feature that opened it.
+        let dialog = summon::hold(app.handle()).unwrap();
+        assert!(!hides());
+        drop(dialog);
+        assert!(hides());
+
+        // The pin.
+        call(&main, "window.keepOpen", json!({"pinned": true})).unwrap();
+        assert!(!hides());
+        call(&main, "window.keepOpen", json!({"pinned": false})).unwrap();
+        assert!(hides());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_hide_on_blur_excuses_the_one_press_or_click_that_caused_it() {
+        let (app, folder) = app_in(summon::Session::X11, "excuse");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        // Off: losing focus hides nothing, so there is nothing to excuse.
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        // On: the press or click that took the focus must not show the window again, and the
+        // one after it toggles as usual. The shortcut and the tray click both ask this.
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        summon::blurred(app.handle());
+        assert!(summon::blur_just_hid(app.handle()));
+        assert!(!summon::blur_just_hid(app.handle()), "asked once");
+        // A window something holds does not hide, so the next press toggles.
+        let dialog = summon::hold(app.handle()).unwrap();
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        drop(dialog);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn wayland_refuses_always_on_top_with_the_fixed_message() {
+        let (app, _folder) = app_in(summon::Session::Wayland, "pin");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "window.keepOpen", json!({"pinned": true})),
+            Ok(json!({"requestId": "r1", "error": open_sesame_core::gate::NOT_ON_OS}))
+        );
+        assert!(!app.state::<summon::Summon>().should_hide_on_blur());
+    }
+
+    #[test]
+    fn summon_without_its_state_is_a_fixed_reply() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "summon.status", json!({})),
+            Ok(json!({"requestId": "r1", "error": UNSUPPORTED}))
+        );
+    }
+
+    #[test]
     fn everything_else_goes_to_the_core() {
         for method in [
             "system.info",
@@ -431,16 +653,112 @@ mod tests {
     }
 
     #[test]
-    fn the_app_is_signed_out_until_sign_in_is_wired() {
-        assert!(!authenticated());
-        assert_eq!(auth("auth.status"), Ok(json!({"authenticated": false})));
+    fn without_the_wiring_the_app_is_signed_out() {
+        let app = app();
+        assert!(!authenticated(app.handle()));
         for method in ["auth.signIn", "auth.cancel", "auth.signOut"] {
-            assert_eq!(auth(method), Err(BridgeError::from(NOT_IN_VERSION)));
+            assert_eq!(
+                auth(app.handle(), method),
+                Err(BridgeError::from(auth::NOT_STARTED))
+            );
         }
         let caller = Caller {
             window: MAIN_WINDOW,
-            authenticated: authenticated(),
+            authenticated: authenticated(app.handle()),
         };
         assert_eq!(gate::gate("system.info", &caller), Gate::SignedOutInfo);
+    }
+
+    /// The wiring with nothing real behind it: no server, a store that is empty, and a browser
+    /// that records what it was asked to open.
+    fn wire(app: &tauri::App<MockRuntime>) -> Arc<std::sync::Mutex<Vec<String>>> {
+        use open_sesame_core::auth::{AuthError, CredentialStore, Jwks, Tokens, WorkosApi};
+        struct Unreachable;
+        impl WorkosApi for Unreachable {
+            fn exchange_code(&self, _: &str, _: &str) -> Result<Tokens, AuthError> {
+                Err(AuthError::Network)
+            }
+            fn refresh(&self, _: &str) -> Result<Tokens, AuthError> {
+                Err(AuthError::Network)
+            }
+            fn jwks(&self) -> Result<Jwks, AuthError> {
+                Err(AuthError::Network)
+            }
+        }
+        struct Empty;
+        impl CredentialStore for Empty {
+            fn load(&self) -> Result<Option<String>, AuthError> {
+                Ok(None)
+            }
+            fn save(&self, _: &str) -> Result<(), AuthError> {
+                Ok(())
+            }
+            fn delete(&self) -> Result<(), AuthError> {
+                Ok(())
+            }
+        }
+        let opened = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let (auth, wakes) = Auth::new(
+            Arc::new(Unreachable),
+            Arc::new(Empty),
+            Arc::new(auth::Marker::new(None)),
+            Arc::new(move |url| {
+                record.lock().unwrap().push(url.to_string());
+                true
+            }),
+            Arc::new(|| None),
+        );
+        auth.run(wakes, |_| {});
+        app.manage(auth);
+        opened
+    }
+
+    #[test]
+    fn the_page_starts_cancels_and_ends_a_sign_in_through_the_bridge() {
+        let app = app();
+        let opened = wire(&app);
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let ok = |result: Value| Ok(json!({"requestId": "r1", "result": result}));
+        let status = |window: &WebviewWindow<MockRuntime>| {
+            call(window, "auth.status", json!({})).unwrap()["result"].clone()
+        };
+        assert_eq!(status(&main)["authenticated"], json!(false));
+        assert_eq!(status(&main)["busy"], json!(false));
+
+        assert_eq!(call(&main, "auth.signIn", json!({})), ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        assert!(opened.lock().unwrap()[0].starts_with("https://api.workos.com/"));
+        assert_eq!(status(&main)["busy"], json!(true));
+        // The reply to the page never carries the address, the state or the verifier.
+        let reply = call(&main, "auth.status", json!({})).unwrap().to_string();
+        assert!(
+            !reply.contains("workos") && !reply.contains("state="),
+            "{reply}"
+        );
+
+        assert_eq!(
+            call(&main, "auth.signIn", json!({})),
+            Ok(json!({"requestId": "r1", "error": auth::BUSY}))
+        );
+        assert_eq!(call(&main, "auth.cancel", json!({})), ok(json!(true)));
+        assert_eq!(status(&main)["busy"], json!(false));
+        assert_eq!(call(&main, "auth.signOut", json!({})), ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1, "sign-out opened nothing");
+
+        // Signed out, every local method is still served: sign-in is not a door (issue #60).
+        assert!(!authenticated(app.handle()));
+        assert_eq!(call(&main, "window.focus", json!({})), ok(json!(true)));
+    }
+
+    #[test]
+    fn another_window_cannot_start_or_read_a_sign_in() {
+        let app = app();
+        let opened = wire(&app);
+        let other = open(&app, "other", bundled());
+        for method in ["auth.status", "auth.signIn", "auth.cancel", "auth.signOut"] {
+            assert!(call(&other, method, json!({})).is_err(), "{method}");
+        }
+        assert!(opened.lock().unwrap().is_empty());
     }
 }
