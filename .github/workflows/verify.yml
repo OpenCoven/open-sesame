@@ -78,8 +78,9 @@ jobs:
       CARGO_TERM_COLOR: never
       CARGO_INCREMENTAL: '0'
       # What the cache holds. The restore step and the save step both read this one list, because
-      # a cache saved for one list of paths is not found by a restore that names another.
-      CARGO_CACHE_PATHS: |
+      # a cache saved for one list of paths is not found by a restore that names another. The
+      # name does not start with CARGO_, which is where Cargo looks for its own settings.
+      RUST_CACHE_PATHS: |
         ~/.cargo/registry/index
         ~/.cargo/registry/cache
         ~/.cargo/git/db
@@ -101,26 +102,28 @@ jobs:
           mkdir -p build/verification/rust
           { rustc --version --verbose; cargo --version; } | tee build/verification/rust/toolchain.txt
       # Issue #126, decided on 16 November 2026: only main saves a cache. A cache saved by a pull
-      # request can be restored by that pull request alone, and those caches pushed the ones from
-      # main out of the repository's cache limit within minutes. Every run restores here; the save
-      # step comes after the last cargo step and runs on main only. A pull request that changes
-      # Cargo.lock finds main's cache through the prefix and rebuilds what changed on each of its
-      # runs. A run on main takes the exact key or nothing: an older target directory carried
-      # forward through the prefix is what made each saved cache larger than the last.
+      # request can be restored by that pull request alone, and with every pull request saving
+      # its own the repository held 11.7 GB of them and none from main; a cache main had saved
+      # was once gone ten minutes later. Every run restores here; the save step comes after the
+      # last cargo step and runs on main only. A pull request that changes Cargo.lock finds
+      # main's cache through the prefix and rebuilds what changed on each of its runs. A run on
+      # main takes the exact key or nothing: an older target directory carried forward through
+      # the prefix is what made each saved cache larger than the last.
       - name: Restore the Cargo registry and build output
         id: cargo-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CARGO_CACHE_PATHS }}
+          path: ${{ env.RUST_CACHE_PATHS }}
           key: cargo-${{ matrix.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ github.ref != 'refs/heads/main' && format('cargo-{0}-{1}-', matrix.os, env.RUST_TOOLCHAIN) || '' }}
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Lint with warnings as errors
         run: cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee build/verification/rust/clippy.log
-      # Issue #99, decided on 16 November 2026: the tests get a limit of their own, so a test that
-      # hangs ends this step after 15 minutes and not the whole job after 30. The longest whole
-      # job measured for #99 took 8 minutes 12 seconds.
+      # Issue #99, decided on 16 November 2026: this step gets a limit of its own, so a test in it
+      # that hangs ends the step after 15 minutes and not the whole job after 30. The longest this
+      # step has taken in a hosted run up to that day is 5 minutes 50 seconds, on macOS with
+      # nothing cached (job 133063649770). The later steps that run tests have only the job's.
       - name: Test the workspace
         timeout-minutes: 15
         run: cargo test --workspace --locked 2>&1 | tee build/verification/rust/test.log
@@ -139,7 +142,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && steps.cargo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CARGO_CACHE_PATHS }}
+          path: ${{ env.RUST_CACHE_PATHS }}
           key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
       - name: Retain executed-check evidence
         if: always()
