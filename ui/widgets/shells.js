@@ -144,7 +144,7 @@ export async function mount({surface, signal, bridge, host, info}) {
     if (!info.available) { say('Open this page in the Open Sesame app to connect to this machine.'); return; }
     if (action === 'selftest' && host.__OPEN_SESAME_SELFTEST__) {
       const module = await import('../dev/selftest.js');
-      await module.run({launch,config:host.__OPEN_SESAME_SELFTEST__});
+      await module.run({launch,bridge,config:host.__OPEN_SESAME_SELFTEST__});
     } else if (action === 'new') await launch({mode:'local'});
     else form.elements.cwd.focus();
   }};

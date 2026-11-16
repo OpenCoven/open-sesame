@@ -182,6 +182,12 @@ async function start() {
   shell.dataset.state = info.available?'connected':'unavailable';
   status.textContent = info.available ? connected(info.authenticated === true) : 'Desktop connection unavailable';
   if (info.available) mountHostSettings();
+  // Development self-tests (ui/dev), set only by a development build started with
+  // OPEN_SESAME_SELFTEST. The storage qualification of #105 needs only the bridge: it starts as
+  // soon as the host answers, as it did before the views, opens no widget and changes no
+  // preference, and does not wait for the first view.
+  const selftest = window.__OPEN_SESAME_SELFTEST__;
+  if (info.available && selftest?.kind === 'runtime') run(import('./dev/selftest.js').then(module => module.run({bridge, config: selftest})));
   const saved = info.available ? await prefs.read() : {on:{},lastView:null};
   if (!info.available) report('Open this page in the Open Sesame app to connect to this machine.');
   catalogChanged(prefs.catalog);
@@ -210,9 +216,8 @@ async function start() {
     shell.setAttribute('aria-busy','false');
     shell.dataset.ready='true';
   }
-  // The existing native terminal self-test keeps using the product's own pane launcher.
-  const selftest = window.__OPEN_SESAME_SELFTEST__;
-  if (selftest) {
+  // The terminal self-test uses the product's own pane launcher.
+  if (selftest && selftest.kind !== 'runtime') {
     await manager.show('shells');
     // The self-test is a development-only first-party widget command, not a public global.
     await manager.show('shells','selftest');

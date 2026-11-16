@@ -38,7 +38,7 @@ try {
       const settings=JSON.parse(sessionStorage.getItem('fixture.settings')||'{}');
       const states=JSON.parse(sessionStorage.getItem('fixture.states')||'{}');
       const calls=[];let noteReply,releaseOpen;
-      const listeners=[];
+      const listeners=[],savedItems=[];
       window.__fixture__={settings,states,calls,holdNotes:false,holdOpen:false,releaseNote:()=>noteReply?.(),releaseOpen:()=>releaseOpen?.(),emit:payload=>{for(const handler of listeners)handler({payload});}};
       window.__OPEN_SESAME_NATIVE__=true;
       window.__TAURI__={event:{listen:async(name,handler)=>{listeners.push(handler);return()=>{};}},core:{Channel:class{},invoke:async(command,{message})=>{
@@ -55,11 +55,14 @@ try {
         else if(method==='items.save') {
           if(window.__fixture__.holdNotes)await new Promise(resolve=>noteReply=resolve);
           if(window.__fixture__.failNote)return {requestId,error:'The note could not be saved.'};
-          result={item:{id:params.item.id}};
+          result={item:{id:params.item.id}};savedItems.push({...params.item,id:params.item.id||`fixture-${savedItems.length}`});
         } else if(method==='terminal.open') {
           if(window.__fixture__.holdOpen)await new Promise(resolve=>releaseOpen=resolve);
           result={id:params.id,pid:0,machine:'fixture'};
-        }else result=true;
+        }
+        // Only a page started with a development self-test asks storage for the items it saved.
+        else if(method==='items.list'&&window.__OPEN_SESAME_SELFTEST__)result={items:savedItems};
+        else result=true;
         return {requestId,result};
       }}};
     });
@@ -251,6 +254,24 @@ try {
           await loading.waitForFunction(()=>window.__fixture__.states.reader==='active',null,{timeout:3000});
           await loading.waitForFunction(()=>window.__fixture__.settings['shell.lastView']==='reader',null,{timeout:3000});
         }finally{await loading.close();}
+      });
+      await step('the runtime self-test of #105 runs through the bridge without opening a widget',async()=>{
+        const runner=await context.newPage();
+        try {
+          // As src-tauri/src/window.rs defines it in a development build started with OPEN_SESAME_SELFTEST.
+          await runner.addInitScript(()=>Object.defineProperty(window,'__OPEN_SESAME_SELFTEST__',{value:Object.freeze({kind:'runtime',phase:'save',text:'Fixture runtime qualification'})}));
+          // The first view never finishes loading: the qualification must not wait for it.
+          await runner.route('**/ui/widgets/pending.js',()=>{});
+          await runner.goto(origin+'/ui/index.html');
+          const result=runner.locator('[data-runtime-result]');
+          await runner.locator('[data-runtime-result]:not([data-runtime-result="pending"])').waitFor({timeout:10000});
+          assert.equal(await result.getAttribute('data-runtime-result'),'passed',await result.textContent());
+          assert.notEqual(await runner.locator('.shell').getAttribute('data-ready'),'true','the first view is still loading');
+          const calls=await runner.evaluate(()=>window.__fixture__.calls.map(c=>c.method));
+          assert(calls.includes('items.save')&&calls.includes('items.list'),'the self-test saved and listed through the bridge');
+          assert(!calls.some(m=>m==='widgets.set'||m==='settings.set'),'the runtime self-test changes no preference');
+          assert(!calls.includes('terminal.open'),'the runtime self-test opens no pane');
+        }finally{await runner.close();}
       });
       await step('initial widget failure does not strand shell restoration',async()=>{
         const recovering=await context.newPage();
