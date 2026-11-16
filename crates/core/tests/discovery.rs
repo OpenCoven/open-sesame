@@ -1557,12 +1557,12 @@ mod login_shell {
 
     /// The launch a stand-in is captured from: one variable whose name is not a shell name,
     /// and the two that name a file a shell reads even when it is not a login shell.
-    fn odd_launch() -> BTreeMap<String, String> {
-        let (_home, mut inherited) = home(&[]);
+    fn odd_launch() -> (tempfile::TempDir, BTreeMap<String, String>) {
+        let (home, mut inherited) = home(&[]);
         inherited.insert("config.key".into(), "launch".into());
         inherited.insert("ENV".into(), "/nonexistent/env".into());
         inherited.insert("BASH_ENV".into(), "/nonexistent/bash-env".into());
-        inherited
+        (home, inherited)
     }
 
     fn gone(pid: i32) -> bool {
@@ -1597,7 +1597,8 @@ mod login_shell {
             let Some((_dir, shell)) = stand_in(name, &login_run(), &bare) else {
                 return;
             };
-            let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+            let (_home, launch) = odd_launch();
+            let env = ShellEnv::capture(Some(&shell), launch.clone(), LIMIT);
             assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
             assert_eq!(env.get("config.key"), Some("launch"), "{name}");
             assert_eq!(
@@ -1608,7 +1609,7 @@ mod login_shell {
                 ],
                 "{name}"
             );
-            let mut plain = odd_launch();
+            let mut plain = launch;
             plain.remove("config.key");
             let env = ShellEnv::capture(Some(&shell), plain, LIMIT);
             assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
@@ -1639,7 +1640,8 @@ mod login_shell {
             let Some((_dir, shell)) = stand_in("zsh", &login_run(), &bare) else {
                 return;
             };
-            let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+            let (_home, launch) = odd_launch();
+            let env = ShellEnv::capture(Some(&shell), launch, LIMIT);
             assert_eq!(env.source(), &EnvSource::LoginShell, "{what}");
             assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"), "{what}");
             assert_eq!(env.get("config.key"), None, "{what}");
@@ -1652,7 +1654,8 @@ mod login_shell {
         let Some((_dir, shell)) = stand_in("zsh", &login, &bare) else {
             return;
         };
-        let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+        let (_home, launch) = odd_launch();
+        let env = ShellEnv::capture(Some(&shell), launch, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
         assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
         assert_eq!(env.get("config.key"), None);
@@ -1670,8 +1673,9 @@ mod login_shell {
         ) else {
             return;
         };
+        let (_home, launch) = odd_launch();
         let started = Instant::now();
-        let env = ShellEnv::capture(Some(&shell), odd_launch(), LIMIT);
+        let env = ShellEnv::capture(Some(&shell), launch, LIMIT);
         let took = started.elapsed();
         assert!(
             took >= Duration::from_secs(4) && took < Duration::from_secs(12),
@@ -1717,7 +1721,8 @@ mod login_shell {
                 (pid, Instant::now())
             })
         };
-        let env = ShellEnv::capture_cancellable(Some(&shell), odd_launch(), LIMIT, cancel);
+        let (_home, launch) = odd_launch();
+        let env = ShellEnv::capture_cancellable(Some(&shell), launch, LIMIT, cancel);
         let returned = Instant::now();
         let (pid, cancelled) = quit.join().unwrap();
         let after = returned.saturating_duration_since(cancelled);

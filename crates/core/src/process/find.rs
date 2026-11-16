@@ -291,8 +291,10 @@ const NVM_ALIASES: usize = 16;
 /// like a version is taken as the highest here, which then gives nothing, where nvm passes
 /// over it; of two prereleases of one version whose names differ only in the case of a letter
 /// the first by bytes is taken here and nvm, under a UTF-8 locale, takes the other; a chain of
-/// more than `NVM_ALIASES` aliases is given up here; and under the C locale nvm keeps a
-/// no-break space at the end of an alias line as part of the name, which is dropped here.
+/// more than `NVM_ALIASES` aliases is given up here; under the C locale nvm keeps a no-break
+/// space at the end of an alias line as part of the name, which is dropped here, and a Linux
+/// locale, where this was not tried, may do the same; and a next-line character (U+0085) at
+/// the end of a line is kept by nvm and dropped here.
 fn nvm_default_bin(root: &Path) -> Option<PathBuf> {
     let versions = root.join("versions").join("node");
     // Folder names that start as a version does, with the three numbers nvm sorts by.
@@ -375,9 +377,9 @@ fn nvm_sort_key(folder: &str) -> Option<[u64; 3]> {
 
 /// What an nvm alias names: the first line of its file that says anything, read as nvm reads
 /// it since 0.40.4: each line ends at a `#`, and the blanks at its end are dropped. nvm drops
-/// what its shell calls a space, which in the UTF-8 locale a terminal has includes a vertical
-/// tab and a no-break space, so both are dropped here; the characters Unicode calls white
-/// space stand in for the system's list. The name is
+/// what its shell calls a space, which in the UTF-8 locale a terminal has on macOS includes a
+/// vertical tab and a no-break space, so both are dropped here; the characters Unicode calls
+/// white space stand in for the system's list. The name is
 /// nvm's own or comes out of another alias file, so one that would leave the alias folder is
 /// not followed, and neither is a long-term name with a capital letter, which nvm refuses.
 /// Only a regular file is opened, so a pipe left under that name cannot hold up the search.
