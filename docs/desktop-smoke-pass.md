@@ -37,7 +37,7 @@ This is a partial run: only the macOS lines an agent can reach without a person,
 | ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
 | --- | --- | --- | --- | --- | --- | --- |
 | A1 | Build the development app from the tested commit: `npm run dev:app` (`cargo tauri dev --no-dev-server` in `src-tauri`) finishes compiling and starts the app | [#78][78] | pass, [M1](#m1-build-and-terminal-launch) | | | |
-| A2 | Launch: the window opens showing "Connected to this machine.", with one Open Sesame process and one `open-sesame: page loaded` line in the terminal | [#78][78]; Windows moved from [#70][70] | pass, [M1](#m1-build-and-terminal-launch), [M2](#m2-launch-from-the-desktop) | | | |
+| A2 | Launch: the window opens and its status says it is connected ("Connected to this machine." before [#76][76], "Connected · Local workspace" after), with one Open Sesame process and one `open-sesame: page loaded` line in the terminal | [#78][78]; Windows moved from [#70][70] | pass, [M1](#m1-build-and-terminal-launch), [M2](#m2-launch-from-the-desktop) | | | |
 | A3 | Hide the window with its close button and show it again (Dock icon on macOS, tray menu elsewhere), four times: the `page loaded` count stays at one | Windows moved from [#70][70] | | | | |
 | B1 | Tray menu Show or Hide, clicked by a person, hides and then shows the window | macOS moved from [#70][70] | | | | |
 | B2 | Tray menu Quit, clicked by a person, leaves no Open Sesame process | macOS moved from [#70][70] | | | | |
@@ -93,7 +93,7 @@ These rows are [#72][72]'s [owner checklist][72-checklist] and stay empty until 
 | F1 | Capture a note and a task from the palette (Control+K, Command+K on a Mac): both appear in Today and Projects | [#78][78]; [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] |
 | F2 | A focus session survives hide, show and relaunch with the correct remaining time | [#78][78]; [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] |
 | F3 | Notes, tasks, bookmarks, projects and saved feed items survive quitting and relaunching | moved from [#75][75] | pending [#77][77], [#105][105] | pending [#77][77], [#105][105] | pending [#77][77], [#105][105] | pending [#77][77], [#105][105] |
-| F4 | Press a control for a feature that is not ported: the fixed not-available message appears | [#78][78] | pending [#76][76] | pending [#76][76] | pending [#76][76] | pending [#76][76] |
+| F4 | Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." | [#78][78] | pending [#76][76] | pending [#76][76] | pending [#76][76] | pending [#76][76] |
 | F5 | A shortcut saved in the Shortcut section is still there after Quit and a relaunch (a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`) | [#78][78] relaunch; [#71][71] | | | | n/a: see C4 |
 
 At the tested commit the core answers the storage methods (`items.*`, `projects.*`, `settings.*`, `widgets.*`) as unsupported, because the storage is wired into the application by #105, and no view saves a note or task until #77. F1 to F4 therefore cannot be run at this commit on any system.
@@ -131,7 +131,8 @@ These are the numbered steps for each system, written for a person at the machin
 3. Make a disposable settings folder and name it in the terminal you start the app from, so nothing is written to the app data in your home folder. macOS and Linux: `export OPEN_SESAME_DEV_CONFIG_DIR="$(mktemp -d)"`. Windows PowerShell: `$env:OPEN_SESAME_DEV_CONFIG_DIR = (New-Item -ItemType Directory -Force "$env:TEMP\os78-config").FullName`.
 4. Make a project folder named `open sesame ünï` in your home folder (`mkdir -p ~/"open sesame ünï"`; PowerShell `New-Item -ItemType Directory "$env:USERPROFILE\open sesame ünï"`).
 5. From the repository root run `npm run dev:app`. The first build takes several minutes. Keep that terminal visible: the app prints `open-sesame:` lines there, and the number of `open-sesame: page loaded` lines is how you see whether the page loaded again. This is A1 and A2.
-6. Record the binary's SHA-256: `shasum -a 256 target/debug/open-sesame` on macOS, `sha256sum target/debug/open-sesame` on Linux, `Get-FileHash target\debug\open-sesame.exe` on Windows.
+6. Where to find the controls: before [#76][76] merged, the shell form (Folder, SSH host, User, New shell) is under the Shortcut section; after it, the window has a row of views, and the shell form is in the Shells view. The Account and Shortcut sections are under the title bar in both. "New shell" below means that button.
+7. Record the binary's SHA-256: `shasum -a 256 target/debug/open-sesame` on macOS, `sha256sum target/debug/open-sesame` on Linux, `Get-FileHash target\debug\open-sesame.exe` on Windows.
 
 ### macOS, part A (about 10 minutes)
 
@@ -152,13 +153,13 @@ The agent lines (A1, A2, C1, D1 to D4, D10, F5 and G1) can be run by an agent at
 3. Open the palette with Command+K and capture a note and a task; both appear in Today and Projects. This is F1.
 4. Start a focus session; hide and show the window; quit and open the app again; the remaining time is right. This is F2.
 5. Add a bookmark and a project and save a feed item if the views offer them, quit, open the app again: the note, task, bookmark, project and feed item are all there. This is F3.
-6. Press a control for a feature that is not ported: the fixed not-available message appears. This is F4.
+6. Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." This is F4.
 
 ### Windows, part A (about 25 minutes)
 
 Run every command in PowerShell; a second PowerShell window, outside the app, is used for checking processes.
 
-1. Start the app with `npm run dev:app` (after the steps above). The window opens with "Connected to this machine." and the terminal has one `page loaded` line. In the second window, `Get-Process open-sesame` lists one process. This is A1 and A2.
+1. Start the app with `npm run dev:app` (after the steps above). The window opens, its status says it is connected, and the terminal has one `page loaded` line. In the second window, `Get-Process open-sesame` lists one process. This is A1 and A2.
 2. Close the window with its ×; it hides. Right-click the tray icon and choose Show or Hide; it shows. Do this four times; the terminal still has one `page loaded` line. This is A3 and B1.
 3. In the second window run `& .\target\debug\open-sesame.exe --toggle` twice: the window hides, then shows. Run `& .\target\debug\open-sesame.exe` with no argument while it is hidden: it shows. Each command returns at once, `Get-Process open-sesame` still lists one process, and there is still one `page loaded` line. This is C1.
 4. Press Control+Alt+Shift+Space twice: the window hides, then shows with the keyboard in it. This is C2.
@@ -179,7 +180,7 @@ Run every command in PowerShell; a second PowerShell window, outside the app, is
 2. Open the palette with Control+K and capture a note and a task; both appear in Today and Projects. This is F1.
 3. Start a focus session; hide and show the window; quit and start the app again; the remaining time is right. This is F2.
 4. Add a bookmark and a project and save a feed item if the views offer them, quit, start the app again: all five are there. This is F3.
-5. Press a control for a feature that is not ported: the fixed not-available message appears. This is F4.
+5. Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." This is F4.
 
 ### Linux X11, part A (about 25 minutes)
 
@@ -208,7 +209,7 @@ Log in to an X11 session (on GNOME, choose "GNOME on Xorg" at the login screen; 
 2. Open the palette with Control+K and capture a note and a task; both appear in Today and Projects. This is F1.
 3. Start a focus session; hide and show the window; quit and start the app again; the remaining time is right. This is F2.
 4. Add a bookmark and a project and save a feed item if the views offer them, quit, start the app again: all five are there. This is F3.
-5. Press a control for a feature that is not ported: the fixed not-available message appears. This is F4.
+5. Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." This is F4.
 
 ### Linux Wayland, part A (about 20 minutes)
 
