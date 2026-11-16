@@ -8,7 +8,7 @@ A result cell is filled only by a person or agent who observed that line in that
 
 **`7dc2c31860735240da2c07cd77eaa7fec43112e8`**, `main` after [#120][120] ([#76][76], the views) merged on 16 November 2026, with [#119][119] ([#105][105], storage and the login-shell environment) and [#118][118] ([#94][94]) before it.
 
-This is a partial run: only the macOS lines an agent can reach without a person, a real account or a tray click. The full pass runs at one later commit, once [#71][71], [#72][72] and [#77][77] are closed. To start it, move the [Environments](#environments) table and the checklist with its results to [Earlier runs](#earlier-runs), write the new commit here, and start again from empty cells, including macOS. A table never mixes results from two commits.
+This is a partial run: only the macOS lines an agent can reach without a person, a real account or a tray click. The full pass runs at one later commit, once [#77][77] is closed; [#71][71] and [#72][72] closed on 16 November 2026, and their code is in the tested commit. To start it, move the [Environments](#environments) table and the checklist with its results to [Earlier runs](#earlier-runs), write the new commit here, and start again from empty cells, including macOS. A table never mixes results from two commits.
 
 ### Environments
 
@@ -74,7 +74,7 @@ At the tested commit the application reads the login-shell environment at startu
 
 ### Sign-in with a real account
 
-These rows are [#72][72]'s [owner checklist][72-checklist] and stay empty until a person signs in with a real account. They run after #72 closes. A macOS development build cannot receive the callback, and a bundle must not be built or launched on a Mac where the installed Swift app owns the `opensesame` scheme until [#87][87] settles the identifier, so the macOS column needs a Mac or user account without the Swift app.
+These rows are [#72][72]'s [owner checklist][72-checklist] and stay empty until a person signs in with a real account. #72 closed on 16 November 2026 and its code is in the tested commit, so they can run now. A macOS development build cannot receive the callback, and a bundle must not be built or launched on a Mac where the installed Swift app owns the `opensesame` scheme until [#87][87] settles the identifier, so the macOS column needs a Mac or user account without the Swift app.
 
 | ID | Check | From | macOS | Windows | Linux X11 | Linux Wayland |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -190,7 +190,7 @@ The Mac was in use by others throughout: keyboard and pointer input arrived with
 
 ## Owner instructions
 
-These are the numbered steps for each system, written for a person at the machine. Each part takes under 30 minutes once the prerequisites are installed and the first build has finished. Part A can run at any commit that has #71's code (it is on `main`); part B needs #72 and #77 closed. For the full pass, run both parts at the one commit written under [Tested commit](#tested-commit) and fill every empty cell in your column with `pass` or `fail`, the date, and one line of what you saw; a failure also gets an issue. Report the system's version, desktop, GPU, web engine version and the binary's SHA-256 in the [Environments](#environments) table.
+These are the numbered steps for each system, written for a person at the machine. Each part takes under 30 minutes once the prerequisites are installed and the first build has finished. Part A can run at any commit that has #71's code (it is on `main`); part B's sign-in steps can run at the tested commit, which has #72's code, and its view steps need #77 closed. For the full pass, run both parts at the one commit written under [Tested commit](#tested-commit) and fill every empty cell in your column with `pass` or `fail`, the date, and one line of what you saw; a failure also gets an issue. Report the system's version, desktop, GPU, web engine version and the binary's SHA-256 in the [Environments](#environments) table.
 
 ### Before the clock starts, on every system
 
@@ -213,7 +213,7 @@ An agent observed A1 to A3, C1, C5, D1 to D8, D10, F4, F5 and G1 at the tested c
 5. Fill in SSH host and User for a machine you can reach with SSH and press New shell: it connects; run `hostname`; close the pane with its ×; `pgrep -l ssh` shows no `ssh` left from it. This is D9.
 6. Choose Quit from the menu-bar icon's menu. `pgrep -x open-sesame` prints nothing. This is B2.
 
-### macOS, part B (about 25 minutes, after #72 and #77 close)
+### macOS, part B (about 25 minutes; sign-in now, the view steps after #77 closes)
 
 1. On a Mac or user account without the installed Swift app, run `cargo tauri build` in `src-tauri`, move the application to the Applications folder and open it once. Do not do this beside the installed Swift app until #87 is settled.
 2. Follow [#72's checklist][72-checklist], steps 1 to 9, for E1 to E7. Run steps 3 and 4 below during its ten-minute wait.
@@ -240,7 +240,7 @@ Run every command in PowerShell; a second PowerShell window, outside the app, is
 13. If you can reach a machine with SSH, fill in SSH host and User and press New shell: it connects; run `hostname`. This is D9.
 14. Make sure three panes are open (the SSH one counts), and note each local pane's `$PID`. Choose Quit from the tray menu. In the second window, `Get-Process open-sesame, ssh -ErrorAction SilentlyContinue` prints nothing and `Get-Process -Id <each PID>` finds none. This is D7, G1 and B2.
 
-### Windows, part B (about 25 minutes, after #72 and #77 close)
+### Windows, part B (about 25 minutes; sign-in now, the view steps after #77 closes)
 
 1. Follow [#72's checklist][72-checklist], steps 1 to 9, with `npm run dev:app`, for E1 to E7. In step 3, `Get-Process open-sesame` lists one process. Run steps 2 to 6 below during its ten-minute wait.
 2. Open the palette with Control+K and capture a note and a task; both appear in Today and Projects. This is F1.
@@ -270,7 +270,7 @@ Log in to an X11 session (on GNOME, choose "GNOME on Xorg" at the login screen; 
 15. Optional, for D5's byte-by-byte check: `export OPEN_SESAME_SELFTEST="{\"out\":\"/tmp/os78-selftest.json\",\"cwd\":\"$HOME/open sesame ünï\",\"cwdName\":\"open sesame ünï\",\"lines\":7000000}"` and `npm run dev:app`. The self-test opens the Shells view by itself once the window is ready. Leave the window alone until it says the self-test finished, then read `/tmp/os78-selftest.json`: every step has `"ok": true`, and the flood step reports its longest timer and frame gaps. Quit from the tray and check that none of the process IDs in its `quit` entry is still running. Unset the variable afterwards.
 16. Open the app from the desktop: the "OS78 smoke" entry in the applications menu or grid. Open the Shells view, press New shell and run `os78-cli`: it prints `os78-cli-found`. Then in a terminal, `tr '\0' '\n' < /proc/$(pgrep -f target/debug/open-sesame)/environ | grep ^PATH=` does not contain `os78-bin`. Quit from the tray. This is D10.
 
-### Linux X11, part B (about 25 minutes, after #72 and #77 close)
+### Linux X11, part B (about 25 minutes; sign-in now, the view steps after #77 closes)
 
 1. Follow [#72's checklist][72-checklist], steps 1 to 10, with `npm run dev:app` on the X11 session, for E1 to E8. In step 3, `pgrep -c -f target/debug/open-sesame` prints 1. Run steps 2 to 5 below during its ten-minute wait.
 2. Open the palette with Control+K and capture a note and a task; both appear in Today and Projects. This is F1.
@@ -288,7 +288,7 @@ Log in to a Wayland session (on GNOME, the default "GNOME" entry; `echo $XDG_SES
 4. In the desktop's keyboard settings add a custom shortcut whose command is the absolute path of `target/debug/open-sesame` followed by `--toggle`. Press it twice: the window hides, then shows. Remove the shortcut afterwards. This is C4.
 5. Run X11 part A steps 8 to 14 and 16 in this session. They are D1 to D10, G1 and B2 for the Wayland column.
 
-### Linux Wayland, part B (about 25 minutes, after #72 and #77 close)
+### Linux Wayland, part B (about 25 minutes; sign-in now, the view steps after #77 closes)
 
 Run X11 part B on the Wayland session, for E1 to E8 and F1 to F4 in the Wayland column.
 
