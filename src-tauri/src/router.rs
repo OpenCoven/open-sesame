@@ -346,6 +346,35 @@ mod tests {
         }
     }
 
+    /// When the window loads a page again, the panes the page before it opened are closed: the
+    /// new page has no way to reach them.
+    #[test]
+    fn a_page_that_loads_again_finds_no_panes_of_the_page_before() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let opened = call(
+            &main,
+            "terminal.open",
+            json!({"id": "main", "mode": "local", "channel": "__CHANNEL__:7"}),
+        )
+        .unwrap();
+        let pid = opened["result"]["pid"].as_u64().expect("no process ID") as u32;
+        assert!(crate::test_support::alive(pid));
+        crate::terminal::page_replaced(app.handle());
+        assert_eq!(
+            call(&main, "terminal.input", json!({"id": "main", "data": "x"})),
+            Ok(json!({"requestId": "r1", "error": "Open this shell before sending input."}))
+        );
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::test_support::alive(pid) && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            !crate::test_support::alive(pid),
+            "the shell of the page before is still running"
+        );
+    }
+
     /// A pane opened through the command is a real shell, and closing it through the command
     /// leaves no process. The channel's messages go nowhere on this windowless runtime; the
     /// stream itself is tested in the core.
