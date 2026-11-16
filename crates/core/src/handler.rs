@@ -6,16 +6,20 @@
 //! ahead of its handler never reaches feature code by accident.
 
 use crate::gate::UNSUPPORTED;
+use crate::process::{Search, ShellEnv};
 use crate::protocol::{BridgeError, BridgeResult};
+use crate::storage::{self, Storage, StorageError};
 use crate::system;
 use crate::terminal::Terminals;
 use serde_json::{Map, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 /// The headless core. One instance lives for the life of the application.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Core {
     shut_down: AtomicBool,
+    storage: Mutex<Option<Result<Storage, StorageError>>>,
     /// Every open pane. The application opens a pane through this directly, because only it
     /// can supply the channel the pane's output goes to.
     pub terminals: Terminals,
@@ -26,6 +30,49 @@ impl Core {
         Core::default()
     }
 
+    /// The host chooses the directory and supplies the opening result. An opening failure
+    /// is retained as a plain error; the rest of the application remains usable.
+    pub fn with_storage(storage: Result<Storage, StorageError>) -> Self {
+        Self {
+            storage: Mutex::new(Some(storage)),
+            ..Self::default()
+        }
+    }
+
+    /// Publishes the background opening result once. A result arriving after Quit is dropped,
+    /// closing its connection, so asynchronous startup cannot reopen a stopped core.
+    pub fn initialize_storage(&self, storage: Result<Storage, StorageError>) -> bool {
+        let mut slot = self.storage.lock().unwrap_or_else(|p| p.into_inner());
+        if self.is_shut_down() || slot.is_some() {
+            return false;
+        }
+        *slot = Some(storage);
+        true
+    }
+
+    /// Finds an installed tool using the current stored override and the host's captured
+    /// environment. A bad override stays missing; a storage failure must not bypass it.
+    pub fn find_tool(
+        &self,
+        name: &str,
+        environment: &ShellEnv,
+    ) -> Result<Option<std::path::PathBuf>, BridgeError> {
+        if self.is_shut_down() {
+            return Err(BridgeError::from(SHUTTING_DOWN));
+        }
+        let slot = self.storage.lock().unwrap_or_else(|p| p.into_inner());
+        let storage = slot
+            .as_ref()
+            .ok_or_else(|| BridgeError::from(DATA_UNAVAILABLE))?
+            .as_ref()
+            .map_err(|error| BridgeError(error.to_string()))?;
+        let explicit = storage.cli_path(name)?;
+        // Filesystem discovery can be slow. It needs only the owned override path, so it must
+        // not keep the storage slot locked and delay storage requests or shutdown.
+        drop(slot);
+        Ok(Search::from_env(environment).find(name, explicit.as_deref()))
+    }
+
     /// Runs one allowed request. Blocking: call it off the UI thread.
     pub fn handle(&self, method: &str, params: &Map<String, Value>) -> BridgeResult {
         if self.is_shut_down() {
@@ -33,6 +80,15 @@ impl Core {
         }
         match method {
             "system.info" => Ok(system::info()),
+            _ if storage::commands::METHODS.contains(&method) => {
+                let slot = self.storage.lock().unwrap_or_else(|p| p.into_inner());
+                let storage = slot
+                    .as_ref()
+                    .ok_or_else(|| BridgeError::from(DATA_UNAVAILABLE))?
+                    .as_ref()
+                    .map_err(|error| BridgeError(error.to_string()))?;
+                storage::commands::handle(storage, method, params)
+            }
             _ if Terminals::METHODS.contains(&method) => self.terminals.handle(method, params),
             _ => Err(BridgeError::from(UNSUPPORTED)),
         }
@@ -45,6 +101,10 @@ impl Core {
         let first = !self.shut_down.swap(true, Ordering::SeqCst);
         if first {
             self.terminals.shut_down();
+            self.storage
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take();
         }
         first
     }
@@ -53,6 +113,17 @@ impl Core {
         self.shut_down.load(Ordering::SeqCst)
     }
 }
+
+impl std::fmt::Debug for Core {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Core")
+            .field("shut_down", &self.is_shut_down())
+            .finish_non_exhaustive()
+    }
+}
+
+pub const DATA_UNAVAILABLE: &str =
+    "Open Sesame is still opening its data file. Try again before saving changes.";
 
 pub const SHUTTING_DOWN: &str = "Open Sesame is quitting.";
 

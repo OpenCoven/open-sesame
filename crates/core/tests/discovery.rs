@@ -66,6 +66,73 @@ fn known_locations_are_searched_after_the_path() {
     assert_eq!(search(&[], &[&known]).find("tool", None), Some(fallback));
 }
 
+#[test]
+fn standard_user_install_locations_work_without_shell_capture() {
+    let home = tempfile::tempdir().unwrap();
+    let cargo = install(&home.path().join(".cargo/bin"), "cargo-owned-tool-73");
+    let bun = install(&home.path().join(".bun/bin"), "bun-owned-tool-73");
+    let inherited = vars(&[(
+        if cfg!(windows) { "USERPROFILE" } else { "HOME" },
+        home.path().to_str().unwrap(),
+    )]);
+    let env = ShellEnv::capture(None, inherited, Duration::from_millis(20));
+    assert!(matches!(env.source(), EnvSource::Inherited(_)));
+    let finder = Search::from_env(&env);
+    assert_eq!(
+        [
+            finder.find("cargo-owned-tool-73", None),
+            finder.find("bun-owned-tool-73", None),
+        ],
+        [Some(cargo), Some(bun)]
+    );
+}
+
+#[test]
+fn configured_install_roots_work_without_a_home_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let cargo_home = dir.path().join("custom cargo");
+    let bun_home = dir.path().join("custom bun");
+    let cargo = install(&cargo_home.join("bin"), "cargo-owned-tool-73");
+    let bun = install(&bun_home.join("bin"), "bun-owned-tool-73");
+    let env = ShellEnv::from_vars(vars(&[
+        ("CARGO_HOME", cargo_home.to_str().unwrap()),
+        ("BUN_INSTALL", bun_home.to_str().unwrap()),
+    ]));
+    let finder = Search::from_env(&env);
+    assert!(finder.known_dirs.iter().all(|path| path.is_absolute()));
+    assert_eq!(
+        [
+            finder.find("cargo-owned-tool-73", None),
+            finder.find("bun-owned-tool-73", None),
+        ],
+        [Some(cargo), Some(bun)]
+    );
+}
+
+#[test]
+fn relative_install_roots_fall_back_to_absolute_home_locations() {
+    let home = tempfile::tempdir().unwrap();
+    let cargo = install(&home.path().join(".cargo/bin"), "cargo-owned-tool-73");
+    let bun = install(&home.path().join(".bun/bin"), "bun-owned-tool-73");
+    let env = ShellEnv::from_vars(vars(&[
+        (
+            if cfg!(windows) { "USERPROFILE" } else { "HOME" },
+            home.path().to_str().unwrap(),
+        ),
+        ("CARGO_HOME", "relative-cargo"),
+        ("BUN_INSTALL", "relative-bun"),
+    ]));
+    let finder = Search::from_env(&env);
+    assert!(finder.known_dirs.iter().all(|path| path.is_absolute()));
+    assert_eq!(
+        [
+            finder.find("cargo-owned-tool-73", None),
+            finder.find("bun-owned-tool-73", None),
+        ],
+        [Some(cargo), Some(bun)]
+    );
+}
+
 /// An override the user set is used as it is. A bad override is reported as missing; the search
 /// never quietly picks a different program.
 #[test]
@@ -145,6 +212,48 @@ fn windows_extensions_are_tried_in_order() {
         .to_string_lossy()
         .to_lowercase()
         .ends_with("tool.cmd"));
+}
+
+/// An execute bit for another class of user does not make a file runnable by its owner.
+#[cfg(unix)]
+#[test]
+fn executable_search_uses_the_callers_actual_access() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let (first, second) = (dir.path().join("first"), dir.path().join("second"));
+    let restricted = install(&first, "tool");
+    let runnable = install(&second, "tool");
+    std::fs::set_permissions(&restricted, std::fs::Permissions::from_mode(0o601)).unwrap();
+    std::fs::set_permissions(&runnable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let allowed = match std::process::Command::new(&restricted)
+        .args(["lines", "1"])
+        .output()
+    {
+        Ok(output) => {
+            // A privileged caller can execute this file; test its real access too, without
+            // silently skipping the test or assuming every runner has the same user ID.
+            assert!(output.status.success());
+            true
+        }
+        Err(error) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            false
+        }
+    };
+    let finder = search(&[&first, &second], &[]);
+    assert_eq!(
+        finder.find("tool", None),
+        Some(if allowed {
+            restricted.clone()
+        } else {
+            runnable
+        })
+    );
+    assert_eq!(
+        finder.find("tool", Some(&restricted)),
+        allowed.then_some(restricted),
+        "an unusable explicit path must be reported missing"
+    );
 }
 
 /// Only absolute directories are searched: never the working directory, never an empty entry.
@@ -604,6 +713,41 @@ mod login_shell {
                 .all(|dir| !dir.contains("odd") && !dir.contains('\u{fffd}')),
             "{path:?}"
         );
+    }
+
+    #[test]
+    fn capture_honors_variables_unset_by_the_login_profile() {
+        let shell = Path::new("/bin/sh");
+        assert!(
+            shell.is_file(),
+            "the Unix login-shell prerequisite must exist"
+        );
+        let (_home, mut inherited) = home(&[(
+            ".profile",
+            "unset REMOVED_BY_PROFILE\nexport PROFILE_OBSERVED=${REMOVED_BY_PROFILE-absent}\n"
+                .to_string(),
+        )]);
+        inherited.insert("REMOVED_BY_PROFILE".into(), "stale-value".into());
+        inherited.insert("PWD".into(), "/launcher-working-directory".into());
+        inherited.insert("SHLVL".into(), "41".into());
+        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("PROFILE_OBSERVED"), Some("absent"));
+        assert_eq!(env.get("REMOVED_BY_PROFILE"), None);
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        assert_eq!(env.get("PWD"), Some("/launcher-working-directory"));
+        assert_eq!(env.get("SHLVL"), Some("41"));
+    }
+
+    #[test]
+    fn capture_preserves_environment_names_that_are_not_shell_identifiers() {
+        let shell = Path::new("/bin/bash");
+        assert!(shell.is_file(), "the bash prerequisite must exist");
+        let (_home, mut inherited) = home(&[(".bash_profile", String::new())]);
+        inherited.insert("config.key".into(), "still-present".into());
+        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("config.key"), Some("still-present"));
     }
 
     /// Startup files print banners, and may even print something that looks like a marker.

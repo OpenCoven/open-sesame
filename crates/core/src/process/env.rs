@@ -43,6 +43,8 @@ pub enum Fallback {
     ShellFailed,
     /// The shell's startup files did not finish in time.
     TimedOut,
+    /// The host is quitting and cancelled its startup capture.
+    Cancelled,
 }
 
 /// A set of environment variables and where it came from. `Debug` shows no names or values.
@@ -89,17 +91,29 @@ impl ShellEnv {
     }
 
     /// Runs `shell` as an interactive login shell with exactly the `inherited` variables and
-    /// returns them overlaid with what the shell's startup files set. On any failure the result
-    /// is `inherited` unchanged, with the reason in [`ShellEnv::source`]. A variable the shell
-    /// reports with a name or value that is not valid Unicode is left out of what is overlaid,
-    /// as [`ShellEnv::inherited`] leaves such variables out; if `inherited` has a value under
-    /// that name, that value stays. Of a `PATH` that is not valid Unicode, the directories that
-    /// are valid are kept; one with no valid directory is left out, and a capture without a
-    /// `PATH` is given up for `inherited`.
+    /// returns the shell's effective environment, including variables removed by startup files.
+    /// Shell-private values retain their inherited values. On any failure the result is
+    /// `inherited` unchanged, with the reason in [`ShellEnv::source`]. A variable the shell
+    /// reports with a name or value that is not valid Unicode is left out, as
+    /// [`ShellEnv::inherited`] leaves such variables out, and is never passed on with
+    /// replacement characters. Of a `PATH` that is not valid Unicode, the directories that are
+    /// valid are kept; one with no valid directory is left out, and a capture without a `PATH`
+    /// is given up for `inherited`.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
         timeout: Duration,
+    ) -> Self {
+        Self::capture_cancellable(shell, inherited, timeout, super::Cancel::new())
+    }
+
+    /// As [`ShellEnv::capture`], with the host's Quit cancellation flag. Cancellation kills and
+    /// collects the capture's entire process tree before returning the inherited fallback.
+    pub fn capture_cancellable(
+        shell: Option<&Path>,
+        inherited: BTreeMap<String, String>,
+        timeout: Duration,
+        cancel: super::Cancel,
     ) -> Self {
         let fallback = |inherited, reason| Self {
             vars: inherited,
@@ -158,10 +172,12 @@ impl ShellEnv {
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect();
         request.timeout = timeout;
+        request.cancel = Some(cancel);
         request.max_output = MAX_ENV_BYTES;
 
         let (output, reported) = match execute(request, None, report) {
             Ok(finished) => finished,
+            Err(RunError::Cancelled) => return fallback(inherited, Fallback::Cancelled),
             Err(RunError::Timeout) => return fallback(inherited, Fallback::TimedOut),
             Err(_) => return fallback(inherited, Fallback::ShellFailed),
         };
@@ -178,12 +194,17 @@ impl ShellEnv {
         if !captured.contains_key("PATH") {
             return fallback(inherited, Fallback::ShellFailed);
         }
-        let mut vars = inherited;
-        vars.extend(
-            captured
-                .into_iter()
-                .filter(|(name, _)| !SHELL_OWN.contains(&name.as_str())),
-        );
+        let mut vars = captured;
+        for name in SHELL_OWN {
+            match inherited.get(*name) {
+                Some(value) => {
+                    vars.insert((*name).to_string(), value.clone());
+                }
+                None => {
+                    vars.remove(*name);
+                }
+            }
+        }
         Self {
             vars,
             source: EnvSource::LoginShell,
@@ -248,15 +269,18 @@ fn between<'a>(output: &'a [u8], marker: &[u8]) -> Option<&'a [u8]> {
 /// replacement characters: a child program would be handed a value the user never set. `PATH`
 /// is the one exception; see [`text`].
 fn parse(body: &[u8]) -> BTreeMap<String, String> {
-    let variable = |entry: &[u8]| -> Option<(String, Result<String, ()>)> {
+    // An entry split at its first `=`: the name as text, the value as the bytes it has.
+    let variable = |entry: &'_ [u8]| -> Option<(String, Result<String, ()>)> {
         let equals = entry.iter().position(|byte| *byte == b'=')?;
         let name = std::str::from_utf8(&entry[..equals]).ok()?;
-        is_name(name).then(|| (name.to_string(), text(name, &entry[equals + 1..])))
+        Some((name.to_string(), text(name, &entry[equals + 1..])))
     };
     let mut vars = BTreeMap::new();
     if body.contains(&0) {
         for entry in body.split(|byte| *byte == 0) {
-            if let Some((name, Ok(value))) = variable(entry) {
+            // OS environment names may contain punctuation or Unicode. NUL framing makes
+            // their boundaries exact, so any name that is not empty is taken.
+            if let Some((name, Ok(value))) = variable(entry).filter(|(name, _)| !name.is_empty()) {
                 vars.insert(name, value);
             }
         }
@@ -274,7 +298,8 @@ fn parse(body: &[u8]) -> BTreeMap<String, String> {
     // while a variable that was left out is being skipped.
     let mut current: Option<String> = None;
     for line in lines {
-        match variable(line) {
+        // Without NUL framing only a line that starts with a shell name starts a variable.
+        match variable(line).filter(|(name, _)| is_name(name)) {
             Some((name, Ok(value))) => {
                 vars.insert(name.clone(), value);
                 current = Some(name);
@@ -348,6 +373,11 @@ impl StartupEnv {
         Self(OnceLock::new())
     }
 
+    /// Reads an already captured environment without starting a capture or waiting for one.
+    pub fn peek(&self) -> Option<&ShellEnv> {
+        self.0.get()
+    }
+
     /// The login-shell environment, captured on the first call.
     pub fn get(&self) -> &ShellEnv {
         self.get_or_capture(ShellEnv::at_startup)
@@ -385,13 +415,34 @@ mod tests {
 
     #[test]
     fn nul_separated_entries_are_exact() {
-        let vars =
-            parse(b"A=1\0EQ=a=b=c\0MULTI=first\nSECOND=fake\n\0EMPTY=\0not a name=x\0NOVALUE\0");
+        let vars = parse(
+            b"A=1\0EQ=a=b=c\0MULTI=first\nSECOND=fake\n\0EMPTY=\0not a name=x\0=invalid\0NOVALUE\0",
+        );
         assert_eq!(get(&vars, "A"), Some("1"));
         assert_eq!(get(&vars, "EQ"), Some("a=b=c"));
         assert_eq!(get(&vars, "MULTI"), Some("first\nSECOND=fake\n"));
         assert_eq!(get(&vars, "EMPTY"), Some(""));
-        assert_eq!(vars.len(), 4);
+        assert_eq!(get(&vars, "not a name"), Some("x"));
+        assert_eq!(vars.len(), 5);
+    }
+
+    #[test]
+    fn nul_separated_names_follow_environment_not_shell_syntax() {
+        let vars = parse("config.key=value\0with-dash=kept\0λ=unicode\0".as_bytes());
+        assert_eq!(get(&vars, "config.key"), Some("value"));
+        assert_eq!(get(&vars, "with-dash"), Some("kept"));
+        assert_eq!(get(&vars, "λ"), Some("unicode"));
+    }
+
+    #[test]
+    fn nul_separated_invalid_unicode_entries_are_omitted() {
+        let vars = parse(b"GOOD=ok\0INVALID_VALUE=\xff\xfe\0invalid-\xff=bad\0");
+        assert_eq!(get(&vars, "GOOD"), Some("ok"));
+        assert_eq!(
+            vars.len(),
+            1,
+            "match the inherited Unicode-only environment"
+        );
     }
 
     /// The fallback for an `env` without `-0`, which no system these tests run on needs.
