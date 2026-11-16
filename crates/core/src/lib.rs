@@ -5,6 +5,7 @@
 //! [`gate::dispatch`], which decides whether the request may run before any feature code does.
 //! Allowed requests that need no window go to [`Core::handle`].
 
+pub mod agents;
 pub mod auth;
 pub mod gate;
 pub mod handler;
