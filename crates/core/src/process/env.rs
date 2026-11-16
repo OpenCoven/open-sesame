@@ -458,7 +458,23 @@ mod tests {
     }
 
     /// A value, a name or a continuation line that is not UTF-8 leaves its variable out, in
-    /// both forms, and takes nothing else with it.
+    /// both forms. In the NUL form it takes nothing else with it; in the newline form a line
+    /// with a damaged name continues the variable before it and takes that one too.
+    #[test]
+    fn the_newline_form_takes_shell_names_only() {
+        // Without NUL framing a line starts a variable only when it starts with a shell name;
+        // any other line, whatever it looks like, continues the value before it.
+        let vars = parse(b"A=1\nconfig.key=v\nwith-dash=w\nB=2\n=nameless\n");
+        assert_eq!(get(&vars, "A"), Some("1\nconfig.key=v\nwith-dash=w"));
+        assert_eq!(get(&vars, "B"), Some("2\n=nameless"));
+        assert_eq!(vars.len(), 2, "{:?}", vars.keys());
+        // With it, the same names are variables of their own.
+        let vars = parse(b"A=1\0config.key=v\0with-dash=w\0B=2\0");
+        assert_eq!(get(&vars, "config.key"), Some("v"));
+        assert_eq!(get(&vars, "with-dash"), Some("w"));
+        assert_eq!(vars.len(), 4, "{:?}", vars.keys());
+    }
+
     #[test]
     fn entries_that_are_not_unicode_are_left_out() {
         let vars = parse(b"A=1\0ODD=\xff\xfe\0MIXED=ok\xff\0N\xffME=x\0B=2\0");

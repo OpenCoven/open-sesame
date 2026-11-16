@@ -379,8 +379,10 @@ mod login_shell {
     /// Names the shells that must be installed where the tests run, as paths separated like a
     /// search path. CI sets it, so a runner without one of them fails instead of passing these
     /// tests without running them (issue #97). Unset, a missing shell is only noted. A shell is
-    /// matched by its file name, so a test uses the path named here in place of its own, and
-    /// a named shell that a test cannot find anywhere fails that test.
+    /// matched by its file name, so a test that finds its shell through `shell` or `installed`
+    /// uses the path named here in place of its own, and a named shell that such a test cannot
+    /// find anywhere fails it. The two tests that came with #105 name `/bin/sh` and `/bin/bash`
+    /// outright and fail without them whatever this says.
     const REQUIRED: &str = "OPEN_SESAME_REQUIRE_SHELLS";
 
     fn required() -> Vec<PathBuf> {
@@ -713,6 +715,95 @@ mod login_shell {
                 .all(|dir| !dir.contains("odd") && !dir.contains('\u{fffd}')),
             "{path:?}"
         );
+    }
+
+    /// A search path with no directory that can be passed on gives the whole capture up for
+    /// the launch environment (issue #97). Since the result is the shell's own environment and
+    /// no longer the launch one with changes laid over it, this is the only thing between such
+    /// a startup file and a result with no search path at all.
+    #[test]
+    fn a_search_path_with_nothing_that_can_be_passed_on_gives_the_capture_up() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let (_home, inherited) = home(&[(
+                kind.startup_file,
+                "export PATH=\"/opt/odd$(printf '\\377')dir\"\nexport AFTER=ok\n".to_string(),
+            )]);
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(
+                env.source(),
+                &EnvSource::Inherited(Fallback::ShellFailed),
+                "{}",
+                shell.display()
+            );
+            assert_eq!(
+                env.get("PATH"),
+                Some("/usr/bin:/bin"),
+                "{}",
+                shell.display()
+            );
+            assert_eq!(
+                env.get("FROM_LAUNCHER"),
+                Some("kept"),
+                "{}",
+                shell.display()
+            );
+            assert_eq!(env.get("AFTER"), None, "{}", shell.display());
+        }
+    }
+
+    /// A variable the shell reports with a value that is not Unicode is left out, and the
+    /// value the application was launched with under that name does not come back in its
+    /// place: the result is the shell's environment (issue #97, with the rule of #105).
+    #[test]
+    fn a_value_that_is_not_unicode_does_not_bring_the_launch_value_back() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let (_home, mut inherited) = home(&[(
+                kind.startup_file,
+                "export ODD=\"$(printf '\\377')\"\nexport AFTER=ok\n".to_string(),
+            )]);
+            inherited.insert("ODD".into(), "launch-value".into());
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            assert_eq!(env.get("ODD"), None, "{}", shell.display());
+        }
+    }
+
+    /// The shell's own bookkeeping variables are not passed on when the application was
+    /// launched without them: what the shell set for itself while it ran says nothing about
+    /// the programs started later (the rule of #105, which no test held).
+    #[test]
+    fn the_shells_own_variables_are_not_passed_on_when_the_launch_had_none() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let (_home, inherited) = home(&[(
+                kind.startup_file,
+                "cd /usr\ncd /\nexport AFTER=ok\n".to_string(),
+            )]);
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            for name in ["PWD", "OLDPWD", "SHLVL", "_"] {
+                assert_eq!(env.get(name), None, "{name} under {}", shell.display());
+            }
+        }
     }
 
     #[test]
