@@ -480,7 +480,10 @@ fn a_shell_that_exits_with_a_job_running_ends_its_pane() {
 #[test]
 fn opening_one_pane_twice_at_once_leaves_one_shell() {
     let terminals = plain();
-    for round in 0..8 {
+    // Fewer rounds on Windows: the pane that loses is closed before its pseudo-console asks for
+    // the cursor, and `open` then waits its full ten seconds for that question in every round.
+    let rounds = if cfg!(windows) { 2 } else { 8 };
+    for round in 0..rounds {
         let panes = [Pane::new(), Pane::new()];
         let start = std::sync::Barrier::new(2);
         let pids: Vec<u32> = std::thread::scope(|scope| {
