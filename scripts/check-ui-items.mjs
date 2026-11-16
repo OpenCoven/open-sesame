@@ -40,6 +40,13 @@ assert.equal(I.isArchived({kind: 'note', stage: 'inbox', done: true}), false, 'O
 assert.equal(I.isArchived({kind: 'task', stage: 'inbox', done: true}), true, 'A task written done by another writer is archived');
 for (const body of ['', 'Plain text', '# Heading\n\n- [x] item\n> quote', '```js\ncode\n```', '![alt](a.png) and [link](https://example.com)', '<b>bold</b> **strong** __u__ ~~s~~ `c`', 'x'.repeat(181), 'word '.repeat(60), '1. one\n2) two', null, undefined, 42])
   assert.equal(I.excerpt(body), W.excerpt(body), `excerpt ${JSON.stringify(body)}`);
+// One difference from the prototype: a tag is replaced by a space rather than removed, so taking
+// one out never joins the text around it into another tag (code scanning alert 24). The excerpt
+// is shown with textContent only.
+assert.equal(I.excerpt('<<b>script>alert(1)</script>'), '< script>alert(1)');
+assert.equal(I.excerpt('a<b>x</b>c'), 'a x c');
+for (const body of ['<scr<b>ipt>x<<i>img src=x onerror=y>', '<<<a>a>a>script>', '<</b>/script>'])
+  assert.doesNotMatch(I.excerpt(body), /<\/?[a-z]/i, `no tag is formed in ${JSON.stringify(body)}`);
 for (const item of [{kind: 'note', text: 'Only text', title: '', url: ''}, {kind: 'note', text: '', title: 'A title', url: ''}, {kind: 'task', text: '', title: '', url: ''},
   {kind: 'bookmark', text: 'Read https://example.com/a later', title: '', url: 'https://example.com/a'}, {kind: 'bookmark', text: 'https://www.example.com/', title: '', url: 'https://www.example.com/'},
   {kind: 'bookmark', text: 'https://example.com/path/x', title: '', url: 'https://example.com/path/x'}])
@@ -358,4 +365,4 @@ assert(!/\bimport\b/.test(source), 'The store imports nothing');
 assert(!/\b(?:window|globalThis|self|document|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest)\b/.test(source), 'The store reaches no global, storage or network');
 assert(!/Date\.now|new Date\(|setTimeout|setInterval/.test(source), 'The store sets no time and schedules nothing');
 
-console.log('Items: archive rule, stage patch, excerpt and titles match the prototype; Today shows the latest active note and open tasks; creates reuse their client UUID after a lost reply or failure, edits name expectedUpdatedAt, conflicts overwrite nothing, 300/30/30 caps hold at their edges with the prototype sentences, and a failed write saves nothing.');
+console.log('Items: archive rule, stage patch, excerpt and titles match the prototype, except that the excerpt replaces a tag with a space; Today shows the latest active note and open tasks; creates reuse their client UUID after a lost reply or failure, edits name expectedUpdatedAt, conflicts overwrite nothing, 300/30/30 caps hold at their edges with the prototype sentences, and a failed write saves nothing.');

@@ -48,11 +48,13 @@ export function patch(item, value) {
   return {stage: value, done: value === 'done' && item.kind === 'task', previousStage: value === 'done' ? (known(item.stage) ? item.stage : known(item.previousStage) ? item.previousStage : 'inbox') : value};
 }
 
-// Plain text from a note's Markdown, at most 180 characters.
+// Plain text from a note's Markdown, at most 180 characters, for textContent only. Unlike the
+// prototype, a tag is replaced by a space rather than removed, so taking one out never joins the
+// text around it into another tag.
 export function excerpt(body) {
   const text = String(body || '').replace(/```[^\n]*\n?|~~~[^\n]*\n?/g, ' ')
     .replace(/!\[([^\]]*)\]\([^\n]*?\)/g, '$1').replace(/\[([^\]]+)\]\([^\n]*?\)/g, '$1')
-    .replace(/<\/?[a-z][^>]*>/gi, '').replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s+)/gm, '')
+    .replace(/<\/?[a-z][^>]*>/gi, ' ').replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s+)/gm, '')
     .replace(/\*\*|__|~~|`/g, '').replace(/\s+/g, ' ').trim();
   return text.length > 180 ? text.slice(0, 177).trimEnd() + '…' : text;
 }
