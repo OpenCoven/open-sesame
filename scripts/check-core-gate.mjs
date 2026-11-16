@@ -24,7 +24,7 @@ const gateSource = readFileSync(path.join(root, 'crates/core/src/gate.rs'), 'utf
 // early: line comments and, new with issue #116, block comments, in one pass that steps over
 // string literals and takes whichever comment starts first. A nested block comment, a raw
 // string and a character literal that holds a quote are still misread.
-const gateCode = gateSource.replace(/"(?:[^"\\]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
+const gateCode = gateSource.replace(/"(?:[^"\\]|\\[\s\S])*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
 
 // Rust lists are read as text: `pub const NAME: &[&str] = &[ "a", "b" ];` with optional comments.
 function rustList(name) {

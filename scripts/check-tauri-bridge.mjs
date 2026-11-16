@@ -186,7 +186,7 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   // comment nor a `/*` in a string or in a line comment changes what is read (a nested block
   // comment, a raw string and a character literal that holds a quote are still misread). Then
   // the list runs up to the closing `];` and holds nothing but plain string literals.
-  const gate = read('crates/core/src/gate.rs').replace(/"(?:[^"\\]|\\.)*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
+  const gate = read('crates/core/src/gate.rs').replace(/"(?:[^"\\]|\\[\s\S])*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
   const list = gate.match(/pub const PORTED: &\[&str\] = &\[([\s\S]*?)\];/);
   assert.ok(list, 'crates/core/src/gate.rs declares PORTED as a list of string literals');
   const ported = [...list[1].matchAll(/"([^"\\]*)"/g)].map(match => match[1]);
