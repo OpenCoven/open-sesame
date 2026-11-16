@@ -288,26 +288,35 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
 }
 
 // 12. Panes do not outlive the page that opened them (issue #112): the window closes them when a
-// page starts to load, in every build and not only a development one, without waiting on the
-// window's thread. The self-test's reload pass is what shows it in a launched window.
+// page starts to load, without waiting on the window's thread. The rule is for every build;
+// the comment below says what this section can show of that and what it cannot.
 {
-  // This reads text and cannot show that the call runs; the self-test's reload pass shows that. With line comments and block
-  // comments that are not nested taken out (it does not know a string from code), it holds
-  // four things and no more. The text `.on_page_load(` occurs once in window.rs. The statement
-  // `let builder = builder.on_page_load(` has no attribute directly on it. The arm for
-  // `PageLoadEvent::Started` has no attribute directly on it, and inside it nothing stands
-  // before the call but calls of a plain path whose arguments hold no string, block or macro
-  // (issue #115 adds one). And `page_replaced` is one function with no attribute directly on it.
-  // It does not read what encloses the statement, the match or `page_replaced`, a guard on an
-  // earlier arm, the body of what `page_replaced` calls, or a handler set by another spelling, so
-  // a handler made development-only from outside passes. It also refuses correct ones written
-  // another way: anything in the arm that is not such a call goes after the call.
+  // This reads text. It cannot show that the call runs. The self-test's reload pass shows the
+  // call running in a development build, the only kind the self-test runs in; nothing in the
+  // repository shows it for a release build.
+  //
+  // What is read about the handler, after taking out `/* ... */` up to the first `*/` and then
+  // `//` to the end of a line (so a string, a nested comment or a `/*` inside a line comment
+  // is misread):
+  // - `.on_page_load(` occurs once in window.rs;
+  // - the statement `let builder = builder.on_page_load(` follows `;`, `{`, `}` or the start
+  //   of the file directly, so no attribute is on it;
+  // - the arm `PageLoadEvent::Started =>` follows `{`, `,` or `}` directly, and between its
+  //   arrow and the call stand only statements that begin with a path and `(`, hold none of
+  //   `;`, `{`, `}`, `#`, `!` and `"` after it, and end with `);` (issue #115 adds one); the call
+  //   itself is followed by `;` or `,`;
+  // - `fn page_replaced` occurs once in terminal.rs, `pub fn page_replaced<` follows `;` or
+  //   `}` directly, and its body starts with the lines matched below;
+  // - the self-test has a reload pass, and its flood step makes no claim about freezing.
+  // What encloses the statement, the match or `page_replaced` is not read, nor a guard on an
+  // earlier arm, nor what `close_all_detached` does, nor a handler set by another spelling. A
+  // handler made development-only from outside passes; a correct one written another way fails.
   const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const window = bare(read('src-tauri/src/window.rs'));
   assert.equal(window.split('.on_page_load(').length - 1, 1, 'window.rs sets the page-load handler once, as `.on_page_load(`: a second would replace the first');
   assert(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(window), 'The handler is set by the statement `let builder = builder.on_page_load(`, with no attribute directly on it');
   const hook = window.slice(window.indexOf('builder.on_page_load('), window.indexOf('let window = builder.build()?;'));
-  assert(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*crate::terminal::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(hook), 'The arm for a page that starts to load carries no attribute and reaches the call that closes the old page\'s panes through plain calls only');
+  assert(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*crate::terminal::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(hook), 'The arm `PageLoadEvent::Started =>` has no attribute directly on it and reaches `crate::terminal::page_replaced(window.app_handle())` through statements that are path calls ended by `);`');
   const host = bare(read('src-tauri/src/terminal.rs'));
   assert.equal(host.split('fn page_replaced').length - 1, 1, 'page_replaced is one function, not one per kind of build');
   assert(/[;}]\s*pub fn page_replaced</.test(host), 'page_replaced carries no attribute');
