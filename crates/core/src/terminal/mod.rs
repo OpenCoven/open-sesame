@@ -49,8 +49,9 @@ pub enum Output {
     Data(Vec<u8>),
     /// The stream broke for a reason other than the program ending. `Exit` follows.
     Error(&'static str),
-    /// The pane has ended and its processes are gone (on Windows: or its killed shell did not
-    /// end within five seconds, see `Tree::end`).
+    /// The pane has ended. On Unix its processes are gone. On Windows its shell has ended, or
+    /// did not end within five seconds of being killed (see `Tree::end`); the pane's other
+    /// processes are ended by the same call and are not waited for.
     Exit,
 }
 
@@ -141,8 +142,10 @@ impl Terminals {
             return Err(BridgeError::from(TOO_MANY));
         }
         // The panes stay locked while the shell starts, which keeps the count above true and
-        // makes every other request for any pane wait: some milliseconds for a start, and about
-        // 75 ms more when no pseudo-terminal can be opened and every further try fails too.
+        // makes every other request for any pane wait: some milliseconds for a start, about
+        // 75 ms more when no pseudo-terminal can be opened and every further try fails too, and
+        // on Windows up to five seconds when a shell that was started cannot be taken over and
+        // does not end when killed.
         let session = Session::start(&launch, cols, rows, sink)?;
         let pid = session.pid;
         let displaced = sessions.insert(id.to_string(), Arc::new(session));
@@ -200,10 +203,11 @@ impl Terminals {
         }
     }
 
-    /// Closes every pane and returns when all their processes are gone, those of panes that
-    /// [`Terminals::close_all_detached`] is still closing included, or on Windows when five
-    /// seconds have passed for a killed shell that did not end. Panes close side by side, so
-    /// quitting with many panes takes as long as the slowest one.
+    /// Closes every pane, those that [`Terminals::close_all_detached`] is still closing
+    /// included, and returns when each has ended as [`Output::Exit`] describes: on Unix its
+    /// processes are gone, on Windows its shell has ended or five seconds have passed for a
+    /// killed shell that did not. Panes close side by side, so quitting with many panes takes
+    /// as long as the slowest one.
     pub fn close_all(&self) {
         close_side_by_side(&self.take_all());
         let closing: Vec<JoinHandle<()>> = self.closing().drain(..).collect();
@@ -220,7 +224,9 @@ impl Terminals {
     /// The one thing this does wait for is the pane list, which a `terminal.open` holds while
     /// it starts its shell: 12 ms at the longest in a measurement on a Mac with another thread
     /// opening panes throughout, and under a tenth of a millisecond otherwise. An open that
-    /// cannot get a pseudo-terminal holds the list about 75 ms longer, for its further tries.
+    /// cannot get a pseudo-terminal holds the list about 75 ms longer, for its further tries,
+    /// and on Windows one whose shell cannot be taken over and does not end when killed holds
+    /// it for up to five seconds.
     pub fn close_all_detached(&self) {
         // Held from before the panes leave the list until the thread that closes them is
         // recorded, so `close_all` on another thread cannot look for threads to wait for in

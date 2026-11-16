@@ -192,9 +192,16 @@ mod windows {
     };
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
-    /// How long `end` waits for a killed shell's process to end. A killed process ends within
-    /// milliseconds; the limit is for one that does not, so that closing a pane does not wait
-    /// for it without end.
+    /// How long `end` and `discard` wait for a killed shell's process to end. A killed process
+    /// ends within milliseconds; the limit is for one that does not, so that closing a pane
+    /// does not wait for it without end.
+    ///
+    /// The limit covers that wait and nothing after it. The caller then closes the
+    /// pseudo-console. Microsoft's page for `ClosePseudoConsole` says the call returns at once
+    /// from Windows 11 24H2 (build 26100) on and that earlier builds wait for the
+    /// pseudo-console to exit, so on an earlier build a shell that outlived the limit may
+    /// still hold the close up. No test produces such a shell, and the hosted runner is build
+    /// 26100, so this is from reading only.
     const ENDING: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Makes sure a shell started from here receives Control+C.
@@ -299,7 +306,7 @@ mod windows {
             let _ = child.wait();
         } else {
             #[cfg(debug_assertions)]
-            eprintln!("open-sesame: a killed shell had not ended after {ENDING:?}");
+            eprintln!("open-sesame: a killed shell had not ended within {ENDING:?}, or could not be waited for");
         }
     }
 
