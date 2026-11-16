@@ -348,7 +348,9 @@ fn execute(
         open += 1;
     }
     // Set once the program is seen exited or the run is being stopped, and on every way out of
-    // this function, so the thread that reads the report never outlives the run.
+    // this function, so the thread that reads the report ends within one look (5 ms) of the
+    // run. It is not joined. Setting it on the way out is for an early return or a panic in
+    // the caller's callback; the capture reaches neither today and no test pins it.
     #[cfg(unix)]
     let exited = Exited::default();
     #[cfg(unix)]
@@ -579,7 +581,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_thread_that_cannot_be_started_is_an_error_and_leaves_nothing_running() {
-        for allowed in 0..5 {
+        // With input the fifth thread writes it. Without input the report's thread is the
+        // last one, which is the only case that shows its failure is not passed over: a
+        // failure to start stays on, so with input the next thread would report it instead.
+        let cases = (0..5).map(|allowed| (allowed, true)).chain([(3, false)]);
+        for (allowed, with_input) in cases {
             let dir = tempfile::tempdir().unwrap();
             let pid_file = dir.path().join("pid");
             let mut request = Run::new("/bin/sh");
@@ -587,7 +593,7 @@ mod tests {
                 "-c".into(),
                 format!("echo $$ > '{}'; sleep 30", pid_file.display()),
             ];
-            request.stdin = Some(b"unused".to_vec());
+            request.stdin = with_input.then(|| b"unused".to_vec());
             request.timeout = Duration::from_secs(20);
             THREADS_LEFT.with(|left| left.set(Some(allowed)));
             let report = Report::new();
@@ -596,7 +602,7 @@ mod tests {
             THREADS_LEFT.with(|left| left.set(None));
             assert!(
                 matches!(result, Err(RunError::Io(_))),
-                "with {allowed} threads started: {result:?}"
+                "with {allowed} threads started, input {with_input}: {result:?}"
             );
             // The program either never got as far as writing its process ID or is gone. A
             // shell killed between creating the file and writing to it leaves the file empty,

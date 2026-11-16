@@ -66,10 +66,12 @@ pub(super) struct Report {
 ///
 /// The number has to be high. The bash that macOS ships (3.2) closes descriptors 3 to 19 when
 /// it starts as an interactive login shell, so a pipe handed over under one of those numbers
-/// was gone before the command ran; measured, 20 and above arrive in bash, sh, zsh, ksh, dash
-/// and fish. Three digits also keep it clear of the numbers startup files use for their own
-/// redirections, which the POSIX shell language limits to one digit. 20 is the second choice
-/// for a process whose limit on open files is below the first.
+/// was gone before the command ran; measured on macOS, 20 and above arrive in bash, sh, zsh,
+/// ksh and dash, and on Linux in fish too. Three digits also keep it clear of the numbers
+/// startup files use for their own redirections: one digit is all the POSIX shell language
+/// promises, though bash takes more. 20 is the second choice for a process whose limit on
+/// open files is 100 or less; with a limit of 20 or less there is no pipe, and the
+/// environment is read from between the markers as before. No test lowers the limit.
 const LOWEST: [libc::c_int; 2] = [100, 20];
 
 impl Report {

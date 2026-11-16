@@ -349,6 +349,8 @@ mod login_shell {
         format!("set -gx {name} {value}\n")
     }
 
+    const FISH_STARTUP: &str = ".config/fish/config.fish";
+
     const KINDS: [Kind; 4] = [
         Kind {
             paths: &["/bin/zsh"],
@@ -367,7 +369,7 @@ mod login_shell {
         },
         Kind {
             paths: &FISH,
-            startup_file: ".config/fish/config.fish",
+            startup_file: FISH_STARTUP,
             export: fish_export,
         },
     ];
@@ -474,24 +476,49 @@ mod login_shell {
     /// Background jobs that a startup file leaves printing share the shell's output. What they
     /// print while the environment is read must neither become a variable nor swallow one
     /// (issue #97): the environment travels on a channel of its own. The jobs print until they
-    /// are killed, so they are printing when the environment is read on a fast machine too,
-    /// and every kind of shell is tried: each treats the descriptors it is handed differently.
-    /// The counting between two lines paces a job: measured, two jobs print about three lines
-    /// a millisecond on a busy Mac, and stay far below the output cap on a fast machine.
+    /// are killed, and every kind of shell is tried, because each catches a different fault.
+    /// Measured on one Mac: with the pipe switched off altogether the zsh rounds fail (11 of
+    /// 12) and the bash and sh rounds almost never do, and with the pipe handed over under a
+    /// low descriptor, which bash 3.2 closes, the bash and sh rounds fail (16 and 12 of 18)
+    /// and the zsh rounds never do. The counting between two lines paces a job: two jobs
+    /// printed between three and seven lines a millisecond on that Mac, far below the output
+    /// cap.
     #[test]
     fn background_output_from_a_startup_file_does_not_reach_the_result() {
-        let job = "/bin/sh -c 'while :; do echo NOISE=x; i=0; while [ $i -lt 100 ]; do i=$((i+1)); done; done' &\n";
         for kind in &KINDS {
+            noisy_rounds(kind, "", 6);
+        }
+    }
+
+    /// The same with `noclobber` set by the startup file, under the shells that have the
+    /// option. The bash that macOS ships refuses a plain `>` to the pipe then, and the
+    /// environment would go back to the shared output; the capture appends instead
+    /// (issue #97). More rounds, because under that bash the background output reaches the
+    /// result in about a third of the rounds when the redirection is the plain one.
+    #[test]
+    fn a_startup_file_that_sets_noclobber_does_not_send_the_environment_to_the_shared_output() {
+        for kind in KINDS
+            .iter()
+            .filter(|kind| kind.startup_file != FISH_STARTUP)
+        {
+            noisy_rounds(kind, "set -o noclobber\n", 12);
+        }
+    }
+
+    fn noisy_rounds(kind: &Kind, first_line: &str, rounds: usize) {
+        let job = "/bin/sh -c 'while :; do echo NOISE=x; i=0; while [ $i -lt 100 ]; do i=$((i+1)); done; done' &\n";
+        {
             let Some(shell) = installed(kind.paths) else {
-                continue;
+                return;
             };
             let noisy = [
+                first_line.to_string(),
                 (kind.export)("REAL", "value"),
                 job.repeat(2),
                 (kind.export)("LAST", "kept"),
             ]
             .concat();
-            for round in 0..6 {
+            for round in 0..rounds {
                 let (_home, inherited) = home(&[(kind.startup_file, noisy.clone())]);
                 let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
                 let case = format!("{}, round {round}", shell.display());

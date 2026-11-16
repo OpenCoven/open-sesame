@@ -94,7 +94,8 @@ impl ShellEnv {
     /// reports with a name or value that is not valid Unicode is left out of what is overlaid,
     /// as [`ShellEnv::inherited`] leaves such variables out; if `inherited` has a value under
     /// that name, that value stays. Of a `PATH` that is not valid Unicode, the directories that
-    /// are valid are kept.
+    /// are valid are kept; one with no valid directory is left out, and a capture without a
+    /// `PATH` is given up for `inherited`.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -139,8 +140,9 @@ impl ShellEnv {
         let print = match &report {
             Some(report) => {
                 let pipe = report.path();
-                // Appending, because a shell with `noclobber` set refuses to write over
-                // anything that is not a regular file.
+                // Appending, because the bash that macOS ships (3.2), as `bash` and as `sh`,
+                // refuses a plain `>` to this pipe when `noclobber` is set. zsh, ksh and dash
+                // were seen to accept it.
                 format!("/usr/bin/env -0 >> {pipe} 2>/dev/null || /usr/bin/env >> {pipe} 2>/dev/null || {to_output}")
             }
             None => to_output.to_string(),
@@ -305,7 +307,12 @@ fn parse(body: &[u8]) -> BTreeMap<String, String> {
 /// stands on its own, so none of what is kept is a value the user never set, and a directory
 /// that cannot be held as text could not be searched from here anyway. Leaving `PATH` out
 /// whole would throw away the capture, and with it every directory the startup files added,
-/// for one directory with an odd name (issue #97).
+/// for one directory with an odd name (issue #97). When no directory is left, only empty
+/// entries or nothing, there is no `PATH` to keep and the variable is left out like any other.
+///
+/// The form `env` prints without `-0`, one variable to a line, is read less exactly: a
+/// continuation line with an invalid byte loses the whole variable there, and of a name that
+/// appears twice the later one decides.
 fn text(name: &str, value: &[u8]) -> Result<String, ()> {
     if let Ok(value) = std::str::from_utf8(value) {
         return Ok(value.to_string());
@@ -317,7 +324,7 @@ fn text(name: &str, value: &[u8]) -> Result<String, ()> {
         .split(|byte| *byte == b':')
         .filter_map(|entry| std::str::from_utf8(entry).ok())
         .collect();
-    if kept.is_empty() {
+    if kept.iter().all(|entry| entry.is_empty()) {
         return Err(());
     }
     Ok(kept.join(":"))
@@ -431,6 +438,17 @@ mod tests {
 
         let vars = parse(b"PATH=\xff\xfe\0A=1\0");
         assert_eq!(get(&vars, "PATH"), None);
+
+        // Nothing left but empty entries is no search path at all: it must not come back as
+        // an empty `PATH` that replaces the one the application was launched with.
+        for nothing_valid in [&b"\xff:"[..], b":\xff", b"\xff::\xfe"] {
+            let vars = parse(&[b"PATH=", nothing_valid, b"\0A=1\0"].concat());
+            assert_eq!(get(&vars, "PATH"), None, "{nothing_valid:?}");
+            assert_eq!(get(&vars, "A"), Some("1"));
+        }
+        // An empty entry beside a directory is the user's own and stays.
+        let vars = parse(b"PATH=/first::\xff\0");
+        assert_eq!(get(&vars, "PATH"), Some("/first:"));
 
         let vars = parse(b"A=1\nPATH=/first:/o\xffdd:/second\nB=2\n");
         assert_eq!(get(&vars, "PATH"), Some("/first:/second"));
