@@ -16,6 +16,7 @@ Start with the [repository map](repository-map.md) to locate code and checks. Th
 | Screen, voice and audio | [Screen notes and capture](screen-notes-and-capture.md), [Protected Share](protected-share.md) | [System audio and media](system-audio-and-media.md), [transcription startup repair](system-audio-transcription.md) |
 | Authentication | [Native login contract](workos-login.md), [public HTTPS login handoff](../web/auth-entrypoint/README.md) | Public deployment and saved provider settings require their own live evidence |
 | Mobile architecture | [Host ADR and approval status](mobile/adr-001-mobile-host.md), [mobile index](mobile/README.md) | [Canonical source/transport inventory](mobile/source-inventory.md), [capability and recovery states](mobile/capabilities.md); device support is not yet qualified |
+| Desktop restart acceptance | [Three-OS smoke pass](desktop-smoke-pass.md): one column each for macOS, Windows, Linux X11 and Linux Wayland, and the owner's steps | [Tauri shell instructions](../src-tauri/AGENTS.md); compilation, hosted CI and fixtures never fill a smoke-pass cell |
 | Remote desktops | [VNC connection types, lifecycle and checks](vnc-desktops.md) | [Controller setup](../desktop/controller-setup.md) covers a separate optional message receiver |
 | Message controllers | [Controller setup](../desktop/controller-setup.md) | [Capability boundaries](capabilities.md) distinguish optional adapters from qualified providers |
 
