@@ -287,8 +287,47 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
   for (const method of ['project.chooseFolder', 'project.reveal']) assert(main.includes(`'${method}'`) && gate.includes(`"${method}"`));
 }
 
-// 12. The flood step of the self-test records the gaps between timers and frames and judges
-// none of them (issue #112), so its name must not say the window did not freeze.
-assert(!read('ui/dev/selftest.js').includes('does not freeze'), 'The flood step does not claim a limit it does not check');
+// 12. Panes do not outlive the page that opened them (issue #112): the window closes them when a
+// page starts to load, without waiting on the window's thread. The rule is for every build;
+// the comment below says what this section can show of that and what it cannot.
+{
+  // This reads text. It cannot show that the call runs. The self-test's reload pass shows the
+  // call running in a development build, the only kind the self-test runs in; nothing in the
+  // repository shows it for a release build.
+  //
+  // What is read. From window.rs and terminal.rs, after taking out `/* ... */` up to the first
+  // `*/` and then `//` to the end of a line (so a string, a nested comment or a `/*` inside a
+  // line comment is misread):
+  // - `.on_page_load(` occurs once in window.rs;
+  // - the statement `let builder = builder.on_page_load(` follows `;`, `{`, `}` or the start
+  //   of the file directly, so no attribute is on it;
+  // - the arm `PageLoadEvent::Started =>` is looked for between `builder.on_page_load(` and
+  //   `let window = builder.build()?;` and follows `{`, `,` or `}` directly; after its arrow
+  //   may stand one `{`, and between that and the call stand only statements that begin with
+  //   a path and `(`, hold none of `;`, `{`, `}`, `#`, `!` and `"` after it, and end with `);`
+  //   (issue #115 adds one); the call is `crate::terminal::page_replaced(window.app_handle())`
+  //   in that spelling and is followed by `;` or `,`;
+  // - `fn page_replaced` occurs once in terminal.rs, `pub fn page_replaced<` follows `;` or
+  //   `}` directly, and its body starts with the lines matched below.
+  // From ui/dev/selftest.js, with comments left in: it has a reload pass, and its flood step
+  // makes no claim about freezing.
+  // What encloses the statement, the match or `page_replaced` is not read, nor a guard on an
+  // earlier arm, nor what `close_all_detached` does, nor a handler set by another spelling. A
+  // handler made development-only from outside passes; a correct one written another way may
+  // fail.
+  const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const window = bare(read('src-tauri/src/window.rs'));
+  assert.equal(window.split('.on_page_load(').length - 1, 1, 'window.rs sets the page-load handler once, as `.on_page_load(`: a second would replace the first');
+  assert(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(window), 'The handler is set by the statement `let builder = builder.on_page_load(`, with no attribute directly on it');
+  const hook = window.slice(window.indexOf('builder.on_page_load('), window.indexOf('let window = builder.build()?;'));
+  assert(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*crate::terminal::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(hook), 'The arm `PageLoadEvent::Started =>` has no attribute directly on it and reaches `crate::terminal::page_replaced(window.app_handle())` through statements that are path calls ended by `);`');
+  const host = bare(read('src-tauri/src/terminal.rs'));
+  assert.equal(host.split('fn page_replaced').length - 1, 1, 'page_replaced is one function, not one per kind of build');
+  assert(/[;}]\s*pub fn page_replaced</.test(host), 'page_replaced carries no attribute');
+  assert(/pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\s*if let Some\(state\) = app\.try_state::<crate::AppState>\(\) \{\s*state\.core\.terminals\.close_all_detached\(\);/.test(host), 'page_replaced begins by asking the core to close every pane without waiting');
+  const selftest = read('ui/dev/selftest.js');
+  assert(selftest.includes('if (config.reload) {') && selftest.includes('location.reload();'), 'The self-test has a reload pass');
+  assert(!selftest.includes('does not freeze'), 'The flood step does not claim a limit it does not check');
+}
 
-console.log('Tauri terminal pane: requests, acknowledgements, input order, exit, clipboard keys and the vendored emulator passed.');
+console.log('Tauri terminal pane: requests, acknowledgements, input order, exit, clipboard keys, the vendored emulator and the page-load rule passed.');

@@ -50,7 +50,11 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     };
     let builder = builder.on_page_load(|window, payload| match payload.event() {
         // The holds of the page before this one are released: it can no longer release them.
-        PageLoadEvent::Started => summon::page_replaced(window.app_handle()),
+        // Its terminal panes are closed, for nothing can reach them any more.
+        PageLoadEvent::Started => {
+            summon::page_replaced(window.app_handle());
+            crate::terminal::page_replaced(window.app_handle());
+        }
         PageLoadEvent::Finished => {
             // Development evidence that hiding and showing the window does not load the page again.
             #[cfg(debug_assertions)]

@@ -205,6 +205,13 @@ const CHILD_COMMAND: &str = "sleep 300 & printf 'CHILD:%s\\n' $!\r";
 #[cfg(windows)]
 const CHILD_COMMAND: &str = "$child = Start-Process ping -ArgumentList '-n','300','127.0.0.1' -PassThru -NoNewWindow; Write-Output ('CHILD:' + $child.Id)\r";
 
+/// As [`CHILD_COMMAND`], with a child that ignores the hang-up a closing pane sends first, so
+/// closing the pane takes its whole grace period before the child is killed.
+#[cfg(unix)]
+const STUBBORN_CHILD_COMMAND: &str = "(trap '' HUP; exec sleep 300) & printf 'CHILD:%s\\n' $!\r";
+#[cfg(windows)]
+const STUBBORN_CHILD_COMMAND: &str = CHILD_COMMAND;
+
 #[test]
 fn rejects_invalid_pane_id() {
     let terminals = plain();
@@ -398,6 +405,41 @@ fn panes_opened_while_others_close_all_start() {
         failures.is_empty(),
         "panes that did not start: {failures:?}"
     );
+}
+
+/// Quit also waits for panes that another thread is, at that moment, closing without waiting.
+/// Before the review of pull request #117 the two could interleave so that Quit found neither
+/// the panes nor the thread that was closing them, and returned with the shells still there
+/// (10 of 60 rounds).
+#[test]
+fn quit_waits_for_panes_another_thread_is_closing_without_waiting() {
+    for round in 0..16 {
+        let terminals = plain();
+        let pane = Pane::new();
+        let shell = pid(&open(&terminals, &pane, json!({"id": "main", "mode": "local"})).unwrap());
+        input(&terminals, "main", STUBBORN_CHILD_COMMAND);
+        let child = number_after(&pane, "CHILD:");
+        let start = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                start.wait();
+                terminals.close_all_detached();
+            });
+            scope.spawn(|| {
+                start.wait();
+                terminals.close_all();
+            });
+        });
+        // Looked at once, with no wait: a close that waited leaves nothing to wait for. On
+        // Windows that holds since `Tree::end` waits for the shell's process to end; before
+        // it did, this one look still found the shell in hosted CI.
+        let shell_gone = !alive(shell);
+        assert!(
+            shell_gone,
+            "round {round}: closing every pane returned while a shell was still there"
+        );
+        assert!(gone(&[child]), "round {round}: a child was left");
+    }
 }
 
 #[test]
@@ -673,6 +715,52 @@ fn close_all_leaves_no_children() {
         .unwrap_err(),
         "Open this shell before sending input."
     );
+}
+
+/// What the application does when its page is replaced: the panes are off the list at once,
+/// their processes end without the caller waiting, and Quit still waits for them.
+#[test]
+fn panes_closed_without_waiting_are_gone_by_the_time_quit_returns() {
+    let terminals = plain();
+    let mut shells = Vec::new();
+    let mut children = Vec::new();
+    let panes: Vec<Arc<Pane>> = (0..3).map(|_| Pane::new()).collect();
+    for (index, pane) in panes.iter().enumerate() {
+        let id = format!("pane-{index}");
+        shells.push(pid(&open(
+            &terminals,
+            pane,
+            json!({"id": id, "mode": "local"}),
+        )
+        .unwrap()));
+        // Children that ignore the hang-up: closing these panes takes the grace period, so a
+        // Quit that did not wait would return with them running.
+        input(&terminals, &id, STUBBORN_CHILD_COMMAND);
+        children.push(number_after(pane, "CHILD:"));
+    }
+    terminals.close_all_detached();
+    assert_eq!(
+        call(
+            &terminals,
+            "terminal.input",
+            json!({"id": "pane-0", "data": "x"})
+        )
+        .unwrap_err(),
+        "Open this shell before sending input."
+    );
+    // The limit counts listed panes only, so a new page can open its own at once.
+    let after = Pane::new();
+    let reopened = open(&terminals, &after, json!({"id": "pane-0", "mode": "local"})).unwrap();
+    terminals.shut_down();
+    // Quit collected every shell before it returned, the detached ones included: looked at
+    // once, with no wait.
+    let running: Vec<u32> = shells.iter().copied().filter(|pid| alive(*pid)).collect();
+    assert!(running.is_empty(), "shells outlived Quit: {running:?}");
+    assert!(gone(&children), "a child outlived Quit");
+    assert!(gone(&[pid(&reopened)]));
+    assert!(wait_for(Duration::from_secs(3), || panes
+        .iter()
+        .all(|pane| pane.exited())));
 }
 
 #[test]
