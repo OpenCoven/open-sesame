@@ -774,3 +774,47 @@ fn a_change_callback_that_panics_as_a_restore_starts_does_not_hold_up_quit() {
         "quit waits for a refresh that never ran"
     );
 }
+
+/// A save that the store refuses once more on the way changes neither sentence: a failed
+/// refresh is not a failed sign-in, and it does not end one either.
+#[test]
+fn a_save_refused_once_more_changes_neither_sentence() {
+    let cancelled = rig();
+    *cancelled.store.token.lock().unwrap() = Some("refresh-one".into());
+    reply(&cancelled, "refresh-two");
+    cancelled.store.fail_save.store(true, Ordering::SeqCst);
+    let auth = cancelled.auth.clone();
+    *cancelled.api.during_call.lock().unwrap() = Some(Box::new(move || auth.cancel()));
+    cancelled.auth.restore();
+    let failed = new_sign_in_fails_over_an_unsaved_restore();
+    for (rig, sentence) in [(cancelled, "Sign-in cancelled."), (failed, EARLIER_SAVED)] {
+        rig.advance(20);
+        rig.auth.refresh();
+        assert!(rig.message().contains("system keychain"), "{sentence}");
+        assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
+        the_earlier_credential_is_saved_and_nothing_else(&rig);
+        assert_eq!(rig.message(), sentence);
+    }
+}
+
+/// With a session still open, a new sign-in that fails and the save that follows leave the
+/// person signed in, and the status says that.
+#[test]
+fn with_a_session_open_a_failed_new_sign_in_then_the_save_says_signed_in() {
+    let rig = rig();
+    rig.sign_in();
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    rig.auth.refresh();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback); // No reply scripted: the code exchange fails.
+    assert!(rig.auth.authenticated());
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    rig.advance(20);
+    rig.auth.refresh();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+    assert!(rig.auth.authenticated());
+    assert_eq!(rig.message(), "Signed in.");
+}
