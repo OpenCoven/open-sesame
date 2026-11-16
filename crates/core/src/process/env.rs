@@ -102,8 +102,10 @@ impl ShellEnv {
         Self::capture_cancellable(shell, inherited, timeout, super::Cancel::new())
     }
 
-    /// As [`ShellEnv::capture`], with the host's Quit cancellation flag. Cancellation kills and
-    /// collects the capture's entire process tree before returning the inherited fallback.
+    /// As [`ShellEnv::capture`], with the host's Quit cancellation flag. Cancellation kills every
+    /// process in the capture's process group and collects the shell before returning the
+    /// inherited fallback. A process the shell started is killed with the group, but it is the
+    /// shell's child, not this process's, so the system collects it a moment later.
     pub fn capture_cancellable(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
