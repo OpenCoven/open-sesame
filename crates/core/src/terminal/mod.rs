@@ -48,7 +48,8 @@ pub enum Output {
     Data(Vec<u8>),
     /// The stream broke for a reason other than the program ending. `Exit` follows.
     Error(&'static str),
-    /// The pane has ended and its processes are gone.
+    /// The pane has ended and its processes are gone (on Windows: or its killed shell did not
+    /// end within five seconds, see `Tree::end`).
     Exit,
 }
 
@@ -195,7 +196,8 @@ impl Terminals {
         }
     }
 
-    /// Closes every pane and returns when all their processes are gone. Panes close side by
+    /// Closes every pane and returns when all their processes are gone, or on Windows when
+    /// five seconds have passed for a killed shell that did not end. Panes close side by
     /// side, so quitting with many panes takes as long as the slowest one.
     pub fn close_all(&self) {
         let sessions: Vec<Arc<Session>> = self
