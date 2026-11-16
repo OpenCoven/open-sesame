@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-/// How long the login shell gets at startup before the app carries on without it.
+/// How long the login shell gets at startup before the app carries on without it. A capture
+/// that has to ask the shell a second question (`passed_on_bare`) can take that run's limit
+/// more, and each run the runner's five seconds for a killed shell that will not end.
 pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_ENV_BYTES: usize = 1024 * 1024;
 /// Shells that accept `-i -l -c <command>` and the `;`, `||` and `printf` used below.
@@ -22,19 +24,50 @@ const SUPPORTED_SHELLS: &[&str] = &["bash", "zsh", "fish", "sh", "dash", "ksh"];
 /// Variables that describe the capturing shell itself, not the user's setup.
 const SHELL_OWN: &[&str] = &["_", "SHLVL", "PWD", "OLDPWD"];
 
-/// Whether `name` is beyond every supported shell: no startup file of any of them can set a
-/// variable of that name or take one away. That is so when the name holds a character that is
-/// not a letter, a digit or an underscore, such as the `.` of `config.key`. It is not so for a
-/// name that only starts with a digit or uses letters outside ASCII, which fish and ksh can
-/// write, nor for a function bash exported (`BASH_FUNC_name%%`), which bash's `unset -f`
-/// removes. An empty name, or one with `=` in it, is no variable at all.
-fn beyond_every_shell(name: &str) -> bool {
-    !name.is_empty()
-        && !name.contains('=')
-        && !name.starts_with("BASH_FUNC_")
-        && name
-            .chars()
-            .any(|character| !(character.is_alphanumeric() || character == '_'))
+/// How long the second, bare run of the shell gets ([`passed_on_bare`]). A shell that reads no
+/// startup file answers in a few milliseconds.
+const BARE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The arguments that run a supported shell with no startup file of the person's, before the
+/// command. zsh still reads the system's `zshenv`, which nothing turns off.
+fn bare_arguments(shell: &Path) -> Option<&'static [&'static str]> {
+    match shell.file_name()?.to_str()? {
+        "zsh" => Some(&["-f", "-c"]),
+        "bash" => Some(&["--noprofile", "--norc", "-c"]),
+        "fish" => Some(&["--no-config", "-c"]),
+        "sh" | "dash" | "ksh" => Some(&["-c"]),
+        _ => None,
+    }
+}
+
+/// What `shell` passes on to a program it starts when it reads no startup file: the launch
+/// environment as the shell itself leaves it. A launch variable missing here was left out by
+/// the shell, not removed by anything the person wrote. `None` when that cannot be found out:
+/// the run failed, timed out, or `env` could not print the variables exactly.
+fn passed_on_bare(
+    shell: &Path,
+    inherited: &BTreeMap<String, String>,
+    cancel: super::Cancel,
+) -> Option<BTreeMap<String, String>> {
+    let mut request = Run::new(shell);
+    request.args = bare_arguments(shell)?
+        .iter()
+        .map(|argument| (*argument).to_string())
+        .chain(["/usr/bin/env -0".to_string()])
+        .collect();
+    request.clear_env = true;
+    // Without the two variables that name a file a shell reads even when it is not a login
+    // shell: this run is to show the shell alone.
+    request.env = inherited
+        .iter()
+        .filter(|(name, _)| !matches!(name.as_str(), "ENV" | "BASH_ENV"))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    request.timeout = BARE_TIMEOUT;
+    request.cancel = Some(cancel);
+    request.max_output = MAX_ENV_BYTES;
+    let output = execute(request, None, None).ok()?.0;
+    (output.status == Some(0) && output.stdout.contains(&0)).then(|| parse(&output.stdout))
 }
 
 /// Where a [`ShellEnv`] came from.
@@ -114,8 +147,11 @@ impl ShellEnv {
     /// replacement characters. Of a `PATH` that is not valid Unicode, the directories that are
     /// valid are kept; one with no valid directory is left out, and a capture without a `PATH`
     /// is given up for `inherited`. One kind of variable comes back from `inherited`: one whose
-    /// name no supported shell can write (`beyond_every_shell`), which no startup file can
-    /// have removed and which some shells do not pass on to what they start.
+    /// name is not a shell name and which the shell itself leaves out of the environment of
+    /// what it starts, as dash and the zsh of macOS do with `config.key` (issue #136). To tell
+    /// that from a variable a startup file removed, the shell is run once more without
+    /// startup files ([`passed_on_bare`]); that second run happens only when such a variable
+    /// is missing after the capture.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -193,7 +229,7 @@ impl ShellEnv {
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect();
         request.timeout = timeout;
-        request.cancel = Some(cancel);
+        request.cancel = Some(cancel.clone());
         request.max_output = MAX_ENV_BYTES;
 
         let (output, reported) = match execute(request, None, report) {
@@ -207,24 +243,38 @@ impl ShellEnv {
         let Some(printed) = between(&output.stdout, marker.as_bytes()) else {
             return fallback(inherited, Fallback::ShellFailed);
         };
-        let captured = parse(if reported.is_empty() {
+        let body = if reported.is_empty() {
             printed
         } else {
             &reported
-        });
+        };
+        let captured = parse(body);
         if !captured.contains_key("PATH") {
             return fallback(inherited, Fallback::ShellFailed);
         }
         let mut vars = captured;
-        // A launch variable whose name no supported shell can write, such as `config.key`,
-        // cannot have been set or removed by a startup file. dash drops such a variable from
-        // the environment of what it starts, and so does the zsh macOS ships; bash, ksh, fish
-        // and the zsh of Ubuntu 24.04 pass it on. It is put back, so the shell in use does not
-        // decide whether the programs started later see it (issue #136). A name some shell can
-        // write is left as the shell left it: there a startup file may have meant it.
-        for (name, value) in &inherited {
-            if beyond_every_shell(name) && !vars.contains_key(name) {
-                vars.insert(name.clone(), value.clone());
+        // A launch variable whose name is not a shell name, such as `config.key`, and that is
+        // missing now. Either the shell left it out by itself, as dash and the zsh macOS ships
+        // do with every such name, or a startup file removed it: the ksh of macOS reaches a dotted name,
+        // bash a function it exported, fish a name that starts with a digit. No list of names
+        // tells the two apart for every shell, version and locale, so the shell is asked: it
+        // is run once more without startup files, and only what is missing there too is put
+        // back (issue #136). What that run still has, a startup file removed, and it stays
+        // removed (the rule of #105). When the question cannot be answered nothing is put
+        // back. The printed form without NUL separators cannot show such names at all, so it
+        // is no evidence that one is missing.
+        let missing: Vec<&String> = inherited
+            .keys()
+            .filter(|name| !name.is_empty() && !name.contains('=') && !is_name(name))
+            .filter(|name| !vars.contains_key(*name))
+            .collect();
+        if !missing.is_empty() && body.contains(&0) {
+            if let Some(bare) = passed_on_bare(shell, &inherited, cancel) {
+                for name in missing {
+                    if !bare.contains_key(name) {
+                        vars.insert(name.clone(), inherited[name].clone());
+                    }
+                }
             }
         }
         for name in SHELL_OWN {
@@ -423,7 +473,8 @@ impl StartupEnv {
 
 #[cfg(test)]
 mod tests {
-    use super::{between, parse};
+    use super::{bare_arguments, between, parse, SUPPORTED_SHELLS};
+    use std::path::Path;
 
     fn get<'a>(
         vars: &'a std::collections::BTreeMap<String, String>,
@@ -489,35 +540,20 @@ mod tests {
         assert!(parse(b"").is_empty());
     }
 
-    /// Only a name no supported shell can write is put back after a capture (issue #136):
-    /// with any other, a startup file may have removed the variable on purpose.
+    /// Every supported shell has a way to run without the person's startup files; a shell
+    /// that is not supported is not run a second time.
     #[test]
-    fn only_a_name_beyond_every_shell_is_put_back() {
-        for name in [
-            "config.key",
-            "with-dash",
-            "a b",
-            "x%",
-            "ProgramFiles(x86)",
-            "όν.ομα",
-        ] {
-            assert!(super::beyond_every_shell(name), "{name}");
+    fn each_supported_shell_can_be_run_without_startup_files() {
+        for name in SUPPORTED_SHELLS {
+            let arguments = bare_arguments(Path::new(&format!("/bin/{name}")));
+            assert_eq!(arguments.and_then(|all| all.last()), Some(&"-c"), "{name}");
         }
-        for name in [
-            "PLAIN",
-            "_x1",
-            // fish and ksh can write these two.
-            "1digit",
-            "όνομα",
-            // bash removes an exported function with `unset -f`.
-            "BASH_FUNC_gone%%",
-            "BASH_FUNC_gone()",
-            "",
-            "=lead",
-            "mid=dle",
-        ] {
-            assert!(!super::beyond_every_shell(name), "{name:?}");
-        }
+        assert_eq!(
+            bare_arguments(Path::new("/bin/zsh")),
+            Some(&["-f", "-c"][..])
+        );
+        assert_eq!(bare_arguments(Path::new("/bin/tcsh")), None);
+        assert_eq!(bare_arguments(Path::new("/")), None);
     }
 
     #[test]

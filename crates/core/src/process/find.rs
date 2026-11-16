@@ -115,14 +115,16 @@ impl Search {
 /// default alias names (nvm has no shims, and is not searched on Windows, where it does not
 /// run), and for npm the `bin` of the prefix its variable names, or `~/.npm-global`, which
 /// npm's documentation suggested until 2025; the `~/.local/bin` it suggests now is searched
-/// already. After the system's own folders come the shims: Volta's `bin`, then the `shims` of
-/// mise and of asdf (asdf has no Windows form). Each folder was read from that tool's source in
-/// November 2026. A variable that names a manager's folder replaces the folder under the home
+/// already. Then the shims that start by themselves, Volta's `bin` and mise's `shims`, then
+/// the system's own folders, and last the `shims` of asdf, which need `asdf` on the `PATH`
+/// (asdf has no Windows form). Each folder was read from that tool's source in November 2026. A variable that names a manager's folder replaces the folder under the home
 /// directory, as it does for the manager itself. Nothing is run to find these, and no tool's
 /// configuration file is read, so a prefix set only in npm's and a `shims_dir` set only in
 /// mise's are not searched. Not searched either: nvm's folders for Node before 0.12 and for
 /// io.js, a default alias of nvm's stored with flags, mise's system-wide shims, and the
-/// variable for npm's prefix in any spelling but all capitals or all small letters. A program
+/// variable for npm's prefix in any spelling but all capitals or all small letters. A shim of
+/// Volta or mise is found before a system copy even when its manager has no version of that
+/// tool to run. A program
 /// found in one of these may still need its interpreter, or the manager itself, on the `PATH`
 /// it is started with (issue #145).
 fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
@@ -167,7 +169,8 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
                 .or_else(|| named("npm_config_prefix"))
                 .or_else(|| roaming.as_ref().map(|roaming| roaming.join("npm"))),
         );
-        // Shims last, as on Unix.
+        // The shims after the real programs. There is no system folder to order them
+        // against here.
         dirs.extend(
             named("VOLTA_HOME")
                 .or_else(|| local.as_ref().map(|local| local.join("Volta")))
@@ -209,6 +212,17 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
                 .map(|prefix| prefix.join("bin")),
         );
         dirs.extend(under_home(".npm-global/bin"));
+        // The shims of Volta and mise come before the system's folders, where a shell set up
+        // for them has them: each finds its manager by itself (Volta's is one program that
+        // reads `VOLTA_HOME` or the home directory, mise's are links to `mise`), so a copy in
+        // a system folder must not hide the version the person chose.
+        dirs.extend(install_bin("VOLTA_HOME", ".volta"));
+        dirs.extend(named("MISE_SHIMS_DIR").or_else(|| {
+            named("MISE_DATA_DIR")
+                .or_else(|| named("XDG_DATA_HOME").map(|data| data.join("mise")))
+                .or_else(|| under_home(".local/share/mise"))
+                .map(|root| root.join("shims"))
+        }));
         dirs.extend(
             [
                 "/opt/homebrew/bin",
@@ -220,17 +234,10 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
             .map(PathBuf::from),
         );
         dirs.extend(under_home(".coven/bin"));
-        // Shims last: a shim is a small program that hands over to its manager, and asdf's
-        // needs `asdf` on the `PATH` it is started with, which is what is missing when these
-        // folders matter. The search stops at the first program of the name, so a shim in
-        // front would hide a copy further down that can start.
-        dirs.extend(install_bin("VOLTA_HOME", ".volta"));
-        dirs.extend(named("MISE_SHIMS_DIR").or_else(|| {
-            named("MISE_DATA_DIR")
-                .or_else(|| named("XDG_DATA_HOME").map(|data| data.join("mise")))
-                .or_else(|| under_home(".local/share/mise"))
-                .map(|root| root.join("shims"))
-        }));
+        // asdf's shims last: since asdf 0.16 a shim is a script that runs `asdf` by name, so
+        // it needs `asdf` on the `PATH` it is started with, which is what is missing when
+        // these folders matter. The search stops at the first program of the name, so that
+        // shim in front would hide a copy further down that can start.
         dirs.extend(
             named("ASDF_DATA_DIR")
                 .or_else(|| under_home(".asdf"))
@@ -256,17 +263,29 @@ const NVM_ALIASES: usize = 16;
 /// The `bin` folder of the Node version nvm would use in a new shell: the one its `default`
 /// alias names. nvm has no folder of shims; it puts this folder on `PATH` itself.
 ///
-/// This follows nvm's own steps (read in 0.40 and 0.41): while there is an alias file of the
-/// name in hand, the name becomes what that file says, and two files that name each other
-/// give nothing. What is left when no file has that name is `node` or `stable` (the highest
-/// version installed), a full version (that folder, if it is there), or part of one (`22`,
-/// `22.11`: the highest installed that starts so). A file is looked for first even when the
-/// name looks like a version, as nvm does. Without a default alias, or with `system`, there is
+/// This follows nvm's own steps, as read in the source of nvm 0.40; the second review of this
+/// code ran nvm 0.40.8 on a Mac against the same folders and the cases that differed are
+/// either changed to match or listed below. While there is an alias file of the name in hand,
+/// the name becomes what that file says, and two files that name each other give nothing.
+/// What is left when no file has that name is `node` or `stable` (the highest version
+/// installed), a full version (that folder, if it is there), or part of one (`22`, `22.11`:
+/// the highest installed that starts so). Of folders with the same three numbers the first by
+/// name is taken, so a release before its own prereleases. A file is looked for first even
+/// when the name looks like a version, as nvm does. The folder found is used only when it has
+/// `node` in its `bin`: nvm puts nothing on `PATH` for a version that was not installed whole,
+/// and no older version in its place. Without a default alias, or with `system`, there is
 /// nothing to add. Nor is there for an alias stored with the `--lts` or `--only=` flags that
 /// nvm 0.41 introduced: working those out needs nvm's record of which versions are long-term
-/// ones, which is not read here. Known differences from nvm: an alias file named like the
-/// version that a chain of aliases ends at is not looked for a second time, and among
-/// prerelease folders of one version the last by name is taken.
+/// ones, which is not read here.
+///
+/// Known differences from nvm 0.40.8, each giving nothing here where nvm finds a version
+/// unless said otherwise: a default of `lts/-1` (the long-term line before the newest);
+/// `unstable` and `iojs`; a name nvm reads as a pattern (`v`, `.11`, `22.*`, `node-`); the
+/// `.nvmrc` in the home directory, which nvm uses when there is no default alias; and an
+/// alias file named like the version that a chain of aliases ends at, which nvm looks for a
+/// second time and this does not, so this takes the version where nvm follows the file. nvm
+/// refuses to work at all while npm's prefix variable is set; the folder is searched here
+/// all the same.
 fn nvm_default_bin(root: &Path) -> Option<PathBuf> {
     let versions = root.join("versions").join("node");
     // Folder names that start as a version does, with the three numbers nvm sorts by.
@@ -294,12 +313,19 @@ fn nvm_default_bin(root: &Path) -> Option<PathBuf> {
         // No default alias, or one that cannot be read.
         return None;
     }
+    // Used only when `node` is there: see above.
+    let bin_of = |folder: &str| {
+        let bin = versions.join(folder).join("bin");
+        is_program(&bin.join("node")).then_some(bin)
+    };
+    // The highest numbers among the folders that start so, and of those the first by name.
     let highest = |starts: &str| {
+        let fits = |folder: &str| folder.starts_with(starts);
+        let (top, _) = installed.iter().rev().find(|(_, folder)| fits(folder))?;
         installed
             .iter()
-            .rev()
-            .find(|(_, folder)| folder.starts_with(starts))
-            .map(|(_, folder)| versions.join(folder).join("bin"))
+            .find(|(numbers, folder)| numbers == top && fits(folder))
+            .and_then(|(_, folder)| bin_of(folder))
     };
     if name == "node" || name == "stable" {
         return highest("v");
@@ -312,9 +338,11 @@ fn nvm_default_bin(root: &Path) -> Option<PathBuf> {
         _ => return None,
     };
     if installed.iter().any(|(_, folder)| *folder == pattern) {
-        return Some(versions.join(&pattern).join("bin"));
+        return bin_of(&pattern);
     }
-    let numbers = pattern[1..].trim_end_matches('.');
+    // One dot at the end is passed over, as nvm passes it over; `22..` is no version.
+    let numbers = &pattern[1..];
+    let numbers = numbers.strip_suffix('.').unwrap_or(numbers);
     let groups = numbers.split('.').count();
     let partial = !numbers.is_empty()
         && groups <= 2
@@ -339,13 +367,15 @@ fn nvm_sort_key(folder: &str) -> Option<[u64; 3]> {
 }
 
 /// What an nvm alias names: the first line of its file that says anything, read as nvm reads
-/// it since 0.40.4 (each line ends at a `#`, and spaces at its end are dropped). The name is
+/// it since 0.40.4 (each line ends at a `#`, and the spaces and tabs at its end are dropped;
+/// a no-break space is not one of them and stays in the name). The name is
 /// nvm's own or comes out of another alias file, so one that would leave the alias folder is
 /// not followed, and neither is a long-term name with a capital letter, which nvm refuses.
 /// Only a regular file is opened, so a pipe left under that name cannot hold up the search.
 fn read_alias(aliases: &Path, name: &str) -> Option<String> {
     use std::io::Read;
     use std::path::Component;
+    let blank = |character: char| character.is_ascii_whitespace();
     let relative = Path::new(name);
     let stays_inside = !name.is_empty()
         && relative
@@ -373,8 +403,8 @@ fn read_alias(aliases: &Path, name: &str) -> Option<String> {
         .ok()?
         .lines()
         .map(|line| line.split('#').next().unwrap_or_default())
-        .find(|line| !line.trim().is_empty())
-        .map(|line| line.trim_end().to_string())
+        .find(|line| !line.trim_matches(blank).is_empty())
+        .map(|line| line.trim_end_matches(blank).to_string())
 }
 
 #[cfg(unix)]

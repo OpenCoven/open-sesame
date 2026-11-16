@@ -253,8 +253,15 @@ mod tests {
         assert_eq!(tree.retire(&mut child), None, "the kill was left out");
         tree.deaf = false;
         tree.kill();
-        std::thread::sleep(Duration::from_millis(300));
-        let still_running = matches!(child.try_wait(), Ok(None));
+        // A kill that was sent would end the program; one that was not ends nothing, so there
+        // is no event to wait for. The child is looked at for a second and the test stops
+        // early only when it has ended.
+        let until = std::time::Instant::now() + Duration::from_secs(1);
+        let mut still_running = true;
+        while still_running && std::time::Instant::now() < until {
+            still_running = matches!(child.try_wait(), Ok(None));
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let _ = child.kill();
         let _ = child.wait();
         assert!(still_running, "a kill after the give-up ended the program");
