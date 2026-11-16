@@ -227,8 +227,7 @@ impl Session {
         let (tree, reader, writer, exit, pid) = match adopted {
             Ok(parts) => parts,
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                super::tree::discard(child.as_mut());
                 return Err(could_not_start(
                     "taking over the pseudo-terminal",
                     number(error.raw_os_error()),
@@ -302,7 +301,8 @@ impl Session {
     }
 
     /// Ends the pane: kills its whole process tree and collects the shell. Returns when that is
-    /// done. Safe to call more than once and from any thread.
+    /// done; on Windows a killed shell is given five seconds to end, and this returns without
+    /// it after that. Safe to call more than once and from any thread.
     pub(super) fn close(&self) {
         self.shared.end();
     }
@@ -318,7 +318,7 @@ impl Shared {
             self.changed.notify_all();
         }
         // Holding this lock while the tree ends makes a second caller wait for the first, so
-        // every caller returns only after the processes are gone.
+        // every caller returns only after the tree has been ended.
         let mut child = lock(&self.child);
         if let Some(mut child) = child.take() {
             self.tree.end(child.as_mut());

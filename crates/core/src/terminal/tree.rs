@@ -15,9 +15,9 @@ use portable_pty::Child;
 use std::io;
 
 #[cfg(unix)]
-pub(super) use unix::Tree;
+pub(super) use unix::{discard, Tree};
 #[cfg(windows)]
-pub(super) use windows::{deliver_control_c, Tree};
+pub(super) use windows::{deliver_control_c, discard, Tree};
 
 #[cfg(unix)]
 mod unix {
@@ -71,7 +71,15 @@ mod unix {
             }
             let _ = child.wait();
         }
+    }
 
+    /// Kills and collects a shell that was started but could not be taken over.
+    pub(in super::super) fn discard(child: &mut dyn Child) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    impl Tree {
         /// Whether the shell has exited and nothing else is left in its session.
         fn finished(&self) -> bool {
             self.leader_exited() && self.members().is_empty()
@@ -264,23 +272,34 @@ mod windows {
                 TerminateJobObject(self.job, 1);
             }
             let _ = child.kill();
-            let ended = match child.as_raw_handle() {
-                // SAFETY: the handle belongs to `child`, which is borrowed for this call.
-                Some(process) => unsafe {
-                    WaitForSingleObject(process as HANDLE, ENDING.as_millis() as u32)
-                        == WAIT_OBJECT_0
-                },
-                // Without a handle there is nothing to wait on but the library, as before.
-                None => true,
-            };
-            // The library waits without a limit for a process whose exit code is not set, so
-            // it is asked only once the process is known to have ended.
-            if ended {
-                let _ = child.wait();
-            } else {
-                #[cfg(debug_assertions)]
-                eprintln!("open-sesame: a killed shell had not ended after {ENDING:?}");
-            }
+            collect(child);
+        }
+    }
+
+    /// Kills and collects a shell that was started but could not be taken over, within the
+    /// same limit as [`Tree::end`].
+    pub(in super::super) fn discard(child: &mut dyn Child) {
+        let _ = child.kill();
+        collect(child);
+    }
+
+    /// Waits up to [`ENDING`] for a killed shell's process to end, and collects it if it did.
+    fn collect(child: &mut dyn Child) {
+        let ended = match child.as_raw_handle() {
+            // SAFETY: the handle belongs to `child`, which is borrowed for this call.
+            Some(process) => unsafe {
+                WaitForSingleObject(process as HANDLE, ENDING.as_millis() as u32) == WAIT_OBJECT_0
+            },
+            // Without a handle there is nothing to wait on but the library, as before.
+            None => true,
+        };
+        // The library waits without a limit for a process whose exit code is not set, so it is
+        // asked only once the process is known to have ended.
+        if ended {
+            let _ = child.wait();
+        } else {
+            #[cfg(debug_assertions)]
+            eprintln!("open-sesame: a killed shell had not ended after {ENDING:?}");
         }
     }
 

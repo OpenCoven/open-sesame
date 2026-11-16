@@ -49,7 +49,8 @@ pub enum Output {
     Data(Vec<u8>),
     /// The stream broke for a reason other than the program ending. `Exit` follows.
     Error(&'static str),
-    /// The pane has ended and its processes are gone.
+    /// The pane has ended and its processes are gone (on Windows: or its killed shell did not
+    /// end within five seconds, see `Tree::end`).
     Exit,
 }
 
@@ -200,8 +201,9 @@ impl Terminals {
     }
 
     /// Closes every pane and returns when all their processes are gone, those of panes that
-    /// [`Terminals::close_all_detached`] is still closing included. Panes close side by side,
-    /// so quitting with many panes takes as long as the slowest one.
+    /// [`Terminals::close_all_detached`] is still closing included, or on Windows when five
+    /// seconds have passed for a killed shell that did not end. Panes close side by side, so
+    /// quitting with many panes takes as long as the slowest one.
     pub fn close_all(&self) {
         close_side_by_side(&self.take_all());
         let closing: Vec<JoinHandle<()>> = self.closing().drain(..).collect();
