@@ -160,6 +160,21 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await picker;
 }
 
+// 6b. Sign in waits for the person too: on Linux the host asks the keyring before it opens the
+// browser, and a locked keyring answers only after its unlock prompt (issue #116).
+{
+  const { bridge, invokes, timers } = await connected();
+  let outcome = 'pending';
+  const signIn = bridge.request('auth.signIn').then(() => { outcome = 'resolved'; }, error => { outcome = error.message; });
+  await settle();
+  const [[, limit]] = [...timers];
+  assert.equal(limit.delay, 180000, 'Sign in waits for the keyring prompt, not for 15 seconds');
+  invokes[1].resolve({ requestId: invokes[1].args.message.requestId, result: { signedIn: false } });
+  await signIn;
+  assert.equal(outcome, 'resolved');
+  assert.equal(timers.size, 0);
+}
+
 // 7. Events: host messages with an `event` key reach every subscriber, in order, until it unsubscribes.
 {
   const { bridge, listens } = await connected();
