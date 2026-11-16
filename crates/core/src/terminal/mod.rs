@@ -214,7 +214,8 @@ impl Terminals {
     ///
     /// The one thing this does wait for is the pane list, which a `terminal.open` holds while
     /// it starts its shell: 12 ms at the longest in a measurement on a Mac with another thread
-    /// opening panes throughout, and under a tenth of a millisecond otherwise.
+    /// opening panes throughout, and under a tenth of a millisecond otherwise. An open that
+    /// cannot get a pseudo-terminal holds the list about 75 ms longer, for its further tries.
     pub fn close_all_detached(&self) {
         // Held from before the panes leave the list until the thread that closes them is
         // recorded, so `close_all` on another thread cannot look for threads to wait for in
@@ -231,8 +232,9 @@ impl Terminals {
                 closing.retain(|thread| !thread.is_finished());
                 closing.push(thread);
             }
-            // No thread to hand them to: close them here, late rather than never.
-            Err(_) => close_side_by_side(&sessions),
+            // No thread to hand them to: close them here, late rather than never, and one
+            // after another, because closing them side by side needs threads too.
+            Err(_) => sessions.iter().for_each(|session| session.close()),
         }
     }
 
