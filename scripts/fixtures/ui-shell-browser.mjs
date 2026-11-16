@@ -187,6 +187,48 @@ try {
         await page.setViewportSize({width:1090,height:700});
         await page.screenshot({path:path.join(output,`${name}-desktop.png`),fullPage:true});
       });
+      await step('turning each widget on and off adds no global',async()=>{
+        // Baseline: the same browser and the same injected fixture host, on a document with no
+        // script of the app. The only key a widget may add is the vendored terminal bundle's
+        // hand-over object, and only after that bundle has been loaded for a pane.
+        const blank=await context.newPage();
+        let defaults;
+        try {await blank.goto(origin+'/README.md');defaults=new Set(await blank.evaluate(()=>Object.keys(window)));}
+        finally{await blank.close();}
+        const added=async()=>(await page.evaluate(()=>Object.keys(window))).filter(key=>!defaults.has(key)).sort();
+        const allowed=()=>requests.some(r=>r.endsWith('/xterm.js'))?['OpenSesameXterm']:[];
+        assert.deepEqual(await added(),allowed(),'the shell and the widgets loaded so far add no other global');
+        const ids=await page.evaluate(async()=>(await import(location.origin+'/ui/manifest.js')).widgets.map(widget=>widget.id));
+        if(await page.locator('#widget-settings').isHidden())await page.getByRole('button',{name:'Widgets',exact:true}).click();
+        const wasOn=new Map();
+        for(const id of ids) {
+          const box=page.locator(`[data-widget="${id}"]`),view=page.locator(`[data-widget-view="${id}"]`);
+          wasOn.set(id,await box.isChecked());
+          if(wasOn.get(id)){await box.uncheck();await view.waitFor({state:'detached'});}
+          await box.check();await view.waitFor({state:'visible'});
+          if(id==='shells'){await view.getByRole('button',{name:'New shell',exact:true}).click();await view.locator('.xterm').waitFor();}
+          assert.deepEqual(await added(),allowed(),`turning ${id} on adds no global`);
+          await box.uncheck();await view.waitFor({state:'detached'});
+          assert.deepEqual(await added(),allowed(),`turning ${id} off leaves no global`);
+        }
+        for(const [id,on] of wasOn)if(on)await page.locator(`[data-widget="${id}"]`).check();
+      });
+      await step('a switch turned while the first view loads is saved',async()=>{
+        const loading=await context.newPage();
+        try {
+          let release;const held=new Promise(resolve=>release=resolve);
+          await loading.route('**/ui/widgets/pending.js',async route=>{await held;await route.continue();});
+          await loading.goto(origin+'/ui/index.html');
+          await loading.locator('[data-widget="reader"]:not([disabled])').waitFor({state:'attached'});
+          assert.notEqual(await loading.locator('.shell').getAttribute('data-ready'),'true','the first view is still loading');
+          await loading.getByRole('button',{name:'Widgets',exact:true}).click();
+          await loading.locator('[data-widget="reader"]').check();
+          release();
+          await loading.locator('[data-ready="true"]').waitFor();
+          await loading.waitForFunction(()=>window.__fixture__.states.reader==='active',null,{timeout:3000});
+          await loading.waitForFunction(()=>window.__fixture__.settings['shell.lastView']==='reader',null,{timeout:3000});
+        }finally{await loading.close();}
+      });
       await step('initial widget failure does not strand shell restoration',async()=>{
         const recovering=await context.newPage();
         try {
