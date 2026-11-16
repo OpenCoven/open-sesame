@@ -71,6 +71,21 @@ fn until(what: &str, holds: impl Fn() -> bool) {
     }
 }
 
+/// Makes the first write to the fake store wait until [`Held::open`]; every write after it
+/// runs `later` instead and then goes on.
+fn hold_first_write(rig: &Rig, later: impl Fn() + Send + Sync + 'static) -> Held {
+    let (held, hook) = waiter();
+    let first = std::sync::atomic::AtomicBool::new(true);
+    *rig.store.before_write.lock().unwrap() = Some(Arc::new(move || {
+        if first.swap(false, Ordering::SeqCst) {
+            hook()
+        } else {
+            later()
+        }
+    }));
+    held
+}
+
 fn hold_writes(rig: &Rig) -> Held {
     let (held, hook) = waiter();
     *rig.store.before_write.lock().unwrap() = Some(hook);
@@ -488,15 +503,24 @@ fn sign_out_says_it_began_before_the_removal_is_asked() {
     let held = hold_writes(&rig);
     let (tell, told) = channel();
     let auth = rig.auth.clone();
+    let seen = rig.auth.clone();
     let signing_out = std::thread::spawn(move || {
         auth.sign_out_now(move |url| {
-            let _ = tell.send(url);
+            // What the gate and the status say at the moment the caller is told: the host
+            // answers the page on this word, and the page asks for the status next.
+            let _ = tell.send((url, seen.authenticated(), seen.status()));
         })
     });
-    let url = told
+    let (url, authenticated, status) = told
         .recv_timeout(Duration::from_secs(2))
         .expect("sign-out waited for the store before it said it began");
     assert!(url.is_some_and(|url| url.contains("/sessions/logout")));
+    assert!(
+        !authenticated,
+        "the gate was open when sign-out said it began"
+    );
+    assert_eq!(status["message"], json!("Signed out on this computer."));
+    assert_eq!(status["authenticated"], json!(false));
     assert!(!rig.auth.authenticated());
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
     held.open();
@@ -536,32 +560,118 @@ fn an_ended_session_is_said_before_its_removal_is_asked() {
 #[test]
 fn a_removal_owed_waits_for_the_last_call_that_is_out() {
     let rig = rig_with(Some((SOON, Duration::from_secs(2))));
+    // Made before the read starts: signing the first token of a run makes the key, which
+    // can take longer than the read's limit.
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let (read, hook) = waiter();
     *rig.store.during_load.lock().unwrap() = Some(Box::new(move || hook()));
     read.open_when_too_long();
     let auth = rig.auth.clone();
     let restoring = std::thread::spawn(move || auth.restore());
     read.entered();
-    let written = hold_writes(&rig);
+    // Only the save waits here. A removal made too early must go straight through, so that
+    // it comes before the save lands and not in a race with it.
+    let written = hold_first_write(&rig, || ());
     written.open_when_too_long();
-    rig.api
-        .exchanges
-        .lock()
-        .unwrap()
-        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
     restoring.join().unwrap();
     assert_eq!(rig.store.saved(), None, "the save was not given up");
     assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
 
+    // Nothing can be seen of the read's return when the rule holds, so this waits for it:
+    // a removal made at that return has half a second to be made before the save lands.
     read.open();
-    std::thread::sleep(Duration::from_millis(300));
+    std::thread::sleep(Duration::from_millis(500));
     written.open();
     until_the_store_is_asked_again(&rig);
     assert_eq!(
         rig.store.saved(),
         None,
         "the removal was made before the save landed"
+    );
+}
+
+/// A refresh's save that was given up, and a sign-out after it: the state both tests below
+/// start from. The first write, the save, waits at the returned gate.
+fn a_save_given_up_and_then_a_sign_out(
+    rig: &Rig,
+    later: impl Fn() + Send + Sync + 'static,
+) -> Held {
+    rig.sign_in();
+    rig.advance(240);
+    reply(rig, "refresh-two");
+    let held = hold_first_write(rig, later);
+    held.open_when_too_long();
+    rig.auth.refresh();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    held
+}
+
+/// The removal owed is made before any other store call is let through: while it is being
+/// made, the call it follows still counts as out.
+#[test]
+fn nothing_is_let_through_while_the_removal_owed_is_made() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let (removal, hook) = waiter();
+    removal.open_when_too_long();
+    let held = a_save_given_up_and_then_a_sign_out(&rig, move || hook());
+    held.open();
+    removal.entered();
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
+    removal.open();
+    until_the_store_is_asked_again(&rig);
+    assert_eq!(rig.store.saved(), None);
+}
+
+/// A removal owed that panics ends the wait as well: the store is asked again afterwards.
+#[test]
+fn a_removal_owed_that_panics_does_not_leave_a_call_out() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_save_given_up_and_then_a_sign_out(&rig, || {
+        panic!("the removal owed panicked, as this test asks it to")
+    });
+    held.open();
+    until_the_store_is_asked_again(&rig);
+}
+
+/// The removal of a session the server ended is owed in the same way as a sign-out's. What
+/// is removed is whatever is saved when the call given up returns: here the second sign-in,
+/// whose save the person was told had failed.
+#[test]
+fn an_ended_sessions_removal_is_owed_while_a_call_given_up_is_out() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-b")));
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback);
+    assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
+    rig.advance(240);
+    rig.api
+        .refreshes
+        .lock()
+        .unwrap()
+        .push(Err(AuthError::Ended));
+    rig.auth.refresh();
+    assert!(rig.message().contains("ended"), "{}", rig.message());
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    held.open();
+    until_the_store_is_asked_again(&rig);
+    assert_eq!(
+        rig.store.saved(),
+        None,
+        "the removal for the ended session was not owed"
     );
 }

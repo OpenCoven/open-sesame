@@ -14,10 +14,10 @@
 //! The credential store can wait for a person: a locked keyring shows its unlock prompt and
 //! answers when the prompt does, or never (issue #130). So that nothing else waits with it:
 //! [`AuthController::authenticated`] and [`AuthController::status`] answer from a copy of the
-//! state and never take the state's lock; every store call runs on a thread of its own and is
-//! given up after a limit; and the three things a person can ask for while a write is waited
-//! for ([`AuthController::begin_sign_in`], [`AuthController::cancel_now`] and
-//! [`AuthController::sign_out_now`]) answer [`AuthError::StoreBusy`] instead of waiting.
+//! state and never take the state's lock; every store call a caller waits for runs on a thread
+//! of its own and is given up after a limit; and the three things a person can ask for while
+//! a write is waited for ([`AuthController::begin_sign_in`], [`AuthController::cancel_now`]
+//! and [`AuthController::sign_out_now`]) answer [`AuthError::StoreBusy`] instead of waiting.
 
 use super::{
     authorization_code, authorize_url, carries_state, generate_pkce, logout_url,
@@ -69,7 +69,9 @@ const WAITING_FOR_STORE: &str =
 const STORE_SOON: Duration = Duration::from_secs(2);
 /// How long a call to the credential store is waited for at all. It has to cover a person
 /// reading the keyring's prompt and typing a password. No request from the page waits this
-/// long: a request waits `STORE_SOON` at most, which has to stay below the page's own limit.
+/// long: a request waits `STORE_SOON` for each thing it waits for, and Sign in waits for
+/// three at most (the host's look, the state, and the host's own cancel when the browser
+/// will not open). Three times `STORE_SOON` has to stay below the page's own limit.
 const STORE_LIMIT: Duration = Duration::from_secs(120);
 
 /// Refresh this long before the access token expires.
@@ -256,6 +258,11 @@ struct Out {
 /// A call that was given up has returned, or will never return because it panicked. A
 /// removal that was asked for while it was out is made now, on the call's own thread and
 /// before any other store call is let through.
+///
+/// That removal is the one store call with no limit: it is waited for by nobody, and while
+/// it waits no other store call is made and no sign-in is begun. Its outcome is not told to
+/// anyone either: the status goes on saying what it said when the removal could not be made,
+/// and no change is announced.
 fn returned(out: &Mutex<Out>, store: &dyn CredentialStore) {
     loop {
         let mut out = unpoisoned(out);
@@ -347,6 +354,13 @@ impl AuthController {
     /// measures its own look at the store against the same time.
     pub fn store_soon(&self) -> Duration {
         self.store_soon
+    }
+
+    /// Whether a store call was given up at the limit and has not returned since. While it
+    /// is so, every store call fails at once and no sign-in is begun; the host asks this
+    /// before it looks at the store for Sign in, so that the store is not asked for nothing.
+    pub fn store_given_up(&self) -> bool {
+        unpoisoned(&self.store_out).stuck > 0
     }
 
     /// How long a store call is waited for before it is given up. The host gives its own look
@@ -528,7 +542,7 @@ impl AuthController {
     pub fn begin_sign_in(&self) -> Result<String, AuthError> {
         // With a store call given up and still out, a new sign-in could not be saved: the
         // browser is not opened for one.
-        if unpoisoned(&self.store_out).stuck > 0 {
+        if self.store_given_up() {
             return Err(AuthError::StoreBusy);
         }
         let pkce = generate_pkce()?;
@@ -957,6 +971,9 @@ impl AuthController {
             .session_id
             .take()
             .map(|session_id| logout_url(&session_id));
+        // Published before the caller is told: the host answers the page on that word, and
+        // the page then asks for the status.
+        *unpoisoned(&self.seen) = Seen::of(&state);
         began(url);
         if self.remove(Some(&state)).is_err() {
             state.message = SIGNED_OUT_NOT_REMOVED;

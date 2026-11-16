@@ -308,25 +308,34 @@ function fakeBridge(status, answers = {}) {
   // be kept, and the Linux sentence names what to install.
   assert.ok(code.indexOf('self.look_at_store()?') < code.indexOf('self.controller.begin_sign_in()'));
   // A request from the page is not held by the credential store (issue #130): a locked keyring
-  // answers only when its unlock prompt is answered. What is read here, and it is text only:
-  // - nothing in auth.rs outside its tests calls the store question on the calling thread, or
-  //   the controller's `cancel` or `sign_out` through `self.controller`, which wait for the
-  //   store (the thread `cancel_unasked` starts calls `controller.cancel()` and may wait);
-  // - the look before Sign in refuses while a look is out and younger than the limit, asks the
-  //   store on a thread of its own, and waits for it `self.soon`;
+  // answers only when its unlock prompt is answered. This reads auth.rs as text, so what it
+  // holds is that certain spellings occur and certain others do not; the same thing spelled
+  // another way (through a local name, say) is not seen here, and the Rust tests are what
+  // hold the behaviour. What is read:
+  // - outside the tests the file has no `(self.store_check)()`, `self.controller.cancel()`,
+  //   `self.controller.sign_out()` or `.sign_out()?`: the store question and the controller's
+  //   waiting forms, as they would be written on the calling thread;
+  // - Sign in asks the controller whether a call it gave up is still out before it looks;
+  // - the look refuses while a look is out and younger than the limit, asks the store on a
+  //   thread of its own, waits for it `self.soon` and answers a wait with the keychain
+  //   sentence; a look given up neither ends the look after it nor has its answer kept; an
+  //   answer is kept thirty seconds;
   // - Cancel answers through `cancel_now`, and a browser that will not open through
-  //   `cancel_unasked`, which tries `cancel_now` first;
-  // - Sign out waits for its thread's first word without a time of its own, opens the address
-  //   that ends the remote session when that word says it began, and refuses when it says so;
-  // - each refusal is the sentence about the keychain;
-  // - a request waits `STORE_SOON` twice at most (the look, then the state), and that is below
-  //   the page's default limit in ui/bridge.js.
+  //   `cancel_unasked`, which tries `cancel_now` first and otherwise leaves the cancel to a
+  //   thread;
+  // - Sign out's thread sends the address with its first word, and the request waits for that
+  //   word without a time of its own, opens the address when the word says it began, and
+  //   refuses when it says so;
+  // - Sign in waits `STORE_SOON` three times at most (the look, the state, and the host's own
+  //   cancel when the browser will not open), and that is below the page's default limit in
+  //   ui/bridge.js.
   // Not read: what the controller does behind `begin_sign_in`, `cancel_now` and `sign_out_now`,
   // which the core's tests hold; the fallback in `sign_out` for when no thread can be started,
-  // which waits as long as the store does; and the limits themselves beyond that comparison.
+  // which waits as long as the store does; that the thread `cancel_unasked` starts cancels the
+  // attempt it was started for and not a later one; and the limits beyond that comparison.
   for (const waits of ['(self.store_check)()', 'self.controller.cancel()', 'self.controller.sign_out()', '.sign_out()?']) assert.ok(!production.includes(waits), `auth.rs does not call ${waits} outside its tests`);
   const handler = code.slice(code.indexOf('pub fn handle('), code.indexOf('fn look_at_store('));
-  assert.match(handler, /if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
+  assert.match(handler, /if self\.controller\.store_given_up\(\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
   assert.match(handler, /AuthError::StoreBusy => KEYCHAIN_WAITING,/);
   assert.match(handler, /"auth\.cancel" => match self\.controller\.cancel_now\(\) \{\n\s+Ok\(\(\)\) => Ok\(Value::Bool\(true\)\),\n\s+Err\(_\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
   assert.match(handler, /"auth\.signOut" => self\.sign_out\(\),/);
@@ -335,16 +344,21 @@ function fakeBridge(status, answers = {}) {
   assert.match(look, /if look\.began\.is_some_and\(\|began\| began\.elapsed\(\) < self\.limit\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);/);
   assert.match(look, /\.spawn\(move \|\| \{\n\s+let answer = catch_unwind\(AssertUnwindSafe\(\|\| check\(\)\)\);/);
   assert.match(look, /match told\.recv_timeout\(self\.soon\) \{/);
+  assert.match(look, /Err\(RecvTimeoutError::Timeout\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
+  assert.match(look, /if look\.turn != turn \{\n\s+return;\n\s+\}\n\s+look\.began = None;\n(\s+\/\/[^\n]*\n)*\s+if let Ok\(answer\) = answer \{\n\s+look\.kept = Some\(\(Instant::now\(\), answer\)\);/);
+  assert.match(look, /if came\.elapsed\(\) < LOOK_KEPT \{\n\s+return Ok\(answer\);/);
+  assert.match(code, /^const LOOK_KEPT: Duration = Duration::from_secs\(30\);$/m);
   const unasked = code.slice(code.indexOf('fn cancel_unasked('), code.indexOf('fn sign_out(&self)'));
-  assert.match(unasked, /if self\.controller\.cancel_now\(\)\.is_err\(\) \{/);
+  assert.match(unasked, /if self\.controller\.cancel_now\(\)\.is_err\(\) \{\n\s+let controller = Arc::clone\(&self\.controller\);\n\s+let _ = std::thread::Builder::new\(\)\n\s+\.name\("auth-cancel"\.into\(\)\)\n\s+\.spawn\(move \|\| controller\.cancel\(\)\);/);
   const signOut = code.slice(code.indexOf('fn sign_out(&self)'), code.indexOf('/// An address the system handed over.'));
   assert.match(signOut, /match told\.recv\(\) \{\n\s+Ok\(SignOut::Began\(url\)\) => \{\n\s+end_remote_session\(&self\.browser, url\);\n\s+Ok\(Value::Bool\(true\)\)/);
   assert.match(signOut, /Ok\(SignOut::Refused\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
   assert.ok(!signOut.includes('recv_timeout'), 'Sign out gives its first word no time of its own');
+  assert.match(signOut, /let ended = controller\.sign_out_now\(move \|url\| \{\n\s+let _ = began\.send\(SignOut::Began\(url\)\);\n\s+\}\);/);
   const soon = Number(read('crates/core/src/auth/controller.rs').match(/^const STORE_SOON: Duration = Duration::from_secs\((\d+)\);/m)?.[1]);
   const pageLimit = Number(read('ui/bridge.js').match(/^const DEFAULT_LIMIT = (\d+);/m)?.[1]);
   assert.ok(soon > 0 && pageLimit > 0, 'STORE_SOON and the page default limit are read');
-  assert.ok(2 * soon * 1000 < pageLimit, `A request waits ${2 * soon} s at most, below the page's ${pageLimit} ms`);
+  assert.ok(3 * soon * 1000 < pageLimit, `Sign in waits ${3 * soon} s at most, below the page's ${pageLimit} ms`);
   assert.match(code, /pub const KEYCHAIN_WAITING: &str = "[^"]*waiting for your system keychain[^"]*try again\."/);
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
   // On Linux the store is looked for again on every attempt (issue #116), so a keyring installed
