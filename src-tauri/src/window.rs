@@ -173,28 +173,46 @@ pub fn is_shown<R: Runtime>(window: &WebviewWindow<R>) -> bool {
 /// One press of the shortcut or one `open-sesame --toggle`: shows the window if it is hidden,
 /// brings it to the front if it is open but behind, and hides it if it is in front
 /// (`summon::press` has the rule).
-pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let press = summon::press_on(app, &window);
-        let _ = act(&window, press);
-    }
+/// Returns which of the three it was, or nothing when there is no window.
+pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    let press = summon::press_on(app, &window);
+    let _ = act(&window, press);
+    Some(press)
 }
 
 /// The tray's menu item: the same three outcomes, decided by `summon::tray_item_on`.
-pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let press = summon::tray_item_on(app, &window);
-        let _ = act(&window, press);
+pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    let press = summon::tray_item_on(app, &window);
+    let _ = act(&window, press);
+    Some(press)
+}
+
+/// Whether a press ends with the window out of sight. Only `Hide` does: a window that is open
+/// but behind is brought to the front, never hidden (issue #115).
+fn conceals(press: summon::Press) -> bool {
+    match press {
+        summon::Press::Hide => true,
+        summon::Press::Show | summon::Press::Forward => false,
     }
+}
+
+/// Whether the tray popover moves the window against the icon first. Only a hidden window is
+/// moved, and not one the person made full-screen or maximized (`kept_in_place`): a window
+/// that is open stays where the person put it.
+fn places(press: summon::Press, kept_in_place: bool) -> bool {
+    press == summon::Press::Show && !kept_in_place
 }
 
 fn act<R: Runtime>(window: &WebviewWindow<R>, press: summon::Press) -> tauri::Result<()> {
     // Development evidence of which of the three a press was.
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: press {press:?}");
-    match press {
-        summon::Press::Hide => conceal(window),
-        summon::Press::Show | summon::Press::Forward => focus(window),
+    if conceals(press) {
+        conceal(window)
+    } else {
+        focus(window)
     }
 }
 
@@ -202,19 +220,16 @@ fn act<R: Runtime>(window: &WebviewWindow<R>, press: summon::Press) -> tauri::Re
 /// if it is open but behind; a hidden window is moved against the tray icon at `icon`, inside
 /// the work area of the screen the icon is on, and shown. A window the person made full-screen
 /// or maximized is shown where it is.
-pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
-    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
-        return;
-    };
+pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option<summon::Press> {
+    let window = app.get_webview_window(MAIN_WINDOW)?;
     let press = summon::press_on(app, &window);
-    if press == summon::Press::Show {
-        let placed =
-            window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
-        if !placed {
-            let _ = place_against(&window, icon);
-        }
+    let kept_in_place =
+        window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
+    if places(press, kept_in_place) {
+        let _ = place_against(&window, icon);
     }
     let _ = act(&window, press);
+    Some(press)
 }
 
 fn place_against<R: Runtime>(window: &WebviewWindow<R>, icon: tauri::Rect) -> tauri::Result<()> {
@@ -323,6 +338,22 @@ mod tests {
 
     fn params(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
+    }
+
+    /// What each of the three presses does to the window: only `Hide` takes it out of sight,
+    /// and only a hidden window is moved against the tray icon.
+    #[test]
+    fn a_window_that_is_behind_is_never_hidden_or_moved() {
+        use summon::Press::{Forward, Hide, Show};
+        assert_eq!([Show, Forward, Hide].map(conceals), [false, false, true]);
+        assert_eq!(
+            [Show, Forward, Hide].map(|press| places(press, false)),
+            [true, false, false]
+        );
+        assert_eq!(
+            [Show, Forward, Hide].map(|press| places(press, true)),
+            [false; 3]
+        );
     }
 
     #[test]

@@ -34,7 +34,8 @@ pub const METHODS: &[&str] = &[
     "summon.hold",
 ];
 
-/// The argument that shows the window if it is hidden and hides it if it is shown.
+/// The argument that is one press ([`press`]): it shows the window if it is hidden, brings it
+/// to the front if it is open but behind, and hides it if it is in front.
 pub const TOGGLE_FLAG: &str = "--toggle";
 /// What a person binds to a desktop shortcut where the application cannot grab a key.
 pub const TOGGLE_COMMAND: &str = "open-sesame --toggle";
@@ -47,9 +48,10 @@ pub const DEFAULT_SHORTCUT: &str = "Control+Alt+Shift+Space";
 
 pub const INVALID_SHORTCUT: &str =
     "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Control+Alt+Shift+Space.";
-/// Shift held alone, with a key that is neither a function key nor a media key.
+/// Shift held alone, with a key that is neither a function key nor a media key. It does not
+/// suggest Alt: on a Mac, Alt and Shift with a letter is refused in turn.
 pub const SHIFT_ALONE: &str =
-    "Shift alone is not enough with that key, because people hold Shift with it while they write. Add Control, Alt or Command, or use a function key or a media key.";
+    "Shift alone is not enough with that key, because people hold Shift with it while they write. Add Control or Command, or use a function key or a media key.";
 /// Alt held alone, or with Shift, with a letter, on a Mac.
 pub const OPTION_WITH_A_LETTER: &str =
     "On a Mac, Alt (the Option key) with a letter types a character, so Open Sesame does not take it. Add Control or Command, or use a key that is not a letter.";
@@ -75,7 +77,7 @@ const SETTINGS_FILE: &str = "summon.json";
 pub enum Launch {
     /// A plain launch: bring the window forward.
     Show,
-    /// `--toggle`: show it if hidden, hide it if shown.
+    /// `--toggle`: one press, as [`press`] decides.
     Toggle,
 }
 
@@ -366,7 +368,11 @@ impl Settings {
             {
                 (shortcut.clone(), None)
             }
-            Some(Value::String(refused)) => (defaults.shortcut, Some(refused.clone())),
+            // A key combination the rules now refuse was the person's own, and they are told.
+            // Text that never was a key combination is a damaged file and says nothing.
+            Some(Value::String(refused)) if Shortcut::from_str(refused.trim()).is_ok() => {
+                (defaults.shortcut, Some(refused.trim().to_string()))
+            }
             _ => (defaults.shortcut, None),
         };
         let hide_on_blur = saved.get("hideOnBlur") == Some(&Value::Bool(true));
@@ -729,7 +735,9 @@ fn unregister<R: Runtime>(app: &AppHandle<R>, text: &str) {
 /// exited, and its arguments arrive here.
 pub fn launched_again<R: Runtime>(app: &AppHandle<R>, arguments: &[String]) {
     match launch(arguments) {
-        Launch::Toggle => window::toggle(app),
+        Launch::Toggle => {
+            window::toggle(app);
+        }
         Launch::Show => window::show(app),
     }
 }
@@ -744,11 +752,13 @@ pub(crate) fn blur_just_hid<R: Runtime>(app: &AppHandle<R>) -> bool {
     press_caused_the_blur(since_blur_hide)
 }
 
-/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
-fn pressed<R: Runtime>(app: &AppHandle<R>) {
-    if !blur_just_hid(app) {
-        window::toggle(app);
+/// The shortcut was pressed: one press on the window, unless this press is what just hid it.
+/// Returns what the press did, or nothing when it did nothing more.
+fn pressed<R: Runtime>(app: &AppHandle<R>) -> Option<Press> {
+    if blur_just_hid(app) {
+        return None;
     }
+    window::toggle(app)
 }
 
 /// The tray icon was clicked, which only Windows reports: the popover, unless this click is
@@ -757,24 +767,37 @@ fn pressed<R: Runtime>(app: &AppHandle<R>) {
 /// and showing it again would mean the icon could never hide it. This is the rule the shortcut
 /// follows on X11; on Windows it is reasoned from how the taskbar takes focus and has not been
 /// seen in a window.
-pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
-    if !blur_just_hid(app) {
-        window::toggle_at(app, icon);
+pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option<Press> {
+    if blur_just_hid(app) {
+        return None;
     }
+    window::toggle_at(app, icon)
+}
+
+/// Whether a press on the tray icon is one that opens its menu, and so one to note for the
+/// menu item ([`tray_pressed`]). On Windows the left button is the popover and only the right
+/// one opens the menu; elsewhere either does.
+pub fn opens_the_tray_menu(windows: bool, right_button: bool) -> bool {
+    !windows || right_button
 }
 
 /// How long what the tray icon's press saw stays good for the menu item. A menu left open
-/// longer than this is answered as if no press had been reported.
+/// longer than this is answered as if no press had been reported. What it costs: nothing says
+/// when a menu was dismissed without a choice, so a press whose menu was dismissed still
+/// decides for a menu opened within this minute by some way that reports no press, such as
+/// the keyboard; the item then goes by what the window was doing at the earlier press.
 const TRAY_MENU_OPEN: Duration = Duration::from_secs(60);
 
-/// Where no press on the tray icon is reported, which is so on Linux: how long ago the window
-/// may have lost the keyboard and still count as in front when the menu item is chosen. The
-/// menu takes the keyboard when it opens, on the desktops this was reasoned for, so a window
-/// that was in front has just lost it, by as long as the person took to choose. Ten seconds
-/// is a guess at that. What it costs: a person who left the window less than ten seconds ago
-/// and chooses the item to bring it back hides it, and chooses again; one who keeps the menu
-/// open longer brings a window forward that was in front, and chooses again to hide it. No
-/// panel's menu has been seen doing this; that is for #78.
+/// Where no press on the tray icon was reported, or the one reported is older than
+/// `TRAY_MENU_OPEN`: how long ago the window may have lost the keyboard and still count as in
+/// front when the menu item is chosen. Linux never reports the press, so there this always
+/// decides; on macOS and Windows it decides for a menu opened without a press. The menu takes
+/// the keyboard when it opens, on the desktops this was reasoned for, so a window that was in
+/// front has just lost it, by as long as the person took to choose. Ten seconds is a guess at
+/// that. What it costs: a person who left the window less than ten seconds ago and chooses
+/// the item to bring it back hides it, and chooses again; one who keeps the menu open longer
+/// brings a window forward that was in front, and chooses again to hide it. No panel's menu
+/// has been seen doing this; that is for #78.
 const TRAY_MENU_GRACE: Duration = Duration::from_secs(10);
 
 fn since_lost_focus<R: Runtime>(app: &AppHandle<R>) -> Option<Duration> {
@@ -941,6 +964,103 @@ pub fn handle<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    /// The application with its main window on Tauri's windowless runtime, where a window
+    /// always says it is shown and never says it has the keyboard. So here "in front" is only
+    /// ever what this module remembers: when the window lost the keyboard, and what the press
+    /// on the tray icon saw.
+    fn windowless(hide_on_blur: bool) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let summon = Summon::new(Session::X11, None);
+        lock(&summon.settings).hide_on_blur = hide_on_blur;
+        app.manage(summon);
+        let window = WebviewWindowBuilder::new(&app, MAIN_WINDOW, WebviewUrl::default())
+            .build()
+            .unwrap();
+        (app, window)
+    }
+
+    fn lost_the_keyboard(app: &tauri::App<MockRuntime>, ago: Option<Duration>) {
+        let at = ago.map(|ago| Instant::now().checked_sub(ago).unwrap());
+        *lock(&app.state::<Summon>().lost_focus) = at;
+    }
+
+    /// The window losing the keyboard is what a press goes by a moment later: without the
+    /// note, a press that takes the keyboard itself could only ever bring the window forward.
+    #[test]
+    fn a_press_goes_by_when_the_window_lost_the_keyboard() {
+        let (app, window) = windowless(false);
+        assert_eq!(press_on(app.handle(), &window), Press::Forward);
+        blurred(app.handle());
+        assert_eq!(press_on(app.handle(), &window), Press::Hide);
+        assert_eq!(pressed(app.handle()), Some(Press::Hide));
+        assert_eq!(window::toggle(app.handle()), Some(Press::Hide));
+        lost_the_keyboard(&app, Some(Duration::from_secs(2)));
+        assert_eq!(press_on(app.handle(), &window), Press::Forward);
+        assert_eq!(pressed(app.handle()), Some(Press::Forward));
+    }
+
+    /// With hide-on-blur on, the press that took the keyboard and so hid the window does
+    /// nothing more, for the shortcut and for the click on the tray icon; the next one acts.
+    #[test]
+    fn the_press_that_just_hid_the_window_does_nothing_more() {
+        let icon = tauri::Rect::default();
+        let (app, _window) = windowless(true);
+        blurred(app.handle());
+        assert!(lock(&app.state::<Summon>().hid_on_blur).is_some());
+        assert_eq!(pressed(app.handle()), None);
+        assert!(
+            pressed(app.handle()).is_some(),
+            "one hide excuses one press"
+        );
+        blurred(app.handle());
+        assert_eq!(tray_clicked(app.handle(), icon), None);
+        assert!(tray_clicked(app.handle(), icon).is_some());
+        // With the setting off nothing hid, so the press acts at once.
+        let (app, _window) = windowless(false);
+        blurred(app.handle());
+        assert!(lock(&app.state::<Summon>().hid_on_blur).is_none());
+        assert_eq!(pressed(app.handle()), Some(Press::Hide));
+    }
+
+    /// The same, through the application's own state: the menu item uses what the press on
+    /// the icon noted, once, and not the shortcut's rule.
+    #[test]
+    fn the_tray_item_uses_what_the_press_noted_and_not_the_shortcuts_rule() {
+        let (app, window) = windowless(false);
+        let handle = app.handle();
+        // No press was reported, as on Linux: a window that lost the keyboard two seconds ago
+        // counts as in front for the item, and as behind for the shortcut.
+        lost_the_keyboard(&app, Some(Duration::from_secs(2)));
+        assert_eq!(press_on(handle, &window), Press::Forward);
+        assert_eq!(tray_item_on(handle, &window), Press::Hide);
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Hide));
+        // The icon was pressed while the window was behind; the menu then took the keyboard
+        // from whatever had it. The item brings the window forward.
+        lost_the_keyboard(&app, None);
+        tray_pressed(handle);
+        lost_the_keyboard(&app, Some(Duration::ZERO));
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Forward));
+        // What the press saw is used once.
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Hide));
+        // The icon was pressed while the window was in front, and the menu stayed open longer
+        // than the allowance for a missing press: the item still hides.
+        lost_the_keyboard(&app, Some(Duration::ZERO));
+        tray_pressed(handle);
+        lost_the_keyboard(&app, Some(TRAY_MENU_GRACE + Duration::from_secs(5)));
+        assert_eq!(tray_item_on(handle, &window), Press::Hide);
+        assert_eq!(tray_item_on(handle, &window), Press::Forward);
+    }
+
+    #[test]
+    fn only_a_press_that_opens_the_tray_menu_is_noted() {
+        assert!(opens_the_tray_menu(false, false));
+        assert!(opens_the_tray_menu(false, true));
+        assert!(opens_the_tray_menu(true, true));
+        assert!(!opens_the_tray_menu(true, false), "the popover's button");
+    }
 
     #[test]
     fn only_the_toggle_argument_toggles() {
@@ -1301,16 +1421,32 @@ mod tests {
             r#"{"shortcut":7}"#,
             r#"{"hideOnBlur":true}"#,
             "not json",
+            // Text that never was a key combination is a damaged file, not a shortcut of the
+            // person's that was replaced.
+            r#"{"shortcut":"   "}"#,
+            r#"{"shortcut":"hello there"}"#,
+            r#"{"shortcut":"Shift+"}"#,
         ] {
-            assert_eq!(load(quiet).status()["notice"], "", "{quiet}");
+            let summon = load(quiet);
+            assert_eq!(summon.status()["notice"], "", "{quiet}");
+            if quiet.contains("hello") {
+                assert_eq!(summon.status()["shortcut"], DEFAULT_SHORTCUT);
+            }
         }
-        // What the file held is shown only when it is short and one line of ordinary text.
-        let long = format!(r#"{{"shortcut":"Shift+{}"}}"#, "A".repeat(200));
+        // The spaces around a saved shortcut are not repeated.
+        let spaced = load(r#"{"shortcut":"  Shift+Up "}"#);
+        assert_eq!(spaced.status()["notice"], replaced("Shift+Up"));
+        // What the file held is shown only when it is short: a key combination can be written
+        // at any length by repeating a modifier.
+        let long = format!(r#"{{"shortcut":"{}Up"}}"#, "Shift+".repeat(20));
         let notice = load(&long).status()["notice"].as_str().unwrap().to_string();
         assert_eq!(notice, replaced(""));
-        assert!(!notice.contains("AAAA"));
+        assert!(!notice.contains("Shift+Shift"));
+        // Long text and text on two lines that are no key combination say nothing.
+        let long = format!(r#"{{"shortcut":"Shift+{}"}}"#, "A".repeat(200));
+        assert_eq!(load(&long).status()["notice"], "");
         let odd = load("{\"shortcut\":\"Shift+A\\nsecond line\"}").status()["notice"].clone();
-        assert_eq!(odd, replaced(""));
+        assert_eq!(odd, "");
         std::fs::remove_file(&path).unwrap();
         assert_eq!(
             Summon::new(Session::X11, Some(path.clone())).status()["notice"],

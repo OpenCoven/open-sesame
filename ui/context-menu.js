@@ -10,9 +10,17 @@
 // Copy and paste go through the host, which holds the only clipboard access the app has; the
 // methods are the two the terminal already uses. What this does not cover: a `<select>` list
 // and an input method's window are native popups too and are not replaced, a field that is
-// `contenteditable` or of a type without a text selection (email, number) gets no menu, a
-// paste made here is not one step of the field's own undo, and with the native menu gone a
-// development build no longer offers Inspect Element on a right click.
+// `contenteditable` or of a type without a text selection (email, number) gets no field menu
+// (only Copy, when text is selected on the page), a paste made here is not one step of the
+// field's own undo, and with the native menu gone a development build no longer offers Inspect
+// Element on a right click. Copy for selected text is offered wherever on the page the menu is
+// asked for, not only over the selection.
+//
+// The native menu is cancelled while the event is captured, so no part of the page can let it
+// through. The menu itself is built when the event has bubbled back to the document, after
+// the part of the page that was pressed has heard it: the terminal emulator selects the word
+// under the pointer in its own listener on a Mac, and the pane is asked what it offers only
+// after that.
 //
 // Everything the menu touches is passed in, so scripts/check-tauri-summon.mjs can run it in
 // Node against stand-ins.
@@ -62,7 +70,11 @@ export function pasteFor(field, start, end, clip) {
   const limit = Number(field.maxLength);
   if (!Number.isInteger(limit) || limit < 0) return clip;
   const room = limit - (String(field.value).length - (end - start));
-  return room > 0 ? clip.slice(0, room) : '';
+  if (room <= 0) return '';
+  const cut = clip.slice(0, room);
+  // Never half of a character that takes two code units.
+  const last = cut.charCodeAt(cut.length - 1);
+  return cut.length < clip.length && last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
 /**
@@ -78,6 +90,8 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
   const view = doc.defaultView;
   let menu = null;
   let origin = null;
+  // The part of the page the open menu belongs to. A scroll inside it leaves the menu open.
+  let anchor = null;
 
   const failed = error => report((error && typeof error.message === 'string' && error.message) || String(error));
   const write = text => bridge.request(WRITE, { text }).catch(failed);
@@ -88,6 +102,7 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     const [gone, back] = [menu, origin];
     menu = null;
     origin = null;
+    anchor = null;
     gone.remove();
     if (restore) back?.focus?.();
   };
@@ -103,13 +118,18 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     const editable = !field.readOnly && !field.disabled;
     const secret = String(field.type).toLowerCase() === 'password';
     const selected = value.slice(start, end);
+    // The clipboard answers later. A field that changed meanwhile is left as it is: the range
+    // remembered here no longer names the same text.
+    const same = () => String(field.value) === value;
     const actions = {
       // Nothing is taken out of the field unless the clipboard has it.
-      cut: () => bridge.request(WRITE, { text: selected }).then(() => { field.setRangeText('', start, end, 'end'); changed(field); }, failed),
+      cut: () => bridge.request(WRITE, { text: selected }).then(() => { if (same()) { field.setRangeText('', start, end, 'end'); changed(field); } }, failed),
       copy: () => { field.setSelectionRange(start, end); return write(selected); },
+      // A clipboard with no text in it, or a field with no room, changes nothing: the
+      // selection is not replaced by nothing.
       paste: () => read().then(clip => {
         const text = pasteFor(field, start, end, clip);
-        if (text || start !== end) { field.setRangeText(text, start, end, 'end'); changed(field); }
+        if (text && same()) { field.setRangeText(text, start, end, 'end'); changed(field); }
       }, failed),
       selectAll: () => field.setSelectionRange(0, String(field.value).length),
     };
@@ -117,24 +137,29 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
       .map(item => ({ label: item.label, enabled: item.enabled, run: actions[item.id] }));
   };
 
-  // What to offer at `target`: the nearest part of the page that provides a menu, else the
-  // field, else Copy for selected text, else nothing.
+  // What to offer at `target`, and the part of the page it belongs to: the nearest part that
+  // provides a menu, else the field, else Copy for selected text, else nothing. A provider
+  // that answers with no list at all leaves the choice to what is above it.
   const itemsAt = target => {
     for (let node = target; node; node = node.parentNode) {
-      const provided = providers.get(node);
-      if (provided) return provided() || [];
+      const items = providers.get(node)?.();
+      if (items) return { items, within: node, back: null };
     }
-    if (isTextField(target)) return forField(target);
+    if (isTextField(target)) return { items: forField(target), within: target, back: target };
     const selected = String(doc.getSelection?.() ?? '');
-    return selected ? [{ label: 'Copy', enabled: true, run: () => write(selected) }] : [];
+    return { items: selected ? [{ label: 'Copy', enabled: true, run: () => write(selected) }] : [], within: null, back: null };
   };
 
-  const show = (items, x, y) => {
-    // What had the keyboard gets it back when the menu closes: the field, or a pane's own input.
-    const focused = doc.activeElement;
+  const show = ({ items, within, back }, x, y) => {
+    // What gets the keyboard when the menu closes: the field the menu was for, else what had
+    // it, which for a pane is its own input.
+    const focused = back ?? doc.activeElement;
     const box = doc.createElement('div');
     box.className = 'context-menu';
     box.setAttribute('role', 'menu');
+    box.setAttribute('aria-label', 'Context menu');
+    // So that a menu with nothing to choose can still hold the keyboard and be closed by it.
+    box.setAttribute('tabindex', '-1');
     const buttons = items.map(item => {
       const button = doc.createElement('button');
       button.type = 'button';
@@ -152,11 +177,14 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     box.addEventListener('keydown', event => {
       const at = usable.indexOf(doc.activeElement);
       const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: usable.length - 1 }[event.key];
+      // A key the menu takes goes no further: Escape must not also close a panel behind it.
       if (to !== undefined && usable.length) {
         event.preventDefault();
+        event.stopPropagation?.();
         usable[(to + usable.length) % usable.length].focus();
       } else if (event.key === 'Escape' || event.key === 'Tab') {
         event.preventDefault();
+        event.stopPropagation?.();
         close();
       }
     });
@@ -167,19 +195,33 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     box.style.top = `${Math.max(0, Math.min(y, (view.innerHeight || 0) - height))}px`;
     menu = box;
     origin = focused;
+    anchor = within;
     (usable[0] ?? box).focus?.();
+  };
+
+  // Where the menu goes. A menu asked for with the keyboard carries no pointer position, and
+  // is put under the element it was asked on.
+  const place = event => {
+    if (event.clientX || event.clientY) return [event.clientX || 0, event.clientY || 0];
+    const { left = 0, bottom = 0 } = event.target?.getBoundingClientRect?.() ?? {};
+    return [left, bottom];
   };
 
   // Capturing, so no part of the page can let the native menu through by stopping the event.
   doc.addEventListener('contextmenu', event => {
     event.preventDefault();
-    if (menu?.contains(event.target)) return;
-    close({ restore: false });
-    const items = itemsAt(event.target);
-    if (items.length) show(items, event.clientX || 0, event.clientY || 0);
+    if (!menu?.contains(event.target)) close({ restore: false });
   }, true);
+  // Not capturing: built after the part of the page that was pressed has heard the event.
+  doc.addEventListener('contextmenu', event => {
+    if (menu?.contains(event.target)) return;
+    const found = itemsAt(event.target);
+    if (found.items.length) show(found, ...place(event));
+  });
   doc.addEventListener('pointerdown', event => { if (menu && !menu.contains(event.target)) close({ restore: false }); }, true);
-  doc.addEventListener('scroll', () => close(), true);
+  // A scroll inside the part of the page the menu belongs to leaves it open: a terminal
+  // scrolls by itself whenever a program prints.
+  doc.addEventListener('scroll', event => { if (!anchor?.contains?.(event?.target)) close(); }, true);
   view.addEventListener('resize', () => close());
   view.addEventListener('blur', () => close({ restore: false }));
 

@@ -2,7 +2,7 @@
 // stand-in elements and a stand-in bridge and verifies what a person is told for each state the
 // host can report, that a change takes effect from the host's answer without a reload, that a
 // refusal is shown and leaves the saved shortcut in place, and that the page reports a drag.
-// It also reads the Rust sources as text for the rules a reviewer is asked to look for. It runs
+// It runs the page's own context menu (issue #115) against a stand-in document. It also reads the Rust sources as text for the rules a reviewer is asked to look for. It runs
 // no Rust, registers no shortcut and opens no window: those are separate evidence.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -99,13 +99,13 @@ function fakeBridge(status, answers = {}) {
   const ui = parts();
   await mountSummon(bridge, ui);
   let prevented = 0;
-  ui.input.value = '  Control+Alt+K ';
+  ui.input.value = '  Control+Shift+K ';
   ui.form.fire('submit', { preventDefault: () => { prevented += 1; } });
   await settle();
   assert.equal(prevented, 1, 'The form never navigates');
-  assert.deepEqual(bridge.calls.at(-1), { method: 'summon.setShortcut', params: { shortcut: 'Control+Alt+K' } });
-  assert.equal(ui.input.value, 'Control+Alt+K');
-  assert.equal(ui.message.textContent, 'Press Control+Alt+K anywhere to show or hide Open Sesame.');
+  assert.deepEqual(bridge.calls.at(-1), { method: 'summon.setShortcut', params: { shortcut: 'Control+Shift+K' } });
+  assert.equal(ui.input.value, 'Control+Shift+K');
+  assert.equal(ui.message.textContent, 'Press Control+Shift+K anywhere to show or hide Open Sesame.');
 
   // An empty field means none.
   ui.input.value = '';
@@ -194,6 +194,20 @@ function fakeBridge(status, answers = {}) {
   const host = read('src-tauri/src/summon.rs');
   const window = read('src-tauri/src/window.rs');
   const entry = read('src-tauri/src/lib.rs');
+  // One press (issue #115). The rules themselves are tested in Rust; what is read here is that
+  // the places a window cannot be seen from a test still go through them: the tray notes only
+  // a press that opens its menu, a press that hid the window on blur does nothing more for the
+  // shortcut and the tray click, losing the keyboard is noted for the next press, only a press
+  // that hides conceals the window, and only a hidden window is moved against the tray icon.
+  const tray = read('src-tauri/src/tray.rs');
+  assert.match(tray, /button_state: MouseButtonState::Down,\n[^}]*\}\s*= &event\s*\{\s*if summon::opens_the_tray_menu\(cfg!\(windows\), \*button == MouseButton::Right\) \{\s*summon::tray_pressed\(tray\.app_handle\(\)\);/);
+  assert.match(tray, /TOGGLE => \{\s*window::toggle_from_tray_menu\(app\);/);
+  assert.match(host, /fn pressed<R: Runtime>\(app: &AppHandle<R>\) -> Option<Press> \{\n    if blur_just_hid\(app\) \{\n        return None;\n    \}\n    window::toggle\(app\)\n\}/);
+  assert.match(host, /pub fn tray_clicked<R: Runtime>\(app: &AppHandle<R>, icon: tauri::Rect\) -> Option<Press> \{\n    if blur_just_hid\(app\) \{\n        return None;\n    \}\n    window::toggle_at\(app, icon\)\n\}/);
+  assert.match(host, /pub fn blurred<R: Runtime>\(app: &AppHandle<R>\) \{\n    let Some\(summon\) = app\.try_state::<Summon>\(\) else \{\n        return;\n    \};\n    \*lock\(&summon\.lost_focus\) = Some\(Instant::now\(\)\);/);
+  assert.match(window, /    if conceals\(press\) \{\n        conceal\(window\)\n    \} else \{\n        focus\(window\)\n    \}/);
+  assert.match(window, /    if places\(press, kept_in_place\) \{\n        let _ = place_against\(&window, icon\);\n    \}/);
+  assert.equal(window.split('place_against(&window').length - 1, 1, 'The window is moved against the tray icon in one place');
   // The folder dialog (issue #74) takes the focus on purpose, so it holds the window first.
   const project = read('src-tauri/src/project.rs');
   const held = project.indexOf('summon::hold(window.app_handle())');
@@ -276,6 +290,8 @@ function fakeBridge(status, answers = {}) {
   assert.equal(pasteFor({ value: 'abcdef', maxLength: 7 }, 2, 4, 'XYZ12'), 'XYZ', 'A paste respects the field limit');
   assert.equal(pasteFor({ value: 'abcdef', maxLength: 4 }, 6, 6, 'XYZ'), '');
   assert.equal(pasteFor({ value: 'abcdef' }, 2, 4, 'XYZ'), 'XYZ');
+  assert.equal(pasteFor({ value: 'ab', maxLength: 4 }, 2, 2, 'x\u{1F600}y'), 'x', 'A paste is never cut in the middle of a character');
+  assert.equal(pasteFor({ value: 'ab', maxLength: 5 }, 2, 2, 'x\u{1F600}y'), 'x\u{1F600}');
 
   // A stand-in document: enough of the DOM for the menu to be built, focused and removed.
   const makeDocument = () => {
@@ -290,7 +306,7 @@ function fakeBridge(status, answers = {}) {
         remove: () => { const kids = self.parentNode?.children; if (kids) kids.splice(kids.indexOf(self), 1); self.parentNode = null; if (doc.activeElement === self || self.children.includes(doc.activeElement)) doc.activeElement = doc.body; },
         contains: other => { for (let at = other; at; at = at.parentNode) if (at === self) return true; return false; },
         focus: () => { doc.activeElement = self; },
-        getBoundingClientRect: () => ({ width: 120, height: 100 }),
+        getBoundingClientRect: () => ({ width: 120, height: 100, left: 400, bottom: 320 }),
         ...extra,
       };
       return self;
@@ -302,8 +318,9 @@ function fakeBridge(status, answers = {}) {
       createElement: tag => node(tag),
       getSelection: () => doc.selection,
       addEventListener: (name, run, capture) => { listeners.set(name, [...(listeners.get(name) || []), { run, capture }]); },
-      fire: (name, event = {}) => { for (const { run } of listeners.get(name) || []) run(event); },
-      capturing: name => (listeners.get(name) || []).every(entry => entry.capture === true),
+      // Capturing listeners run first, as they do in a document.
+      fire: (name, event = {}) => { const all = listeners.get(name) || []; for (const { run } of [...all.filter(entry => entry.capture === true), ...all.filter(entry => entry.capture !== true)]) run(event); },
+      listenersFor: name => (listeners.get(name) || []),
       defaultView: {
         innerWidth: 800, innerHeight: 600,
         Event: class { constructor(type, init) { this.type = type; this.bubbles = init?.bubbles === true; } },
@@ -357,7 +374,16 @@ function fakeBridge(status, answers = {}) {
   {
     const doc = makeDocument();
     const menu = mountContextMenu(clipboard(), doc);
-    assert.ok(doc.capturing('contextmenu'), 'The listener captures, so no part of the page can let the native menu through');
+    // The native menu is cancelled by a capturing listener, so no part of the page can let it
+    // through, and that listener alone cancels it. The menu is built by a second one that does
+    // not capture, so the part of the page that was pressed has heard the event first.
+    const [first, second, ...more] = doc.listenersFor('contextmenu');
+    assert.deepEqual([first.capture, second.capture, more.length], [true, undefined, 0]);
+    {
+      let prevented = 0;
+      first.run({ target: doc.body, preventDefault: () => { prevented += 1; } });
+      assert.equal(prevented, 1, 'The capturing listener cancels the native menu by itself');
+    }
     const plain = doc.node('p');
     doc.body.append(plain);
     assert.equal(ask(doc, plain), 1, 'The native menu is cancelled where there is nothing to offer');
@@ -399,10 +425,40 @@ function fakeBridge(status, answers = {}) {
     assert.equal(doc.activeElement, box.children[3]);
     box.fire('keydown', { key: 'ArrowDown', preventDefault: () => { stopped += 1; } });
     assert.equal(doc.activeElement, box.children[0]);
-    box.fire('keydown', { key: 'Escape', preventDefault: () => { stopped += 1; } });
-    assert.equal(stopped, 3);
+    // Home and End go to the ends, and a key the menu takes goes no further: Escape must not
+    // also close a panel behind the menu.
+    let kept = 0;
+    const key = name => box.fire('keydown', { key: name, preventDefault: () => { stopped += 1; }, stopPropagation: () => { kept += 1; } });
+    key('End');
+    assert.equal(doc.activeElement, box.children[3]);
+    key('Home');
+    assert.equal(doc.activeElement, box.children[0]);
+    key('a');
+    assert.deepEqual([stopped, kept, menu.isOpen()], [4, 2, true], 'Any other key is left alone');
+    key('Escape');
+    assert.deepEqual([stopped, kept], [5, 3]);
     assert.equal(menu.isOpen(), false);
     assert.equal(doc.activeElement, input, 'The field has the keyboard again');
+    ask(doc, input);
+    menuOf(doc).fire('keydown', { key: 'Tab', preventDefault: () => {}, stopPropagation: () => {} });
+    assert.equal(menu.isOpen(), false, 'Tab closes the menu');
+    // Near the left and top edges the menu is not pushed outside either.
+    ask(doc, input, { clientX: -30, clientY: -5 });
+    assert.deepEqual([menuOf(doc).style.left, menuOf(doc).style.top], ['0px', '0px']);
+    menu.close();
+    // Asked for with the keyboard, the event carries no place: the menu goes under the field.
+    ask(doc, input, { clientX: 0, clientY: 0 });
+    assert.deepEqual([menuOf(doc).style.left, menuOf(doc).style.top], ['400px', '320px']);
+    menu.close();
+    // After a choice the field the menu was for has the keyboard, whatever had it before.
+    const elsewhere = doc.node('button');
+    doc.body.append(elsewhere);
+    elsewhere.focus();
+    ask(doc, input);
+    await choose(doc, 'Select All');
+    assert.equal(doc.activeElement, input, 'The field asked about has the keyboard after a choice');
+    input.selectionStart = 0;
+    input.selectionEnd = 5;
 
     ask(doc, input);
     await choose(doc, 'Copy');
@@ -428,6 +484,36 @@ function fakeBridge(status, answers = {}) {
     await choose(doc, 'Select All');
     assert.deepEqual([input.selectionStart, input.selectionEnd], [0, 12]);
     assert.deepEqual(reported, []);
+
+    // A clipboard with no text in it changes nothing: the selection is not replaced by nothing.
+    {
+      const empty = field(doc, 'hello world', 0, 5);
+      bridge.text = '';
+      ask(doc, empty);
+      await choose(doc, 'Paste');
+      assert.equal(empty.value, 'hello world', 'An empty clipboard leaves the selected text');
+      assert.deepEqual(empty.events, []);
+      // Nor does a field with no room left.
+      const full = field(doc, 'abcdef', 0, 0, { maxLength: 6 });
+      bridge.text = 'MORE';
+      ask(doc, full);
+      await choose(doc, 'Paste');
+      assert.equal(full.value, 'abcdef');
+      // A field that changed while the clipboard answered is left as it is.
+      const moving = field(doc, 'KEEP THIS text', 0, 5);
+      const slow = { request: async (method, params) => { moving.value = 'THIS text now'; return bridge.request(method, params); } };
+      const doc3 = makeDocument();
+      mountContextMenu(slow, doc3);
+      doc3.body.append(moving);
+      ask(doc3, moving);
+      await choose(doc3, 'Cut');
+      assert.equal(moving.value, 'THIS text now', 'Cut removes nothing from a field that changed meanwhile');
+      moving.value = 'KEEP THIS text';
+      bridge.text = 'X';
+      ask(doc3, moving);
+      await choose(doc3, 'Paste');
+      assert.equal(moving.value, 'THIS text now', 'Paste puts nothing into a field that changed meanwhile');
+    }
 
     // A field with a limit takes no more than fits.
     const short = field(doc, 'abc', 3, 3, { maxLength: 8 });
@@ -463,6 +549,20 @@ function fakeBridge(status, answers = {}) {
     assert.equal(doc.body.children.filter(child => child.attributes.role === 'menu').length, 1, 'A second request replaces the menu');
     assert.deepEqual(menuOf(doc).children.map(child => [child.textContent, child.disabled]), [['Cut', true], ['Copy', false], ['Paste', true], ['Select All', false]]);
     assert.deepEqual(bridge.calls, [], 'Nothing reads the clipboard until Paste is chosen');
+    // A field that is switched off offers neither Cut nor Paste.
+    const off = field(doc, 'off', 0, 3, { disabled: true });
+    ask(doc, off);
+    assert.deepEqual(menuOf(doc).children.map(child => [child.textContent, child.disabled]), [['Cut', true], ['Copy', false], ['Paste', true], ['Select All', false]]);
+    // A menu with nothing to choose still takes the keyboard, so Escape can close it.
+    const nothing = field(doc, '', 0, 0, { readOnly: true });
+    nothing.focus();
+    ask(doc, nothing);
+    const dead = menuOf(doc);
+    assert.deepEqual(dead.children.map(child => child.disabled), [true, true, true, true]);
+    assert.deepEqual([dead.attributes.tabindex, dead.attributes['aria-label'], doc.activeElement === dead], ['-1', 'Context menu', true]);
+    dead.fire('keydown', { key: 'Escape', preventDefault: () => {}, stopPropagation: () => {} });
+    assert.equal(menuOf(doc), undefined);
+    assert.equal(doc.activeElement, nothing);
   }
 
   // A part of the page with a menu of its own, as a terminal pane has; a press elsewhere, a
@@ -482,11 +582,40 @@ function fakeBridge(status, answers = {}) {
     assert.equal(doc.activeElement, menuOf(doc).children[1]);
     await choose(doc, 'Paste');
     assert.deepEqual(ran, ['paste']);
-    for (const closes of [() => doc.fire('pointerdown', { target: doc.body }), () => doc.fire('scroll'), () => doc.defaultView.fire('resize'), () => doc.defaultView.fire('blur')]) {
+    for (const closes of [() => doc.fire('pointerdown', { target: doc.body }), () => doc.fire('scroll', { target: doc.body }), () => doc.fire('scroll'), () => doc.defaultView.fire('resize'), () => doc.defaultView.fire('blur')]) {
       ask(doc, inner);
       assert.equal(menu.isOpen(), true);
       closes();
       assert.equal(menu.isOpen(), false);
+    }
+    // A scroll inside the pane the menu belongs to leaves it open: a terminal scrolls by
+    // itself whenever a program prints.
+    ask(doc, inner);
+    doc.fire('scroll', { target: inner });
+    doc.fire('scroll', { target: pane });
+    assert.equal(menu.isOpen(), true, 'The pane scrolling does not close its menu');
+    menu.close();
+    // The pane is asked what it offers after it has heard the event itself: here its own
+    // listener makes the selection the menu then finds, as the emulator does on a Mac.
+    {
+      let selected = false;
+      const undo = provideMenu(inner, () => [{ label: 'Copy', enabled: selected, run: () => {} }]);
+      doc.addEventListener('contextmenu', () => { selected = true; });
+      const all = doc.listenersFor('contextmenu');
+      all.splice(1, 0, all.pop());
+      ask(doc, inner);
+      assert.deepEqual(menuOf(doc).children.map(child => child.disabled), [false], 'Copy is offered for what the pane selected on this very press');
+      all.splice(1, 1);
+      menu.close();
+      undo();
+    }
+    // A provider that answers with no list leaves the choice to what is above it.
+    {
+      const undo = provideMenu(inner, () => undefined);
+      ask(doc, inner);
+      assert.deepEqual(menuOf(doc).children.map(child => child.textContent), ['Copy', 'Paste'], 'The pane above decides');
+      menu.close();
+      undo();
     }
     // A press inside the menu does not close it before the click arrives, and a context-menu
     // request on the menu itself is cancelled and changes nothing.
@@ -508,7 +637,11 @@ function fakeBridge(status, answers = {}) {
   const main = read('ui/main.js');
   assert.match(main, /^mountContextMenu\(bridge, document, \{ report \}\);$/m);
   assert.ok(main.indexOf('mountContextMenu(bridge, document') < main.indexOf('async function start()'), 'Mounted before the host is asked anything');
-  assert.match(read('ui/widgets/shells.js'), /provideMenu\(panel, \(\) => \[/);
+  // The pane's two items, read as text: Copy only with a selection in the emulator, Paste
+  // until the shell has ended, each calling the pane's own function, which the keys call too.
+  const shells = read('ui/widgets/shells.js');
+  assert.match(shells, /provideMenu\(panel, \(\) => \[\n\s+\{ label: 'Copy', enabled: pane\.hasSelection\(\), run: \(\) => \{ pane\.copy\(\); \} \},\n\s+\{ label: 'Paste', enabled: !pane\.ended, run: \(\) => pane\.paste\(\) \},\n\s+\]\);/);
+  assert.match(read('ui/terminal.js'), /hasSelection: \(\) => Boolean\(term\.getSelection\(\)\),/);
   assert.match(read('ui/shell.css'), /^\.context-menu \{ position: fixed;/m);
 }
 

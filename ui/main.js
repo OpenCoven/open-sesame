@@ -34,7 +34,8 @@ const navButtons = new Map();
 const switches = new Map();
 const run = promise => promise.catch(error => report(message(error)));
 // The native context menu is never opened (issue #115); see context-menu.js. It is mounted
-// before the host answers, so no moment of the page has the native one.
+// before the host answers. Until this module has run, and if it fails to load, the page has
+// the native one.
 mountContextMenu(bridge, document, { report });
 
 function closePalette() {
