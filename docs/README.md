@@ -30,3 +30,5 @@ Local tests, hosted checks, rendered browser observations, installed native oper
 [Shared mobile renderer](mobile-shell.md) documents navigation, Today projections, capture ownership and the pending reference/device gates.
 
 [Local speaker labels](speaker-diarization.md) explains opt-in NeMo setup, timestamp alignment, anonymous names, responsive Stop and private temporary-audio cleanup.
+
+The restart's [ES-module shell contract](ui-shell.md) covers metadata-only command discovery, widget lifetimes, the JSON tier, persistence boundaries and rendered/native-renderer checks.
