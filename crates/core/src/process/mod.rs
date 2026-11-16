@@ -82,6 +82,7 @@ pub struct Run {
     pub stdin: Option<Vec<u8>>,
     pub timeout: Duration,
     /// The most bytes of standard output and standard error together before the run is stopped.
+    /// What the login-shell capture reads from its own pipe counts as well.
     pub max_output: usize,
     pub cancel: Option<Cancel>,
 }
@@ -175,7 +176,40 @@ impl From<RunError> for BridgeError {
 enum Message {
     Stdout(Vec<u8>),
     Stderr(Vec<u8>),
+    /// From the extra pipe of a run started with a [`Report`].
+    #[cfg(unix)]
+    Report(Vec<u8>),
     Closed,
+}
+
+/// A third output stream that only what the caller's command line names can write to; see
+/// `Report` in `unix.rs`. Windows has no caller that needs one.
+#[cfg(unix)]
+use platform::Report;
+#[cfg(not(unix))]
+enum Report {}
+
+/// The flag that ends the reading of a [`Report`]; see `drain` in `unix.rs`. Dropping it sets
+/// it, so an early return from the run ends the reading too.
+#[cfg(unix)]
+#[derive(Default)]
+struct Exited(Arc<AtomicBool>);
+
+#[cfg(unix)]
+impl Drop for Exited {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Starts one of the run's helper threads. A system that cannot start a thread reports an
+/// error here; `std::thread::spawn` would panic instead.
+fn start(work: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
+    #[cfg(test)]
+    if tests::thread_start_fails() {
+        return Err(std::io::Error::other("no thread could be started"));
+    }
+    std::thread::Builder::new().spawn(work).map(|_| ())
 }
 
 /// What the watchdog and the supervising thread share.
@@ -236,7 +270,17 @@ impl Drop for Owned {
 /// the returned output. The callback runs on the calling thread and should return quickly: the
 /// timeout still kills the program while a callback is running, but `run` cannot return until
 /// the callback does.
-pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output, RunError> {
+pub fn run(run: Run, on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output, RunError> {
+    execute(run, on_line, None).map(|(output, _)| output)
+}
+
+/// [`run`], with an optional extra output stream whose bytes are returned beside the output.
+fn execute(
+    run: Run,
+    mut on_line: Option<&mut dyn FnMut(&str)>,
+    report: Option<Report>,
+) -> Result<(Output, Vec<u8>), RunError> {
+    let failed = |error: std::io::Error| RunError::Io(error.to_string());
     let cancel = run.cancel.clone().unwrap_or_default();
     if cancel.is_cancelled() {
         return Err(RunError::Cancelled);
@@ -262,6 +306,10 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
         Stdio::null()
     });
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    if let Some(report) = &report {
+        report.attach(&mut command);
+    }
 
     let (child, tree) = platform::spawn(&mut command).map_err(|error| match error.kind() {
         std::io::ErrorKind::NotFound => RunError::NotFound,
@@ -279,34 +327,63 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
         status: None,
     };
 
+    // From here on an early return drops `owned`, which kills the tree and collects the child.
+    // That is what a thread that cannot be started comes to: an error, with nothing left behind.
     watch(
         shared.clone(),
         owned.tree.clone(),
         cancel,
         started,
         run.timeout,
-    );
+    )
+    .map_err(failed)?;
     let (sender, receiver) = sync_channel::<Message>(16);
+    let mut open = 0; // output streams that have not closed yet
     if let Some(stdout) = owned.child.stdout.take() {
-        pump(stdout, sender.clone(), Message::Stdout);
+        pump(stdout, sender.clone(), Message::Stdout).map_err(failed)?;
+        open += 1;
     }
     if let Some(stderr) = owned.child.stderr.take() {
-        pump(stderr, sender.clone(), Message::Stderr);
+        pump(stderr, sender.clone(), Message::Stderr).map_err(failed)?;
+        open += 1;
     }
+    // Set once the program is seen exited or the run is being stopped, and on every way out of
+    // this function, so the thread that reads the report ends within one look (5 ms) of the
+    // run. It is not joined. Setting it on the way out is for an early return or a panic in
+    // the caller's callback; the capture reaches neither today and no test pins it.
+    #[cfg(unix)]
+    let exited = Exited::default();
+    #[cfg(unix)]
+    if let Some(report) = report {
+        // The child has its own copy of the writing end by now; this side's is given up here.
+        let reader = report.into_reader();
+        let (sender, exited) = (sender.clone(), exited.0.clone());
+        start(move || {
+            platform::drain(reader, &exited, |bytes| {
+                sender.send(Message::Report(bytes)).is_ok()
+            });
+            let _ = sender.send(Message::Closed);
+        })
+        .map_err(failed)?;
+        open += 1;
+    }
+    #[cfg(not(unix))]
+    let _ = report;
     drop(sender);
     if let (Some(mut stdin), Some(input)) = (owned.child.stdin.take(), run.stdin) {
         // A program that never reads its input must not block the run, so this has its own
         // thread. It ends when the input is written or the program is gone.
-        std::thread::spawn(move || {
+        start(move || {
             let _ = stdin.write_all(&input);
-        });
+        })
+        .map_err(failed)?;
     }
 
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
+    let mut reported = Vec::new();
     let mut delivered = 0; // bytes of stdout already passed to on_line
     let mut total = 0usize;
-    let mut open = 2; // output streams that have not closed yet
     let mut ended: Option<Instant> = None; // when the program was first seen exited or stopped
     let mut swept = false; // whether the tree has been killed
     let mut quiet: Option<Instant> = None; // since when no output has arrived
@@ -316,6 +393,10 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
     let result = loop {
         let reason = shared.reason();
         if reason.is_some() || owned.tree.exited() {
+            // What the program wrote to its report is in the pipe by now. The report is read
+            // out and closed without waiting for whatever else still holds its other end.
+            #[cfg(unix)]
+            exited.0.store(true, Ordering::SeqCst);
             let since = ended.get_or_insert_with(Instant::now).elapsed();
             if open == 0 {
                 break reason;
@@ -344,9 +425,11 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
         } else {
             POLL
         };
-        let (bytes, to_stdout) = match receiver.recv_timeout(tick) {
-            Ok(Message::Stdout(bytes)) => (bytes, true),
-            Ok(Message::Stderr(bytes)) => (bytes, false),
+        let (bytes, stream) = match receiver.recv_timeout(tick) {
+            Ok(Message::Stdout(bytes)) => (bytes, 1),
+            Ok(Message::Stderr(bytes)) => (bytes, 2),
+            #[cfg(unix)]
+            Ok(Message::Report(bytes)) => (bytes, 3),
             Ok(Message::Closed) => {
                 open -= 1;
                 quiet = None;
@@ -357,7 +440,7 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => {
-                // Both streams are closed and the program is still running. Nothing more will
+                // Every stream is closed and the program is still running. Nothing more will
                 // arrive on the channel, so wait here instead of spinning on it.
                 open = 0;
                 std::thread::sleep(tick);
@@ -374,8 +457,13 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
             owned.tree.kill();
             continue;
         }
-        if !to_stdout {
-            stderr.extend_from_slice(&bytes);
+        if stream != 1 {
+            let other = if stream == 2 {
+                &mut stderr
+            } else {
+                &mut reported
+            };
+            other.extend_from_slice(&bytes);
             continue;
         }
         stdout.extend_from_slice(&bytes);
@@ -392,11 +480,14 @@ pub fn run(run: Run, mut on_line: Option<&mut dyn FnMut(&str)>) -> Result<Output
     let status = owned.retire();
     match result {
         Some(reason) => Err(reason),
-        None => Ok(Output {
-            status,
-            stdout,
-            stderr,
-        }),
+        None => Ok((
+            Output {
+                status,
+                stdout,
+                stderr,
+            },
+            reported,
+        )),
     }
 }
 
@@ -406,8 +497,8 @@ fn pump(
     mut source: impl Read + Send + 'static,
     sender: SyncSender<Message>,
     wrap: fn(Vec<u8>) -> Message,
-) {
-    std::thread::spawn(move || {
+) -> std::io::Result<()> {
+    start(move || {
         let mut buffer = [0u8; 8192];
         loop {
             match source.read(&mut buffer) {
@@ -422,7 +513,7 @@ fn pump(
             }
         }
         let _ = sender.send(Message::Closed);
-    });
+    })
 }
 
 /// Kills the tree when the timeout passes or the caller cancels, even while the caller's
@@ -433,8 +524,8 @@ fn watch(
     cancel: Cancel,
     started: Instant,
     timeout: Duration,
-) {
-    std::thread::spawn(move || {
+) -> std::io::Result<()> {
+    start(move || {
         let mut finished = lock(&shared.finished);
         while !*finished {
             let elapsed = started.elapsed();
@@ -457,5 +548,72 @@ fn watch(
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .0;
         }
-    });
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    use super::*;
+    use std::cell::Cell;
+
+    thread_local! {
+        /// How many more helper threads the run on this thread may start before one fails.
+        static THREADS_LEFT: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    /// Whether the next helper thread of a run started on this thread should fail to start.
+    pub(super) fn thread_start_fails() -> bool {
+        THREADS_LEFT.with(|left| match left.get() {
+            Some(0) => true,
+            Some(more) => {
+                left.set(Some(more - 1));
+                false
+            }
+            None => false,
+        })
+    }
+
+    /// A system that cannot start a thread makes the run an error, not a panic, and the
+    /// program that was already started is killed (issue #97). A run starts up to five
+    /// threads: the watchdog, one for each output stream, one for the report when it has one,
+    /// and one that writes the input.
+    #[cfg(unix)]
+    #[test]
+    fn a_thread_that_cannot_be_started_is_an_error_and_leaves_nothing_running() {
+        // With input the fifth thread writes it. Without input the report's thread is the
+        // last one, which is the only case that shows its failure is not passed over: a
+        // failure to start stays on, so with input the next thread would report it instead.
+        let cases = (0..5).map(|allowed| (allowed, true)).chain([(3, false)]);
+        for (allowed, with_input) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let pid_file = dir.path().join("pid");
+            let mut request = Run::new("/bin/sh");
+            request.args = vec![
+                "-c".into(),
+                format!("echo $$ > '{}'; sleep 30", pid_file.display()),
+            ];
+            request.stdin = with_input.then(|| b"unused".to_vec());
+            request.timeout = Duration::from_secs(20);
+            THREADS_LEFT.with(|left| left.set(Some(allowed)));
+            let report = Report::new();
+            assert!(report.is_some(), "no pipe for the report");
+            let result = execute(request, None, report).map(|_| ());
+            THREADS_LEFT.with(|left| left.set(None));
+            assert!(
+                matches!(result, Err(RunError::Io(_))),
+                "with {allowed} threads started, input {with_input}: {result:?}"
+            );
+            // The program either never got as far as writing its process ID or is gone. A
+            // shell killed between creating the file and writing to it leaves the file empty,
+            // which a Linux run showed; that too is "never got as far".
+            std::thread::sleep(Duration::from_millis(300));
+            let written = std::fs::read_to_string(&pid_file).unwrap_or_default();
+            if let Ok(pid) = written.trim().parse::<libc::pid_t>() {
+                // SAFETY: signal 0 sends nothing; it only reports whether the process exists.
+                let alive = unsafe { libc::kill(pid, 0) } == 0;
+                assert!(!alive, "with {allowed} threads started: {pid} is running");
+            }
+        }
+    }
 }

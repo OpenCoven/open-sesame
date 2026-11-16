@@ -46,7 +46,7 @@ jobs:
         run: npm run verify
       - name: Retain executed-check evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verification-${{ matrix.os }}
           path: build/verification/
@@ -87,6 +87,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      # Issue #97: the login-shell tests note a missing shell and pass without running. Naming the
+      # shells here turns a missing one into a failure on the systems that are meant to have it.
+      # zsh and fish are not on the Linux image; fish is not on the macOS image, so its case
+      # runs on Linux only.
+      - name: Install and require the shells the login-shell tests use
+        if: runner.os != 'Windows'
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get install -y zsh fish
+            shells=/bin/sh:/bin/bash:/bin/zsh:/usr/bin/fish
+          else
+            shells=/bin/sh:/bin/bash:/bin/zsh
+          fi
+          for shell in ${shells//:/ }; do test -x "$shell" || { echo "missing $shell"; exit 1; }; done
+          echo "OPEN_SESAME_REQUIRE_SHELLS=$shells" >> "$GITHUB_ENV"
       - name: Install the Rust toolchain
         run: |
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy --no-self-update
@@ -110,6 +125,17 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee build/verification/rust/clippy.log
       - name: Test the workspace
         run: cargo test --workspace --locked 2>&1 | tee build/verification/rust/test.log
+      # Issue #97: what the process runner's Windows-only tests measured. A passing test's output
+      # is hidden in the step above, so they run once more here with it shown. The name filter
+      # passes when it matches no test, so the step fails unless both tests left their lines.
+      - name: Record the Windows process-runner measurements
+        if: runner.os == 'Windows'
+        run: |
+          log=build/verification/rust/windows-process-runner.log
+          cargo test -p open-sesame-core --locked on_windows -- --nocapture --test-threads=1 2>&1 | tee "$log"
+          for line in 'WINDOWS-97 resume:' 'WINDOWS-97 cmd tool:'; do
+            grep -qF "$line" "$log" || { echo "No \"$line\" line: a Windows process-runner test did not run."; exit 1; }
+          done
       # Sign-in keeps its refresh token in the system's credential store (issue #72). This test
       # writes a value that is not a token under a name nothing else uses, reads it back,
       # replaces it and removes it. It is ignored in the ordinary run because a machine without
@@ -121,7 +147,7 @@ jobs:
         run: cargo build --package open-sesame --locked 2>&1 | tee build/verification/rust/build.log
       - name: Retain executed-check evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-verification-${{ matrix.os }}
           path: build/verification/rust/
