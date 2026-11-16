@@ -38,9 +38,10 @@ try {
       const settings=JSON.parse(sessionStorage.getItem('fixture.settings')||'{}');
       const states=JSON.parse(sessionStorage.getItem('fixture.states')||'{}');
       const calls=[];let noteReply,releaseOpen;
-      window.__fixture__={settings,states,calls,holdNotes:false,holdOpen:false,releaseNote:()=>noteReply?.(),releaseOpen:()=>releaseOpen?.()};
+      const listeners=[];
+      window.__fixture__={settings,states,calls,holdNotes:false,holdOpen:false,releaseNote:()=>noteReply?.(),releaseOpen:()=>releaseOpen?.(),emit:payload=>{for(const handler of listeners)handler({payload});}};
       window.__OPEN_SESAME_NATIVE__=true;
-      window.__TAURI__={event:{listen:async()=>()=>{}},core:{Channel:class{},invoke:async(command,{message})=>{
+      window.__TAURI__={event:{listen:async(name,handler)=>{listeners.push(handler);return()=>{};}},core:{Channel:class{},invoke:async(command,{message})=>{
         const {requestId,method,params}=message;calls.push({method,params:{...params,channel:undefined}});
         let result;
         if(method==='system.info')result={available:true,platform:'darwin',authenticated:false};
@@ -84,6 +85,17 @@ try {
         assert.deepEqual(await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='widgets.set'||c.method==='settings.set')),[],'startup writes no preference');
         const trace=await page.evaluate(()=>({paint:performance.getEntriesByType('paint').map(x=>({name:x.name,time:x.startTime})),resources:performance.getEntriesByType('resource').map(x=>({name:x.name,start:x.startTime,duration:x.duration,bytes:x.transferSize}))}));
         await writeFile(path.join(output,`${name}-startup.json`),JSON.stringify({requests:[...requests],...trace},null,2));
+      });
+      await step('the status line follows a sign-in change from the host',async()=>{
+        const status=page.locator('[data-status]'),account=page.locator('[data-account]');
+        assert.equal(await status.textContent(),'Connected · Local workspace');
+        const changed=authenticated=>page.evaluate(authenticated=>window.__fixture__.emit({event:'auth.changed',status:{authenticated,busy:false,message:'',name:'',email:authenticated?'person@example.com':''}}),authenticated);
+        await changed(true);
+        await account.getByText('Signed in as person@example.com').waitFor();
+        assert.equal(await status.textContent(),'Connected · Signed in','the bar agrees with the account control');
+        await changed(false);
+        await account.getByText('Not signed in').waitFor();
+        assert.equal(await status.textContent(),'Connected · Local workspace');
       });
       await step('off widget command is discoverable without import',async()=>{
         await page.getByRole('button',{name:'Commands',exact:true}).click();
