@@ -165,8 +165,9 @@ pub fn parse_shortcut(text: &str) -> Result<Shortcut, BridgeError> {
 /// Whether pressing the key, with Shift or without, puts a character into the text a person is
 /// writing: letters, digits, punctuation, the space bar, Enter and Tab, on the main block and on
 /// the number pad. Every other key is still accepted with Shift alone: the function keys, and
-/// also the keys that move or delete (the arrows, Home, End, Backspace, Delete), Escape, the
-/// lock keys and the media keys. Issue #115 asks only about keys that type.
+/// also the keys that move or delete (the arrows, Home, End, Page Up, Page Down, Backspace,
+/// Delete, Insert), Escape, Pause, Print Screen, the lock keys, and the media and volume keys.
+/// Issue #115 asks only about keys that type.
 fn types_a_character(key: Code) -> bool {
     use Code::*;
     matches!(
@@ -449,7 +450,9 @@ impl Summon {
         Ok(())
     }
 
-    /// Releases every hold the page took. The features' own holds and the pin stay.
+    /// Releases every hold the page has taken so far. The features' own holds and the pin
+    /// stay. A request is not tied to the page that sent it, so a `summon.hold` the old page
+    /// sent that is handled after this is kept until the next page load.
     fn release_page_holds(&self) {
         lock(&self.held_by_page).clear();
     }

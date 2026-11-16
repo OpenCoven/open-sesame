@@ -658,8 +658,10 @@ mod tests {
         );
         hold(false, None);
         assert!(hides());
-        // Releasing what is not held, or holding twice, changes nothing.
-        hold(false, Some("menu"));
+        // Releasing what is not held, or holding twice, changes nothing, and neither is an
+        // error: the answer is the state that was asked for.
+        assert_eq!(hold(false, Some("menu"))["result"], json!({"held": false}));
+        assert_eq!(hold(false, None)["result"], json!({"held": false}));
         hold(true, Some("menu"));
         hold(true, Some("menu"));
         hold(false, Some("menu"));
@@ -723,9 +725,11 @@ mod tests {
         drop(dialog);
         assert!(hides());
 
-        // The pin.
+        // The pin. It is the person's, not the page's, so a page load leaves it too.
         call(&main, "window.keepOpen", json!({"pinned": true})).unwrap();
         assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(!hides(), "a page load took the pin off");
         call(&main, "window.keepOpen", json!({"pinned": false})).unwrap();
         assert!(hides());
         std::fs::remove_dir_all(&folder).unwrap();

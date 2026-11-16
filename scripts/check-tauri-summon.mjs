@@ -199,9 +199,14 @@ function fakeBridge(status, answers = {}) {
   assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
   assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
   // A page that loads takes none of the old page's holds with it (issue #115), in every build.
-  const loads = window.slice(window.indexOf('builder.on_page_load('), window.indexOf('let window = builder.build()?;'));
-  assert.match(loads, /PageLoadEvent::Started => summon::page_replaced\(window\.app_handle\(\)\),/, 'The page-load hook releases the page\'s holds');
-  assert.ok(!/cfg\(debug_assertions\)\]\s*let builder = builder\.on_page_load/.test(window), 'The page-load hook is not development-only');
+  // Comments are taken out first, so that neither a comment between an attribute and what it
+  // applies to, nor one inside the arm, changes what is found. The arm may be one call or a
+  // block with other calls beside this one (the proposal for issue #112 adds one).
+  const bare = window.replace(/^\s*\/\/.*$/gm, '');
+  const loads = /let builder = builder\.on_page_load\(\|window, payload\| match payload\.event\(\) \{([\s\S]*?)PageLoadEvent::Started =>([\s\S]*?)PageLoadEvent::Finished =>/.exec(bare);
+  assert.ok(loads, 'The window has a page-load hook with an arm for a page that starts to load');
+  assert.ok(loads[2].includes('summon::page_replaced(window.app_handle())'), 'The page-load hook releases the page\'s holds');
+  assert.ok(!/#\[cfg\(debug_assertions\)\]\s*$/.test(bare.slice(0, loads.index)) && !loads[1].includes('#[cfg') && !loads[2].includes('#[cfg'), 'Neither the page-load hook nor that arm nor the call is development-only');
   assert.match(host, /pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\n    if let Some\(summon\) = app\.try_state::<Summon>\(\) \{\n        summon\.release_page_holds\(\);/);
   assert.match(window, /Session::Wayland\)\n            \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/);
   // AppKit aborts the process if a window is ordered off the main thread, and a second launch,
