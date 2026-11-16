@@ -430,8 +430,17 @@ fn quit_waits_for_panes_another_thread_is_closing_without_waiting() {
                 terminals.close_all();
             });
         });
+        // Looked at once, with no wait, where that can be relied on. On Windows a killed
+        // process reports its exit code a moment before its process object says it has ended,
+        // so a close that waited can still be followed by one look that finds the shell (seen
+        // in hosted CI); there the look is given time, and the race itself is shown on Unix.
+        let shell_gone = if cfg!(windows) {
+            gone(&[shell])
+        } else {
+            !alive(shell)
+        };
         assert!(
-            !alive(shell),
+            shell_gone,
             "round {round}: closing every pane returned while a shell was still there"
         );
         assert!(gone(&[child]), "round {round}: a child was left");
