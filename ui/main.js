@@ -1,4 +1,4 @@
-import { mountAccount } from './account.js';
+import { CHANGED_EVENT, mountAccount } from './account.js';
 import { createBridge } from './bridge.js';
 import { widgets, paletteIndex } from './manifest.js';
 import { searchCommands } from './palette.js';
@@ -150,6 +150,7 @@ function catalogChanged(catalog) {
 
 // The account (issue #72) and the shortcut (issue #71) belong to the host, not to a widget, so
 // they mount once the host answers, whatever widgets are on.
+const connected = signedIn => signedIn ? 'Connected · Signed in' : 'Connected · Local workspace';
 function mountHostSettings() {
   hostSettings.hidden = false;
   const account = hostSettings.querySelector('[data-account]');
@@ -171,11 +172,15 @@ function mountHostSettings() {
     blur: section.querySelector('[data-summon-blur]'),
   });
   holdDuringDrag(bridge, document);
+  // The bar names the account state too, so it follows the host's changes as the account does.
+  bridge.subscribe(message => {
+    if (message.event === CHANGED_EVENT && message.status && typeof message.status === 'object') status.textContent = connected(message.status.authenticated === true);
+  });
 }
 async function start() {
   const info = await bridge.ready;
   shell.dataset.state = info.available?'connected':'unavailable';
-  status.textContent = info.available ? (info.authenticated ? 'Connected · Signed in' : 'Connected · Local workspace') : 'Desktop connection unavailable';
+  status.textContent = info.available ? connected(info.authenticated === true) : 'Desktop connection unavailable';
   if (info.available) mountHostSettings();
   const saved = info.available ? await prefs.read() : {on:{},lastView:null};
   if (!info.available) report('Open this page in the Open Sesame app to connect to this machine.');
