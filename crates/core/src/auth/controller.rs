@@ -126,9 +126,11 @@ struct State {
     pending: Option<Pending>,
     busy: bool,
     restoring: bool,
-    /// The last thing the person asked for was a new sign-in, and it failed. A Cancel, a new
-    /// attempt, a sign-out and an opened session end it. It decides only which sentence
-    /// follows a save-only retry.
+    /// The last thing the person asked for was a new sign-in, and it failed. A Cancel ends
+    /// it; a failed refresh neither sets nor ends it. A new attempt, a sign-out and an opened
+    /// session end it too, for tidiness only: after each of those the save-only retry that
+    /// reads it cannot come before a Cancel or another failed sign-in has set it again. It
+    /// decides only which sentence follows a save-only retry with nobody signed in.
     sign_in_failed: bool,
     message: &'static str,
     user: Option<User>,
@@ -652,8 +654,9 @@ impl AuthController {
                     state.busy = false;
                     state.restoring = false;
                     state.retry_at = None;
-                    // Nobody is signed in on this path. It is reached after a Cancel, and
-                    // after a new sign-in that failed; the sentence says which.
+                    // Reached after a Cancel, and after a new sign-in that failed. With a
+                    // session still open the save changes nothing a person sees. With nobody
+                    // signed in, the sentence says which of the two it was.
                     state.message = if state.authenticated(self.now()) {
                         SIGNED_IN
                     } else if state.sign_in_failed {
