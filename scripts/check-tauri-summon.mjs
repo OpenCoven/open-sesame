@@ -209,15 +209,19 @@ function fakeBridge(status, answers = {}) {
   // - `.on_page_load(` occurs once in window.rs;
   // - the statement `let builder = builder.on_page_load(` follows `;`, `{`, `}` or the start
   //   of the file directly, so no attribute is on it;
-  // - the arm `PageLoadEvent::Started =>` follows `{`, `,` or `}` directly, and between its
-  //   arrow and the call stand only statements that begin with a path and `(`, hold none of
-  //   `;`, `{`, `}`, `#`, `!` and `"` after it, and end with `);` (the proposal for issue
-  //   #112 adds one); the call itself is followed by `;` or `,`;
+  // - the arm `PageLoadEvent::Started =>` is looked for between `builder.on_page_load(` and
+  //   `let window = builder.build()?;` and follows `{`, `,` or `}` directly; after its arrow
+  //   may stand one `{`, and between that and the call stand only statements that begin with
+  //   a path and `(`, hold none of `;`, `{`, `}`, `#`, `!` and `"` after it, and end with `);`
+  //   (the proposal for issue #112 adds one); the call is
+  //   `summon::page_replaced(window.app_handle())` in that spelling and is followed by `;` or
+  //   `,`;
   // - `fn page_replaced` occurs once in summon.rs, `pub fn page_replaced<` follows `;` or `}`
-  //   directly, and its body starts with the lines matched below.
+  //   directly, and its body starts with the lines matched below, in that layout.
   // What encloses the statement, the match or `page_replaced` is not read, nor a guard on an
   // earlier arm, nor what `release_page_holds` does, nor a hook set by another spelling. A
-  // hook made development-only from outside passes; a correct one written another way fails.
+  // hook made development-only from outside passes; a correct one written another way may
+  // fail.
   const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const source = bare(window);
   assert.equal(source.split('.on_page_load(').length - 1, 1, 'window.rs sets the page-load hook once, as `.on_page_load(`: a second would replace the first');
@@ -226,7 +230,7 @@ function fakeBridge(status, answers = {}) {
   assert.ok(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*summon::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(loads), 'The arm `PageLoadEvent::Started =>` has no attribute directly on it and reaches `summon::page_replaced(window.app_handle())` through statements that are path calls ended by `);`');
   assert.equal(bare(host).split('fn page_replaced').length - 1, 1, 'page_replaced is one function, not one per kind of build');
   assert.ok(/[;}]\s*pub fn page_replaced</.test(bare(host)), 'page_replaced carries no attribute');
-  assert.match(host, /pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\n    if let Some\(summon\) = app\.try_state::<Summon>\(\) \{\n        summon\.release_page_holds\(\);/);
+  assert.match(bare(host), /pub fn page_replaced<R: Runtime>\(app: &AppHandle<R>\) \{\n    if let Some\(summon\) = app\.try_state::<Summon>\(\) \{\n        summon\.release_page_holds\(\);/);
   assert.match(window, /Session::Wayland\)\n            \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/);
   // AppKit aborts the process if a window is ordered off the main thread, and a second launch,
   // the shortcut and the bridge all call from other threads. Found in a launched app.
