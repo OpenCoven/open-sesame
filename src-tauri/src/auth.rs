@@ -18,8 +18,8 @@
 //!   `state`; a callback from another process with no sign-in pending changes nothing.
 //! - The refresh token is saved only through the operating system's credential store. No
 //!   token, address, name or email is logged, printed, put in an error or sent to the page
-//!   beyond the status. A development build prints two lines: the status flags with the
-//!   fixed sentence, and the kind of a link that arrived.
+//!   beyond the status. A development build prints one line here, the status flags with the
+//!   fixed sentence; link.rs prints the kind of a link that arrived and nothing of the link.
 
 use crate::summon;
 use open_sesame_core::auth::{
