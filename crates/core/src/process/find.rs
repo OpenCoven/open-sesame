@@ -109,18 +109,22 @@ impl Search {
 
 /// Usual install locations, most specific first. `home` adds the per-user ones.
 ///
-/// After Cargo and Bun come the places Node version managers and npm put programs (issue #97,
-/// decided on 16 November 2026), in a fixed order: Volta, mise, asdf, fnm, nvm, then npm's own
-/// global folder. Each was read from that tool's source in November 2026: Volta's `bin`, the
-/// `shims` of mise and asdf, the `aliases/default` link fnm keeps to its default version, the
-/// `bin` of the version nvm's default alias names (nvm has no shims), and for npm the `bin` of
-/// the prefix its variable names, or `~/.npm-global`, which npm's documentation suggested
-/// until 2025; the `~/.local/bin` it suggests now is searched already. Nothing is run to find
-/// them, and npm's configuration file is not read, so a prefix set only there is not searched.
-/// Not searched either: nvm's folders for Node before 0.12 and for io.js, a default alias of
-/// nvm's stored with flags, mise's system-wide shims, and the variable for npm's prefix in any
-/// spelling but all capitals or all small letters. A program found in one of these may still
-/// need its interpreter, or the manager itself, on the `PATH` it is started with.
+/// The places Node version managers and npm put programs are searched too (issue #97, decided
+/// on 16 November 2026). After Cargo and Bun come the ones that hold real programs: the
+/// `aliases/default` link fnm keeps to its default version, the `bin` of the version nvm's
+/// default alias names (nvm has no shims, and is not searched on Windows, where it does not
+/// run), and for npm the `bin` of the prefix its variable names, or `~/.npm-global`, which
+/// npm's documentation suggested until 2025; the `~/.local/bin` it suggests now is searched
+/// already. After the system's own folders come the shims: Volta's `bin`, then the `shims` of
+/// mise and of asdf (asdf has no Windows form). Each folder was read from that tool's source in
+/// November 2026. A variable that names a manager's folder replaces the folder under the home
+/// directory, as it does for the manager itself. Nothing is run to find these, and no tool's
+/// configuration file is read, so a prefix set only in npm's and a `shims_dir` set only in
+/// mise's are not searched. Not searched either: nvm's folders for Node before 0.12 and for
+/// io.js, a default alias of nvm's stored with flags, mise's system-wide shims, and the
+/// variable for npm's prefix in any spelling but all capitals or all small letters. A program
+/// found in one of these may still need its interpreter, or the manager itself, on the `PATH`
+/// it is started with (issue #145).
 fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
     let home = home.filter(|home| home.is_absolute());
     // The folder a variable names when it names an absolute one.
@@ -145,17 +149,6 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
     if cfg!(windows) {
         let local = named("LOCALAPPDATA");
         let roaming = named("APPDATA");
-        dirs.extend(
-            named("VOLTA_HOME")
-                .or_else(|| local.as_ref().map(|local| local.join("Volta")))
-                .map(|root| root.join("bin")),
-        );
-        dirs.extend(named("MISE_SHIMS_DIR").or_else(|| {
-            named("MISE_DATA_DIR")
-                .or_else(|| named("XDG_DATA_HOME").map(|data| data.join("mise")))
-                .or_else(|| local.as_ref().map(|local| local.join("mise")))
-                .map(|root| root.join("shims"))
-        }));
         // On Windows a Node installation has its programs in its own folder, not in `bin`.
         let fnm_default = |root: PathBuf| root.join("aliases").join("default");
         match named("FNM_DIR") {
@@ -174,19 +167,19 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
                 .or_else(|| named("npm_config_prefix"))
                 .or_else(|| roaming.as_ref().map(|roaming| roaming.join("npm"))),
         );
-    } else {
-        dirs.extend(install_bin("VOLTA_HOME", ".volta"));
+        // Shims last, as on Unix.
+        dirs.extend(
+            named("VOLTA_HOME")
+                .or_else(|| local.as_ref().map(|local| local.join("Volta")))
+                .map(|root| root.join("bin")),
+        );
         dirs.extend(named("MISE_SHIMS_DIR").or_else(|| {
             named("MISE_DATA_DIR")
                 .or_else(|| named("XDG_DATA_HOME").map(|data| data.join("mise")))
-                .or_else(|| under_home(".local/share/mise"))
+                .or_else(|| local.as_ref().map(|local| local.join("mise")))
                 .map(|root| root.join("shims"))
         }));
-        dirs.extend(
-            named("ASDF_DATA_DIR")
-                .or_else(|| under_home(".asdf"))
-                .map(|root| root.join("shims")),
-        );
+    } else {
         let fnm_default = |root: PathBuf| root.join("aliases/default/bin");
         match named("FNM_DIR") {
             Some(root) => dirs.push(fnm_default(root)),
@@ -227,6 +220,22 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
             .map(PathBuf::from),
         );
         dirs.extend(under_home(".coven/bin"));
+        // Shims last: a shim is a small program that hands over to its manager, and asdf's
+        // needs `asdf` on the `PATH` it is started with, which is what is missing when these
+        // folders matter. The search stops at the first program of the name, so a shim in
+        // front would hide a copy further down that can start.
+        dirs.extend(install_bin("VOLTA_HOME", ".volta"));
+        dirs.extend(named("MISE_SHIMS_DIR").or_else(|| {
+            named("MISE_DATA_DIR")
+                .or_else(|| named("XDG_DATA_HOME").map(|data| data.join("mise")))
+                .or_else(|| under_home(".local/share/mise"))
+                .map(|root| root.join("shims"))
+        }));
+        dirs.extend(
+            named("ASDF_DATA_DIR")
+                .or_else(|| under_home(".asdf"))
+                .map(|root| root.join("shims")),
+        );
     }
     let mut unique = Vec::new();
     for dir in dirs {
@@ -237,65 +246,103 @@ fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
     unique
 }
 
-/// The most that is read of one nvm alias file, and the most version folders looked at.
-const NVM_ALIAS_BYTES: u64 = 256;
+/// The most that is read of one nvm alias file, the most version folders looked at, and the
+/// most aliases followed. nvm itself has none of these limits; past one of ours there is
+/// nothing to add.
+const NVM_ALIAS_BYTES: u64 = 4096;
 const NVM_VERSIONS: usize = 1024;
+const NVM_ALIASES: usize = 16;
 
 /// The `bin` folder of the Node version nvm would use in a new shell: the one its `default`
-/// alias names. nvm has no folder of shims; it puts this folder on `PATH` itself. An alias may
-/// name a version (`v22.11.0`), part of one (`22`, the highest installed that starts so),
-/// `node` or `stable` (the highest installed), or another alias, `lts/*` among them. Without a
-/// default alias, or with `system`, there is nothing to add. Nor is there for an alias stored
-/// with the `--lts` or `--only=` flags that nvm 0.41 introduced: working those out needs nvm's
-/// record of which versions are long-term ones, which is not read here.
+/// alias names. nvm has no folder of shims; it puts this folder on `PATH` itself.
+///
+/// This follows nvm's own steps (read in 0.40 and 0.41): while there is an alias file of the
+/// name in hand, the name becomes what that file says, and two files that name each other
+/// give nothing. What is left when no file has that name is `node` or `stable` (the highest
+/// version installed), a full version (that folder, if it is there), or part of one (`22`,
+/// `22.11`: the highest installed that starts so). A file is looked for first even when the
+/// name looks like a version, as nvm does. Without a default alias, or with `system`, there is
+/// nothing to add. Nor is there for an alias stored with the `--lts` or `--only=` flags that
+/// nvm 0.41 introduced: working those out needs nvm's record of which versions are long-term
+/// ones, which is not read here. Known differences from nvm: an alias file named like the
+/// version that a chain of aliases ends at is not looked for a second time, and among
+/// prerelease folders of one version the last by name is taken.
 fn nvm_default_bin(root: &Path) -> Option<PathBuf> {
     let versions = root.join("versions").join("node");
-    let mut installed: Vec<(Vec<u64>, PathBuf)> = std::fs::read_dir(&versions)
+    // Folder names that start as a version does, with the three numbers nvm sorts by.
+    let mut installed: Vec<([u64; 3], String)> = std::fs::read_dir(&versions)
         .ok()?
         .take(NVM_VERSIONS)
         .filter_map(Result::ok)
         .filter_map(|entry| {
-            let name = entry.file_name();
-            let numbers = version_numbers(name.to_str()?.strip_prefix('v')?)?;
-            (numbers.len() == 3).then(|| (numbers, entry.path()))
+            let name = entry.file_name().into_string().ok()?;
+            Some((nvm_sort_key(&name)?, name))
         })
         .collect();
     installed.sort();
-    let mut alias = "default".to_string();
-    // nvm follows aliases too; the count only stops two that name each other.
-    for _ in 0..8 {
-        let named = read_alias(&root.join("alias"), &alias)?;
-        let wanted = match named.as_str() {
-            "node" | "stable" => Some(Vec::new()),
-            other => version_numbers(other.strip_prefix('v').unwrap_or(other)),
-        };
-        if let Some(wanted) = wanted {
-            return installed
-                .iter()
-                .rev()
-                .find(|(numbers, _)| numbers.starts_with(&wanted))
-                .map(|(_, dir)| dir.join("bin"));
+    let aliases = root.join("alias");
+    let mut name = "default".to_string();
+    let mut seen = vec![name.clone()];
+    while let Some(next) = read_alias(&aliases, &name) {
+        if seen.contains(&next) || seen.len() > NVM_ALIASES {
+            return None;
         }
-        alias = named;
+        seen.push(next.clone());
+        name = next;
     }
-    None
+    if seen.len() == 1 {
+        // No default alias, or one that cannot be read.
+        return None;
+    }
+    let highest = |starts: &str| {
+        installed
+            .iter()
+            .rev()
+            .find(|(_, folder)| folder.starts_with(starts))
+            .map(|(_, folder)| versions.join(folder).join("bin"))
+    };
+    if name == "node" || name == "stable" {
+        return highest("v");
+    }
+    // nvm puts a `v` in front of a name that starts with a digit, and compares text from
+    // there: `022` and ` 22` are not `22`.
+    let pattern = match name.bytes().next() {
+        Some(first) if first.is_ascii_digit() => format!("v{name}"),
+        Some(b'v') => name,
+        _ => return None,
+    };
+    if installed.iter().any(|(_, folder)| *folder == pattern) {
+        return Some(versions.join(&pattern).join("bin"));
+    }
+    let numbers = pattern[1..].trim_end_matches('.');
+    let groups = numbers.split('.').count();
+    let partial = !numbers.is_empty()
+        && groups <= 2
+        && numbers
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+    partial.then(|| highest(&format!("v{numbers}."))).flatten()
 }
 
-/// The numbers of a version or of the start of one: `22`, `22.11`, `22.11.0`.
-fn version_numbers(text: &str) -> Option<Vec<u64>> {
-    let numbers: Option<Vec<u64>> = text
-        .split('.')
-        .map(|part| {
-            (!part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-                .then(|| part.parse().ok())
-                .flatten()
-        })
-        .collect();
-    numbers.filter(|numbers| !numbers.is_empty() && numbers.len() <= 3)
+/// The three numbers nvm sorts a version folder by: `v22.11.0` gives 22, 11 and 0, and so does
+/// a prerelease such as `v22.11.0-rc.1`. A name that does not start so is not a version.
+fn nvm_sort_key(folder: &str) -> Option<[u64; 3]> {
+    let mut parts = folder.strip_prefix('v')?.splitn(3, '.');
+    let mut number = |whole: bool| {
+        let part = parts.next()?;
+        let digits = part.bytes().take_while(u8::is_ascii_digit).count();
+        (digits > 0 && (!whole || digits == part.len()))
+            .then(|| part[..digits].parse().ok())
+            .flatten()
+    };
+    Some([number(true)?, number(true)?, number(false)?])
 }
 
-/// What an nvm alias names: the first line of its file that says anything. The name is nvm's own or comes out of
-/// another alias file, so one that would leave the alias folder is not followed.
+/// What an nvm alias names: the first line of its file that says anything, read as nvm reads
+/// it since 0.40.4 (each line ends at a `#`, and spaces at its end are dropped). The name is
+/// nvm's own or comes out of another alias file, so one that would leave the alias folder is
+/// not followed, and neither is a long-term name with a capital letter, which nvm refuses.
+/// Only a regular file is opened, so a pipe left under that name cannot hold up the search.
 fn read_alias(aliases: &Path, name: &str) -> Option<String> {
     use std::io::Read;
     use std::path::Component;
@@ -304,21 +351,30 @@ fn read_alias(aliases: &Path, name: &str) -> Option<String> {
         && relative
             .components()
             .all(|part| matches!(part, Component::Normal(_)));
-    if !stays_inside {
+    let refused = name.starts_with("lts/") && name.bytes().any(|byte| byte.is_ascii_uppercase());
+    if !stays_inside || refused {
         return None;
     }
-    let mut text = String::new();
-    std::fs::File::open(aliases.join(relative))
+    let path = aliases.join(relative);
+    if !std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
         .ok()?
-        .take(NVM_ALIAS_BYTES)
-        .read_to_string(&mut text)
+        .take(NVM_ALIAS_BYTES + 1)
+        .read_to_end(&mut bytes)
         .ok()?;
-    // As nvm reads it since 0.40.6: each line ends at a `#`, and the first line with anything
-    // left on it counts.
-    text.lines()
-        .map(|line| line.split('#').next().unwrap_or_default().trim())
-        .find(|line| !line.is_empty())
-        .map(str::to_string)
+    // A longer file is not cut short and read as if that were all of it.
+    if bytes.len() as u64 > NVM_ALIAS_BYTES {
+        return None;
+    }
+    String::from_utf8(bytes)
+        .ok()?
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or_default())
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim_end().to_string())
 }
 
 #[cfg(unix)]

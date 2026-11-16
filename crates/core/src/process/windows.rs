@@ -83,13 +83,14 @@ pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
     if unsafe { AssignProcessToJobObject(job.0, process) } == 0 {
         let error = io::Error::last_os_error();
         let _ = child.kill();
-        let _ = child.wait();
+        // With the same limit as every other wait for a killed child.
+        let _ = super::collect(&mut child);
         return Err(error);
     }
     if let Err(error) = resume(child.id()) {
         // Dropping the job kills the still-suspended child.
         drop(job);
-        let _ = child.wait();
+        let _ = super::collect(&mut child);
         return Err(error);
     }
     Ok((

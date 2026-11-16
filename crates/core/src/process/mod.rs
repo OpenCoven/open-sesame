@@ -7,9 +7,14 @@
 //! is killed before `run` returns. The child is the leader of a new session and process group on
 //! Unix and is placed in a kill-on-close job object on Windows before it runs any code.
 //!
-//! One program the kill does not end: one this user may not signal, which on Unix is a program
-//! that has changed its user. `run` waits [`GONE`] for a killed child and then returns
-//! [`RunError::Timeout`] with that program possibly still running (issue #97).
+//! Some programs the kill does not end, or not at once: one this user may not signal, which on
+//! Unix is a program that has changed its user, and one held inside the system, as on a file
+//! system that has stopped answering. `run` waits [`GONE`] for a killed child and then returns
+//! [`RunError::Timeout`] with that program possibly still running, whatever had stopped the run
+//! (issue #97): a caller cannot tell "killed" from "given up", and the sentence for a timeout
+//! says the command was stopped. A child given up is handed to a thread that collects it when
+//! it ends; until then that thread, the threads reading its output and their pipes stay, so a
+//! caller that keeps starting such a program keeps adding to them. Nothing bounds that number.
 //!
 //! Known limit: on Unix a program that deliberately moves itself to another process group or
 //! session leaves the group and is not killed. Ordinary command-line tools and their helpers do
@@ -628,62 +633,93 @@ mod tests {
 
     /// A program that outlives the kill does not hold the run for as long as it lives: after
     /// `GONE` the run stops waiting and says it took too long, with the program still running
-    /// (issue #97). A test cannot start a program its user may not signal, so the kill is left
-    /// out for this one run; the wait, the give-up and the later collection are the real code.
+    /// (issue #97). It says so whatever had stopped the run, a cancel included, as decided. A
+    /// test cannot start a program its user may not signal, so the kill is left out for these
+    /// runs; the wait, the give-up and the later collection are the real code. The two runs
+    /// are side by side, so the test takes one wait and not two.
     #[cfg(unix)]
     #[test]
     fn a_program_that_outlives_the_kill_is_given_up_after_a_limit() {
-        // SAFETY (for both): `kill` takes plain integers; signal 0 only asks whether the
-        // process exists, and it exists until it has been collected.
-        let exists = |pid: libc::pid_t| unsafe { libc::kill(pid, 0) } == 0;
-        let end = |pid: libc::pid_t| unsafe { libc::kill(pid, libc::SIGKILL) };
-        let dir = tempfile::tempdir().unwrap();
-        let pid_file = dir.path().join("pid");
-        let mut request = Run::new("/bin/sh");
-        // `exec`, so the number written is the program the run waits for. It ends by itself
-        // after a minute if this test dies before it can end it.
-        request.args = vec![
-            "-c".into(),
-            format!("echo $$ > '{}'; exec sleep 60", pid_file.display()),
-        ];
-        request.timeout = Duration::from_millis(500);
-        KILL_DOES_NOTHING.with(|flag| flag.set(true));
-        let started = Instant::now();
-        let result = execute(request, None, None).map(|_| ());
-        let took = started.elapsed();
-        KILL_DOES_NOTHING.with(|flag| flag.set(false));
+        // What one run did: its result, how long it took, and whether the program was still
+        // there afterwards and was collected once it had been ended from here.
+        fn outlive(cancel_after: Option<Duration>) -> (Result<(), RunError>, Duration, bool, bool) {
+            // SAFETY (for both): `kill` takes plain integers; signal 0 only asks whether the
+            // process exists, and it exists until it has been collected.
+            let exists = |pid: libc::pid_t| unsafe { libc::kill(pid, 0) } == 0;
+            let end = |pid: libc::pid_t| unsafe { libc::kill(pid, libc::SIGKILL) };
+            let dir = tempfile::tempdir().unwrap();
+            let pid_file = dir.path().join("pid");
+            let mut request = Run::new("/bin/sh");
+            // `exec`, so the number written is the program the run waits for. It ends by
+            // itself after a minute if this test dies before it can end it.
+            request.args = vec![
+                "-c".into(),
+                format!("echo $$ > '{}'; exec sleep 60", pid_file.display()),
+            ];
+            request.timeout = match cancel_after {
+                Some(_) => Duration::from_secs(30),
+                None => Duration::from_millis(500),
+            };
+            if let Some(after) = cancel_after {
+                let cancel = Cancel::default();
+                request.cancel = Some(cancel.clone());
+                std::thread::spawn(move || {
+                    std::thread::sleep(after);
+                    cancel.cancel();
+                });
+            }
+            KILL_DOES_NOTHING.with(|flag| flag.set(true));
+            let started = Instant::now();
+            let result = execute(request, None, None).map(|_| ());
+            let took = started.elapsed();
+            KILL_DOES_NOTHING.with(|flag| flag.set(false));
 
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let pid = loop {
-            let written = std::fs::read_to_string(&pid_file).unwrap_or_default();
-            if let Ok(pid) = written.trim().parse::<libc::pid_t>() {
-                break pid;
-            }
-            assert!(Instant::now() < deadline, "the program never wrote its ID");
-            std::thread::sleep(Duration::from_millis(20));
-        };
-        let outlived = exists(pid);
-        end(pid);
-        // The run handed the program to a thread that collects it once it ends.
-        let collected = loop {
-            if !exists(pid) {
-                break true;
-            }
-            if Instant::now() >= deadline {
-                break false;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        };
-        assert!(matches!(result, Err(RunError::Timeout)), "{result:?}");
-        assert!(
-            outlived,
-            "the program was gone, so the limit was not what ended the wait"
-        );
-        assert!(
-            took >= GONE && took < GONE + Duration::from_secs(5),
-            "the run returned after {took:?}"
-        );
-        assert!(collected, "{pid} was never collected after it ended");
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let pid = loop {
+                let written = std::fs::read_to_string(&pid_file).unwrap_or_default();
+                if let Ok(pid) = written.trim().parse::<libc::pid_t>() {
+                    break pid;
+                }
+                assert!(Instant::now() < deadline, "the program never wrote its ID");
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            let outlived = exists(pid);
+            end(pid);
+            // The run handed the program to a thread that collects it once it ends.
+            let collected = loop {
+                if !exists(pid) {
+                    break true;
+                }
+                if Instant::now() >= deadline {
+                    break false;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            (result, took, outlived, collected)
+        }
+        let cancelled = std::thread::spawn(|| outlive(Some(Duration::from_millis(500))));
+        let timed_out = outlive(None);
+        let cancelled = cancelled.join().unwrap();
+        for (what, (result, took, outlived, collected)) in
+            [("timed out", timed_out), ("cancelled", cancelled)]
+        {
+            assert!(
+                matches!(result, Err(RunError::Timeout)),
+                "{what}: {result:?}"
+            );
+            assert!(
+                outlived,
+                "{what}: the program was gone, so the limit was not what ended the wait"
+            );
+            assert!(
+                took >= GONE && took < GONE + Duration::from_secs(5),
+                "{what}: the run returned after {took:?}"
+            );
+            assert!(
+                collected,
+                "{what}: the program was never collected after it ended"
+            );
+        }
     }
 
     /// Whether the next helper thread of a run started on this thread should fail to start.

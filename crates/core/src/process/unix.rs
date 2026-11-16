@@ -235,3 +235,28 @@ impl Tree {
         collected
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+    use std::time::Duration;
+
+    /// Once a child has been given up, nothing in its group is signalled again: its ID is no
+    /// longer held by anything `run` waits for, so a later kill could reach a stranger. Here
+    /// the tree is made able to kill again after the give-up, and a kill then ends nothing.
+    #[test]
+    fn a_tree_given_up_is_not_signalled_again() {
+        let mut command = Command::new("/bin/sleep");
+        command.arg("60");
+        let (mut child, mut tree) = super::spawn(&mut command).unwrap();
+        tree.deaf = true;
+        assert_eq!(tree.retire(&mut child), None, "the kill was left out");
+        tree.deaf = false;
+        tree.kill();
+        std::thread::sleep(Duration::from_millis(300));
+        let still_running = matches!(child.try_wait(), Ok(None));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(still_running, "a kill after the give-up ended the program");
+    }
+}
