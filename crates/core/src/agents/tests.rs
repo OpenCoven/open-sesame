@@ -207,6 +207,28 @@ fn scope_states_and_no_private_arguments() {
     assert_eq!(order, [24, 22, 21, 25, 26]);
 }
 
+// test_agent_monitor.py: test_snapshot_is_bounded_read_only_and_scoped. There is no `ps` call to
+// bound or keep out of a shell: the process table is read in-process. An empty table lists nothing;
+// the current-user scope is checked against a real process in tests/agents.rs.
+#[test]
+fn an_empty_process_table_lists_no_agents() {
+    assert!(agents(&[], ME, &HashMap::new()).is_empty());
+}
+
+// test_agent_monitor.py: test_scan_failures_are_actionable. Without the current user nothing can be
+// listed or controlled safely, so both say what to do instead.
+#[test]
+fn scan_failures_are_actionable() {
+    let mut scanner = Scanner::without_user();
+    assert_eq!(
+        scanner.snapshot(&HashMap::new()).map(|_| ()),
+        Err(UNAVAILABLE)
+    );
+    let params = json!({"pid": 4242, "token": "x", "action": "stop"});
+    assert_eq!(scanner.control(&params).map(|_| ()), Err(UNAVAILABLE));
+    assert!(UNAVAILABLE.starts_with("Local process discovery is unavailable"));
+}
+
 // test_agent_monitor.py: test_wrappers_deduplicated_but_independent_sessions_retained
 #[test]
 fn wrappers_deduplicated_but_independent_sessions_retained() {

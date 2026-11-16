@@ -55,6 +55,15 @@ impl Scanner {
         }
     }
 
+    /// A scanner for which the system would not say who the current user is.
+    #[cfg(test)]
+    pub(super) fn without_user() -> Self {
+        Self {
+            user: None,
+            ..Self::new()
+        }
+    }
+
     /// The current user's agents. `panes` maps each of the app's terminal panes' process IDs to
     /// the pane's ID.
     pub fn snapshot(&mut self, panes: &HashMap<u32, String>) -> Result<Snapshot, &'static str> {
