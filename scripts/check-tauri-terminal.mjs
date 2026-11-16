@@ -291,15 +291,21 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
 // page starts to load, in every build and not only a development one, without waiting on the
 // window's thread. The self-test's reload pass is what shows it in a launched window.
 {
-  // This reads text, so it cannot show that the call runs. What it holds, with every comment
-  // taken out first: the window sets one page-load handler; neither that statement nor the arm
-  // for a page that starts to load carries an attribute; and in that arm nothing stands before
-  // the call but other plain calls (issue #115 adds one), so no condition, macro or attribute
-  // can decide whether it is reached. A statement that is not a plain call goes after it.
+  // This reads text and cannot show that the call runs; the self-test's reload pass shows that. With line comments and block
+  // comments that are not nested taken out (it does not know a string from code), it holds
+  // four things and no more. The text `.on_page_load(` occurs once in window.rs. The statement
+  // `let builder = builder.on_page_load(` has no attribute directly on it. The arm for
+  // `PageLoadEvent::Started` has no attribute directly on it, and inside it nothing stands
+  // before the call but calls of a plain path whose arguments hold no string, block or macro
+  // (issue #115 adds one). And `page_replaced` is one function with no attribute directly on it.
+  // It does not read what encloses the statement, the match or `page_replaced`, a guard on an
+  // earlier arm, the body of what `page_replaced` calls, or a handler set by another spelling, so
+  // a handler made development-only from outside passes. It also refuses correct ones written
+  // another way: anything in the arm that is not such a call goes after the call.
   const bare = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const window = bare(read('src-tauri/src/window.rs'));
-  assert.equal(window.split('.on_page_load(').length - 1, 1, 'The window sets one page-load handler: a second would replace the first');
-  assert(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(window), 'The page-load handler\'s statement carries no attribute');
+  assert.equal(window.split('.on_page_load(').length - 1, 1, 'window.rs sets the page-load handler once, as `.on_page_load(`: a second would replace the first');
+  assert(/(?:^|[;{}])\s*let builder = builder\.on_page_load\(/.test(window), 'The handler is set by the statement `let builder = builder.on_page_load(`, with no attribute directly on it');
   const hook = window.slice(window.indexOf('builder.on_page_load('), window.indexOf('let window = builder.build()?;'));
   assert(/[{,}]\s*PageLoadEvent::Started\s*=>\s*(?:\{\s*)?(?:[A-Za-z_][A-Za-z0-9_:]*\([^;{}#!"]*\);\s*)*crate::terminal::page_replaced\(window\.app_handle\(\)\)\s*[;,]/.test(hook), 'The arm for a page that starts to load carries no attribute and reaches the call that closes the old page\'s panes through plain calls only');
   const host = bare(read('src-tauri/src/terminal.rs'));
