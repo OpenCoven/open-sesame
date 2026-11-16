@@ -133,6 +133,239 @@ fn relative_install_roots_fall_back_to_absolute_home_locations() {
     );
 }
 
+/// The environment of an application launched with a home directory and nothing else.
+fn launched_from(home: &Path, extra: &[(&str, &str)]) -> ShellEnv {
+    let mut all = vec![(
+        if cfg!(windows) { "USERPROFILE" } else { "HOME" },
+        home.to_str().unwrap(),
+    )];
+    all.extend_from_slice(extra);
+    ShellEnv::from_vars(vars(&all))
+}
+
+/// Where Node version managers and npm put programs is searched when the login shell's `PATH`
+/// could not be had (issue #97): Volta's and mise's shims, asdf's shims, fnm's default version,
+/// the version nvm's default alias names, and npm's per-user global folder.
+#[cfg(unix)]
+#[test]
+fn version_manager_folders_under_the_home_directory_are_searched() {
+    let home = tempfile::tempdir().unwrap();
+    let at = |rest: &str| home.path().join(rest);
+    std::fs::create_dir_all(at(".nvm/alias")).unwrap();
+    std::fs::write(at(".nvm/alias/default"), "22\n").unwrap();
+    let expected = [
+        install(&at(".volta/bin"), "tool-volta"),
+        install(&at(".local/share/mise/shims"), "tool-mise"),
+        install(&at(".asdf/shims"), "tool-asdf"),
+        install(&at(".local/share/fnm/aliases/default/bin"), "tool-fnm-xdg"),
+        install(
+            &at("Library/Application Support/fnm/aliases/default/bin"),
+            "tool-fnm-mac",
+        ),
+        install(&at(".fnm/aliases/default/bin"), "tool-fnm-old"),
+        install(&at(".nvm/versions/node/v22.11.0/bin"), "tool-nvm"),
+        install(&at(".npm-global/bin"), "tool-npm"),
+    ];
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    assert!(finder.known_dirs.iter().all(|dir| dir.is_absolute()));
+    for program in expected {
+        let name = program.file_name().unwrap().to_str().unwrap();
+        assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
+    }
+}
+
+/// Each manager's own variable for its folder is honoured when it names an absolute one, and
+/// the folder under the home directory is then not searched in its place. A relative value is
+/// passed over for the home folder, as for Cargo and Bun.
+#[cfg(unix)]
+#[test]
+fn version_manager_folders_follow_their_variables() {
+    let home = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let at = |rest: &str| other.path().join(rest);
+    std::fs::create_dir_all(at("nvm/alias")).unwrap();
+    std::fs::write(at("nvm/alias/default"), "v20.1.0\n").unwrap();
+    let expected = [
+        install(&at("volta/bin"), "tool-volta"),
+        install(&at("mise/shims"), "tool-mise"),
+        install(&at("asdf/shims"), "tool-asdf"),
+        install(&at("fnm/aliases/default/bin"), "tool-fnm"),
+        install(&at("nvm/versions/node/v20.1.0/bin"), "tool-nvm"),
+        install(&at("npm/bin"), "tool-npm"),
+    ];
+    let text = |rest: &str| at(rest).to_str().unwrap().to_string();
+    let named = [
+        ("VOLTA_HOME", text("volta")),
+        ("MISE_DATA_DIR", text("mise")),
+        ("ASDF_DATA_DIR", text("asdf")),
+        ("FNM_DIR", text("fnm")),
+        ("NVM_DIR", text("nvm")),
+        ("NPM_CONFIG_PREFIX", text("npm")),
+    ];
+    let pairs: Vec<(&str, &str)> = named
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    // The same names under the home directory, which the variables replace.
+    let shadowed = install(&home.path().join(".volta/bin"), "only-under-home");
+    let finder = Search::from_env(&launched_from(home.path(), &pairs));
+    for program in &expected {
+        let name = program.file_name().unwrap().to_str().unwrap();
+        assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
+    }
+    assert_eq!(finder.find("only-under-home", None), None);
+
+    // npm also reads the variable in lower case, and mise and fnm follow XDG_DATA_HOME.
+    let data = tempfile::tempdir().unwrap();
+    let mise = install(&data.path().join("mise/shims"), "tool-mise-xdg");
+    let fnm = install(&data.path().join("fnm/aliases/default/bin"), "tool-fnm-xdg");
+    let finder = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("npm_config_prefix", &text("npm")),
+            ("XDG_DATA_HOME", data.path().to_str().unwrap()),
+        ],
+    ));
+    assert_eq!(finder.find("tool-npm", None), Some(expected[5].clone()));
+    assert_eq!(finder.find("tool-mise-xdg", None), Some(mise));
+    assert_eq!(finder.find("tool-fnm-xdg", None), Some(fnm));
+
+    // mise's own variable for the shims folder comes before its data folder, and nvm is under
+    // the configuration folder when that variable is set.
+    let config = tempfile::tempdir().unwrap();
+    let shims = install(&other.path().join("mise shims"), "tool-mise-shims");
+    std::fs::create_dir_all(config.path().join("nvm/alias")).unwrap();
+    std::fs::write(config.path().join("nvm/alias/default"), "node\n").unwrap();
+    let nvm = install(
+        &config.path().join("nvm/versions/node/v24.0.1/bin"),
+        "tool-nvm-config",
+    );
+    let finder = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("MISE_SHIMS_DIR", shims.parent().unwrap().to_str().unwrap()),
+            ("MISE_DATA_DIR", &text("mise")),
+            ("XDG_CONFIG_HOME", config.path().to_str().unwrap()),
+        ],
+    ));
+    assert_eq!(finder.find("tool-mise-shims", None), Some(shims));
+    assert_eq!(finder.find("tool-mise", None), None);
+    assert_eq!(finder.find("tool-nvm-config", None), Some(nvm));
+
+    let relative = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("VOLTA_HOME", "relative-volta"),
+            ("NVM_DIR", "relative-nvm"),
+        ],
+    ));
+    assert!(relative.known_dirs.iter().all(|dir| dir.is_absolute()));
+    assert_eq!(relative.find("only-under-home", None), Some(shadowed));
+}
+
+/// nvm has no folder of shims: the folder to search is the `bin` of the version its default
+/// alias names, worked out from nvm's own files and never by running nvm.
+#[cfg(unix)]
+#[test]
+fn the_nvm_folder_is_the_one_its_default_alias_names() {
+    let home = tempfile::tempdir().unwrap();
+    let nvm = home.path().join(".nvm");
+    let mut programs = BTreeMap::new();
+    for version in ["v9.11.2", "v20.1.0", "v22.3.0", "v22.11.0", "v24.0.1"] {
+        let program = install(&nvm.join("versions/node").join(version).join("bin"), "tool");
+        programs.insert(version, program);
+    }
+    // A folder that is not a version is never chosen.
+    install(&nvm.join("versions/node/v99.broken/bin"), "tool");
+    let alias = |name: &str, names: &str| {
+        let file = nvm.join("alias").join(name);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, names).unwrap();
+    };
+    alias("lts/*", "lts/jod\n");
+    alias("lts/jod", "v22.11.0\n");
+    alias("mine", "20\n");
+    alias("round", "about\n");
+    alias("about", "round\n");
+    let cases = [
+        ("v20.1.0", Some("v20.1.0")),
+        ("20.1.0", Some("v20.1.0")),
+        // Part of a version is the highest installed one that starts so, by number: 22.11
+        // is above 22.3, and 9 is not above 22.
+        ("22", Some("v22.11.0")),
+        ("v22.3", Some("v22.3.0")),
+        ("2", None),
+        ("node", Some("v24.0.1")),
+        ("stable", Some("v24.0.1")),
+        ("lts/*", Some("v22.11.0")),
+        ("mine", Some("v20.1.0")),
+        ("22.3.0  \nsecond line\n", Some("v22.3.0")),
+        (
+            "# a comment\n\n22.3.0 # and one after it\n",
+            Some("v22.3.0"),
+        ),
+        // Nothing to add: the system's Node, a version that is not installed, an alias that
+        // names nothing, two that name each other, a name that leaves the alias folder, and an
+        // alias stored with one of the flags nvm 0.41 introduced.
+        ("system", None),
+        ("--lts node", None),
+        ("--only=lts 22", None),
+        ("v18.0.0", None),
+        ("99", None),
+        ("missing", None),
+        ("round", None),
+        ("../versions/node/v24.0.1", None),
+        ("/etc/hostname", None),
+        ("", None),
+    ];
+    for (default, expected) in cases {
+        alias("default", default);
+        let finder = Search::from_env(&launched_from(home.path(), &[]));
+        assert_eq!(
+            finder.find("tool", None),
+            expected.map(|version| programs[version].clone()),
+            "default alias {default:?}"
+        );
+    }
+    std::fs::remove_file(nvm.join("alias/default")).unwrap();
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    assert_eq!(finder.find("tool", None), None, "no default alias");
+}
+
+/// On Windows the folders are under the two application-data folders, and npm puts programs
+/// in its prefix itself, with no `bin` under it.
+#[cfg(windows)]
+#[test]
+fn version_manager_folders_on_windows_are_searched() {
+    let home = tempfile::tempdir().unwrap();
+    let local = home.path().join("AppData").join("Local");
+    let roaming = home.path().join("AppData").join("Roaming");
+    let expected = [
+        install(&local.join("Volta").join("bin"), "tool-volta"),
+        install(&local.join("mise").join("shims"), "tool-mise"),
+        install(
+            &roaming.join("fnm").join("aliases").join("default"),
+            "tool-fnm",
+        ),
+        install(
+            &home.path().join(".fnm").join("aliases").join("default"),
+            "tool-fnm-old",
+        ),
+        install(&roaming.join("npm"), "tool-npm"),
+    ];
+    let finder = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("LOCALAPPDATA", local.to_str().unwrap()),
+            ("APPDATA", roaming.to_str().unwrap()),
+        ],
+    ));
+    for program in expected {
+        let name = program.file_stem().unwrap().to_str().unwrap();
+        assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
+    }
+}
+
 /// An override the user set is used as it is. A bad override is reported as missing; the search
 /// never quietly picks a different program.
 #[test]
@@ -852,15 +1085,48 @@ mod login_shell {
         assert_eq!(env.get("SHLVL"), Some("41"));
     }
 
+    /// A variable the application was launched with under a name no shell can use, such as
+    /// `config.key`, is still there after the capture (issue #136). bash passes such a variable
+    /// on; zsh and dash drop it from the environment of everything they start, and no startup
+    /// file can set or unset it, so the capture puts the launch value back. A variable with an
+    /// ordinary name that the startup file unsets stays gone beside it (the rule of #105).
     #[test]
     fn capture_preserves_environment_names_that_are_not_shell_identifiers() {
-        let shell = Path::new("/bin/bash");
-        assert!(shell.is_file(), "the bash prerequisite must exist");
-        let (_home, mut inherited) = home(&[(".bash_profile", String::new())]);
-        inherited.insert("config.key".into(), "still-present".into());
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
-        assert_eq!(env.source(), &EnvSource::LoginShell);
-        assert_eq!(env.get("config.key"), Some("still-present"));
+        const ODD_NAMES: [&str; 4] = ["config.key", "with-dash", "1digit", "όνομα"];
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let unset = if kind.startup_file == FISH_STARTUP {
+                "set -e REMOVED_BY_PROFILE\n"
+            } else {
+                "unset REMOVED_BY_PROFILE\n"
+            };
+            let startup = format!("{unset}{}", (kind.export)("AFTER", "ok"));
+            let (_home, mut inherited) = home(&[(kind.startup_file, startup)]);
+            for name in ODD_NAMES {
+                inherited.insert(name.into(), format!("launch value of {name}"));
+            }
+            inherited.insert("REMOVED_BY_PROFILE".into(), "stale-value".into());
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            for name in ODD_NAMES {
+                assert_eq!(
+                    env.get(name),
+                    Some(format!("launch value of {name}").as_str()),
+                    "{name} under {}",
+                    shell.display()
+                );
+            }
+            assert_eq!(env.get("REMOVED_BY_PROFILE"), None, "{}", shell.display());
+            assert_eq!(
+                env.get("FROM_LAUNCHER"),
+                Some("kept"),
+                "{}",
+                shell.display()
+            );
+        }
     }
 
     /// Startup files print banners, and may even print something that looks like a marker.

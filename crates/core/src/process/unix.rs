@@ -16,9 +16,12 @@ use std::time::Duration;
 #[derive(Clone)]
 pub(super) struct Tree {
     group: libc::pid_t,
-    /// True once the child has been collected. After that the group ID may be reused by an
-    /// unrelated process, so nothing is signalled again.
+    /// True once the child has been collected, or given up as one the kill did not end. After
+    /// that the group ID may be reused by an unrelated process, so nothing is signalled again.
     retired: Arc<Mutex<bool>>,
+    /// Test only: the kill is left out, which stands in for a program this user cannot kill.
+    #[cfg(test)]
+    deaf: bool,
 }
 
 pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
@@ -42,6 +45,8 @@ pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
         Tree {
             group,
             retired: Arc::new(Mutex::new(false)),
+            #[cfg(test)]
+            deaf: super::tests::kill_does_nothing(),
         },
     ))
 }
@@ -182,6 +187,10 @@ pub(super) fn drain(
 
 impl Tree {
     fn signal(&self) {
+        #[cfg(test)]
+        if self.deaf {
+            return;
+        }
         // SAFETY: `kill` takes plain integers. The group still belongs to this child: the child
         // has not been collected, so its PID, and with it the group ID, cannot have been reused.
         unsafe {
@@ -214,14 +223,15 @@ impl Tree {
         }
     }
 
-    /// Kills whatever is left in the group, then collects the child. Returns its exit code.
-    pub(super) fn retire(&self, child: &mut Child) -> Option<i32> {
+    /// Kills whatever is left in the group, then collects the child. Returns its exit code, or
+    /// `None` when the child was still there after the limit and has not been collected.
+    pub(super) fn retire(&self, child: &mut Child) -> Option<Option<i32>> {
         let mut retired = super::lock(&self.retired);
         if !*retired {
             self.signal();
         }
-        let status = child.wait().ok();
+        let collected = super::collect(child);
         *retired = true;
-        status.and_then(|status| status.code())
+        collected
     }
 }

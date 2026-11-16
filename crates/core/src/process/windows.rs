@@ -161,15 +161,16 @@ impl Tree {
         unsafe { WaitForSingleObject(self.process.0, 0) == WAIT_OBJECT_0 }
     }
 
-    /// Kills whatever is left in the job, then collects the child. Returns its exit code.
-    pub(super) fn retire(&self, child: &mut Child) -> Option<i32> {
+    /// Kills whatever is left in the job, then collects the child. Returns its exit code, or
+    /// `None` when the child was still there after the limit and has not been collected.
+    pub(super) fn retire(&self, child: &mut Child) -> Option<Option<i32>> {
         let mut retired = super::lock(&self.retired);
         if !*retired {
             self.terminate();
         }
-        let status = child.wait().ok();
+        let collected = super::collect(child);
         *retired = true;
-        status.and_then(|status| status.code())
+        collected
     }
 }
 

@@ -22,6 +22,17 @@ const SUPPORTED_SHELLS: &[&str] = &["bash", "zsh", "fish", "sh", "dash", "ksh"];
 /// Variables that describe the capturing shell itself, not the user's setup.
 const SHELL_OWN: &[&str] = &["_", "SHLVL", "PWD", "OLDPWD"];
 
+/// Whether a shell can use `name` for a variable: ASCII letters, digits and underscores, not
+/// starting with a digit. Some shells take more; a name outside this is one that at least zsh
+/// and dash cannot carry.
+fn shell_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
 /// Where a [`ShellEnv`] came from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EnvSource {
@@ -98,7 +109,8 @@ impl ShellEnv {
     /// [`ShellEnv::inherited`] leaves such variables out, and is never passed on with
     /// replacement characters. Of a `PATH` that is not valid Unicode, the directories that are
     /// valid are kept; one with no valid directory is left out, and a capture without a `PATH`
-    /// is given up for `inherited`.
+    /// is given up for `inherited`. One kind of variable comes back from `inherited`: one whose
+    /// name is not a shell name, which no startup file can change and some shells do not pass on.
     pub fn capture(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -110,7 +122,9 @@ impl ShellEnv {
     /// As [`ShellEnv::capture`], with the host's Quit cancellation flag. Cancellation kills every
     /// process in the capture's process group and collects the shell before returning the
     /// inherited fallback. A process the shell started is killed with the group, but it is the
-    /// shell's child, not this process's, so the system collects it a moment later.
+    /// shell's child, not this process's, so the system collects it a moment later. A shell
+    /// that the kill does not end is given up after the runner's limit of five seconds, and the
+    /// fallback then says the capture timed out, whether it was cancelled or not.
     pub fn capture_cancellable(
         shell: Option<&Path>,
         inherited: BTreeMap<String, String>,
@@ -197,6 +211,15 @@ impl ShellEnv {
             return fallback(inherited, Fallback::ShellFailed);
         }
         let mut vars = captured;
+        // A launch variable whose name no shell can use, such as `config.key`, cannot have been
+        // set or unset by a startup file, and zsh and dash drop it from the environment of what
+        // they start. It is put back, so the shell in use does not decide whether the programs
+        // started later see it (issue #136).
+        for (name, value) in &inherited {
+            if !shell_name(name) && !vars.contains_key(name) {
+                vars.insert(name.clone(), value.clone());
+            }
+        }
         for name in SHELL_OWN {
             match inherited.get(*name) {
                 Some(value) => {
