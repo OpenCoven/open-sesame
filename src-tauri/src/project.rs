@@ -23,6 +23,9 @@ pub fn handle<R: Runtime>(
 ) -> BridgeResult {
     match method {
         "project.chooseFolder" => {
+            if !params.is_empty() {
+                return Err(BridgeError::from("Invalid folder request."));
+            }
             // The dialog takes the focus from the window. With hide-on-blur on, the window
             // would hide and take its own dialog with it, so it is held until the answer.
             let _open = summon::hold(window.app_handle());

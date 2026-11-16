@@ -239,9 +239,9 @@ pub fn credential_service(identifier: &str) -> String {
 
 /// The "the user signed out" flag: a small file when a folder is given, otherwise memory.
 ///
-/// It matters only when sign-out could not delete the credential. See `summon.rs` for why a
-/// release build has no folder yet (issues #87 and #105); until it has one, a credential that
-/// could not be deleted is used again at the next launch.
+/// It matters only when sign-out could not delete the credential. A release build gives it no
+/// folder yet: the restart data folder of issue #105 (`data.rs`) is not wired to it, so until it
+/// is, a credential that could not be deleted is used again at the next launch.
 pub struct Marker {
     path: Option<PathBuf>,
     memory: AtomicBool,
