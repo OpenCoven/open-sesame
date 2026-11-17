@@ -592,7 +592,9 @@ impl Auth {
         });
     }
 
-    /// At quit: discards anything in flight and stops the threads. What is saved is kept.
+    /// At quit: waits for a refresh that was already sent, so that its replacement credential
+    /// is saved, tries once more to save one an earlier attempt could not, and stops the
+    /// threads. It can therefore wait for one request and write the credential store.
     pub fn shutdown(&self) {
         self.controller.shutdown();
         self.stopped.store(true, Ordering::SeqCst);
