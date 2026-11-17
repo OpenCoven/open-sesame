@@ -1,7 +1,7 @@
 import { CHANGED_EVENT, mountAccount } from './account.js';
 import { createBridge } from './bridge.js';
 import { widgets, paletteIndex } from './manifest.js';
-import { searchCommands } from './palette.js';
+import { draftAction, paletteView } from './palette.js';
 import { loaders, styles } from './widget-loaders.js';
 import { createLifecycle } from './lifecycle.js';
 import { createPreferences } from './preferences.js';
@@ -30,6 +30,14 @@ let commands = paletteIndex;
 let manager;
 let state;
 let restoring = true;
+// A palette capture that was not saved (issue #77) is kept with its draft ID: its text comes back
+// each time the palette opens, and its reason stays shown, until it is saved or the person closes
+// the palette with the field empty. Text typed in the field, a search included, replaces neither.
+// A retry of it, edited or not, names the same draft, so the core keeps one row.
+const OVERTAKEN = 'That capture was not saved because another view opened first. The palette keeps it; try again.';
+let kept = null, drafts = 0;
+const keep = (text, draft, error) => {kept = {text, draft, error};report(error);};
+const drop = () => {if (kept && notice.textContent === kept.error) report('');kept = null;};
 const navButtons = new Map();
 const switches = new Map();
 const run = promise => promise.catch(error => report(message(error)));
@@ -39,6 +47,7 @@ const run = promise => promise.catch(error => report(message(error)));
 mountContextMenu(bridge, document, { report });
 
 function closePalette() {
+  if (kept && !query.value.trim()) drop();
   palette.hidden = true;
   paletteToggle.setAttribute('aria-expanded','false');
   paletteToggle.focus();
@@ -46,20 +55,54 @@ function closePalette() {
 function openPalette() {
   palette.hidden = false;
   paletteToggle.setAttribute('aria-expanded','true');
-  query.value = '';
+  query.value = kept?.text ?? '';
   renderCommands();
   query.focus();
 }
+// A calculator or world-clock answer (issue #77) comes first. It invokes no command: choosing it
+// copies the result, or says why it could not.
+function renderAnswer(found) {
+  if (found.error) {
+    const line = element('p',found.error);
+    line.dataset.commandAnswer = 'error';
+    return line;
+  }
+  const button = element('button');
+  button.type = 'button';
+  button.dataset.commandAnswer = found.kind;
+  button.append(element('strong',found.result),element('span',` ${found.expression} · Copy`));
+  button.addEventListener('click',() => {
+    const copied = navigator.clipboard?.writeText(found.result) ?? Promise.reject(Error('unavailable'));
+    copied.then(() => {button.lastChild.textContent = ` ${found.expression} · Copied`;},
+      () => {button.lastChild.textContent = ` ${found.expression} · Could not copy. Select the result to copy it.`;});
+  });
+  return button;
+}
 function renderCommands() {
   results.replaceChildren();
-  for (const command of searchCommands(commands,query.value)) {
+  const view = paletteView(commands,query.value);
+  if (view.answer) results.append(renderAnswer(view.answer));
+  for (const command of view.commands) {
     const button = element('button',`${command.label}${state?.on[command.widget] === false ? ' · Off' : ''}`);
     button.type = 'button';
     button.dataset.command = command.id;
     button.disabled = !manager;
+    if (command.capture && !view.captureOnEnter) button.dataset.notOnEnter = '';
     button.addEventListener('click',() => {
+      // A capture counts as saved only when Today says so. One that failed goes back to the
+      // palette with the reason; one that never ran, because another view opened before Today
+      // was ready, is kept for the next time the palette opens.
+      const typed = query.value, draft = command.capture ? kept?.draft ?? `palette-${++drafts}` : null;
       closePalette();
-      run(manager.show(command.widget,command.action));
+      run(manager.show(command.widget,command.capture ? draftAction(command.action,draft) : command.action).then(result => {
+        if (!command.capture) return;
+        if (result?.saved === true) {if (kept?.draft === draft) drop();}
+        else keep(typed,draft,OVERTAKEN);
+      },error => {
+        if (!command.capture) throw error;
+        keep(typed,draft,message(error));
+        openPalette();
+      }));
     });
     results.append(button);
   }
@@ -126,7 +169,7 @@ widgetToggle.addEventListener('click',() => {
 query.addEventListener('input',renderCommands);
 query.addEventListener('keydown',event => {
   if (event.key === 'ArrowDown') {event.preventDefault();results.querySelector('button')?.focus();}
-  if (event.key === 'Enter') {event.preventDefault();results.querySelector('button')?.click();}
+  if (event.key === 'Enter') {event.preventDefault();results.querySelector('button:not([data-not-on-enter])')?.click();}
 });
 results.addEventListener('keydown',event => {
   if (!['ArrowDown','ArrowUp'].includes(event.key)) return;

@@ -9,6 +9,7 @@
 //!
 //! Validation, limits and messages are those of `desktop/bridge.py`, which this replaces.
 
+mod exit;
 mod launch;
 mod session;
 mod tree;
@@ -21,6 +22,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread::JoinHandle;
 
 /// The sender stops when the emulator has this many bytes it has not acknowledged.
 pub const HIGH_WATER: u64 = 1024 * 1024;
@@ -47,7 +49,9 @@ pub enum Output {
     Data(Vec<u8>),
     /// The stream broke for a reason other than the program ending. `Exit` follows.
     Error(&'static str),
-    /// The pane has ended and its processes are gone.
+    /// The pane has ended. What has become of its processes by then differs by system and is
+    /// said in `tree.rs`, at its top and at `Tree::end`; on Windows a killed shell that did
+    /// not end within five seconds may still be there.
     Exit,
 }
 
@@ -72,6 +76,8 @@ pub struct Config {
 pub struct Terminals {
     config: Config,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
+    /// Threads still closing panes for [`Terminals::close_all_detached`].
+    closing: Mutex<Vec<JoinHandle<()>>>,
     /// Set by [`Terminals::shut_down`]: no pane opens from then on.
     quitting: AtomicBool,
 }
@@ -91,6 +97,7 @@ impl Terminals {
         Terminals {
             config,
             sessions: Mutex::default(),
+            closing: Mutex::default(),
             quitting: AtomicBool::new(false),
         }
     }
@@ -111,7 +118,7 @@ impl Terminals {
     }
 
     /// `terminal.open`: starts a pane and returns `{"id", "pid", "machine"}`. Reopening an ID
-    /// closes the pane that had it first.
+    /// closes the pane that had it first, also when two requests for one ID arrive together.
     pub fn open(&self, params: &Map<String, Value>, sink: Sink) -> BridgeResult {
         let id = pane_id(params)?;
         let previous = self.sessions().remove(id);
@@ -134,9 +141,20 @@ impl Terminals {
         {
             return Err(BridgeError::from(TOO_MANY));
         }
+        // The panes stay locked while the shell starts, which keeps the count above true and
+        // makes every other request for any pane wait: some milliseconds for a start, about
+        // 75 ms more when no pseudo-terminal can be opened and every further try fails too, and
+        // for as long as discarding the shell takes when one was started and cannot be taken
+        // over (on Windows that has the limit and the caveat said at `ENDING` in `tree.rs`).
         let session = Session::start(&launch, cols, rows, sink)?;
         let pid = session.pid;
-        sessions.insert(id.to_string(), Arc::new(session));
+        let displaced = sessions.insert(id.to_string(), Arc::new(session));
+        drop(sessions);
+        // Another open of the same ID got in after this one looked for a pane to replace. The
+        // later of the two keeps the ID, and the earlier pane is closed like any replaced pane.
+        if let Some(displaced) = displaced {
+            displaced.close();
+        }
         Ok(json!({"id": id, "pid": pid, "machine": launch.machine}))
     }
 
@@ -166,27 +184,96 @@ impl Terminals {
             }
             "terminal.close" => {
                 session.close();
-                self.sessions().remove(id);
+                self.forget(id, &session);
             }
             _ => return Err(BridgeError::from(crate::gate::UNSUPPORTED)),
         }
         Ok(Value::Bool(true))
     }
 
-    /// Closes every pane and returns when all their processes are gone. Panes close side by
+    /// Takes a closed pane off the list, unless a `terminal.open` of the same ID has put another
+    /// pane there since: that one is running, and the list is the only way to close it.
+    fn forget(&self, id: &str, closed: &Arc<Session>) {
+        let mut sessions = self.sessions();
+        if sessions
+            .get(id)
+            .is_some_and(|listed| Arc::ptr_eq(listed, closed))
+        {
+            sessions.remove(id);
+        }
+    }
+
+    /// Closes every pane, those that [`Terminals::close_all_detached`] is still closing
+    /// included, and returns when every pane's `Session::close` has returned; what that says
+    /// about a pane's processes differs by system and is said there. Panes close side by
     /// side, so quitting with many panes takes as long as the slowest one.
     pub fn close_all(&self) {
-        let sessions: Vec<Arc<Session>> = self
-            .sessions()
+        close_side_by_side(&self.take_all());
+        let closing: Vec<JoinHandle<()>> = self.closing().drain(..).collect();
+        for thread in closing {
+            let _ = thread.join();
+        }
+    }
+
+    /// Closes every pane without waiting for their processes to go: the panes are off the list
+    /// when this returns, and another thread ends them. For the application's window thread,
+    /// when the page that opened the panes has been replaced and nothing can reach them
+    /// (issue #112). Quit still waits for them, through [`Terminals::close_all`].
+    ///
+    /// The one thing this does wait for is the pane list, which a `terminal.open` holds while
+    /// it starts its shell: 12 ms at the longest in a measurement on a Mac with another thread
+    /// opening panes throughout, and under a tenth of a millisecond otherwise. An open that
+    /// cannot get a pseudo-terminal holds the list about 75 ms longer, for its further tries,
+    /// and one whose shell was started and cannot be taken over holds it for as long as
+    /// discarding that shell takes (see the comment in `open`).
+    pub fn close_all_detached(&self) {
+        // Held from before the panes leave the list until the thread that closes them is
+        // recorded, so `close_all` on another thread cannot look for threads to wait for in
+        // between and return while these panes still run.
+        let mut closing = self.closing();
+        let sessions = self.take_all();
+        if sessions.is_empty() {
+            return;
+        }
+        let for_thread = sessions.clone();
+        let thread = std::thread::Builder::new().spawn(move || close_side_by_side(&for_thread));
+        match thread {
+            Ok(thread) => {
+                closing.retain(|thread| !thread.is_finished());
+                closing.push(thread);
+            }
+            // No thread to hand them to: close them here, late rather than never, and one
+            // after another, because closing them side by side needs threads too.
+            Err(_) => sessions.iter().for_each(|session| session.close()),
+        }
+    }
+
+    fn take_all(&self) -> Vec<Arc<Session>> {
+        self.sessions()
             .drain()
             .map(|(_, session)| session)
-            .collect();
-        std::thread::scope(|scope| {
-            for session in &sessions {
-                scope.spawn(move || session.close());
-            }
-        });
+            .collect()
     }
+
+    fn closing(&self) -> MutexGuard<'_, Vec<JoinHandle<()>>> {
+        self.closing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// Closes the panes side by side. A pane no thread can be started for is closed here, on the
+/// calling thread: `Scope::spawn` panics in that case, which would leave that pane and every
+/// pane after it running with nothing left that could close them.
+fn close_side_by_side(sessions: &[Arc<Session>]) {
+    std::thread::scope(|scope| {
+        for session in sessions {
+            let started = std::thread::Builder::new().spawn_scoped(scope, move || session.close());
+            if started.is_err() {
+                session.close();
+            }
+        }
+    });
 }
 
 impl Terminals {
@@ -260,6 +347,32 @@ mod tests {
 
     fn params(value: Value) -> Map<String, Value> {
         value.as_object().cloned().unwrap()
+    }
+
+    /// `terminal.close` closes a pane and then takes it off the list. A `terminal.open` of the
+    /// same ID that lands between the two must stay on the list, or nothing can close its shell
+    /// (issue #112). The steps of the close are taken by hand here so the open lands exactly
+    /// between them.
+    #[cfg(unix)]
+    #[test]
+    fn closing_a_pane_does_not_forget_the_one_that_replaced_it() {
+        let terminals = Terminals::with(Config {
+            shell: Some(PathBuf::from("/bin/sh")),
+            ..Config::default()
+        });
+        let request = params(json!({"id": "main", "mode": "local"}));
+        let nowhere: Sink = Arc::new(|_| {});
+        terminals.open(&request, Arc::clone(&nowhere)).unwrap();
+        let first = terminals.sessions().get("main").cloned().unwrap();
+        first.close();
+        let second = terminals.open(&request, nowhere).unwrap();
+        terminals.forget("main", &first);
+        let listed = terminals.sessions().get("main").cloned();
+        let listed = listed.expect("the pane opened during the close was taken off the list");
+        assert_eq!(u64::from(listed.pid), second["pid"].as_u64().unwrap());
+        assert!(!listed.closed());
+        terminals.close_all();
+        assert!(listed.closed());
     }
 
     #[test]

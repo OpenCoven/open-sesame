@@ -20,12 +20,17 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const gateSource = readFileSync(path.join(root, 'crates/core/src/gate.rs'), 'utf8');
+// Comments are taken out before a list is looked for, so that a `];` in one does not end it
+// early: line comments and, new with issue #116, block comments, in one pass that steps over
+// string literals and takes whichever comment starts first. A nested block comment, a raw
+// string and a character literal that holds a quote are still misread.
+const gateCode = gateSource.replace(/"(?:[^"\\]|\\[\s\S])*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, found => (found[0] === '"' ? found : ''));
 
 // Rust lists are read as text: `pub const NAME: &[&str] = &[ "a", "b" ];` with optional comments.
 function rustList(name) {
-  const match = gateSource.match(new RegExp(`pub const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
+  const match = gateCode.match(new RegExp(`pub const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
   assert(match, `crates/core/src/gate.rs declares ${name} as a list of string literals`);
-  const body = match[1].replace(/\/\/[^\n]*/g, '');
+  const body = match[1];
   const entries = [...body.matchAll(/"([^"\\]*)"/g)].map(entry => entry[1]);
   assert.equal(body.replace(/"[^"\\]*"/g, '').replace(/[\s,]/g, ''), '', `${name} holds only string literals`);
   return entries;

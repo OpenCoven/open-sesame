@@ -29,6 +29,8 @@ const origin=`http://127.0.0.1:${server.address().port}`;
 const browsers=process.env.UI_SHELL_ENGINES?.split(',')||['chromium','webkit'];
 const report={kind:'browser with synthetic host; no native/device/provider acceptance',platform:process.platform,results:[]};
 const definition=JSON.parse(await readFile(path.join(root,'dist/tools/meeting-notes/tool.json'),'utf8'));
+// The first view at startup is Today (#77); holding or failing its module holds or fails the first view.
+const FIRST_VIEW='**/ui/widgets/today.js';
 try {
   for(const name of browsers) {
     const browser=await ({chromium,webkit})[name].launch({headless:process.env.UI_SHELL_HEADLESS!=='0'});
@@ -243,7 +245,7 @@ try {
         const loading=await context.newPage();
         try {
           let release;const held=new Promise(resolve=>release=resolve);
-          await loading.route('**/ui/widgets/pending.js',async route=>{await held;await route.continue();});
+          await loading.route(FIRST_VIEW,async route=>{await held;await route.continue();});
           // WebKit holds the load event while the first view's import is pending; the page is ready to use before it.
           await loading.goto(origin+'/ui/index.html',{waitUntil:'domcontentloaded'});
           await loading.locator('[data-widget="reader"]:not([disabled])').waitFor({state:'attached'});
@@ -262,7 +264,7 @@ try {
           // As src-tauri/src/window.rs defines it in a development build started with OPEN_SESAME_SELFTEST.
           await runner.addInitScript(()=>Object.defineProperty(window,'__OPEN_SESAME_SELFTEST__',{value:Object.freeze({kind:'runtime',phase:'save',text:'Fixture runtime qualification'})}));
           // The first view never finishes loading: the qualification must not wait for it.
-          await runner.route('**/ui/widgets/pending.js',()=>{});
+          await runner.route(FIRST_VIEW,()=>{});
           // WebKit holds the load event while the first view's import is pending; the page is ready to use before it.
           await runner.goto(origin+'/ui/index.html',{waitUntil:'domcontentloaded'});
           const result=runner.locator('[data-runtime-result]');
@@ -278,7 +280,7 @@ try {
       await step('initial widget failure does not strand shell restoration',async()=>{
         const recovering=await context.newPage();
         try {
-          await recovering.route('**/ui/widgets/pending.js',route=>route.abort());
+          await recovering.route(FIRST_VIEW,route=>route.abort());
           await recovering.goto(origin+'/ui/index.html');
           await recovering.locator('[data-shell-notice]:not([hidden])').waitFor();
           await recovering.locator('[data-view="shells"]').click();
