@@ -248,7 +248,7 @@ function fakeBridge(status, answers = {}) {
   //   `let window = builder.build()?;` and follows `{`, `,` or `}` directly; after its arrow
   //   may stand one `{`, and between that and the call stand only statements that begin with
   //   a path and `(`, hold none of `;`, `{`, `}`, `#`, `!` and `"` after it, and end with `);`
-  //   (the proposal for issue #112 adds one); the call is
+  //   (none stands there now: the call for issue #112 comes after this one); the call is
   //   `summon::page_replaced(window.app_handle())` in that spelling and is followed by `;` or
   //   `,`;
   // - `fn page_replaced` occurs once in summon.rs, `pub fn page_replaced<` follows `;` or `}`
@@ -532,6 +532,20 @@ function fakeBridge(status, answers = {}) {
       ask(doc3, moving);
       await choose(doc3, 'Paste');
       assert.equal(moving.value, 'THIS text now', 'Paste puts nothing into a field that changed meanwhile');
+      // So is a field the page took out meanwhile, as a view does when it draws its list again:
+      // its text is the same, and it is no longer the field the person sees.
+      const replaced = field(doc, 'a draft', 0, 7, { isConnected: true });
+      const redrawn = { request: async (method, params) => { replaced.isConnected = false; return bridge.request(method, params); } };
+      const doc4 = makeDocument();
+      mountContextMenu(redrawn, doc4);
+      doc4.body.append(replaced);
+      bridge.text = 'X';
+      for (const label of ['Paste', 'Cut']) {
+        replaced.isConnected = true;
+        ask(doc4, replaced);
+        await choose(doc4, label);
+        assert.deepEqual([replaced.value, replaced.events], ['a draft', []], `${label} leaves a field alone that is no longer in the page`);
+      }
     }
 
     // A field with a limit takes no more than fits.
@@ -666,6 +680,31 @@ function fakeBridge(status, answers = {}) {
       assert.deepEqual(menuOf(doc).children.map(child => child.textContent), ['Copy', 'Paste'], 'The pane above decides');
       menu.close();
       undo();
+    }
+    // The keyboard taken from the menu by the page, as a view does when it puts the keyboard in
+    // a field after the host answers: the menu closes and does not take the keyboard back.
+    // The keyboard moving inside the menu, or going nowhere the page can name (a press on an
+    // item in a web view that does not focus a button, or the window losing it, which is the
+    // window's own event), leaves the menu to what follows.
+    {
+      const taker = doc.node('input');
+      doc.body.append(taker);
+      ask(doc, inner);
+      const open = menuOf(doc);
+      for (const to of [open.children[1], open, null, undefined]) {
+        open.fire('focusout', { relatedTarget: to });
+        assert.equal(menu.isOpen(), true, 'The keyboard staying in the menu, or going nowhere named, does not close it');
+      }
+      taker.focus();
+      open.fire('focusout', { relatedTarget: taker });
+      assert.equal(menu.isOpen(), false, 'The page taking the keyboard closes the menu');
+      assert.equal(doc.activeElement, taker, 'and the keyboard stays where the page put it');
+      // A menu that has closed hears nothing more of it.
+      open.fire('focusout', { relatedTarget: taker });
+      ask(doc, inner);
+      open.fire('focusout', { relatedTarget: taker });
+      assert.equal(menu.isOpen(), true, 'A closed menu does not close the one after it');
+      menu.close();
     }
     // A press inside the menu does not close it before the click arrives, and a context-menu
     // request on the menu itself is cancelled and changes nothing.

@@ -7,8 +7,8 @@
 // Select All in a text field, Copy for selected text, and whatever a part of the page provides
 // for itself with `provideMenu` (a terminal pane offers Copy and Paste).
 //
-// Copy and paste go through the host, which holds the only clipboard access the app has; the
-// methods are the two the terminal already uses. What this does not cover: a `<select>` list
+// Copy and paste go through the host's clipboard; the methods are the two the terminal
+// already uses. What this does not cover: a `<select>` list
 // and an input method's window are native popups too and are not replaced, a field that is
 // `contenteditable` or of a type without a text selection (email, number) gets no field menu
 // (only Copy, when text is selected on the page), a paste made here is not one step of the
@@ -121,8 +121,9 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
     const secret = String(field.type).toLowerCase() === 'password';
     const selected = value.slice(start, end);
     // The clipboard answers later. A field that changed meanwhile is left as it is: the range
-    // remembered here no longer names the same text.
-    const same = () => String(field.value) === value;
+    // remembered here no longer names the same text. So is one the page took out meanwhile, as
+    // a view does when it draws its list again: it is not the field the person sees any more.
+    const same = () => field.isConnected !== false && String(field.value) === value;
     const actions = {
       // Nothing is taken out of the field unless the clipboard has it.
       cut: () => bridge.request(WRITE, { text: selected }).then(() => { if (same()) { field.setRangeText('', start, end, 'end'); changed(field); } }, failed),
@@ -191,6 +192,14 @@ export function mountContextMenu(bridge, doc, { report = () => {} } = {}) {
         event.preventDefault();
         close();
       }
+    });
+    // The page can take the keyboard from the menu: a view puts it in a field when the host
+    // answers. The menu would stay drawn with keys going to the page, so it closes, and leaves
+    // the keyboard where the page put it. Only a move to something the event names counts: a
+    // press on an item in a web view that does not focus a button names nothing, and must not
+    // close the menu before its click arrives; the window losing the keyboard is heard below.
+    box.addEventListener('focusout', event => {
+      if (menu === box && event.relatedTarget && !box.contains(event.relatedTarget)) close({ restore: false });
     });
     doc.body.append(box);
     // Kept inside the window, whatever corner the pointer is in.
