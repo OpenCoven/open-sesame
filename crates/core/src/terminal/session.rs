@@ -11,6 +11,7 @@
 //! once even when the program is not reading. On macOS it is typed in small pieces with a pause
 //! between them: see [`Pace`].
 
+use super::exit::ShellExit;
 use super::launch::Launch;
 use super::tree::Tree;
 use super::{Output, Sink, HIGH_WATER, LOW_WATER};
@@ -66,6 +67,68 @@ pub(super) const STREAM_ENDED: &str = "Terminal stream ended.";
 pub(super) const NOT_READING: &str =
     "This shell is not reading its input. Wait for it, or close the pane.";
 
+/// The reply for a pane that could not be started. The page gets one sentence whatever went
+/// wrong. A development build also says on standard error which step failed and why, as the
+/// system's error number or its own words for it, and nothing else: no path, argument or
+/// environment value. Without that, a start that fails once on a busy machine cannot be
+/// explained afterwards (issue #112).
+fn could_not_start(step: &str, why: String) -> BridgeError {
+    if cfg!(debug_assertions) {
+        eprintln!("open-sesame: no shell: {step} failed ({why})");
+    }
+    BridgeError::from(COULD_NOT_START)
+}
+
+fn number(system_error: Option<i32>) -> String {
+    match system_error {
+        Some(code) => format!("system error {code}"),
+        None => "no system error number".to_string(),
+    }
+}
+
+/// The operating system's error number behind a `portable-pty` error, when it kept one. The
+/// error's text is not used: it can name the program and the folder.
+fn system_error<E: AsRef<dyn std::error::Error + Send + Sync + 'static>>(error: &E) -> String {
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(error.as_ref());
+    while let Some(current) = cause {
+        if let Some(io) = current.downcast_ref::<std::io::Error>() {
+            return number(io.raw_os_error());
+        }
+        cause = current.source();
+    }
+    number(None)
+}
+
+/// The pauses before each further try at opening a pseudo-terminal.
+///
+/// macOS now and then refuses to open one with error -6, which is not an error a program is
+/// meant to see: the kernel uses that number for "start this open again" and passes it on when
+/// its own tries run out. On macOS 27.2, on a busy machine, it reached this code in 2 of 8
+/// runs of this package's tests and in 1 of 12 processes when two copies of the terminal
+/// tests ran at once, each time for one pane out of some hundreds, and the page was told the
+/// shell could not start (issue #112). A further try a few milliseconds later is what the
+/// number asks for. The library keeps the error as text only, so every failure of this step is
+/// tried again; one that lasts, such as no pseudo-terminal being left, is reported about 75 ms
+/// later than before.
+const OPEN_PAUSES: [Duration; 3] = [
+    Duration::from_millis(5),
+    Duration::from_millis(20),
+    Duration::from_millis(50),
+];
+
+/// Runs `attempt`, and after a failure once more after each of `pauses`; the last error stands.
+fn again<T, E>(pauses: &[Duration], mut attempt: impl FnMut() -> Result<T, E>) -> Result<T, E> {
+    let mut result = attempt();
+    for pause in pauses {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(*pause);
+        result = attempt();
+    }
+    result
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -118,14 +181,23 @@ impl Session {
         rows: u16,
         sink: Sink,
     ) -> Result<Session, BridgeError> {
-        let failed = |_| BridgeError::from(COULD_NOT_START);
         let size = PtySize {
             rows,
             cols,
             pixel_width: 0,
             pixel_height: 0,
         };
-        let pair = native_pty_system().openpty(size).map_err(failed)?;
+        let mut tries = 0;
+        let pair = again(&OPEN_PAUSES, || {
+            tries += 1;
+            native_pty_system().openpty(size)
+        })
+        // The library keeps this error as text, and the text names no path: it is the
+        // system's own description of why no pseudo-terminal could be had.
+        .map_err(|error| could_not_start("opening a pseudo-terminal", error.to_string()))?;
+        if cfg!(debug_assertions) && tries > 1 {
+            eprintln!("open-sesame: opening a pseudo-terminal worked on try {tries}");
+        }
         let mut command = CommandBuilder::new(&launch.program);
         command.args(&launch.args);
         command.cwd(&launch.cwd);
@@ -134,7 +206,10 @@ impl Session {
         // The shell inherits how this process treats Control+C; see `deliver_control_c`.
         #[cfg(windows)]
         super::tree::deliver_control_c();
-        let mut child = pair.slave.spawn_command(command).map_err(failed)?;
+        let mut child = pair
+            .slave
+            .spawn_command(command)
+            .map_err(|error| could_not_start("starting the program", system_error(&error)))?;
         // Only the child may hold the other end, or the stream never reports its end.
         drop(pair.slave);
         let adopted = Tree::adopt(child.as_ref()).and_then(|tree| {
@@ -143,17 +218,20 @@ impl Session {
                 .try_clone_reader()
                 .map_err(std::io::Error::other)?;
             let writer = pair.master.take_writer().map_err(std::io::Error::other)?;
+            let exit = ShellExit::watch(pair.master.as_ref())?;
             let pid = child
                 .process_id()
                 .ok_or_else(|| std::io::Error::other("the shell has no process ID"))?;
-            Ok((tree, reader, writer, pid))
+            Ok((tree, reader, writer, exit, pid))
         });
-        let (tree, reader, writer, pid) = match adopted {
+        let (tree, reader, writer, exit, pid) = match adopted {
             Ok(parts) => parts,
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(BridgeError::from(COULD_NOT_START));
+            Err(error) => {
+                super::tree::discard(child.as_mut());
+                return Err(could_not_start(
+                    "taking over the pseudo-terminal",
+                    number(error.raw_os_error()),
+                ));
             }
         };
         let shared = Arc::new(Shared {
@@ -167,7 +245,7 @@ impl Session {
             sink,
         });
         let for_reader = Arc::clone(&shared);
-        std::thread::spawn(move || for_reader.read(reader));
+        std::thread::spawn(move || for_reader.read(reader, exit));
         let for_sender = Arc::clone(&shared);
         std::thread::spawn(move || for_sender.send());
         let for_typist = Arc::clone(&shared);
@@ -223,7 +301,10 @@ impl Session {
     }
 
     /// Ends the pane: kills its whole process tree and collects the shell. Returns when that is
-    /// done. Safe to call more than once and from any thread.
+    /// done; on Windows a killed shell is given five seconds to end, and this goes on without
+    /// it after that to close the pseudo-console, which on Windows builds before 26100 may
+    /// itself wait (see `ENDING` in `tree.rs`). On Unix the top of `tree.rs` and `Tree::end`
+    /// say what is ended and what is not. Safe to call more than once and from any thread.
     pub(super) fn close(&self) {
         self.shared.end();
     }
@@ -239,7 +320,7 @@ impl Shared {
             self.changed.notify_all();
         }
         // Holding this lock while the tree ends makes a second caller wait for the first, so
-        // every caller returns only after the processes are gone.
+        // every caller returns only after the tree has been ended.
         let mut child = lock(&self.child);
         if let Some(mut child) = child.take() {
             self.tree.end(child.as_mut());
@@ -299,9 +380,18 @@ impl Shared {
 
     /// Reads the pseudo-terminal until it ends. Keeps reading after the pane is closed so the
     /// program's last writes never block the kill, and discards what it reads then.
-    fn read(&self, mut reader: Box<dyn Read + Send>) {
+    ///
+    /// The stream also ends when `exit` says the shell has exited and left something running
+    /// that keeps the terminal open (see `exit.rs`). The sender then ends the pane, and this
+    /// goes on reading, and discarding, until the kill has closed the terminal.
+    fn read(&self, mut reader: Box<dyn Read + Send>, mut exit: ShellExit) {
         let mut chunk = vec![0u8; READ_BYTES];
         loop {
+            if exit.ended(&self.tree, || lock(&self.stream).closed) {
+                lock(&self.stream).eof = true;
+                self.changed.notify_all();
+                continue;
+            }
             let read = reader.read(&mut chunk);
             let mut stream = lock(&self.stream);
             match read {
@@ -310,13 +400,15 @@ impl Shared {
                     break;
                 }
                 Ok(count) => {
-                    while !stream.closed && stream.buffer.len() >= BUFFER_BYTES {
+                    exit.took(count);
+                    let over = |stream: &Stream| stream.closed || stream.eof;
+                    while !over(&stream) && stream.buffer.len() >= BUFFER_BYTES {
                         stream = self
                             .changed
                             .wait(stream)
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
                     }
-                    if !stream.closed {
+                    if !over(&stream) {
                         stream.buffer.extend_from_slice(&chunk[..count]);
                         self.changed.notify_all();
                     }
@@ -327,7 +419,7 @@ impl Shared {
                     // Linux and a closed pipe on Windows; anything else is a real failure.
                     let ended = error.kind() == std::io::ErrorKind::BrokenPipe
                         || error.raw_os_error() == Some(END_OF_TERMINAL);
-                    stream.failed = !ended && !stream.closed;
+                    stream.failed = !ended && !stream.closed && !stream.eof;
                     stream.eof = true;
                     break;
                 }
@@ -425,3 +517,51 @@ const END_OF_TERMINAL: i32 = libc::EIO;
 /// `ERROR_BROKEN_PIPE`, in case it does not arrive as `ErrorKind::BrokenPipe`.
 #[cfg(windows)]
 const END_OF_TERMINAL: i32 = 109;
+
+#[cfg(test)]
+mod tests {
+    use super::again;
+    use std::time::{Duration, Instant};
+
+    const PAUSES: [Duration; 2] = [Duration::from_millis(1), Duration::from_millis(30)];
+
+    #[test]
+    fn a_step_that_fails_at_first_is_tried_again_and_its_result_used() {
+        let mut tries = 0;
+        let result: Result<u32, &str> = again(&PAUSES, || {
+            tries += 1;
+            if tries < 3 {
+                Err("not yet")
+            } else {
+                Ok(tries)
+            }
+        });
+        assert_eq!(result, Ok(3));
+        assert_eq!(tries, 3);
+    }
+
+    #[test]
+    fn a_step_that_works_is_run_once_and_without_a_pause() {
+        let mut tries = 0;
+        let started = Instant::now();
+        let result: Result<(), &str> = again(&[Duration::from_secs(30)], || {
+            tries += 1;
+            Ok(())
+        });
+        assert_eq!(result, Ok(()));
+        assert_eq!(tries, 1);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_step_that_keeps_failing_ends_with_its_last_error_after_every_pause() {
+        let mut tries = 0;
+        let started = Instant::now();
+        let result: Result<(), String> = again(&PAUSES, || {
+            tries += 1;
+            Err(format!("failure {tries}"))
+        });
+        assert_eq!(result, Err("failure 3".to_string()));
+        assert!(started.elapsed() >= PAUSES[0] + PAUSES[1]);
+    }
+}

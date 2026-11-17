@@ -151,19 +151,31 @@ fn cancelling_a_hanging_login_shell_kills_its_child_before_returning() {
     }
     cancel.cancel();
     let env = worker.join().unwrap();
+    let returned_after = started.elapsed();
     let pid: i32 = std::fs::read_to_string(pidfile)
         .expect("shell never started")
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(
-        unsafe { libc::kill(pid, 0) },
-        -1,
-        "capture child survived cancellation"
-    );
+    // The runner kills the whole group but collects only the shell, its own child. The `sleep`
+    // is the shell's child, so the system collects it a moment after the shell is gone, and
+    // until then signal 0 still reaches it although it has been killed. Wait a bounded time for
+    // the ID to stop answering: a `sleep 30` that cancellation left running answers throughout.
+    let collected_by = Instant::now() + Duration::from_secs(5);
+    let gone = loop {
+        // SAFETY: `kill` takes plain integers, and signal 0 only checks that the process exists.
+        if unsafe { libc::kill(pid, 0) } == -1 {
+            break std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        }
+        if Instant::now() >= collected_by {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(gone, "capture child survived cancellation");
     assert_eq!(env.source(), &EnvSource::Inherited(Fallback::Cancelled));
     assert!(
-        started.elapsed() < Duration::from_secs(2),
+        returned_after < Duration::from_secs(2),
         "cancellation waited for the startup timeout"
     );
 }

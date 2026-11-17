@@ -4,7 +4,7 @@ use crate::summon::{self, Session, Summon};
 use open_sesame_core::gate::{MAIN_WINDOW, NOT_ON_OS, UNSUPPORTED};
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, LogicalSize, Manager, Runtime, Url, WebviewUrl, WebviewWindow};
 use tauri::{WebviewWindowBuilder, WindowEvent};
 
@@ -48,12 +48,20 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     } else {
         builder.center()
     };
-    #[cfg(debug_assertions)]
-    let builder = builder.on_page_load(|window, payload| {
-        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+    let builder = builder.on_page_load(|window, payload| match payload.event() {
+        // The holds of the page before this one are released: it can no longer release them.
+        // Its terminal panes are closed, for nothing can reach them any more.
+        PageLoadEvent::Started => {
+            summon::page_replaced(window.app_handle());
+            crate::terminal::page_replaced(window.app_handle());
+        }
+        PageLoadEvent::Finished => {
             // Development evidence that hiding and showing the window does not load the page again.
-            eprintln!("open-sesame: page loaded {}", payload.url());
-            crate::runtime_probe::record(window.app_handle(), "page-load");
+            #[cfg(debug_assertions)]
+            {
+                eprintln!("open-sesame: page loaded {}", payload.url());
+                crate::runtime_probe::record(window.app_handle(), "page-load");
+            }
         }
     });
     let window = builder.build()?;
