@@ -7,6 +7,15 @@
 //! is killed before `run` returns. The child is the leader of a new session and process group on
 //! Unix and is placed in a kill-on-close job object on Windows before it runs any code.
 //!
+//! Some programs the kill does not end, or not at once: one this user may not signal, which on
+//! Unix is a program that has changed its user, and one held inside the system, as on a file
+//! system that has stopped answering. `run` waits [`GONE`] for a killed child and then returns
+//! [`RunError::Timeout`] with that program possibly still running, whatever had stopped the run
+//! (issue #97): a caller cannot tell "killed" from "given up", and the sentence for a timeout
+//! says the command was stopped. A child given up is handed to a thread that collects it when
+//! it ends; until then that thread, the threads reading its output and their pipes stay, so a
+//! caller that keeps starting such a program keeps adding to them. Nothing bounds that number.
+//!
 //! Known limit: on Unix a program that deliberately moves itself to another process group or
 //! session leaves the group and is not killed. Ordinary command-line tools and their helpers do
 //! not do this. If such a program also keeps the output pipes and keeps writing to them, the run
@@ -43,6 +52,10 @@ const POLL: Duration = Duration::from_millis(20);
 /// How long output may keep arriving after the program has exited or been killed. A helper the
 /// program left behind can hold the pipes open; it is killed when this runs out.
 const DRAIN: Duration = Duration::from_millis(250);
+/// How long a child that has just been killed is waited for. Without a limit, a program this
+/// user cannot kill held `run` for as long as it lived (issue #97; the owner chose a limit and
+/// a timeout error on 16 November 2026). Five seconds is what a pane gives a killed shell too.
+const GONE: Duration = Duration::from_secs(5);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MAX_OUTPUT: usize = 1024 * 1024;
 
@@ -239,23 +252,63 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// What became of the child when the run let go of it.
+#[derive(Clone, Copy)]
+enum Left {
+    /// It was collected, with this exit code if it had one.
+    Collected(Option<i32>),
+    /// It was killed and was still there after [`GONE`].
+    Running,
+}
+
+/// Waits for a child that has just been killed and collects it. `None` when it is still there
+/// after [`GONE`]. It looks at the child in steps so that the wait can end without it.
+fn collect(child: &mut Child) -> Option<Option<i32>> {
+    let started = Instant::now();
+    let mut pause = Duration::from_micros(200);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status.code()),
+            // Nothing more can be learned about the child, as when `wait` failed here before.
+            Err(_) => return Some(None),
+            Ok(None) if started.elapsed() >= GONE => return None,
+            Ok(None) => {}
+        }
+        std::thread::sleep(pause);
+        pause = (pause * 2).min(POLL);
+    }
+}
+
 /// Owns the child for the length of the run. Dropping it, on any path including a panic in the
-/// caller's callback, kills the whole tree, collects the child and stops the watchdog.
+/// caller's callback, kills the whole tree, collects the child and stops the watchdog. A child
+/// that the kill does not end is given up after [`GONE`].
 struct Owned {
-    child: Child,
+    child: Option<Child>,
     tree: platform::Tree,
     shared: Arc<Shared>,
-    status: Option<Option<i32>>,
+    left: Left,
 }
 
 impl Owned {
-    fn retire(&mut self) -> Option<i32> {
-        if self.status.is_none() {
-            self.status = Some(self.tree.retire(&mut self.child));
-            *lock(&self.shared.finished) = true;
-            self.shared.wake.notify_all();
-        }
-        self.status.flatten()
+    fn retire(&mut self) -> Left {
+        let Some(mut child) = self.child.take() else {
+            return self.left;
+        };
+        self.left = match self.tree.retire(&mut child) {
+            Some(status) => Left::Collected(status),
+            None => {
+                // Whenever the program does end, this collects it, so that it does not stay in
+                // the process table until the application quits. Where no thread can be
+                // started it does stay there.
+                let _ = start(move || {
+                    let _ = child.wait();
+                });
+                Left::Running
+            }
+        };
+        *lock(&self.shared.finished) = true;
+        self.shared.wake.notify_all();
+        self.left
     }
 }
 
@@ -311,20 +364,22 @@ fn execute(
         report.attach(&mut command);
     }
 
-    let (child, tree) = platform::spawn(&mut command).map_err(|error| match error.kind() {
+    let (mut child, tree) = platform::spawn(&mut command).map_err(|error| match error.kind() {
         std::io::ErrorKind::NotFound => RunError::NotFound,
         _ => RunError::Io(error.to_string()),
     })?;
+    let (child_stdin, child_stdout, child_stderr) =
+        (child.stdin.take(), child.stdout.take(), child.stderr.take());
     let shared = Arc::new(Shared {
         reason: Mutex::new(None),
         finished: Mutex::new(false),
         wake: Condvar::new(),
     });
     let mut owned = Owned {
-        child,
+        child: Some(child),
         tree,
         shared: shared.clone(),
-        status: None,
+        left: Left::Collected(None),
     };
 
     // From here on an early return drops `owned`, which kills the tree and collects the child.
@@ -339,11 +394,11 @@ fn execute(
     .map_err(failed)?;
     let (sender, receiver) = sync_channel::<Message>(16);
     let mut open = 0; // output streams that have not closed yet
-    if let Some(stdout) = owned.child.stdout.take() {
+    if let Some(stdout) = child_stdout {
         pump(stdout, sender.clone(), Message::Stdout).map_err(failed)?;
         open += 1;
     }
-    if let Some(stderr) = owned.child.stderr.take() {
+    if let Some(stderr) = child_stderr {
         pump(stderr, sender.clone(), Message::Stderr).map_err(failed)?;
         open += 1;
     }
@@ -370,7 +425,7 @@ fn execute(
     #[cfg(not(unix))]
     let _ = report;
     drop(sender);
-    if let (Some(mut stdin), Some(input)) = (owned.child.stdin.take(), run.stdin) {
+    if let (Some(mut stdin), Some(input)) = (child_stdin, run.stdin) {
         // A program that never reads its input must not block the run, so this has its own
         // thread. It ends when the input is written or the program is gone.
         start(move || {
@@ -477,10 +532,12 @@ fn execute(
         }
     };
 
-    let status = owned.retire();
-    match result {
-        Some(reason) => Err(reason),
-        None => Ok((
+    match (owned.retire(), result) {
+        // The kill did not end the program in time. The run stops waiting and says it took too
+        // long, whatever stopped it first, and the program may still be running.
+        (Left::Running, _) => Err(RunError::Timeout),
+        (Left::Collected(_), Some(reason)) => Err(reason),
+        (Left::Collected(status), None) => Ok((
             Output {
                 status,
                 stdout,
@@ -560,6 +617,109 @@ mod tests {
     thread_local! {
         /// How many more helper threads the run on this thread may start before one fails.
         static THREADS_LEFT: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    #[cfg(unix)]
+    thread_local! {
+        /// Whether the kill is left out for a program started on this thread.
+        static KILL_DOES_NOTHING: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Whether a program started on this thread is to outlive the kill. See `Tree::deaf`.
+    #[cfg(unix)]
+    pub(super) fn kill_does_nothing() -> bool {
+        KILL_DOES_NOTHING.with(Cell::get)
+    }
+
+    /// A program that outlives the kill does not hold the run for as long as it lives: after
+    /// `GONE` the run stops waiting and says it took too long, with the program still running
+    /// (issue #97). It says so whatever had stopped the run, a cancel included, as decided. A
+    /// test cannot start a program its user may not signal, so the kill is left out for these
+    /// runs; the wait, the give-up and the later collection are the real code. The two runs
+    /// are side by side, so the test takes one wait and not two.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_outlives_the_kill_is_given_up_after_a_limit() {
+        // What one run did: its result, how long it took, and whether the program was still
+        // there afterwards and was collected once it had been ended from here.
+        fn outlive(cancel_after: Option<Duration>) -> (Result<(), RunError>, Duration, bool, bool) {
+            // SAFETY (for both): `kill` takes plain integers; signal 0 only asks whether the
+            // process exists, and it exists until it has been collected.
+            let exists = |pid: libc::pid_t| unsafe { libc::kill(pid, 0) } == 0;
+            let end = |pid: libc::pid_t| unsafe { libc::kill(pid, libc::SIGKILL) };
+            let dir = tempfile::tempdir().unwrap();
+            let pid_file = dir.path().join("pid");
+            let mut request = Run::new("/bin/sh");
+            // `exec`, so the number written is the program the run waits for. It ends by
+            // itself after a minute if this test dies before it can end it.
+            request.args = vec![
+                "-c".into(),
+                format!("echo $$ > '{}'; exec sleep 60", pid_file.display()),
+            ];
+            request.timeout = match cancel_after {
+                Some(_) => Duration::from_secs(30),
+                None => Duration::from_millis(500),
+            };
+            if let Some(after) = cancel_after {
+                let cancel = Cancel::default();
+                request.cancel = Some(cancel.clone());
+                std::thread::spawn(move || {
+                    std::thread::sleep(after);
+                    cancel.cancel();
+                });
+            }
+            KILL_DOES_NOTHING.with(|flag| flag.set(true));
+            let started = Instant::now();
+            let result = execute(request, None, None).map(|_| ());
+            let took = started.elapsed();
+            KILL_DOES_NOTHING.with(|flag| flag.set(false));
+
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let pid = loop {
+                let written = std::fs::read_to_string(&pid_file).unwrap_or_default();
+                if let Ok(pid) = written.trim().parse::<libc::pid_t>() {
+                    break pid;
+                }
+                assert!(Instant::now() < deadline, "the program never wrote its ID");
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            let outlived = exists(pid);
+            end(pid);
+            // The run handed the program to a thread that collects it once it ends.
+            let collected = loop {
+                if !exists(pid) {
+                    break true;
+                }
+                if Instant::now() >= deadline {
+                    break false;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            (result, took, outlived, collected)
+        }
+        let cancelled = std::thread::spawn(|| outlive(Some(Duration::from_millis(500))));
+        let timed_out = outlive(None);
+        let cancelled = cancelled.join().unwrap();
+        for (what, (result, took, outlived, collected)) in
+            [("timed out", timed_out), ("cancelled", cancelled)]
+        {
+            assert!(
+                matches!(result, Err(RunError::Timeout)),
+                "{what}: {result:?}"
+            );
+            assert!(
+                outlived,
+                "{what}: the program was gone, so the limit was not what ended the wait"
+            );
+            assert!(
+                took >= GONE && took < GONE + Duration::from_secs(5),
+                "{what}: the run returned after {took:?}"
+            );
+            assert!(
+                collected,
+                "{what}: the program was never collected after it ended"
+            );
+        }
     }
 
     /// Whether the next helper thread of a run started on this thread should fail to start.
