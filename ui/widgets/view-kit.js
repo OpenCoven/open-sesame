@@ -27,11 +27,17 @@ export function itemStore({bridge, host, signal, draw}) {
   return store;
 }
 
-// Runs `refresh` when the window is shown again, until the lifetime ends.
+// The shell sends this to the document when the rail's panel opens (ui/main.js): the window was
+// on screen all along as the strip, so the document's own visibility did not change.
+export const PANEL_SHOWN = 'open-sesame-panel-shown';
+
+// Runs `refresh` when the window is shown again or the panel opens, until the lifetime ends.
 export function whenShown(document, signal, refresh) {
   const listener = () => { if (document.visibilityState === 'visible' && !signal.aborted) refresh(); };
-  document.addEventListener('visibilitychange', listener);
-  signal.addEventListener('abort', () => document.removeEventListener('visibilitychange', listener), {once: true});
+  for (const name of ['visibilitychange', PANEL_SHOWN]) {
+    document.addEventListener(name, listener);
+    signal.addEventListener('abort', () => document.removeEventListener(name, listener), {once: true});
+  }
 }
 
 // Draws a list again and gives keyboard focus back to the same row's control.

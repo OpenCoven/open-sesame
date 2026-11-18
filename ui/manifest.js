@@ -26,6 +26,9 @@ export const widgets = Object.freeze([
   entry('transcription', 'Local transcription', false, 85),
   entry('declarative', 'JSON widgets', false, null),
 ]);
+// Views that are better with room: the rail opens them at its wide width until the person
+// narrows it (ui/main.js).
+export const wideViews = Object.freeze(['shells']);
 export const paletteIndex = Object.freeze(widgets.flatMap(widget => widget.commands.map(command =>
   Object.freeze({...command, widget: widget.id, group: widget.name}),
 )));

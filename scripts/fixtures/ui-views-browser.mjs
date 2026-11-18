@@ -335,7 +335,7 @@ try {
         }
       });
       await step('turning the views off removes their surfaces and style', async () => {
-        await page.getByRole('button', {name: 'Widgets', exact: true}).click();
+        await page.getByRole('button', {name: 'Settings', exact: true}).click();
         for (const id of ['today', 'projects', 'focus']) {
           await page.locator(`[data-widget="${id}"]`).uncheck();
           await view(page, id).waitFor({state: 'detached'});
@@ -343,7 +343,7 @@ try {
         assert.equal(await page.locator('link[data-widget-style*="views.css"]').count(), 0);
         for (const id of ['today', 'projects', 'focus']) await page.locator(`[data-widget="${id}"]`).check();
         await view(page, 'focus').waitFor({state: 'visible'});
-        await page.getByRole('button', {name: 'Widgets', exact: true}).click();
+        await page.getByRole('button', {name: 'Settings', exact: true}).click();
         assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0], 'no browser storage is used');
       });
       await step('stored markup is shown as text, never as HTML', async () => {

@@ -196,8 +196,24 @@ function fakeBridge(status, answers = {}) {
   // Hide-on-blur is off unless the person turns it on.
   assert.match(host, /hide_on_blur: false,\n        \}\n    \}\n\}/);
   // On Wayland the window is not positioned and always-on-top is refused with the fixed message.
-  assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
-  assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
+  // The ordinary window is left where the session puts it; only the rail is placed, by rail.rs,
+  // and a Wayland session gets the rail only as a layer surface, which the session places
+  // (layer.rs); without the protocol or the library it keeps the ordinary window.
+  assert.equal(window.split('.center()').length - 1, 0, 'The ordinary window is not centred or otherwise placed when it is created');
+  assert.match(window, /let builder = match presentation \{\n        Presentation::Rail => rail::shape\(builder\),\n        Presentation::Window => builder\n/);
+  const railSource = read('src-tauri/src/rail.rs');
+  assert.match(railSource, /Session::Wayland => Presentation::Window,/, 'A Wayland session keeps the ordinary window');
+  assert.match(railSource, /if session == Session::Wayland && crate::layer::supported\(\) \{\n        return Presentation::Rail;\n    \}\n    presentation_for\(session\)/, 'Only a Wayland session that can dock the window gets the rail');
+  // The layer-shell library is opened when it is there and never linked, so the application
+  // starts without it, and it is asked only before the window is first shown.
+  const layerSource = read('src-tauri/src/layer.rs');
+  assert.match(layerSource, /libc::dlopen\(\n            c"libgtk-layer-shell\.so\.0"\.as_ptr\(\),/, 'gtk-layer-shell is opened at run time');
+  assert.equal(/#\[link|extern crate|gtk_layer_shell::/.test(layerSource), false, 'gtk-layer-shell is not linked');
+  assert.match(layerSource, /if surface\.is_realized\(\) \{\n        return false;\n    \}/, 'A window that already has a surface is not docked');
+  assert.match(layerSource, /"OPEN_SESAME_LAYER_SHELL"\)\.as_deref\(\) == Ok\("off"\)/, 'The ordinary window can be asked for');
+  assert.equal(/gtk_layer_/.test(railSource), false, 'Every gtk-layer-shell call is in layer.rs');
+  assert.match(railSource, /app\.manage\(rail\);\n    if presentation != Presentation::Rail \{\n        return;\n    \}/, 'The ordinary window starts no pointer thread');
+  assert.match(railSource, /"rail\.set" => \{\n            \/\/ The ordinary window has nothing to set\.\n            if !rail\.is_rail\(\) \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/, 'rail.set is refused for the ordinary window');
   // A page that loads takes none of the old page's holds with it (issue #115). The rule is for
   // every build. This reads text and cannot show that the call runs, and nothing else in the
   // repository shows a page load releasing holds: the test in router.rs calls

@@ -46,6 +46,9 @@ pub const PORTED: &[&str] = &[
     "summon.setShortcut",
     "summon.setHideOnBlur",
     "summon.hold",
+    // The companion rail: its status, and opening, widening and placing it.
+    "rail.status",
+    "rail.set",
     // Terminals, SSH, clipboard and folder picker (#74).
     "terminal.open",
     "terminal.input",

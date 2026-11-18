@@ -1,160 +1,251 @@
-:root {
-  color-scheme: light dark;
-  --page: #f6f5f2; --ink: #1b1a18; --muted: #6b6861; --line: #dcd9d2;
-  --field: #fff; --ok: #2f7d4f; --warn: #a45a12; --terminal: #131315;
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --page: #171614; --ink: #eeebe5; --muted: #a39f96; --line: #34322e; --field: #211f1c; --ok: #6fc48f; --warn: #e0a15c; }
-}
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
-html, body { height: 100%; margin: 0; }
-body { background: var(--page); color: var(--ink); }
-.shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-h1 { margin: 0; font-size: 1.05rem; font-weight: 650; }
-h2 { font-size: 1.15rem; margin-top: 0; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .65rem 1rem; border-bottom: 1px solid var(--line); }
-.status { margin: 0 auto 0 0; color: var(--muted); }
-button, input, textarea { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .6rem; }
-button { cursor: pointer; }
-button:hover { border-color: var(--muted); }
-button:disabled { opacity: .6; cursor: wait; }
-:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
-.navigation { display: flex; flex-wrap: wrap; gap: .4rem; padding: .6rem 1rem; border-bottom: 1px solid var(--line); }
-.navigation [aria-current] { border-color: var(--ok); font-weight: 650; }
-.notice { margin: 0; padding: .5rem 1rem; color: var(--warn); overflow-wrap: anywhere; }
-.view-host { flex: 1; min-height: 0; display: flex; overflow: auto; }
-.widget-view { flex: 1; min-width: 0; padding: 1rem; overflow: auto; }
-.widget-view[data-widget-view="shells"] { padding: 0; display: flex; }
-.empty { padding: 1rem; color: var(--muted); }
-.palette, .widget-settings { padding: 1rem; border-bottom: 1px solid var(--line); }
-.palette label { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-.palette input { flex: 1; min-width: 12rem; }
-.command-results { display: grid; gap: .3rem; max-height: 18rem; overflow: auto; margin: .75rem 0; }
-.command-results button { text-align: left; }
-.widget-settings [data-widget-options] { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; }
-.widget-settings label { display: flex; align-items: center; gap: .4rem; }
-.widget-settings input { accent-color: var(--ok); }
-@media (max-width: 600px) { .bar, .navigation { padding: .6rem; } .status { flex-basis: 100%; order: 1; } }
+/* The shell: the rail's strip of icons against the screen edge and the panel that opens beside
+   it. Colours, sizes and timing come from tokens.css.
 
-/* Host settings in a row under the bar, outside every widget, so they stay whatever widgets are
-   on: the account (issue #72) and the shortcut (issue #71). */
-.settings {
+   The layout follows the window's own width, not a message from the host: the host resizes the
+   window (src-tauri/src/rail.rs) and the page is right in the same frame, with nothing to wait
+   for. At the strip's width only the strip is drawn. The data attributes ui/rail.js sets say
+   which edge the strip is on and whether the window is a rail at all. */
+
+/* Where the system's material is behind the window (macOS, Windows 11), the page is see-through
+   and only tints it. */
+html[data-surface="material"], html[data-surface="material"] body { background: transparent; }
+html[data-surface="material"] .shell { background: var(--sunken-tint); }
+html[data-surface="material"] .panel { background: var(--surface-tint); }
+html[data-surface="material"] .palette, html[data-surface="material"] .sheet { background: var(--surface-sheet); }
+
+/* Where the window is see-through (Linux), the page draws the rounded window itself. */
+html[data-surface="page"], html[data-surface="page"] body { background: transparent; }
+html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shadow: 0 0 0 1px var(--line-strong) inset; }
+
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.shell {
+  position: relative;
+  height: 100%;
+  min-height: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 2rem;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--line);
+  background: var(--sunken);
+  overflow: hidden;
 }
+/* The strip sits on the side the screen edge is on. The ordinary window keeps it on the left. */
+.shell[data-presentation="rail"][data-edge="right"] { flex-direction: row-reverse; }
 
-.settings[hidden] { display: none; }
-
-.settings > section { flex: 1 1 18rem; max-width: 30rem; }
-
-/* Account control (issue #72). */
-.account {
-  display: grid;
-  gap: 0.5rem;
-  align-content: start;
-}
-
-.account[hidden] { display: none; }
-
-.account h2 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.account .who, .account .message { margin: 0; }
-
-.account .message { color: var(--muted); font-size: 0.9rem; }
-
-.account .message:empty { display: none; }
-
-.account .message[data-warn="true"] { color: var(--warn); }
-
-.account .row { display: flex; gap: 0.5rem; }
-
-.account button {
-  padding: 0.35rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-}
-
-.account button:disabled { color: var(--muted); }
-
-.account button:focus-visible {
-  outline: 2px solid var(--ok);
-  outline-offset: 1px;
-}
-
-.summon {
-  display: grid;
-  gap: 0.5rem;
-  align-content: start;
-}
-
-.summon[hidden], .summon form[hidden] { display: none; }
-
-.summon h2 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.summon form { display: grid; gap: 0.35rem; }
-
-.summon label { color: var(--muted); }
-
-.summon .row { display: flex; gap: 0.5rem; }
-
-.summon input[type="text"] {
-  flex: 1;
-  min-width: 0;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  -webkit-user-select: text;
-  user-select: text;
-  cursor: text;
-}
-
-.summon button {
-  padding: 0.35rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-}
-
-.summon input:focus-visible, .summon button:focus-visible {
-  outline: 2px solid var(--ok);
-  outline-offset: 1px;
-}
-
-.summon .hint, .summon .message { margin: 0; }
-
-.summon .hint { color: var(--muted); font-size: 0.9rem; }
-
-.summon .message:empty { display: none; }
-
-.summon .message[data-warn="true"] { color: var(--warn); }
-
-.summon .check {
+/* The strip. Its buttons are in the same place on the screen whether the panel is open or not:
+   the column is the strip's width, against the same edge, and its contents are centred as the
+   closed window is centred on the display. */
+.rail {
+  flex: none;
+  width: var(--rail-width);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: var(--ink);
+}
+.rail-inner {
+  width: 100%;
+  height: var(--rail-height);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+.shell[data-presentation="window"] .rail { align-items: stretch; }
+.shell[data-presentation="window"] .rail-inner { height: 100%; }
+.rail-views {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.shell[data-presentation="rail"] .rail-views { justify-content: center; }
+.rail-tools { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+
+.rail-button {
+  position: relative;
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+}
+.rail-button:hover { background: var(--fill-hover); color: var(--ink); }
+.rail-button:active { background: var(--fill-active); }
+.rail-button:disabled { color: var(--faint); background: transparent; }
+.rail-button[aria-current="page"] { background: var(--accent-wash); color: var(--accent-strong); }
+.rail-button[aria-expanded="true"]:not(.rail-mark) { background: var(--fill-active); color: var(--ink); }
+/* The view that is open carries a short bar on the side of the screen edge. */
+.rail-button[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  top: 11px;
+  bottom: 11px;
+  left: -8px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.shell[data-presentation="rail"][data-edge="right"] .rail-button[aria-current="page"]::before { left: auto; right: -8px; }
+
+/* A mark from ui/attention.js: something under way, or something that needs the person. */
+.rail-button[data-mark]::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--sunken);
+}
+.rail-button[data-mark="attention"]::after { background: var(--attention); animation: attention var(--pulse) var(--ease) infinite; }
+@keyframes attention {
+  0%, 100% { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 2px var(--attention-ring); }
+  50% { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 6px transparent; }
 }
 
-/* The general input rule above gives text fields a width; a checkbox keeps its own. */
-.summon .check input { width: auto; padding: 0; }
+.rail-mark { color: var(--ink); }
+.rail-mark:disabled { color: var(--ink); }
+.rail-mark .icon { width: 24px; height: 24px; }
+
+/* The panel: one raised sheet beside the strip. */
+.panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 6px 6px 6px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+  animation: panel-in var(--smooth) var(--ease);
+}
+.shell[data-presentation="rail"][data-edge="right"] .panel { margin: 6px 0 6px 6px; }
+@keyframes panel-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+/* The closed rail is the strip alone. */
+@media (max-width: 120px) {
+  .panel { display: none; }
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+.bar-title { flex: 1; min-width: 0; }
+.bar-title h1, .status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { color: var(--muted); font-size: var(--text-small); }
+.shell[data-state="unavailable"] .status { color: var(--warn); }
+.bar-button {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--muted);
+}
+.bar-button:hover { color: var(--ink); }
+.bar-button .icon { width: 18px; height: 18px; }
+.shell[data-edge="left"] [data-collapse] .icon { transform: scaleX(-1); }
+
+.notice {
+  flex: none;
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--warn-wash);
+  color: var(--warn);
+  overflow-wrap: anywhere;
+}
+
+.panel-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.widget-view { flex: 1; min-width: 0; padding: var(--space-4); overflow: auto; }
+.widget-view[data-widget-view="shells"] { padding: 0; display: flex; }
+.empty { padding: var(--space-4); color: var(--muted); }
+
+/* Commands and Settings open over the view, inside the panel; the view under them stays as it
+   was. */
+.palette, .sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: auto;
+  background: var(--surface);
+  animation: sheet-in var(--quick) var(--ease);
+}
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.palette { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
+.palette label { display: grid; gap: var(--space-2); color: var(--muted); font-size: var(--text-small); }
+.palette input { width: 100%; min-height: 36px; padding: 0 var(--space-3); font-size: var(--text); color: var(--ink); }
+.command-results { flex: 1; min-height: 0; display: grid; gap: 2px; align-content: start; overflow: auto; }
+.command-results button {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.command-results button:hover, .command-results button:focus-visible { background: var(--fill-hover); }
+.command-results button:first-child:not([data-not-on-enter]) { background: var(--fill); }
+.command-results [data-command-answer] { border: 1px solid var(--line); background: var(--raised); }
+.command-results [data-command-answer] strong { font-size: var(--text-large); font-variant-numeric: tabular-nums; }
+.command-results [data-command-answer] span, .command-results p { color: var(--muted); }
+.command-results p { margin: 0; padding: var(--space-2) var(--space-3); }
+.palette [data-palette-close] { align-self: start; }
+
+.sheet { display: grid; gap: var(--space-3); align-content: start; padding: var(--space-4); }
+.settings { display: grid; gap: var(--space-3); }
+.sheet section {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--raised);
+}
+.sheet h2 { font-size: var(--text); font-weight: 600; }
+.sheet .hint, .sheet .message, .sheet label { color: var(--muted); }
+.sheet .hint { font-size: var(--text-small); }
+.sheet .message:empty { display: none; }
+.sheet .message[data-warn="true"] { color: var(--warn); }
+.sheet .who { color: var(--ink); }
+.sheet .row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sheet form { display: grid; gap: var(--space-2); }
+.sheet .row input[type="text"] { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--text-small); }
+.sheet .check { display: flex; align-items: center; gap: var(--space-2); color: var(--ink); }
+.sheet .field { display: grid; gap: var(--space-1); }
+.sheet select { width: 100%; }
+.widget-settings [data-widget-options] { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-1) var(--space-3); }
+.widget-settings [data-widget-options] label { display: flex; align-items: center; gap: var(--space-2); min-height: 28px; color: var(--ink); }

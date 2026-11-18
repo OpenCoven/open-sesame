@@ -1,0 +1,174 @@
+/* Design tokens and the shared control rules for the restart shell. Every stylesheet in ui/
+   takes its colours, sizes, radii and timing from here; none names a colour of its own apart
+   from the terminal's cell colours, which the emulator writes itself.
+
+   Dark is the first theme: the rail floats over other applications, where a dark surface
+   reads as a separate layer. A system set to light gets the light values below. */
+:root {
+  color-scheme: dark light;
+
+  /* Surfaces, from the furthest back to the nearest. */
+  --sunken: #090a0d;
+  --surface: #101216;
+  --raised: #181b21;
+  --overlay: #1f232b;
+
+  /* The same surfaces as tints, for a window with the system's material behind it. */
+  --sunken-tint: rgb(9 10 13 / 0.58);
+  --surface-tint: rgb(16 18 22 / 0.82);
+  --surface-sheet: rgb(16 18 22 / 0.96);
+
+  /* Lines are the ink at a low opacity, so they hold on every surface. */
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.16);
+
+  --ink: #eef0f4;
+  --muted: #a3a9b6;
+  --faint: #6d7482;
+
+  /* One accent, for what is selected and what has the keyboard. */
+  --accent: #8b9bff;
+  --accent-strong: #a7b3ff;
+  --accent-wash: rgb(139 155 255 / 0.14);
+  --on-accent: #0b0d12;
+
+  /* Status. Attention is the colour of "this needs you". */
+  --ok: #56d394;
+  --warn: #f3b562;
+  --danger: #ff7a7a;
+  --attention: #ffb454;
+  --warn-wash: rgb(243 181 98 / 0.12);
+  --attention-ring: rgb(255 180 84 / 0.5);
+
+  --fill: rgb(255 255 255 / 0.06);
+  --fill-hover: rgb(255 255 255 / 0.1);
+  --fill-active: rgb(255 255 255 / 0.15);
+
+  /* The emulator's own theme (ui/terminal.js); it stays dark in the light theme. */
+  --terminal: #131315;
+  --terminal-ink: #ddd5e7;
+
+  /* The window's corner. src-tauri/src/panel.rs cuts the same radius on macOS. */
+  --radius-window: 18px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* The rail's column and the heights src-tauri/src/rail.rs gives the window. */
+  --rail-width: 56px;
+  --rail-height: 376px;
+  --target: 40px;
+
+  --font: system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "DejaVu Sans Mono", monospace;
+  --text: 13px;
+  --text-small: 12px;
+  --text-large: 15px;
+  --text-title: 17px;
+
+  --quick: 120ms;
+  --smooth: 220ms;
+  --pulse: 1800ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --shadow-raised: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 8px 24px rgb(0 0 0 / 0.28);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --sunken: #eceef2;
+    --surface: #f7f8fa;
+    --raised: #ffffff;
+    --overlay: #ffffff;
+    --sunken-tint: rgb(236 238 242 / 0.58);
+    --surface-tint: rgb(247 248 250 / 0.82);
+    --surface-sheet: rgb(247 248 250 / 0.96);
+    --line: rgb(16 20 30 / 0.1);
+    --line-strong: rgb(16 20 30 / 0.2);
+    --ink: #14171d;
+    --muted: #565d6b;
+    --faint: #838a98;
+    --accent: #4658d8;
+    --accent-strong: #3445c0;
+    --accent-wash: rgb(70 88 216 / 0.12);
+    --on-accent: #ffffff;
+    --ok: #1f8a56;
+    --warn: #a25a0c;
+    --danger: #c8322f;
+    --attention: #b86200;
+    --warn-wash: rgb(162 90 12 / 0.1);
+    --attention-ring: rgb(184 98 0 / 0.45);
+    --fill: rgb(16 20 30 / 0.05);
+    --fill-hover: rgb(16 20 30 / 0.09);
+    --fill-active: rgb(16 20 30 / 0.14);
+    --shadow-raised: 0 1px 0 rgb(255 255 255 / 0.7) inset, 0 8px 24px rgb(16 20 30 / 0.1);
+  }
+}
+
+/* Motion is decoration here; nothing waits for it. A person who asked for less gets none. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --quick: 0ms; --smooth: 0ms; }
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+html { font: var(--text)/1.45 var(--font); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { color: var(--ink); background: var(--surface); -webkit-user-select: none; user-select: none; cursor: default; overflow: hidden; }
+
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: var(--text-large); font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: var(--text-title); font-weight: 650; letter-spacing: -0.015em; }
+h3 { font-size: var(--text); font-weight: 600; }
+
+/* Controls. A button is a quiet fill; the one that carries a view's main action is marked
+   data-primary and takes the accent. */
+button, input, select, textarea { font: inherit; color: var(--ink); }
+button {
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--fill);
+  cursor: default;
+  transition: background var(--quick) var(--ease), border-color var(--quick) var(--ease), color var(--quick) var(--ease);
+}
+button:hover { background: var(--fill-hover); }
+button:active { background: var(--fill-active); }
+button:disabled { color: var(--faint); background: var(--fill); }
+button[data-primary] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+button[data-primary]:hover { background: var(--accent-strong); }
+button[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-strong); }
+
+input, select, textarea {
+  min-height: 30px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--sunken);
+  transition: border-color var(--quick) var(--ease), box-shadow var(--quick) var(--ease);
+}
+input:hover, select:hover, textarea:hover { border-color: var(--line-strong); }
+input[type="text"], input[type="search"], input[type="url"], input[type="number"], textarea { -webkit-user-select: text; user-select: text; cursor: text; }
+input::placeholder, textarea::placeholder { color: var(--faint); }
+input[type="checkbox"] { min-height: 0; width: 15px; height: 15px; padding: 0; margin: 0; accent-color: var(--accent); }
+textarea { resize: vertical; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+
+/* Thin scrollbars that stay out of the way in a narrow column. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+.icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Text for assistive technology that the layout has no room to show. */
+.label-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

@@ -1,7 +1,10 @@
 @import '../xterm.css';
 
+/* Shells, drawn for the rail's panel. The launch form wraps to the column it is given; the
+   panes take the rest. The panel opens wide for this view (ui/main.js). */
 .terminals {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
@@ -10,71 +13,62 @@
 .terminals .launch {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
 }
 
 .terminals .launch label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
+  flex: 1 1 8rem;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
   color: var(--muted);
+  font-size: var(--text-small);
 }
 
-.terminals input, .terminals button {
-  font: inherit;
-  color: var(--ink);
-  background: var(--field);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.25rem 0.5rem;
-}
-
-.terminals input {
-  -webkit-user-select: text;
-  user-select: text;
-  cursor: text;
-  width: 11rem;
-}
-
-.terminals input[name="cwd"] { width: 16rem; }
-
-.terminals button { cursor: default; }
-.terminals button:hover { border-color: var(--muted); }
-.terminals :focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+.terminals input { width: 100%; font-size: var(--text); }
+.terminals .launch button[type="submit"] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.terminals .launch button[type="submit"]:hover { background: var(--accent-strong); }
 
 .terminals .notice {
-  margin: 0;
-  padding: 0.25rem 1rem;
+  margin: 0 var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--warn-wash);
   color: var(--warn);
 }
 
 .terminals .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0 1rem;
-  min-height: 0.25rem;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  min-height: var(--space-1);
 }
 
 .terminals .tab {
   display: inline-flex;
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
+  max-width: 100%;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   overflow: hidden;
 }
 
 .terminals .tab button {
+  min-height: 28px;
   border: 0;
   border-radius: 0;
   background: transparent;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.terminals .tab [role="tab"][aria-selected="true"] { background: var(--terminal); color: #ddd5e7; }
-.terminals .tab[data-ended="true"] [role="tab"] { color: var(--muted); }
-.terminals .tab .close { color: var(--muted); padding: 0.25rem 0.4rem; }
+.terminals .tab [role="tab"][aria-selected="true"] { background: var(--terminal); color: var(--terminal-ink); }
+.terminals .tab[data-ended="true"] [role="tab"] { color: var(--faint); }
+.terminals .tab .close { padding: 0 var(--space-2); }
+.terminals .tab .close:hover { color: var(--ink); }
 
 .terminals .panes {
   min-height: 0;
@@ -83,7 +77,7 @@
 
 .terminals .pane {
   height: 100%;
-  padding: 0.4rem 0.5rem;
+  padding: var(--space-2);
 }
 
 .terminals .pane .xterm { height: 100%; }

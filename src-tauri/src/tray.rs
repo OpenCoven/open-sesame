@@ -1,7 +1,8 @@
 //! The tray icon. Its menu shows or hides the window and quits, and works everywhere. On macOS
 //! and Linux a click only opens the menu: Tauri's tray emits no click events on Linux. On
-//! Windows a left click shows the window against the icon, as a popover, and a right click
-//! opens the menu (issue #71).
+//! Windows a left click opens or closes the rail's panel, and a right click opens the menu
+//! (issue #71). Where the window is the rail (`rail.rs`), the menu's Show or Hide takes the
+//! whole rail off the screen and puts the strip back.
 
 use crate::{summon, window};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -38,7 +39,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
-            TOGGLE => window::toggle(app),
+            TOGGLE => window::toggle_shown(app),
             // Exit runs the shutdown in `run`, so Quit and every other way out share one path.
             QUIT => app.exit(0),
             _ => {}

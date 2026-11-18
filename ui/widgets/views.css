@@ -1,45 +1,69 @@
-/* Today, Projects and Focus (issue #77). Loaded with any of the three and removed with it. */
-.view { display: grid; gap: 1rem; max-width: 56rem; align-content: start; }
-.view h2 { margin: 0; }
-.view h3 { margin: 0 0 .4rem; font-size: 1rem; font-weight: 650; }
-.view p { margin: 0; }
+/* Today, Projects and Focus (issue #77), drawn for the rail's panel: one narrow column, about
+   344 px across, that also reads well when the panel is wide or the window is an ordinary one.
+   Loaded with any of the three and removed with it. Colours and sizes come from tokens.css. */
+.view { display: grid; gap: var(--space-4); max-width: 44rem; align-content: start; }
+/* The panel's bar already names the view; the heading stays for assistive technology. */
+.view > h2, .view > header > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.view h3 { color: var(--muted); font-size: var(--text-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .view .muted { color: var(--muted); overflow-wrap: anywhere; }
-.view-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.view-status { color: var(--muted); overflow-wrap: anywhere; }
+.view-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.view-row:empty { display: none; }
+.view-status { color: var(--muted); font-size: var(--text-small); overflow-wrap: anywhere; }
 .view-status:empty { display: none; }
 .view-status[data-tone="warn"] { color: var(--warn); }
-.view select, .view input, .view textarea { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .5rem; }
-.view textarea, .view input[type="text"], .view input[type="url"] { -webkit-user-select: text; user-select: text; cursor: text; }
-.view textarea { width: 100%; resize: vertical; min-height: 3rem; }
-.view button[aria-pressed="true"] { border-color: var(--ok); font-weight: 650; }
-.card { border: 1px solid var(--line); border-radius: 8px; padding: .75rem 1rem; display: grid; gap: .35rem; align-content: start; min-width: 0; }
-.card-title { font-weight: 650; overflow-wrap: anywhere; }
-.card > button { justify-self: start; }
-.capture { display: grid; gap: .5rem; }
-
-.today-date { color: var(--muted); }
-.today-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
-.today-clock { font-size: 2rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.today-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
-.today-tasks label { display: flex; align-items: center; gap: .5rem; overflow-wrap: anywhere; }
-
-.item-list, .project-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
-.item-list li { display: flex; align-items: flex-start; gap: .6rem; border-bottom: 1px solid var(--line); padding-bottom: .5rem; }
-.item-list input[type="checkbox"] { margin-top: .5rem; }
-.item-main { flex: 1; min-width: 0; display: grid; gap: .15rem; }
-.item-open { border: 0; background: none; padding: 0; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
-.item-open[aria-current="true"] { text-decoration: underline; }
-.item-detail { font-size: .9rem; }
-.project-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.project-list input { flex: 1 1 10rem; min-width: 0; }
-.editor-form { display: grid; gap: .5rem; }
-.field { display: grid; gap: .2rem; color: var(--muted); }
-.field input, .field select, .field textarea { color: var(--ink); }
-
-.focus-clock { font-size: 3.5rem; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
-.focus input[type="number"] { width: 6rem; }
-
-@media (max-width: 600px) {
-  .item-list li { flex-wrap: wrap; }
-  .focus-clock { font-size: 2.75rem; }
+.view textarea { width: 100%; min-height: 4.2rem; padding: var(--space-2) var(--space-3); line-height: 1.45; }
+.view select { max-width: 100%; }
+.card {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--raised);
 }
+.card-title { font-weight: 600; overflow-wrap: anywhere; }
+.card > button { justify-self: start; }
+.capture { display: grid; gap: var(--space-2); }
+/* The action a form is for takes the accent. */
+.capture button[type="submit"], .editor-form button[type="submit"], [data-focus-action="start"], [data-focus-action="resume"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.capture button[type="submit"]:hover, .editor-form button[type="submit"]:hover, [data-focus-action="start"]:hover, [data-focus-action="resume"]:hover { background: var(--accent-strong); }
+.capture button[type="submit"]:disabled, .editor-form button[type="submit"]:disabled, [data-focus-action]:disabled { background: var(--fill); color: var(--faint); }
+
+.today-date { color: var(--muted); font-size: var(--text-small); }
+.today-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); }
+.today-clock { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.today-tasks label { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-1) 0; overflow-wrap: anywhere; }
+.today-tasks input[type="checkbox"] { margin-top: 2px; flex: none; }
+
+.filters select { flex: 1 1 8rem; min-width: 0; }
+.item-list, .project-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.item-list li { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); background: var(--raised); border: 1px solid var(--line); }
+.item-list input[type="checkbox"] { margin-top: 3px; flex: none; }
+.item-main { flex: 1 1 9rem; min-width: 0; display: grid; gap: 2px; }
+.item-open { min-height: 0; padding: 0; border: 0; border-radius: 4px; background: none; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
+.item-open:hover { background: none; color: var(--accent-strong); }
+.item-open[aria-current="true"] { color: var(--accent-strong); }
+.item-detail { font-size: var(--text-small); }
+.project-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.project-list input { flex: 1 1 8rem; min-width: 0; }
+.editor-form { display: grid; gap: var(--space-2); }
+.editor-form input, .editor-form select, .editor-form textarea { width: 100%; }
+.field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--text-small); }
+.field input, .field select, .field textarea { color: var(--ink); font-size: var(--text); }
+
+.focus { justify-items: center; text-align: center; padding-top: var(--space-5); }
+.focus .view-row { justify-content: center; }
+.focus-clock { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
+.focus input[type="number"] { width: 5rem; }
+.focus label { color: var(--muted); }
+
+/* A port that has not landed yet (widgets/pending.js) and anything else a view leaves bare. */
+.widget-view > h2 { margin-bottom: var(--space-2); }
+.widget-view > p { color: var(--muted); }
