@@ -1198,6 +1198,20 @@ fn a_directory_in_place_of_the_database_is_refused() {
     assert_eq!(error.to_string(), COULD_NOT_OPEN);
 }
 
+/// A refusal while opening keeps, in its detail for the log, the step that refused, so a failure
+/// seen once in hosted CI can be placed from its message (#127). The page's sentence is unchanged.
+#[test]
+fn a_refusal_while_opening_names_its_step_in_the_detail() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(DATABASE_FILE), vec![0x5a; 4096]).unwrap();
+    let error = Storage::open_in(dir.path()).err().unwrap();
+    let StorageError::Unreadable(detail) = &error else {
+        panic!("{error:?}");
+    };
+    assert!(detail.starts_with("inspecting the file: "), "{detail}");
+    assert_eq!(error.to_string(), COULD_NOT_OPEN);
+}
+
 /// A symbolic link under the database's name would put the data outside the directory the host
 /// chose, so it is refused and nothing is created where it points.
 #[cfg(unix)]

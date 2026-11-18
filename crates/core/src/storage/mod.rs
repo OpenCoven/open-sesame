@@ -136,8 +136,8 @@ impl Storage {
             Err(error) => return Err(io(error)),
         }
         create_private(&path).map_err(io)?;
-        let conn =
-            Connection::open(&path).map_err(|error| StorageError::Unreadable(error.to_string()))?;
+        let conn = Connection::open(&path)
+            .map_err(|error| StorageError::Unreadable(format!("opening the file: {error}")))?;
         Self::prepare(conn, clock, Some(path))
     }
 
@@ -170,29 +170,43 @@ impl Storage {
         on_disk: bool,
         pending_log: bool,
     ) -> Result<Connection, StorageError> {
-        conn.busy_timeout(BUSY_TIMEOUT)?;
+        // Each step's name goes in front of its failure's detail, so a refusal seen once in a
+        // log says which step refused (#127).
+        at(
+            "setting the busy timeout",
+            conn.busy_timeout(BUSY_TIMEOUT).map_err(Into::into),
+        )?;
         // Closing the last connection folds a pending write-ahead log into the database file and
         // deletes the log. Until the file is known to be ours, a refusal must leave both exactly
         // as they were, so that step is held back while the file is inspected.
         if pending_log {
-            conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
+            let held = conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true);
+            at("holding the log back", held.map_err(Into::into))?;
         }
-        schema::inspect(&conn, SCHEMA_VERSION)?;
+        at(
+            "inspecting the file",
+            schema::inspect(&conn, SCHEMA_VERSION),
+        )?;
         if pending_log {
-            conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
+            let released = conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false);
+            at("releasing the log", released.map_err(Into::into))?;
         }
         // Write-ahead logging lets a second process read while this one writes. FULL keeps a
         // committed write on disk through a power loss.
-        let mode = enable_write_ahead_log(&conn)?;
+        let mode = at(
+            "switching to write-ahead logging",
+            enable_write_ahead_log(&conn),
+        )?;
         if on_disk && !mode.eq_ignore_ascii_case("wal") {
             return Err(StorageError::Unreadable(
                 "write-ahead logging is not available for this file".into(),
             ));
         }
-        conn.execute_batch(
+        let pragmas = conn.execute_batch(
             "PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON; PRAGMA trusted_schema = OFF;",
-        )?;
-        schema::migrate(&mut conn)?;
+        );
+        at("setting the pragmas", pragmas.map_err(Into::into))?;
+        at("migrating", schema::migrate(&mut conn))?;
         Ok(conn)
     }
 
@@ -248,6 +262,16 @@ impl Storage {
         tx.commit()?;
         Ok(value)
     }
+}
+
+/// Puts the name of the opening step that failed in front of the failure's detail. The detail is
+/// for logs; the sentence the page shows does not change.
+fn at<T>(step: &str, outcome: Result<T, StorageError>) -> Result<T, StorageError> {
+    outcome.map_err(|error| match error {
+        StorageError::Database(detail) => StorageError::Database(format!("{step}: {detail}")),
+        StorageError::Unreadable(detail) => StorageError::Unreadable(format!("{step}: {detail}")),
+        other => other,
+    })
 }
 
 fn system_clock() -> Clock {
