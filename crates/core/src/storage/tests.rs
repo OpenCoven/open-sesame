@@ -1125,7 +1125,7 @@ fn a_saved_item_survives_the_process_dying() {
 #[test]
 fn a_new_database_can_be_opened_by_several_openers_at_once() {
     const OPENERS: usize = 8;
-    for round in 0..1000 {
+    for round in 0..4000 {
         let dir = tempfile::tempdir().unwrap();
         let start = Arc::new(std::sync::Barrier::new(OPENERS));
         let openers: Vec<_> = (0..OPENERS)
