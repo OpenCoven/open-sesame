@@ -47,11 +47,15 @@ function createHost({settings = {}} = {}) {
   const state = {settings: structuredClone(settings), widgets: {}}, calls = [], faults = [];
   return {
     core, state, calls,
-    fault(method, value) { faults.push({method, value}); },
+    // A fault is taken by the first request for `method` whose params hold every entry of
+    // `match`, so a step can refuse one write while the shell's own writes of the same method
+    // go through.
+    fault(method, value, match = {}) { faults.push({method, value, match}); },
     writes: () => calls.filter(([method]) => /\.(set|save|delete)$/.test(method)),
     async request(method, params = {}) {
       calls.push([method, structuredClone(params)]);
-      const index = faults.findIndex(fault => fault.method === method);
+      const index = faults.findIndex(fault => fault.method === method
+        && Object.entries(fault.match).every(([name, expected]) => params[name] === expected));
       if (index >= 0) return {ok: false, error: faults.splice(index, 1)[0].value};
       try {
         let result = true;
@@ -465,7 +469,9 @@ try {
       await step('a failed focus write changes nothing', async () => {
         await page.locator('[data-view="focus"]').click();
         assert.deepEqual([await clock(), await state()], ['25:00', 'Ready to start']);
-        timing.fault('settings.set', SAVE_FAILED);
+        // Opening the view also makes the shell write `shell.lastView`, so the fault names
+        // Start's key: only that write can take it.
+        timing.fault('settings.set', SAVE_FAILED, {key: 'focus.session'});
         await view(page, 'focus').getByRole('button', {name: 'Start', exact: true}).click();
         await view(page, 'focus').locator('[data-focus-message]').getByText(SAVE_FAILED).waitFor();
         assert.deepEqual([await clock(), await state()], ['25:00', 'Ready to start']);
