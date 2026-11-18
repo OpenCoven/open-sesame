@@ -153,9 +153,15 @@ impl Storage {
     ) -> Result<Self, StorageError> {
         let on_disk = path.is_some();
         let pending_log = path.as_deref().is_some_and(has_pending_log);
-        // A failure before the first statement that writes means the file was not changed.
+        // A failure before the first statement that writes means the file was not changed. Its
+        // detail says how long opening had taken, so a log tells a busy limit that ran out from a
+        // refusal that came at once (#127).
+        let began = Instant::now();
         let conn = Self::configure(conn, on_disk, pending_log).map_err(|error| match error {
-            StorageError::Database(detail) => StorageError::Unreadable(detail),
+            StorageError::Database(detail) | StorageError::Unreadable(detail) => {
+                let taken = began.elapsed().as_millis();
+                StorageError::Unreadable(format!("{detail} ({taken} ms into opening)"))
+            }
             other => other,
         })?;
         Ok(Self {

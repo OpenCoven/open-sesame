@@ -1209,7 +1209,27 @@ fn a_refusal_while_opening_names_its_step_in_the_detail() {
         panic!("{error:?}");
     };
     assert!(detail.starts_with("inspecting the file: "), "{detail}");
+    assert!(detail.ends_with(" ms into opening)"), "{detail}");
     assert_eq!(error.to_string(), COULD_NOT_OPEN);
+}
+
+/// Migrating waits for another writer instead of being refused at once, so a writer that holds
+/// the lock for less than the busy limit does not turn an opener away (#127).
+#[test]
+fn opening_waits_for_another_writer_while_it_migrates() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(Storage::open_in(dir.path()).unwrap());
+    let holder = rusqlite::Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        holder.execute_batch("COMMIT").unwrap();
+    });
+    let began = std::time::Instant::now();
+    let opened = Storage::open_in(dir.path());
+    release.join().unwrap();
+    assert!(opened.is_ok(), "{:?}", opened.err());
+    assert!(began.elapsed() >= std::time::Duration::from_millis(400));
 }
 
 /// A symbolic link under the database's name would put the data outside the directory the host
