@@ -16,9 +16,12 @@ use std::time::Duration;
 #[derive(Clone)]
 pub(super) struct Tree {
     group: libc::pid_t,
-    /// True once the child has been collected. After that the group ID may be reused by an
-    /// unrelated process, so nothing is signalled again.
+    /// True once the child has been collected, or given up as one the kill did not end. After
+    /// that the group ID may be reused by an unrelated process, so nothing is signalled again.
     retired: Arc<Mutex<bool>>,
+    /// Test only: the kill is left out, which stands in for a program this user cannot kill.
+    #[cfg(test)]
+    deaf: bool,
 }
 
 pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
@@ -42,6 +45,8 @@ pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
         Tree {
             group,
             retired: Arc::new(Mutex::new(false)),
+            #[cfg(test)]
+            deaf: super::tests::kill_does_nothing(),
         },
     ))
 }
@@ -182,6 +187,10 @@ pub(super) fn drain(
 
 impl Tree {
     fn signal(&self) {
+        #[cfg(test)]
+        if self.deaf {
+            return;
+        }
         // SAFETY: `kill` takes plain integers. The group still belongs to this child: the child
         // has not been collected, so its PID, and with it the group ID, cannot have been reused.
         unsafe {
@@ -214,14 +223,47 @@ impl Tree {
         }
     }
 
-    /// Kills whatever is left in the group, then collects the child. Returns its exit code.
-    pub(super) fn retire(&self, child: &mut Child) -> Option<i32> {
+    /// Kills whatever is left in the group, then collects the child. Returns its exit code, or
+    /// `None` when the child was still there after the limit and has not been collected.
+    pub(super) fn retire(&self, child: &mut Child) -> Option<Option<i32>> {
         let mut retired = super::lock(&self.retired);
         if !*retired {
             self.signal();
         }
-        let status = child.wait().ok();
+        let collected = super::collect(child);
         *retired = true;
-        status.and_then(|status| status.code())
+        collected
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+    use std::time::Duration;
+
+    /// Once a child has been given up, nothing in its group is signalled again: its ID is no
+    /// longer held by anything `run` waits for, so a later kill could reach a stranger. Here
+    /// the tree is made able to kill again after the give-up, and a kill then ends nothing.
+    #[test]
+    fn a_tree_given_up_is_not_signalled_again() {
+        let mut command = Command::new("/bin/sleep");
+        command.arg("60");
+        let (mut child, mut tree) = super::spawn(&mut command).unwrap();
+        tree.deaf = true;
+        assert_eq!(tree.retire(&mut child), None, "the kill was left out");
+        tree.deaf = false;
+        tree.kill();
+        // A kill that was sent would end the program; one that was not ends nothing, so there
+        // is no event to wait for. The child is looked at for a second and the test stops
+        // early only when it has ended.
+        let until = std::time::Instant::now() + Duration::from_secs(1);
+        let mut still_running = true;
+        while still_running && std::time::Instant::now() < until {
+            still_running = matches!(child.try_wait(), Ok(None));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(still_running, "a kill after the give-up ended the program");
     }
 }

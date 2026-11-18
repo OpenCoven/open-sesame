@@ -14,7 +14,7 @@
 //! memory; a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`.
 
 use crate::window;
-use open_sesame_core::gate::UNSUPPORTED;
+use open_sesame_core::gate::{MAIN_WINDOW, UNSUPPORTED};
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
@@ -23,7 +23,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// The summon methods this crate answers. Each is also listed in the gate's `PORTED`.
@@ -34,7 +34,8 @@ pub const METHODS: &[&str] = &[
     "summon.hold",
 ];
 
-/// The argument that shows the window if it is hidden and hides it if it is shown.
+/// The argument that is one press ([`press`]): it shows the window if it is hidden, brings it
+/// to the front if it is open but behind, and hides it if it is in front.
 pub const TOGGLE_FLAG: &str = "--toggle";
 /// What a person binds to a desktop shortcut where the application cannot grab a key.
 pub const TOGGLE_COMMAND: &str = "open-sesame --toggle";
@@ -47,6 +48,16 @@ pub const DEFAULT_SHORTCUT: &str = "Control+Alt+Shift+Space";
 
 pub const INVALID_SHORTCUT: &str =
     "That is not a shortcut Open Sesame can use. Hold at least one of Control, Alt, Shift or Command and press one more key, for example Control+Alt+Shift+Space.";
+/// Shift held alone, with a key that is neither a function key nor a media key. It does not
+/// suggest Alt: on a Mac, Alt and Shift with a letter is refused in turn.
+pub const SHIFT_ALONE: &str =
+    "Shift alone is not enough with that key, because people hold Shift with it while they write. Add Control or Command, or use a function key or a media key.";
+/// Alt held alone, or with Shift, with a letter, on a Mac.
+pub const OPTION_WITH_A_LETTER: &str =
+    "On a Mac, Alt (the Option key) with a letter types a character, so Open Sesame does not take it. Add Control or Command, or use a key that is not a letter.";
+/// Control and Alt, with Shift or without, with a letter, on Windows.
+pub const ALT_GR_WITH_A_LETTER: &str =
+    "Control+Alt with a letter is how many Windows keyboards type a character (the AltGr key), so Open Sesame does not take it. Use a key that is not a letter, for example Control+Alt+Shift+Space.";
 pub const INVALID_REQUEST: &str = "Invalid summon request.";
 /// How many named reasons the page may hold the window for at once. The drag is not counted.
 pub const MAX_PAGE_HOLDS: usize = 8;
@@ -66,7 +77,7 @@ const SETTINGS_FILE: &str = "summon.json";
 pub enum Launch {
     /// A plain launch: bring the window forward.
     Show,
-    /// `--toggle`: show it if hidden, hide it if shown.
+    /// `--toggle`: one press, as [`press`] decides.
     Toggle,
 }
 
@@ -145,30 +156,105 @@ pub fn session_from(
 }
 
 /// Parses a shortcut a person typed. It needs a modifier, so a bare key that every application
-/// uses is never taken from them. Shift alone is not enough for a key that types: Shift with a
-/// letter is how a capital is written, and registering it would take that character from every
-/// application (issue #115). An empty string is not a shortcut; it means "none".
+/// uses is never taken from them, and it must not be something a person presses while writing,
+/// because registering it takes that from every application (issue #115): Shift alone is enough
+/// only for a function key or a media key, and a letter is refused with Option on a Mac and
+/// with Control+Alt on Windows, where those type a character. An empty string is not a
+/// shortcut; it means "none".
 pub fn parse_shortcut(text: &str) -> Result<Shortcut, BridgeError> {
+    let keyboard = if cfg!(target_os = "macos") {
+        Keyboard::Mac
+    } else if cfg!(windows) {
+        Keyboard::Windows
+    } else {
+        Keyboard::Other
+    };
+    parse_shortcut_on(text, keyboard)
+}
+
+/// Whose keyboard rules apply. They differ in which modifiers type a character with a letter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Keyboard {
+    /// Option (Alt), with Shift or without, types a character with a letter.
+    Mac,
+    /// The right-hand Alt of many keyboards (AltGr) is reported as Control and Alt together,
+    /// and types a character with a letter.
+    Windows,
+    /// Linux: AltGr is a modifier of its own that a shortcut here cannot name, and Alt with
+    /// a letter types nothing.
+    Other,
+}
+
+/// [`parse_shortcut`] for a named system's keyboard. Only letters are refused with Option or
+/// AltGr, as decided on 16 November 2026; a digit or a punctuation key with them types a
+/// character too and is still accepted.
+fn parse_shortcut_on(text: &str, keyboard: Keyboard) -> Result<Shortcut, BridgeError> {
     let invalid = || BridgeError::from(INVALID_SHORTCUT);
     let shortcut = Shortcut::from_str(text.trim()).map_err(|_| invalid())?;
     let needed = Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER | Modifiers::SHIFT;
     if !shortcut.mods.intersects(needed) {
         return Err(invalid());
     }
-    let beside_shift = Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER;
-    if !shortcut.mods.intersects(beside_shift) && types_a_character(shortcut.key) {
-        return Err(invalid());
+    let beside_shift = shortcut.mods & (Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER);
+    if beside_shift.is_empty() && !shift_alone_is_enough(shortcut.key) {
+        return Err(BridgeError::from(SHIFT_ALONE));
+    }
+    if is_letter(shortcut.key) {
+        if keyboard == Keyboard::Mac && beside_shift == Modifiers::ALT {
+            return Err(BridgeError::from(OPTION_WITH_A_LETTER));
+        }
+        if keyboard == Keyboard::Windows && beside_shift == Modifiers::CONTROL | Modifiers::ALT {
+            return Err(BridgeError::from(ALT_GR_WITH_A_LETTER));
+        }
     }
     Ok(shortcut)
 }
 
-/// Whether pressing the key, with Shift or without, puts a character into the text a person is
-/// writing: letters, digits, punctuation, the space bar, Enter and Tab, on the main block and on
-/// the number pad. Every other key is still accepted with Shift alone: the function keys, and
-/// also the keys that move or delete (the arrows, Home, End, Page Up, Page Down, Backspace,
-/// Delete, Insert), Escape, Pause, Print Screen, the lock keys, and the media and volume keys.
-/// Issue #115 asks only about keys that type.
-fn types_a_character(key: Code) -> bool {
+/// The keys Shift alone may be a shortcut with: the function keys and the media and volume
+/// keys. Nobody holds Shift with these while writing. Every other key is refused with Shift
+/// alone: the keys that type, and also the arrows, Home, End, Page Up, Page Down, Backspace,
+/// Delete, Insert, Escape, Pause, Print Screen and the lock keys, which people do press with
+/// Shift held, to select text or by habit.
+fn shift_alone_is_enough(key: Code) -> bool {
+    use Code::*;
+    matches!(
+        key,
+        F1 | F2
+            | F3
+            | F4
+            | F5
+            | F6
+            | F7
+            | F8
+            | F9
+            | F10
+            | F11
+            | F12
+            | F13
+            | F14
+            | F15
+            | F16
+            | F17
+            | F18
+            | F19
+            | F20
+            | F21
+            | F22
+            | F23
+            | F24
+            | AudioVolumeDown
+            | AudioVolumeMute
+            | AudioVolumeUp
+            | MediaPause
+            | MediaPlay
+            | MediaPlayPause
+            | MediaStop
+            | MediaTrackNext
+            | MediaTrackPrevious
+    )
+}
+
+fn is_letter(key: Code) -> bool {
     use Code::*;
     matches!(
         key,
@@ -197,47 +283,6 @@ fn types_a_character(key: Code) -> bool {
             | KeyX
             | KeyY
             | KeyZ
-            | Digit0
-            | Digit1
-            | Digit2
-            | Digit3
-            | Digit4
-            | Digit5
-            | Digit6
-            | Digit7
-            | Digit8
-            | Digit9
-            | Backquote
-            | Backslash
-            | BracketLeft
-            | BracketRight
-            | Comma
-            | Equal
-            | Minus
-            | Period
-            | Quote
-            | Semicolon
-            | Slash
-            | Space
-            | Enter
-            | Tab
-            | Numpad0
-            | Numpad1
-            | Numpad2
-            | Numpad3
-            | Numpad4
-            | Numpad5
-            | Numpad6
-            | Numpad7
-            | Numpad8
-            | Numpad9
-            | NumpadAdd
-            | NumpadDecimal
-            | NumpadDivide
-            | NumpadEnter
-            | NumpadEqual
-            | NumpadMultiply
-            | NumpadSubtract
     )
 }
 
@@ -253,6 +298,31 @@ fn is_reason(reason: &str) -> bool {
 /// The sentence shown when the system refuses a shortcut.
 pub fn refused(shortcut: &str) -> String {
     format!("Open Sesame could not register {shortcut}. Another application may already use it. Choose a different shortcut.")
+}
+
+/// The sentence shown when a saved shortcut the rules now refuse was replaced by the default.
+/// `saved` is what the file held, or empty when that is not fit to show.
+pub fn replaced(saved: &str) -> String {
+    let which = if saved.is_empty() {
+        "Your saved shortcut".to_string()
+    } else {
+        format!("Your saved shortcut, {saved},")
+    };
+    format!("{which} is one Open Sesame no longer takes, so the default, {DEFAULT_SHORTCUT}, is used. Set another here if you prefer.")
+}
+
+/// What the settings file held is repeated to the person only when it is one short line of
+/// plain characters; it is text from a file, not something this run was given.
+fn showable(saved: &str) -> &str {
+    let plain = saved.len() <= 64
+        && saved
+            .chars()
+            .all(|character| character.is_ascii_graphic() || character == ' ');
+    if plain {
+        saved
+    } else {
+        ""
+    }
 }
 
 /// What is kept between launches.
@@ -274,29 +344,49 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Reads the settings file. A missing or damaged file gives the defaults: a setting that
-    /// cannot be read must not stop the application from starting.
+    /// The settings alone, as the tests read them back.
+    #[cfg(test)]
     pub fn load(path: &Path) -> Settings {
+        Self::load_reporting(path).0
+    }
+
+    /// Reads the settings file. A missing or damaged file gives the defaults: a setting that
+    /// cannot be read must not stop the application from starting. Beside the settings comes
+    /// the shortcut the file held when that was one the person had saved and the rules no
+    /// longer take, which the default replaced.
+    fn load_reporting(path: &Path) -> (Settings, Option<String>) {
         let defaults = Settings::default();
         let Ok(text) = std::fs::read_to_string(path) else {
-            return defaults;
+            return (defaults, None);
         };
         let Ok(Value::Object(saved)) = serde_json::from_str::<Value>(&text) else {
-            return defaults;
+            return (defaults, None);
         };
-        let shortcut = match saved.get("shortcut") {
+        let (shortcut, replaced) = match saved.get("shortcut") {
             Some(Value::String(shortcut))
                 if shortcut.is_empty() || parse_shortcut(shortcut).is_ok() =>
             {
-                shortcut.clone()
+                (shortcut.clone(), None)
             }
-            _ => defaults.shortcut,
+            // A key combination the rules now refuse was the person's own, and they are told.
+            // Text that never was a key combination is a damaged file and says nothing.
+            // A key with no modifier was never taken, so it is not one that is "no longer".
+            Some(Value::String(refused))
+                if Shortcut::from_str(refused.trim())
+                    .is_ok_and(|shortcut| !shortcut.mods.is_empty()) =>
+            {
+                (defaults.shortcut, Some(refused.trim().to_string()))
+            }
+            _ => (defaults.shortcut, None),
         };
         let hide_on_blur = saved.get("hideOnBlur") == Some(&Value::Bool(true));
-        Settings {
-            shortcut,
-            hide_on_blur,
-        }
+        (
+            Settings {
+                shortcut,
+                hide_on_blur,
+            },
+            replaced,
+        )
     }
 
     /// Writes the settings file through a temporary file, so a crash leaves the old one whole.
@@ -328,6 +418,38 @@ const BLUR_GRACE: Duration = Duration::from_millis(300);
 /// last hid because it lost focus, if it has.
 pub fn press_caused_the_blur(since_blur_hide: Option<Duration>) -> bool {
     since_blur_hide.is_some_and(|elapsed| elapsed < BLUR_GRACE)
+}
+
+/// What one press does: the shortcut, `open-sesame --toggle`, the tray's menu item and a click
+/// on the tray icon on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Press {
+    /// The window is hidden or minimized: show it.
+    Show,
+    /// The window is open and something else is in front of it: bring it to the front.
+    Forward,
+    /// The window is open and in front: hide it.
+    Hide,
+}
+
+/// The rule for one press (issue #115, decided on 16 November 2026): a window that is open but
+/// behind comes to the front, and one that is in front hides. Before, every press hid a window
+/// that was open, whether or not the person could see it.
+///
+/// "In front" is: the window has the keyboard now, or lost it no longer ago than `BLUR_GRACE`.
+/// The second half is for a press that takes the keyboard itself before it is reported, which
+/// the shortcut does on X11 and a click on the taskbar does on Windows; without it such a
+/// press would only ever bring the window forward. It is the same allowance, for the same
+/// reason, as `press_caused_the_blur`. What it costs: a person who turns to another
+/// application and presses within that third of a second hides the window. What each system
+/// reports as "has the keyboard" has not been seen on a real desktop; that is for #78.
+pub fn press(shown: bool, focused: bool, since_lost_focus: Option<Duration>) -> Press {
+    let in_front = focused || since_lost_focus.is_some_and(|since| since < BLUR_GRACE);
+    match (shown, in_front) {
+        (false, _) => Press::Show,
+        (true, true) => Press::Hide,
+        (true, false) => Press::Forward,
+    }
 }
 
 /// Where a window of `size` goes so that it sits against a tray icon at `icon` (position and
@@ -379,6 +501,14 @@ pub struct Summon {
     pinned: AtomicBool,
     /// When the window last hid because it lost focus.
     hid_on_blur: Mutex<Option<Instant>>,
+    /// What the person is told about a saved shortcut the default replaced; empty for nothing.
+    notice: Mutex<String>,
+    /// When the window last lost the keyboard, whether or not it hid for that.
+    lost_focus: Mutex<Option<Instant>>,
+    /// Whether the window was in front when the tray icon was last pressed, and when that was.
+    /// Opening the tray's menu can take the keyboard, and the menu may then stay open for any
+    /// length of time, so the menu item cannot ask the window when it is chosen.
+    front_at_tray: Mutex<Option<(Instant, bool)>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -407,7 +537,13 @@ pub fn hold<R: Runtime>(app: &AppHandle<R>) -> Option<Hold> {
 impl Summon {
     /// `path` is the settings file, or `None` to keep nothing between launches.
     pub fn new(session: Session, path: Option<PathBuf>) -> Summon {
-        let settings = path.as_deref().map(Settings::load).unwrap_or_default();
+        let (settings, refused) = path
+            .as_deref()
+            .map(Settings::load_reporting)
+            .unwrap_or_default();
+        let notice = refused
+            .map(|saved| replaced(showable(&saved)))
+            .unwrap_or_default();
         Summon {
             session,
             path,
@@ -417,7 +553,16 @@ impl Summon {
             held_by_page: Mutex::default(),
             pinned: AtomicBool::new(false),
             hid_on_blur: Mutex::new(None),
+            notice: Mutex::new(notice),
+            lost_focus: Mutex::new(None),
+            front_at_tray: Mutex::new(None),
         }
+    }
+
+    /// The person set a shortcut, or none, themselves: what replaced the old one is no longer
+    /// news.
+    fn shortcut_was_set(&self) {
+        lock(&self.notice).clear();
     }
 
     pub fn session(&self) -> Session {
@@ -482,6 +627,7 @@ impl Summon {
             "defaultShortcut": DEFAULT_SHORTCUT,
             "registered": registration.registered,
             "message": registration.message,
+            "notice": *lock(&self.notice),
             "toggleCommand": TOGGLE_COMMAND,
             "hideOnBlur": settings.hide_on_blur,
         })
@@ -593,7 +739,9 @@ fn unregister<R: Runtime>(app: &AppHandle<R>, text: &str) {
 /// exited, and its arguments arrive here.
 pub fn launched_again<R: Runtime>(app: &AppHandle<R>, arguments: &[String]) {
     match launch(arguments) {
-        Launch::Toggle => window::toggle(app),
+        Launch::Toggle => {
+            window::toggle(app);
+        }
         Launch::Show => window::show(app),
     }
 }
@@ -608,22 +756,120 @@ pub(crate) fn blur_just_hid<R: Runtime>(app: &AppHandle<R>) -> bool {
     press_caused_the_blur(since_blur_hide)
 }
 
-/// The shortcut was pressed: toggle the window, unless this press is what just hid it.
-fn pressed<R: Runtime>(app: &AppHandle<R>) {
-    if !blur_just_hid(app) {
-        window::toggle(app);
+/// The shortcut was pressed: one press on the window, unless this press is what just hid it.
+/// Returns what the press did, or nothing when it did nothing more.
+fn pressed<R: Runtime>(app: &AppHandle<R>) -> Option<Press> {
+    if blur_just_hid(app) {
+        return None;
     }
+    window::toggle(app)
 }
 
-/// The tray icon was clicked, which only Windows reports: the popover, unless this click is
-/// what just hid the window. Pressing the button on the taskbar takes the focus from the
+/// The tray icon was clicked, which is acted on only on Windows (macOS reports the click too,
+/// and there it opens the menu): the popover, unless this click is what just hid the window. Pressing the button on the taskbar takes the focus from the
 /// window before the click is reported, so with hide-on-blur on the window has already hidden
 /// and showing it again would mean the icon could never hide it. This is the rule the shortcut
 /// follows on X11; on Windows it is reasoned from how the taskbar takes focus and has not been
 /// seen in a window.
-pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
-    if !blur_just_hid(app) {
-        window::toggle_at(app, icon);
+pub fn tray_clicked<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option<Press> {
+    if blur_just_hid(app) {
+        return None;
+    }
+    window::toggle_at(app, icon)
+}
+
+/// Whether a press on the tray icon is one that opens its menu, and so one to note for the
+/// menu item ([`tray_pressed`]). On Windows the left button is the popover and only the right
+/// one opens the menu; elsewhere either does. Off Windows a press of the middle button, where
+/// it is reported, opens no menu and is noted all the same: that note is used only if a menu
+/// is then opened within `TRAY_MENU_OPEN` by some way that reports no press.
+pub fn opens_the_tray_menu(windows: bool, right_button: bool) -> bool {
+    !windows || right_button
+}
+
+/// How long what the tray icon's press saw stays good for the menu item. A menu left open
+/// longer than this is answered as if no press had been reported. What it costs: nothing says
+/// when a menu was dismissed without a choice, so a press whose menu was dismissed still
+/// decides for a menu opened within this minute by some way that reports no press, such as
+/// the keyboard; the item then goes by what the window was doing at the earlier press.
+const TRAY_MENU_OPEN: Duration = Duration::from_secs(60);
+
+/// Where no press on the tray icon was reported, or the one reported is older than
+/// `TRAY_MENU_OPEN`: how long ago the window may have lost the keyboard and still count as in
+/// front when the menu item is chosen. Linux never reports the press, so there this always
+/// decides; on macOS and Windows it decides for a menu opened without a press. The menu takes
+/// the keyboard when it opens, on the desktops this was reasoned for, so a window that was in
+/// front has just lost it, by as long as the person took to choose. Ten seconds is a guess at
+/// that. What it costs: a person who left the window less than ten seconds ago and chooses
+/// the item to bring it back hides it, and chooses again; one who keeps the menu open longer
+/// brings a window forward that was in front, and chooses again to hide it. No panel's menu
+/// has been seen doing this; that is for #78.
+const TRAY_MENU_GRACE: Duration = Duration::from_secs(10);
+
+fn since_lost_focus<R: Runtime>(app: &AppHandle<R>) -> Option<Duration> {
+    app.try_state::<Summon>()
+        .and_then(|summon| *lock(&summon.lost_focus))
+        .map(|at| at.elapsed())
+}
+
+/// What a press does to `window` now. See [`press`].
+pub(crate) fn press_on<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) -> Press {
+    press(
+        window::is_shown(window),
+        window.is_focused().unwrap_or(false),
+        since_lost_focus(app),
+    )
+}
+
+/// The tray icon was pressed, which Windows and macOS report and Linux does not: remembers
+/// whether the window was in front, for the menu item that may be chosen next.
+pub fn tray_pressed<R: Runtime>(app: &AppHandle<R>) {
+    let (Some(summon), Some(window)) = (
+        app.try_state::<Summon>(),
+        app.get_webview_window(MAIN_WINDOW),
+    ) else {
+        return;
+    };
+    let front = press_on(app, &window) == Press::Hide;
+    *lock(&summon.front_at_tray) = Some((Instant::now(), front));
+}
+
+/// What choosing the tray's menu item does to `window`. See [`tray_item`].
+pub(crate) fn tray_item_on<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) -> Press {
+    let seen = app
+        .try_state::<Summon>()
+        .and_then(|summon| lock(&summon.front_at_tray).take())
+        .map(|(at, front)| (at.elapsed(), front));
+    tray_item(
+        window::is_shown(window),
+        window.is_focused().unwrap_or(false),
+        since_lost_focus(app),
+        seen,
+    )
+}
+
+/// The rule for the tray's menu item. The open menu may have the keyboard by the time its
+/// item is chosen, and may have had it for any length of time, so the window cannot simply be
+/// asked then. `seen` is how long ago the icon was pressed and whether the window was in
+/// front at that moment; where it is there and recent it decides. Without it the window
+/// counts as in front if it has the keyboard, or lost it within `TRAY_MENU_GRACE`.
+pub fn tray_item(
+    shown: bool,
+    focused: bool,
+    since_lost_focus: Option<Duration>,
+    seen: Option<(Duration, bool)>,
+) -> Press {
+    if !shown {
+        return Press::Show;
+    }
+    let front = match seen {
+        Some((since, front)) if since < TRAY_MENU_OPEN => front,
+        _ => focused || since_lost_focus.is_some_and(|since| since < TRAY_MENU_GRACE),
+    };
+    if front {
+        Press::Hide
+    } else {
+        Press::Forward
     }
 }
 
@@ -632,6 +878,10 @@ pub fn blurred<R: Runtime>(app: &AppHandle<R>) {
     let Some(summon) = app.try_state::<Summon>() else {
         return;
     };
+    *lock(&summon.lost_focus) = Some(Instant::now());
+    // Development evidence of when the system says the keyboard went elsewhere.
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: window lost the keyboard");
     if summon.should_hide_on_blur() {
         *lock(&summon.hid_on_blur) = Some(Instant::now());
         window::hide(app);
@@ -686,6 +936,7 @@ pub fn handle<R: Runtime>(
             };
             summon.save(&settings)?;
             *lock(&summon.settings) = settings;
+            summon.shortcut_was_set();
             Ok(summon.status())
         }
         "summon.setHideOnBlur" => {
@@ -719,6 +970,138 @@ pub fn handle<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::{mock_builder, mock_context, noop_assets, MockRuntime};
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    /// The application with its main window on Tauri's windowless runtime, where a window
+    /// always says it is shown and never says it has the keyboard. So here "in front" is only
+    /// ever what this module remembers: when the window lost the keyboard, and what the press
+    /// on the tray icon saw.
+    fn windowless(hide_on_blur: bool) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let summon = Summon::new(Session::X11, None);
+        lock(&summon.settings).hide_on_blur = hide_on_blur;
+        app.manage(summon);
+        let window = WebviewWindowBuilder::new(&app, MAIN_WINDOW, WebviewUrl::default())
+            .build()
+            .unwrap();
+        (app, window)
+    }
+
+    fn lost_the_keyboard(app: &tauri::App<MockRuntime>, ago: Option<Duration>) {
+        let at = ago.map(|ago| Instant::now().checked_sub(ago).unwrap());
+        *lock(&app.state::<Summon>().lost_focus) = at;
+    }
+
+    /// What `blurred` noted is made to read as this instant for as long as the test runs, so
+    /// that a slow machine cannot let `BLUR_GRACE` pass between two statements. The note that
+    /// the window lost the keyboard has to be there already, and be no older than two
+    /// seconds, so a `blurred` that noted an earlier time still fails here. The time is moved
+    /// ahead, which reads as no time gone: `Instant::elapsed` gives zero for a later instant
+    /// on the toolchain in use, and its documentation keeps the right to panic there again.
+    fn the_blur_was_this_instant(app: &tauri::App<MockRuntime>) {
+        let summon = app.state::<Summon>();
+        let later = Instant::now() + Duration::from_secs(3600);
+        let mut lost = lock(&summon.lost_focus);
+        assert!(
+            lost.is_some_and(|at| at.elapsed() < Duration::from_secs(2)),
+            "losing the keyboard is noted with the time"
+        );
+        *lost = Some(later);
+        drop(lost);
+        let mut hid = lock(&summon.hid_on_blur);
+        if hid.is_some() {
+            *hid = Some(later);
+        }
+    }
+
+    /// The window losing the keyboard is what a press goes by a moment later: without the
+    /// note, a press that takes the keyboard itself could only ever bring the window forward.
+    #[test]
+    fn a_press_goes_by_when_the_window_lost_the_keyboard() {
+        let (app, window) = windowless(false);
+        assert_eq!(press_on(app.handle(), &window), Press::Forward);
+        blurred(app.handle());
+        the_blur_was_this_instant(&app);
+        assert_eq!(press_on(app.handle(), &window), Press::Hide);
+        assert_eq!(pressed(app.handle()), Some(Press::Hide));
+        assert_eq!(window::toggle(app.handle()), Some(Press::Hide));
+        lost_the_keyboard(&app, Some(Duration::from_secs(2)));
+        assert_eq!(press_on(app.handle(), &window), Press::Forward);
+        assert_eq!(pressed(app.handle()), Some(Press::Forward));
+    }
+
+    /// With hide-on-blur on, the press that took the keyboard and so hid the window does
+    /// nothing more, for the shortcut and for the click on the tray icon; the next one acts.
+    #[test]
+    fn the_press_that_just_hid_the_window_does_nothing_more() {
+        let icon = tauri::Rect::default();
+        let (app, _window) = windowless(true);
+        blurred(app.handle());
+        assert!(lock(&app.state::<Summon>().hid_on_blur).is_some());
+        the_blur_was_this_instant(&app);
+        assert_eq!(pressed(app.handle()), None);
+        assert!(
+            pressed(app.handle()).is_some(),
+            "one hide excuses one press"
+        );
+        blurred(app.handle());
+        the_blur_was_this_instant(&app);
+        assert_eq!(tray_clicked(app.handle(), icon), None);
+        assert!(tray_clicked(app.handle(), icon).is_some());
+        // With the setting off nothing hid, so the press acts at once.
+        let (app, _window) = windowless(false);
+        blurred(app.handle());
+        assert!(lock(&app.state::<Summon>().hid_on_blur).is_none());
+        the_blur_was_this_instant(&app);
+        assert_eq!(pressed(app.handle()), Some(Press::Hide));
+    }
+
+    /// The same, through the application's own state: the menu item uses what the press on
+    /// the icon noted, once, and not the shortcut's rule.
+    #[test]
+    fn the_tray_item_uses_what_the_press_noted_and_not_the_shortcuts_rule() {
+        let (app, window) = windowless(false);
+        let handle = app.handle();
+        // No press was reported, as on Linux: a window that lost the keyboard two seconds ago
+        // counts as in front for the item, and as behind for the shortcut.
+        lost_the_keyboard(&app, Some(Duration::from_secs(2)));
+        assert_eq!(press_on(handle, &window), Press::Forward);
+        assert_eq!(tray_item_on(handle, &window), Press::Hide);
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Hide));
+        // The icon was pressed while the window was behind; the menu then took the keyboard
+        // from whatever had it. The item brings the window forward.
+        lost_the_keyboard(&app, None);
+        tray_pressed(handle);
+        lost_the_keyboard(&app, Some(Duration::ZERO));
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Forward));
+        // What the press saw is used once.
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Hide));
+        // The icon was pressed while the window was in front, and the menu stayed open longer
+        // than the allowance for a missing press: the item still hides.
+        lost_the_keyboard(&app, Some(Duration::ZERO));
+        the_blur_was_this_instant(&app);
+        tray_pressed(handle);
+        lost_the_keyboard(&app, Some(TRAY_MENU_GRACE + Duration::from_secs(5)));
+        assert_eq!(tray_item_on(handle, &window), Press::Hide);
+        assert_eq!(tray_item_on(handle, &window), Press::Forward);
+    }
+
+    /// The sentence for Shift alone names what to add, and not Alt: on a Mac, Alt and Shift
+    /// with a letter is refused in turn.
+    #[test]
+    fn the_shift_sentence_suggests_control_or_command_and_not_alt() {
+        assert!(SHIFT_ALONE.contains("Add Control or Command"));
+        assert!(!SHIFT_ALONE.contains("Alt") && !SHIFT_ALONE.contains("Option"));
+    }
+
+    #[test]
+    fn only_a_press_that_opens_the_tray_menu_is_noted() {
+        assert!(opens_the_tray_menu(false, false));
+        assert!(opens_the_tray_menu(false, true));
+        assert!(opens_the_tray_menu(true, true));
+        assert!(!opens_the_tray_menu(true, false), "the popover's button");
+    }
 
     #[test]
     fn only_the_toggle_argument_toggles() {
@@ -777,7 +1160,7 @@ mod tests {
     fn a_shortcut_needs_a_modifier_and_a_key() {
         for good in [
             DEFAULT_SHORTCUT,
-            "Control+Alt+K",
+            "Control+Shift+K",
             "super+shift+o",
             " Alt+F1 ",
             "CmdOrCtrl+Shift+Space",
@@ -805,7 +1188,7 @@ mod tests {
 
     /// Shift with a key that types is what a person presses while writing, so taking it as a
     /// shortcut takes that character from every application (issue #115). Shift is still a
-    /// modifier beside another one, and enough by itself for a key that types nothing.
+    /// modifier beside another one, and enough by itself for a function key.
     #[test]
     fn shift_alone_is_not_enough_for_a_key_that_types() {
         for bad in [
@@ -822,7 +1205,7 @@ mod tests {
         ] {
             assert_eq!(
                 parse_shortcut(bad).map_err(|error| error.0),
-                Err(INVALID_SHORTCUT.to_string()),
+                Err(SHIFT_ALONE.to_string()),
                 "{bad}"
             );
         }
@@ -881,7 +1264,7 @@ mod tests {
             );
             assert_eq!(
                 parse_shortcut(&format!("Shift+{key}")).map_err(|error| error.0),
-                Err(INVALID_SHORTCUT.to_string()),
+                Err(SHIFT_ALONE.to_string()),
                 "{key}"
             );
         }
@@ -929,6 +1312,193 @@ mod tests {
         assert!(summon.hold_for_page("one-more", true).is_err());
     }
 
+    /// Shift alone is enough only for a function key or a media key (issue #115, decided on
+    /// 16 November 2026). A person holds Shift with the arrows, Backspace and the like while
+    /// writing, so those are refused as the keys that type are, and with a sentence that says
+    /// why.
+    #[test]
+    fn shift_alone_is_enough_only_for_function_and_media_keys() {
+        for bad in [
+            "Shift+Up",
+            "Shift+ArrowLeft",
+            "Shift+Backspace",
+            "Shift+Delete",
+            "Shift+Insert",
+            "Shift+Home",
+            "Shift+End",
+            "Shift+PageUp",
+            "Shift+PageDown",
+            "Shift+Escape",
+            "Shift+CapsLock",
+            "Shift+NumLock",
+            "Shift+ScrollLock",
+            "Shift+Pause",
+            "Shift+PrintScreen",
+            "Shift+A",
+            "Shift+Space",
+        ] {
+            assert_eq!(
+                parse_shortcut(bad).map_err(|error| error.0),
+                Err(SHIFT_ALONE.to_string()),
+                "{bad}"
+            );
+        }
+        let mut good: Vec<String> = (1..=24).map(|number| format!("Shift+F{number}")).collect();
+        good.extend(
+            [
+                "MediaPlay",
+                "MediaPause",
+                "MediaPlayPause",
+                "MediaStop",
+                "MediaTrackNext",
+                "MediaTrackPrevious",
+                "VolumeUp",
+                "VolumeDown",
+                "VolumeMute",
+            ]
+            .map(|key| format!("Shift+{key}")),
+        );
+        good.extend(
+            [
+                "Control+Shift+Up",
+                "Alt+Shift+Backspace",
+                "Super+Shift+Home",
+            ]
+            .map(String::from),
+        );
+        for good in good {
+            assert!(parse_shortcut(&good).is_ok(), "{good}");
+        }
+    }
+
+    /// A letter with Option types a character on a Mac, and a letter with Control+Alt does on
+    /// Windows, where that is how the right-hand Alt of many keyboards (AltGr) is reported.
+    /// Taking such a shortcut takes that character from every application, so each is refused
+    /// with its own sentence, and only on the system where it types.
+    #[test]
+    fn a_letter_with_option_or_alt_gr_is_refused_where_it_types() {
+        let always = [
+            "Alt+Space",
+            "Alt+1",
+            "Alt+F4",
+            "Alt+Super+A",
+            "Control+A",
+            "Control+Shift+A",
+            "Super+Shift+A",
+            "Control+Alt+Space",
+            "Control+Alt+1",
+            "Control+Alt+Super+A",
+            DEFAULT_SHORTCUT,
+        ];
+        let option = [
+            "Alt+A",
+            "alt+z",
+            "Alt+Shift+E",
+            "Option+N",
+            "Shift+Option+KeyQ",
+        ];
+        let alt_gr = ["Control+Alt+A", "Control+Alt+Shift+Q", "Ctrl+Alt+KeyE"];
+        for keyboard in [Keyboard::Mac, Keyboard::Windows, Keyboard::Other] {
+            for good in always {
+                assert!(
+                    parse_shortcut_on(good, keyboard).is_ok(),
+                    "{good}, {keyboard:?}"
+                );
+            }
+            for shortcut in option {
+                let expected =
+                    (keyboard == Keyboard::Mac).then(|| OPTION_WITH_A_LETTER.to_string());
+                assert_eq!(
+                    parse_shortcut_on(shortcut, keyboard)
+                        .map_err(|error| error.0)
+                        .err(),
+                    expected,
+                    "{shortcut}, {keyboard:?}"
+                );
+            }
+            for shortcut in alt_gr {
+                let expected =
+                    (keyboard == Keyboard::Windows).then(|| ALT_GR_WITH_A_LETTER.to_string());
+                assert_eq!(
+                    parse_shortcut_on(shortcut, keyboard)
+                        .map_err(|error| error.0)
+                        .err(),
+                    expected,
+                    "{shortcut}, {keyboard:?}"
+                );
+            }
+        }
+        // The running system's own rule is the one `parse_shortcut` applies.
+        assert_eq!(parse_shortcut("Alt+A").is_err(), cfg!(target_os = "macos"));
+        assert_eq!(parse_shortcut("Control+Alt+A").is_err(), cfg!(windows));
+    }
+
+    /// A saved shortcut that the rules now refuse is replaced by the default, and the person
+    /// is told which one it was until they set a shortcut themselves. A file that is missing,
+    /// damaged or holds no shortcut says nothing: nothing of the person's was replaced.
+    #[test]
+    fn a_replaced_saved_shortcut_is_reported_until_one_is_set() {
+        let folder =
+            std::env::temp_dir().join(format!("open-sesame-summon-notice-{}", std::process::id()));
+        let path = folder.join(SETTINGS_FILE);
+        std::fs::create_dir_all(&folder).unwrap();
+        let load = |text: &str| {
+            std::fs::write(&path, text).unwrap();
+            Summon::new(Session::X11, Some(path.clone()))
+        };
+        let summon = load(r#"{"shortcut":"Shift+Up","hideOnBlur":true}"#);
+        let status = summon.status();
+        assert_eq!(status["shortcut"], DEFAULT_SHORTCUT);
+        assert_eq!(status["hideOnBlur"], true);
+        assert_eq!(status["notice"], replaced("Shift+Up"));
+        assert!(replaced("Shift+Up").contains("Shift+Up"));
+        assert!(replaced("Shift+Up").contains(DEFAULT_SHORTCUT));
+        summon.shortcut_was_set();
+        assert_eq!(summon.status()["notice"], "");
+
+        for quiet in [
+            r#"{"shortcut":"Control+Shift+K"}"#,
+            r#"{"shortcut":""}"#,
+            r#"{"shortcut":7}"#,
+            r#"{"hideOnBlur":true}"#,
+            "not json",
+            // Text that never was a key combination is a damaged file, not a shortcut of the
+            // person's that was replaced.
+            r#"{"shortcut":"   "}"#,
+            r#"{"shortcut":"hello there"}"#,
+            r#"{"shortcut":"Shift+"}"#,
+            // A key with no modifier was never taken, so nothing says it no longer is.
+            r#"{"shortcut":"Space"}"#,
+            r#"{"shortcut":"K"}"#,
+        ] {
+            let summon = load(quiet);
+            assert_eq!(summon.status()["notice"], "", "{quiet}");
+            if quiet.contains("hello") {
+                assert_eq!(summon.status()["shortcut"], DEFAULT_SHORTCUT);
+            }
+        }
+        // The spaces around a saved shortcut are not repeated.
+        let spaced = load(r#"{"shortcut":"  Shift+Up "}"#);
+        assert_eq!(spaced.status()["notice"], replaced("Shift+Up"));
+        // What the file held is shown only when it is short: a key combination can be written
+        // at any length by repeating a modifier.
+        let long = format!(r#"{{"shortcut":"{}Up"}}"#, "Shift+".repeat(20));
+        let notice = load(&long).status()["notice"].as_str().unwrap().to_string();
+        assert_eq!(notice, replaced(""));
+        assert!(!notice.contains("Shift+Shift"));
+        // Long text and text on two lines that are no key combination say nothing.
+        let long = format!(r#"{{"shortcut":"Shift+{}"}}"#, "A".repeat(200));
+        assert_eq!(load(&long).status()["notice"], "");
+        let odd = load("{\"shortcut\":\"Shift+A\\nsecond line\"}").status()["notice"].clone();
+        assert_eq!(odd, "");
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            Summon::new(Session::X11, Some(path.clone())).status()["notice"],
+            ""
+        );
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     /// A saved shortcut that is no longer one gives the default, like any other the file
     /// cannot keep.
     #[test]
@@ -970,7 +1540,7 @@ mod tests {
         let path = folder.join("nested").join(SETTINGS_FILE);
         assert_eq!(Settings::load(&path), Settings::default());
         let saved = Settings {
-            shortcut: "Control+Alt+K".to_string(),
+            shortcut: "Control+Shift+K".to_string(),
             hide_on_blur: true,
         };
         saved.save(&path).unwrap();
@@ -1099,6 +1669,70 @@ mod tests {
             !press_caused_the_blur(None),
             "the window did not hide on blur"
         );
+    }
+
+    /// One press: a hidden window shows, one that is open but behind comes forward, one in
+    /// front hides (issue #115). A press that took the keyboard a moment before it was reported
+    /// still finds the window "in front".
+    #[test]
+    fn a_press_brings_a_window_that_is_behind_to_the_front() {
+        let ms = Duration::from_millis;
+        for (shown, focused, since, expected) in [
+            (false, false, None, Press::Show),
+            (false, false, Some(ms(10)), Press::Show),
+            (false, true, None, Press::Show),
+            (true, true, None, Press::Hide),
+            (true, true, Some(ms(5_000)), Press::Hide),
+            (true, false, None, Press::Forward),
+            (true, false, Some(ms(5_000)), Press::Forward),
+            (true, false, Some(ms(300)), Press::Forward),
+            (true, false, Some(ms(299)), Press::Hide),
+            (true, false, Some(ms(0)), Press::Hide),
+        ] {
+            assert_eq!(
+                press(shown, focused, since),
+                expected,
+                "shown {shown}, focused {focused}, lost focus {since:?} ago"
+            );
+        }
+    }
+
+    /// The tray's menu item goes by what the press on the icon saw, because the open menu may
+    /// have the keyboard by the time the item is chosen. Without such a press, as on Linux, or
+    /// with one from long ago, a window that lost the keyboard a few seconds ago was in front.
+    #[test]
+    fn the_tray_item_goes_by_what_the_press_on_the_icon_saw() {
+        let s = Duration::from_secs;
+        for (shown, focused, lost, seen, expected) in [
+            // Hidden: shown, whatever else is known.
+            (false, false, None, None, Press::Show),
+            (false, false, Some(s(1)), Some((s(1), true)), Press::Show),
+            // A press was reported: it decides, for a minute.
+            (true, false, Some(s(2)), Some((s(2), true)), Press::Hide),
+            (true, false, Some(s(59)), Some((s(59), true)), Press::Hide),
+            (
+                true,
+                false,
+                Some(s(60)),
+                Some((s(60), true)),
+                Press::Forward,
+            ),
+            (true, false, Some(s(2)), Some((s(1), false)), Press::Forward),
+            (true, true, None, Some((s(1), false)), Press::Forward),
+            // No press reported: the keyboard now, or until a few seconds ago.
+            (true, true, None, None, Press::Hide),
+            (true, false, Some(s(2)), None, Press::Hide),
+            (true, false, Some(s(9)), None, Press::Hide),
+            (true, false, Some(s(10)), None, Press::Forward),
+            (true, false, Some(s(600)), None, Press::Forward),
+            (true, false, None, None, Press::Forward),
+        ] {
+            assert_eq!(
+                tray_item(shown, focused, lost, seen),
+                expected,
+                "shown {shown}, focused {focused}, lost focus {lost:?} ago, press {seen:?}"
+            );
+        }
     }
 
     #[test]

@@ -83,13 +83,14 @@ pub(super) fn spawn(command: &mut Command) -> io::Result<(Child, Tree)> {
     if unsafe { AssignProcessToJobObject(job.0, process) } == 0 {
         let error = io::Error::last_os_error();
         let _ = child.kill();
-        let _ = child.wait();
+        // With the same limit as every other wait for a killed child.
+        let _ = super::collect(&mut child);
         return Err(error);
     }
     if let Err(error) = resume(child.id()) {
         // Dropping the job kills the still-suspended child.
         drop(job);
-        let _ = child.wait();
+        let _ = super::collect(&mut child);
         return Err(error);
     }
     Ok((
@@ -161,15 +162,16 @@ impl Tree {
         unsafe { WaitForSingleObject(self.process.0, 0) == WAIT_OBJECT_0 }
     }
 
-    /// Kills whatever is left in the job, then collects the child. Returns its exit code.
-    pub(super) fn retire(&self, child: &mut Child) -> Option<i32> {
+    /// Kills whatever is left in the job, then collects the child. Returns its exit code, or
+    /// `None` when the child was still there after the limit and has not been collected.
+    pub(super) fn retire(&self, child: &mut Child) -> Option<Option<i32>> {
         let mut retired = super::lock(&self.retired);
         if !*retired {
             self.terminate();
         }
-        let status = child.wait().ok();
+        let collected = super::collect(child);
         *retired = true;
-        status.and_then(|status| status.code())
+        collected
     }
 }
 

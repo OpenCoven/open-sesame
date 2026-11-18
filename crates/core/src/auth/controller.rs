@@ -10,15 +10,26 @@
 //! credential. Sign-out and a completed newer sign-in invalidate that lineage too. Network
 //! calls run without the state lock; credential writes are serialized with lineage changes.
 //! Shutdown closes admission and drains an already running refresh before the host exits.
+//!
+//! The credential store can wait for a person: a locked keyring shows its unlock prompt and
+//! answers when the prompt does, or never (issue #130). So that nothing else waits with it:
+//! [`AuthController::authenticated`] and [`AuthController::status`] answer from a copy of the
+//! state and never take the state's lock; every store call a caller waits for runs on a thread
+//! of its own and is given up after a limit; and the three things a person can ask for while
+//! a write is waited for ([`AuthController::begin_sign_in`], [`AuthController::cancel_now`]
+//! and [`AuthController::sign_out_now`]) answer [`AuthError::StoreBusy`] instead of waiting.
 
 use super::{
     authorization_code, authorize_url, carries_state, generate_pkce, logout_url,
     verify_access_token, AuthError, CredentialStore, SignedOutMarker, Tokens, User, WorkosApi,
 };
 use serde_json::{json, Value};
+use std::ops::{Deref, DerefMut};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{channel, RecvTimeoutError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
+use std::time::{Duration, Instant, SystemTime};
 
 // Sign-in is an account control, not a door (issue #60): these sentences say what happened to
 // the session and never tell a person they must sign in to carry on. Before any attempt there
@@ -29,6 +40,10 @@ const SIGNED_IN: &str = "Signed in.";
 const REFRESHING: &str = "Refreshing sign-in…";
 const RESTORING: &str = "Restoring your sign-in…";
 const CANCELLED: &str = "Sign-in cancelled.";
+// After a new sign-in has failed and the earlier sign-in's credential has then been saved:
+// nobody is signed in for the rest of this run, and the next launch restores that sign-in
+// (issue #94, decided on 16 November 2026).
+const EARLIER_SAVED: &str = "The new sign-in could not be completed. Your earlier sign-in is saved and will be used the next time Open Sesame starts.";
 const EXPIRED: &str = "Your session expired. Sign in again to use your account.";
 const ENDED: &str = "Your sign-in has ended. Sign in again to use your account.";
 const FAILED: &str = "Could not complete sign-in. Check your connection and try again.";
@@ -43,6 +58,23 @@ const SIGNED_OUT: &str = "Signed out on this computer.";
 const SIGNED_OUT_NOT_REMOVED: &str =
     "Signed out. The saved credential could not be removed; sign in again to replace it.";
 
+// Shown while a call to the credential store has been waited for longer than a moment: on a
+// locked keyring that is the time its unlock prompt is open (issue #130).
+const WAITING_FOR_STORE: &str =
+    "Waiting for your system keychain. If it is asking for your password, answer it and this will finish.";
+
+/// How long a call to the credential store is waited for before the status says so, and how
+/// long a request from the page waits for the state before it is told the store is busy. A
+/// store that answers does so in far less; a prompt takes a person far longer.
+const STORE_SOON: Duration = Duration::from_secs(2);
+/// How long a call to the credential store is waited for at all. It has to cover a person
+/// reading the keyring's prompt and typing a password. No request from the page waits this
+/// long: a request waits `STORE_SOON` for each thing it waits for, and Sign in waits for
+/// three at most (the host's look, the state, and the host's own cancel when the browser
+/// will not open). Three times `STORE_SOON` is kept below the shortest limit the page gives
+/// any request, which is more than Sign in needs: the page gives Sign in a longer one.
+const STORE_LIMIT: Duration = Duration::from_secs(120);
+
 /// Refresh this long before the access token expires.
 const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 /// Try again this long after a failure that may be temporary.
@@ -55,7 +87,10 @@ pub struct AuthParts {
     pub marker: Arc<dyn SignedOutMarker>,
     /// The current time. Injected so tests do not depend on the wall clock.
     pub clock: Arc<dyn Fn() -> SystemTime + Send + Sync>,
-    /// Called, without any lock held, whenever [`AuthController::status`] may have changed.
+    /// Called whenever [`AuthController::status`] may have changed. It may read the status and
+    /// ask whether the person is signed in. It must not call anything else on the controller
+    /// before it returns: it is also called while a store call is being waited for, and the
+    /// state's lock may be held then.
     pub on_change: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -97,6 +132,12 @@ struct State {
     pending: Option<Pending>,
     busy: bool,
     restoring: bool,
+    /// The last thing the person asked for was a new sign-in, and it failed. A Cancel ends
+    /// it; a failed refresh neither sets nor ends it. A new attempt, a sign-out and an opened
+    /// session end it too, for tidiness only: after each of those the save-only retry that
+    /// reads it cannot come before a Cancel or another failed sign-in has set it again. It
+    /// decides only which sentence follows a save-only retry with nobody signed in.
+    sign_in_failed: bool,
     message: &'static str,
     user: Option<User>,
     expires: Option<SystemTime>,
@@ -121,10 +162,132 @@ impl State {
     }
 }
 
+/// What [`AuthController::status`] and [`AuthController::authenticated`] answer from: a copy
+/// of the parts of the state they need. It is made each time the state's lock is released,
+/// and before each store call made with that lock held, so the two never wait for the store.
+#[derive(Clone)]
+struct Seen {
+    user: Option<User>,
+    expires: Option<SystemTime>,
+    busy: bool,
+    unsaved: bool,
+    message: &'static str,
+}
+
+impl Seen {
+    fn of(state: &State) -> Self {
+        Self {
+            user: state.user.clone(),
+            expires: state.expires,
+            busy: state.busy,
+            unsaved: state.unsaved,
+            message: state.message,
+        }
+    }
+
+    fn authenticated(&self, now: SystemTime) -> bool {
+        self.user.is_some() && self.expires.is_some_and(|deadline| deadline > now)
+    }
+}
+
+/// The state with its lock held. When it is let go, what was done is copied to [`Seen`].
+struct Locked<'a> {
+    state: Option<MutexGuard<'a, State>>,
+    seen: &'a Mutex<Seen>,
+}
+
+impl Deref for Locked<'_> {
+    type Target = State;
+    fn deref(&self) -> &State {
+        self.state.as_ref().expect("held until dropped")
+    }
+}
+
+impl DerefMut for Locked<'_> {
+    fn deref_mut(&mut self) -> &mut State {
+        self.state.as_mut().expect("held until dropped")
+    }
+}
+
+impl<'a> Locked<'a> {
+    /// Lets the state go until `changed` is signalled, then holds it again.
+    fn wait(mut self, changed: &Condvar) -> Self {
+        let state = self.state.take().expect("held until dropped");
+        *unpoisoned(self.seen) = Seen::of(&state);
+        self.state = Some(
+            changed
+                .wait(state)
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        self
+    }
+}
+
+impl Drop for Locked<'_> {
+    fn drop(&mut self) {
+        if let Some(state) = &self.state {
+            *unpoisoned(self.seen) = Seen::of(state);
+        }
+    }
+}
+
+fn unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// How one store call stands between the thread that makes it and the one that waits for it.
+#[derive(Clone, Copy, PartialEq)]
+enum Call {
+    Out,
+    Answered,
+    GivenUp,
+}
+
+/// The store calls that were given up at the limit and have not returned since.
+#[derive(Default)]
+struct Out {
+    /// How many there are. While there is one, every store call fails at once and no sign-in
+    /// is begun.
+    stuck: usize,
+    /// A removal was asked for meanwhile and could not be made. It is made when the last of
+    /// those calls returns, so that a save given up before a sign-out does not outlive it.
+    removal_owed: bool,
+}
+
+/// A call that was given up has returned, or will never return because it panicked. A
+/// removal that was asked for while it was out is made now, on the call's own thread and
+/// before any other store call is let through.
+///
+/// That removal is the one store call with no limit: it is waited for by nobody, and while
+/// it waits no other store call is made and no sign-in is begun. Its outcome is not told to
+/// anyone either: the status goes on saying what it said when the removal could not be made,
+/// and no change is announced.
+fn returned(out: &Mutex<Out>, store: &dyn CredentialStore) {
+    loop {
+        let mut out = unpoisoned(out);
+        if out.removal_owed && out.stuck == 1 {
+            out.removal_owed = false;
+            drop(out);
+            let _ = catch_unwind(AssertUnwindSafe(|| store.delete()));
+            continue;
+        }
+        out.stuck -= 1;
+        break;
+    }
+}
+
 pub struct AuthController {
     parts: AuthParts,
     state: Mutex<State>,
+    seen: Mutex<Seen>,
     drained: Condvar,
+    /// Store calls that have been waited for longer than a moment and are still waited for.
+    store_waits: AtomicUsize,
+    store_out: Arc<Mutex<Out>>,
+    store_soon: Duration,
+    store_limit: Duration,
 }
 
 /// Release refresh admission even if the work of a refresh or the change callback panics. It
@@ -159,6 +322,7 @@ impl AuthController {
             pending: None,
             busy: false,
             restoring: false,
+            sign_in_failed: false,
             message: START,
             user: None,
             expires: None,
@@ -168,15 +332,191 @@ impl AuthController {
         };
         Self {
             parts,
+            seen: Mutex::new(Seen::of(&state)),
             state: Mutex::new(state),
             drained: Condvar::new(),
+            store_waits: AtomicUsize::new(0),
+            store_out: Arc::new(Mutex::new(Out::default())),
+            store_soon: STORE_SOON,
+            store_limit: STORE_LIMIT,
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    /// Replaces the two times a store call is measured against: `soon`, after which the status
+    /// says the store is being waited for and a request from the page is told so, and `limit`,
+    /// after which the call is given up. For tests; the host keeps the defaults.
+    pub fn store_limits(mut self, soon: Duration, limit: Duration) -> Self {
+        self.store_soon = soon;
+        self.store_limit = limit;
+        self
+    }
+
+    /// How long a request from the page waits before it is told the store is busy. The host
+    /// measures its own look at the store against the same time.
+    pub fn store_soon(&self) -> Duration {
+        self.store_soon
+    }
+
+    /// Whether a store call was given up at the limit and has not returned since. While it
+    /// is so, every store call fails at once and no sign-in is begun.
+    pub fn store_given_up(&self) -> bool {
+        unpoisoned(&self.store_out).stuck > 0
+    }
+
+    /// Whether a store call has been waited for longer than a moment and is waited for still,
+    /// which is when the status says the keychain is being waited for.
+    pub fn store_waited_for(&self) -> bool {
+        self.store_waits.load(Ordering::SeqCst) > 0
+    }
+
+    /// Whether the store is held up: a call is being waited for past the first moment, or one
+    /// was given up and has not returned. The host asks this before it looks at the store for
+    /// Sign in.
+    pub fn store_busy(&self) -> bool {
+        // In this order: a call given up is counted as out before its wait is counted back,
+        // so a call that has been said to be waited for is seen by one question or the other
+        // until it returns. In its first moment a call is seen by neither, by design.
+        self.store_waited_for() || self.store_given_up()
+    }
+
+    /// How long a store call is waited for before it is given up. The host gives its own look
+    /// at the store up after the same time.
+    pub fn store_limit(&self) -> Duration {
+        self.store_limit
+    }
+
+    fn lock(&self) -> Locked<'_> {
+        Locked {
+            state: Some(unpoisoned(&self.state)),
+            seen: &self.seen,
+        }
+    }
+
+    /// The state for a request from the page, or `None` when something has held it for longer
+    /// than a moment. Only a store call holds it that long.
+    fn lock_soon(&self) -> Option<Locked<'_>> {
+        let started = Instant::now();
+        loop {
+            match self.state.try_lock() {
+                Ok(state) => break Some(state),
+                Err(TryLockError::Poisoned(poisoned)) => break Some(poisoned.into_inner()),
+                Err(TryLockError::WouldBlock) if started.elapsed() >= self.store_soon => {
+                    break None
+                }
+                Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+        .map(|state| Locked {
+            state: Some(state),
+            seen: &self.seen,
+        })
+    }
+
+    /// One call to the credential store, on a thread of its own, waited for no longer than
+    /// the limit. `held` is the state when the call is made with its lock held; what it says
+    /// by now is published first, so that the status and the gate do not show the time before.
+    ///
+    /// A call given up is not ended: nothing can end a keyring call that waits for its prompt.
+    /// Its thread stays until the store answers, and what it was asked to do may still happen
+    /// then: a save given up may so land later. While such a call is out the store is not
+    /// asked again, because a second call would only wait behind the first; every call fails
+    /// at once until it returns, and no sign-in is begun. A removal asked for meanwhile is
+    /// made when it returns ([`returned`]), so that such a save does not outlive a sign-out.
+    fn store<T: Send + 'static>(
+        &self,
+        held: Option<&State>,
+        call: impl FnOnce(&dyn CredentialStore) -> Result<T, AuthError> + Send + 'static,
+    ) -> Result<T, AuthError> {
+        self.store_as(held, false, call)
+    }
+
+    /// Removes the saved credential, as [`AuthController::store`] makes any call. A removal
+    /// that cannot be made because a call given up is still out is owed: it is made when that
+    /// call returns, since what the call was asked to save may land then.
+    fn remove(&self, held: Option<&State>) -> Result<(), AuthError> {
+        self.store_as(held, true, |store| store.delete())
+    }
+
+    fn store_as<T: Send + 'static>(
+        &self,
+        held: Option<&State>,
+        removal: bool,
+        call: impl FnOnce(&dyn CredentialStore) -> Result<T, AuthError> + Send + 'static,
+    ) -> Result<T, AuthError> {
+        if let Some(state) = held {
+            *unpoisoned(&self.seen) = Seen::of(state);
+        }
+        {
+            let mut out = unpoisoned(&self.store_out);
+            if out.stuck > 0 {
+                out.removal_owed |= removal;
+                return Err(AuthError::Store);
+            }
+        }
+        let (tell, told) = channel();
+        let standing = Arc::new(Mutex::new(Call::Out));
+        let (store, out, theirs) = (
+            self.parts.store.clone(),
+            self.store_out.clone(),
+            standing.clone(),
+        );
+        let started = std::thread::Builder::new()
+            .name("credential-store".into())
+            .spawn(move || {
+                // A call that panics has ended too: it must not count as out for ever.
+                let answer = catch_unwind(AssertUnwindSafe(|| call(store.as_ref())));
+                let mut standing = unpoisoned(&theirs);
+                if *standing == Call::GivenUp {
+                    drop(standing);
+                    returned(&out, store.as_ref());
+                } else {
+                    // Also for a call that panicked: it has ended, and the waiting side must
+                    // not give it up after this and count it as out.
+                    *standing = Call::Answered;
+                    if let Ok(answer) = answer {
+                        let _ = tell.send(answer);
+                    }
+                }
+            });
+        if started.is_err() {
+            return Err(AuthError::Store);
+        }
+        let mut waited = false;
+        let answer = match told.recv_timeout(self.store_soon) {
+            Err(RecvTimeoutError::Timeout) => {
+                self.store_waits.fetch_add(1, Ordering::SeqCst);
+                waited = true;
+                // The state's lock may be held here; a callback that panics must not unwind
+                // through whoever holds it.
+                let _ = catch_unwind(AssertUnwindSafe(|| self.changed()));
+                let rest = self.store_limit.saturating_sub(self.store_soon);
+                told.recv_timeout(rest)
+            }
+            answer => answer,
+        };
+        let answer = match answer {
+            Ok(answer) => answer,
+            // The call panicked: it will never answer, and it is not out either.
+            Err(RecvTimeoutError::Disconnected) => Err(AuthError::Store),
+            Err(RecvTimeoutError::Timeout) => {
+                let mut standing = unpoisoned(&standing);
+                if *standing == Call::Answered {
+                    // It answered between the limit and here.
+                    told.try_recv().unwrap_or(Err(AuthError::Store))
+                } else {
+                    *standing = Call::GivenUp;
+                    unpoisoned(&self.store_out).stuck += 1;
+                    Err(AuthError::Store)
+                }
+            }
+        };
+        // Counted back only now, after a call given up has been counted as out: once a call
+        // has been said to be waited for, there is no moment before it returns at which it is
+        // neither waited for nor given up.
+        if waited {
+            self.store_waits.fetch_sub(1, Ordering::SeqCst);
+        }
+        answer
     }
 
     fn now(&self) -> SystemTime {
@@ -189,21 +529,29 @@ impl AuthController {
 
     /// True while a verified session is within its deadline.
     pub fn authenticated(&self) -> bool {
-        self.lock().authenticated(self.now())
+        let now = self.now();
+        unpoisoned(&self.seen).authenticated(now)
     }
 
     /// The `auth.status` reply: `{authenticated, busy, message, name, email}`. Never a token.
     pub fn status(&self) -> Value {
         let now = self.now();
-        let state = self.lock();
+        let state = unpoisoned(&self.seen).clone();
         let authenticated = state.authenticated(now);
         let user = state.user.as_ref().filter(|_| authenticated);
         let name = user.and_then(|user| user.name.clone().or_else(|| user.first_name.clone()));
         let expired = state.user.is_some() && !authenticated && !state.busy && !state.unsaved;
+        let message = if self.store_waits.load(Ordering::SeqCst) > 0 {
+            WAITING_FOR_STORE
+        } else if expired {
+            EXPIRED
+        } else {
+            state.message
+        };
         json!({
             "authenticated": authenticated,
             "busy": state.busy,
-            "message": if expired { EXPIRED } else { state.message },
+            "message": message,
             "name": name.unwrap_or_default(),
             "email": user.map(|user| user.email.clone()).unwrap_or_default(),
         })
@@ -212,12 +560,20 @@ impl AuthController {
     /// Starts a sign-in and returns the URL to open in the system browser.
     ///
     /// A sign-in the user asks for takes precedence over a background restore, which is
-    /// cancelled. While another sign-in is pending this returns [`AuthError::Busy`].
+    /// cancelled. While another sign-in is pending this returns [`AuthError::Busy`]; while a
+    /// store call given up is still out, or one that holds the state is being waited for,
+    /// [`AuthError::StoreBusy`]. The read at launch holds no state, so a sign-in is begun
+    /// while it waits; the host refuses that press itself ([`AuthController::store_busy`]).
     pub fn begin_sign_in(&self) -> Result<String, AuthError> {
+        // With a store call given up and still out, a new sign-in could not be saved: the
+        // browser is not opened for one.
+        if self.store_given_up() {
+            return Err(AuthError::StoreBusy);
+        }
         let pkce = generate_pkce()?;
         let url = authorize_url(&pkce);
         {
-            let mut state = self.lock();
+            let mut state = self.lock_soon().ok_or(AuthError::StoreBusy)?;
             if state.closed {
                 return Err(AuthError::Busy);
             }
@@ -229,6 +585,7 @@ impl AuthController {
             }
             state.epoch += 1;
             state.verification = None;
+            state.sign_in_failed = false;
             state.pending = Some(Pending {
                 state: pkce.state,
                 verifier: pkce.verifier,
@@ -285,7 +642,7 @@ impl AuthController {
             // The store is read without the lock held, so what it returns is used only if no
             // sign-in, cancel, sign-out or shutdown happened while it was being read. Otherwise
             // a credential read before a sign-out would sign the user back in after it.
-            let loaded = self.parts.store.load();
+            let loaded = self.store(None, |store| store.load());
             let mut state = self.lock();
             if state.epoch != ticket || state.closed {
                 return None;
@@ -371,10 +728,13 @@ impl AuthController {
             return false;
         }
         if state.unsaved {
-            let Some(token) = state.saved.as_deref() else {
+            let Some(token) = state.saved.clone() else {
                 return false;
             };
-            if self.parts.store.save(token).is_err() {
+            if self
+                .store(Some(&state), move |store| store.save(&token))
+                .is_err()
+            {
                 if state.epoch == ticket.epoch && !state.closed {
                     self.fail(&mut state, AuthError::Store, Phase::Refresh);
                 } else if !state.busy && !state.closed {
@@ -411,8 +771,13 @@ impl AuthController {
                     state.busy = false;
                     state.restoring = false;
                     state.retry_at = None;
+                    // Reached after a Cancel, and after a new sign-in that failed. With a
+                    // session still open the save changes nothing a person sees. With nobody
+                    // signed in, the sentence says which of the two it was.
                     state.message = if state.authenticated(self.now()) {
                         SIGNED_IN
+                    } else if state.sign_in_failed {
+                        EARLIER_SAVED
                     } else {
                         CANCELLED
                     };
@@ -479,6 +844,7 @@ impl AuthController {
         state.session_id = Some(verified.session_id);
         state.busy = false;
         state.restoring = false;
+        state.sign_in_failed = false;
         state.retry_at = None;
         state.message = SIGNED_IN;
     }
@@ -498,8 +864,13 @@ impl AuthController {
                 return;
             }
             // The lock is held across the save so a cancel or sign-out cannot land between the
-            // save and the state change and leave a credential behind.
-            if self.parts.store.save(&tokens.refresh_token).is_err() {
+            // save and the state change and leave a credential behind. The page's Cancel and
+            // Sign out do not wait for it: they are told the store is busy.
+            let token = tokens.refresh_token.clone();
+            if self
+                .store(Some(&state), move |store| store.save(&token))
+                .is_err()
+            {
                 self.fail(&mut state, AuthError::Store, Phase::SignIn);
             } else {
                 state.credential_epoch += 1;
@@ -527,6 +898,9 @@ impl AuthController {
         state.busy = false;
         state.restoring = false;
         state.pending = None;
+        if phase == Phase::SignIn {
+            state.sign_in_failed = true;
+        }
         // Only a refresh can end the session. A code exchange the server refuses is a failed
         // sign-in attempt and must not delete a credential that is still good.
         let ended = phase == Phase::Refresh && error == AuthError::Ended;
@@ -538,7 +912,10 @@ impl AuthController {
             state.unsaved = false;
             state.verification = None;
             state.credential_epoch += 1;
-            let _ = self.parts.store.delete();
+            // Said before the store is asked, so that the status does not show the time
+            // before while the removal is waited for.
+            state.message = ENDED;
+            let _ = self.remove(Some(state));
         }
         let store_failure = error == AuthError::Store;
         state.message = if store_failure {
@@ -557,48 +934,85 @@ impl AuthController {
     }
 
     /// Cancels session updates from pending work. A sent refresh still saves its replacement.
+    /// This waits for a store call that holds the state; a request from the page uses
+    /// [`AuthController::cancel_now`].
     pub fn cancel(&self) {
-        {
-            let mut state = self.lock();
-            state.interrupt();
-            state.message = CANCELLED;
-            state.retry_at = (state.unsaved && !state.closed).then(|| self.now() + RETRY_AFTER);
-        }
+        self.cancel_in(self.lock());
+    }
+
+    /// As [`AuthController::cancel`], for a request from the page: while the credential store
+    /// is being waited for nothing is cancelled and the answer is [`AuthError::StoreBusy`].
+    pub fn cancel_now(&self) -> Result<(), AuthError> {
+        self.cancel_in(self.lock_soon().ok_or(AuthError::StoreBusy)?);
+        Ok(())
+    }
+
+    fn cancel_in(&self, mut state: Locked<'_>) {
+        state.interrupt();
+        state.sign_in_failed = false;
+        state.message = CANCELLED;
+        state.retry_at = (state.unsaved && !state.closed).then(|| self.now() + RETRY_AFTER);
+        drop(state);
         self.changed();
     }
 
     /// Signs out locally and returns the URL that ends the remote session, when a verified
-    /// session ID is known. The host opens it in the system browser.
+    /// session ID is known. The host opens it in the system browser. This waits for a store
+    /// call that holds the state; a request from the page uses
+    /// [`AuthController::sign_out_now`].
     pub fn sign_out(&self) -> Option<String> {
-        let url = {
-            let mut state = self.lock();
-            state.interrupt();
-            state.retry_at = None;
-            state.saved = None;
-            state.unsaved = false;
-            state.credential_epoch += 1;
-            state.user = None;
-            state.expires = None;
-            // The marker is set before the delete so a credential that cannot be removed is
-            // still not restored at the next launch.
-            self.parts.marker.set_signed_out(true);
-            state.message = match self.parts.store.delete() {
-                Ok(()) => SIGNED_OUT,
-                Err(_) => SIGNED_OUT_NOT_REMOVED,
-            };
-            state
-                .session_id
-                .take()
-                .map(|session_id| logout_url(&session_id))
-        };
-        self.changed();
+        let mut url = None;
+        self.sign_out_in(self.lock(), |ends| url = ends);
         url
+    }
+
+    /// As [`AuthController::sign_out`], for a request from the page: while the credential
+    /// store is being waited for nothing changes and the answer is [`AuthError::StoreBusy`].
+    /// Otherwise `began` is called once, with the URL that ends the remote session when there
+    /// is one, as soon as the person is signed out here and before the saved credential is
+    /// removed, which is the part that can wait for a prompt. It is called with the state
+    /// held and must not call anything of the controller that takes the state; `status` and
+    /// `authenticated` do not.
+    pub fn sign_out_now(&self, began: impl FnOnce(Option<String>)) -> Result<(), AuthError> {
+        self.sign_out_in(self.lock_soon().ok_or(AuthError::StoreBusy)?, began);
+        Ok(())
+    }
+
+    fn sign_out_in(&self, mut state: Locked<'_>, began: impl FnOnce(Option<String>)) {
+        state.interrupt();
+        state.sign_in_failed = false;
+        state.retry_at = None;
+        state.saved = None;
+        state.unsaved = false;
+        state.credential_epoch += 1;
+        state.user = None;
+        state.expires = None;
+        // The marker is set before the delete so a credential that cannot be removed is
+        // still not restored at the next launch.
+        self.parts.marker.set_signed_out(true);
+        // The person is signed out from here on, whatever the store then does: the gate and
+        // the status say so while the delete is waited for.
+        state.message = SIGNED_OUT;
+        let url = state
+            .session_id
+            .take()
+            .map(|session_id| logout_url(&session_id));
+        // Published before the caller is told: the host answers the page on that word, and
+        // the page then asks for the status.
+        *unpoisoned(&self.seen) = Seen::of(&state);
+        began(url);
+        if self.remove(Some(&state)).is_err() {
+            state.message = SIGNED_OUT_NOT_REMOVED;
+        }
+        drop(state);
+        self.changed();
     }
 
     /// At quit: close admission and drain an already sent refresh through its save attempt.
     /// Call on the host's exit thread, never reentrantly from a WorkosApi or on_change callback.
     /// The host must keep the process alive until this returns. Network calls must have the
-    /// timeout required by WorkosApi; a locked credential store may need its unlock prompt.
+    /// timeout required by WorkosApi; a locked credential store may need its unlock prompt,
+    /// which is waited for no longer than the limit every store call has.
     /// Failed secure writes and forced process termination cannot promise durable recovery.
     pub fn shutdown(&self) {
         let mut state = self.lock();
@@ -606,19 +1020,16 @@ impl AuthController {
         state.interrupt();
         state.retry_at = None;
         while state.refreshing {
-            state = self
-                .drained
-                .wait(state)
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state = state.wait(&self.drained);
         }
         // A previous save may have failed while the app stayed open. Give that exact
         // replacement one final secure-store attempt; never exchange a credential at Quit.
         if state.unsaved {
-            if state
-                .saved
-                .as_deref()
-                .is_some_and(|token| self.parts.store.save(token).is_ok())
-            {
+            let saved = state.saved.clone().is_some_and(|token| {
+                self.store(Some(&state), move |store| store.save(&token))
+                    .is_ok()
+            });
+            if saved {
                 state.unsaved = false;
             } else {
                 state.message = STORE_UNWRITABLE;
