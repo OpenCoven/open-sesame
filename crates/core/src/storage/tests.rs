@@ -1125,6 +1125,8 @@ fn a_saved_item_survives_the_process_dying() {
 #[test]
 fn a_new_database_can_be_opened_by_several_openers_at_once() {
     const OPENERS: usize = 8;
+    // TEMPORARY (#127): keep going after a refusal and time each opener.
+    let mut failures = Vec::new();
     for round in 0..4000 {
         let dir = tempfile::tempdir().unwrap();
         let start = Arc::new(std::sync::Barrier::new(OPENERS));
@@ -1133,19 +1135,32 @@ fn a_new_database_can_be_opened_by_several_openers_at_once() {
                 let (path, start) = (dir.path().to_path_buf(), start.clone());
                 std::thread::spawn(move || {
                     start.wait();
-                    let db = Storage::open_in(&path)?;
-                    db.save_item(note("saved by one opener", "")).map(|_| ())
+                    let began = std::time::Instant::now();
+                    let outcome = Storage::open_in(&path)
+                        .and_then(|db| db.save_item(note("saved by one opener", "")).map(|_| ()));
+                    outcome.map_err(|error| {
+                        format!("{error:?} after {} ms", began.elapsed().as_millis())
+                    })
                 })
             })
             .collect();
+        let before = failures.len();
         for opener in openers {
-            let outcome = opener.join().unwrap();
-            assert!(outcome.is_ok(), "round {round}: {outcome:?}");
+            if let Err(error) = opener.join().unwrap() {
+                failures.push(format!("round {round}: {error}"));
+            }
         }
         let db = Storage::open_in(dir.path()).unwrap();
         assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
-        assert_eq!(find(&db, json!({})).len(), OPENERS, "round {round}");
+        if failures.len() == before {
+            assert_eq!(find(&db, json!({})).len(), OPENERS, "round {round}");
+        }
     }
+    assert!(
+        failures.is_empty(),
+        "{} refused: {failures:#?}",
+        failures.len()
+    );
 }
 
 /// The host shares one `Storage` between its command handlers.
