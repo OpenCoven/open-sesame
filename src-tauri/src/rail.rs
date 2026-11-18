@@ -765,12 +765,14 @@ fn tick<R: Runtime>(app: &AppHandle<R>) {
         .try_state::<summon::Summon>()
         .is_some_and(|summon| !summon.free());
     let hover = lock(&rail.settings).hover;
+    let remembered = lock(&rail.state).focused;
+    let focused = has_keyboard(app, remembered);
     let act = {
         let mut state = lock(&rail.state);
         let glance = Glance {
             expanded: state.expanded,
             held: state.held,
-            focused: state.focused,
+            focused,
             kept,
             hover,
             frame: state.frame,
@@ -856,7 +858,8 @@ fn settle<R: Runtime>(app: &AppHandle<R>, focus: Focus) {
     };
     let shape = rail.shape();
     let edge = lock(&rail.settings).edge;
-    let had_keyboard = lock(&rail.state).focused;
+    let remembered = lock(&rail.state).focused;
+    let had_keyboard = has_keyboard(app, remembered);
     let (shown, target) = {
         let mut state = lock(&rail.state);
         let target = state
@@ -952,7 +955,16 @@ fn place<R: Runtime>(window: &WebviewWindow<R>, frame: Rect, screens: &[Screen])
             frame.width as u32,
             frame.height as u32,
         ));
-        let _ = window.set_position(tauri::PhysicalPosition::new(frame.x as i32, frame.y as i32));
+        let (x, y) = (frame.x as i32, frame.y as i32);
+        // On Windows a window with a shadow and no frame keeps the unseen border a frame has for
+        // resizing, 8 pixels at 100% on the left, right and bottom. A position is that border's
+        // corner, so the border is taken off for what a person sees to be where `frame` says.
+        #[cfg(windows)]
+        let (x, y) = match (window.inner_position(), window.outer_position()) {
+            (Ok(inner), Ok(outer)) => (x - (inner.x - outer.x), y - (inner.y - outer.y)),
+            _ => (x, y),
+        };
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     }
 }
 
@@ -1116,6 +1128,30 @@ pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) {
         );
         settle(app, Focus::Leave);
     });
+}
+
+/// Whether a person is typing in the rail's window. `remembered` is what the window's own focus
+/// events last said, which is the answer on macOS and Linux. On Windows those events follow the
+/// web view inside the window: it says it has the keyboard as soon as it exists, while another
+/// application's window is still the one in front, and says nothing more when the window does
+/// come to the front. So Windows is asked which window is in front.
+fn has_keyboard<R: Runtime>(app: &AppHandle<R>, remembered: bool) -> bool {
+    #[cfg(windows)]
+    {
+        #[link(name = "user32")]
+        extern "system" {
+            fn GetForegroundWindow() -> *mut std::ffi::c_void;
+        }
+        if let Some(Ok(hwnd)) = app
+            .get_webview_window(MAIN_WINDOW)
+            .map(|window| window.hwnd())
+        {
+            // SAFETY: the function takes nothing and returns a handle that is only compared.
+            return unsafe { GetForegroundWindow() } == hwnd.0;
+        }
+    }
+    let _ = app;
+    remembered
 }
 
 /// The window got or lost the keyboard. Answers whether that is news: a session may say again

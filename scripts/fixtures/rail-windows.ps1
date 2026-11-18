@@ -1,8 +1,9 @@
 # Starts the development binary on a Windows desktop and writes down what the companion rail's
 # window does: where the strip is, whether it leaves the keyboard with the window that had it,
-# and what resting on it and `open-sesame --toggle` change. The pointer is a stand-in file
-# (OPEN_SESAME_DEV_POINTER), so nobody's pointer moves. Run by hosted CI on a virtual machine:
-# no person, no real display, and it fills no smoke-pass cell. See docs/companion-rail.md.
+# and what resting on it, a click on it and `open-sesame --toggle` change. Resting is a stand-in
+# file (OPEN_SESAME_DEV_POINTER); the click is a real one, so this moves the pointer and belongs
+# on a machine nobody is using. Run by hosted CI on a virtual machine: no person, no real display,
+# and it fills no smoke-pass cell. See docs/companion-rail.md.
 param([Parameter(Mandatory)][string]$Binary, [Parameter(Mandatory)][string]$Out)
 $ErrorActionPreference = 'Stop'
 
@@ -33,6 +34,28 @@ public static class RailProbe {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int max);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr hwnd, StringBuilder text, int max);
   [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+  [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
+  [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+
+  // What a person sees of the window, on the screen: left, top, width, height. A window with a
+  // shadow and no frame has an unseen border around this.
+  public static int[] Seen(IntPtr hwnd) {
+    RECT client; GetClientRect(hwnd, out client);
+    var origin = new POINT(); ClientToScreen(hwnd, ref origin);
+    return new[] { origin.X, origin.Y, client.Right - client.Left, client.Bottom - client.Top };
+  }
+
+  // One press and release of the left button at a point of the screen.
+  public static void Click(int x, int y) {
+    SetCursorPos(x, y);
+    System.Threading.Thread.Sleep(120);
+    mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+    System.Threading.Thread.Sleep(60);
+    mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+  }
 
   static readonly object Gate = new object();
 
@@ -111,15 +134,15 @@ function Wait-For([scriptblock]$Condition, $Seconds) {
 function Look($Hwnd) {
   $rect = New-Object RailProbe+RECT
   [void][RailProbe]::GetWindowRect($Hwnd, [ref]$rect)
+  $seen = [RailProbe]::Seen($Hwnd)
   $front = [RailProbe]::GetForegroundWindow()
   $exStyle = [RailProbe]::ExStyle($Hwnd)
   [ordered]@{
-    x = $rect.Left; y = $rect.Top; width = $rect.Right - $rect.Left; height = $rect.Bottom - $rect.Top
+    x = $seen[0]; y = $seen[1]; width = $seen[2]; height = $seen[3]
+    withUnseenBorder = @($rect.Left, $rect.Top, ($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top))
     visible = [RailProbe]::IsWindowVisible($Hwnd)
     refusesKeyboard = [bool]($exStyle -band 0x08000000)
     topmost = [bool]($exStyle -band 0x8)
-    toolWindow = [bool]($exStyle -band 0x80)
-    appWindow = [bool]($exStyle -band 0x40000)
     exStyle = ('0x{0:X8}' -f $exStyle)
     style = ('0x{0:X8}' -f [RailProbe]::Style($Hwnd))
     foreground = $(if ($front -eq $Hwnd) { 'rail' } elseif ($front -eq $other.Handle) { 'other window' } elseif ($front -eq [IntPtr]::Zero) { 'none' } else { 'something else: ' + [RailProbe]::Class($front) + ' / ' + [RailProbe]::Title($front) })
@@ -166,9 +189,12 @@ try {
     $script:candidates = [RailProbe]::Windows([uint32]$process.Id)
     $candidates.Count -gt 0
   } 30
+  # The toolkit also keeps windows of no size for its own messages; a person sees the ones with
+  # the application's window class.
   $all = @($candidates | ForEach-Object { [ordered]@{ class = [RailProbe]::Class($_); title = [RailProbe]::Title($_) } })
-  foreach ($candidate in $candidates) { if ([RailProbe]::Title($candidate) -eq 'Open Sesame') { $hwnd = $candidate } }
-  Note 'the application starts, loads its page and puts one window on the screen' ($loaded -and $appeared -and $hwnd -ne [IntPtr]::Zero -and $candidates.Count -eq 1) ([ordered]@{ pageLoaded = $loaded; windows = $all; exited = $process.HasExited })
+  $own = @($candidates | Where-Object { [RailProbe]::Class($_) -eq 'Tauri Window' })
+  foreach ($candidate in $own) { if ([RailProbe]::Title($candidate) -eq 'Open Sesame') { $hwnd = $candidate } }
+  Note 'the application starts, loads its page and puts one window on the screen' ($loaded -and $appeared -and $hwnd -ne [IntPtr]::Zero -and $own.Count -eq 1) ([ordered]@{ pageLoaded = $loaded; windows = $all; exited = $process.HasExited })
   if ($hwnd -eq [IntPtr]::Zero) { throw 'The application put no window titled Open Sesame on the screen.' }
 
   $unit = [RailProbe]::GetDpiForWindow($hwnd) / 96.0
@@ -187,7 +213,9 @@ try {
   $centred = [Math]::Abs(($seen.y + $seen.height / 2) - (($work[1] + $work[3]) / 2)) -le 1
   Note 'the strip is 56 by 376 against the right edge, centred, above other windows' ((Is-Strip $seen) -and (At-Right-Edge $seen) -and $centred -and $seen.topmost) $seen
   Note 'the strip appeared without taking the keyboard from the other window' ($seen.foreground -eq 'other window' -and $seen.refusesKeyboard) ([ordered]@{ foreground = $seen.foreground; refusesKeyboard = $seen.refusesKeyboard })
-  Note 'the strip is not in the taskbar' ($seen.toolWindow -or -not $seen.appWindow) ([ordered]@{ toolWindow = $seen.toolWindow; appWindow = $seen.appWindow; exStyle = $seen.exStyle })
+  # Not read: whether the taskbar has a button for it. The toolkit removes the button through
+  # the taskbar's own interface, which leaves nothing in the window's styles; the images show it.
+  $strip = $seen
   $images.strip = Capture 'strip'
 
   # 2. The pointer rests on the strip: the panel opens and the keyboard stays where it was.
@@ -202,11 +230,29 @@ try {
   $seen = Look $hwnd
   Note 'moving away closes it to the strip, the keyboard still with the other window' ($closed -and $seen.foreground -eq 'other window') $seen
 
-  # 3. `open-sesame --toggle`: the panel opens with the keyboard, and closing gives it back.
+  # 3. A real click on the strip's first view: the panel opens to stay, with the keyboard,
+  # although the strip itself refuses the keyboard. The view's button is 79 pixels below the
+  # strip's top at 100%; if the strip's layout changes, this number changes with it.
+  $clickX = $strip.x + [int]($strip.width / 2); $clickY = $strip.y + [int][Math]::Round(79 * $unit)
+  Set-Content -Path $pointer -Value ("{0} {1}" -f $clickX, $clickY)
+  [RailProbe]::Click($clickX, $clickY)
+  $opened = Wait-For { $now = Look $hwnd; (Is-Panel $now) -and $now.foreground -eq 'rail' } 10
+  $seen = Look $hwnd
+  Note 'a click on a view on the strip opens the panel to stay, with the keyboard' ($opened -and (At-Right-Edge $seen) -and -not $seen.refusesKeyboard) $seen
+  Set-Content -Path $pointer -Value '200 200'
+  Pump 1500
+  $seen = Look $hwnd
+  Note 'the panel opened by a click stays open when the pointer leaves' ((Is-Panel $seen) -and $seen.foreground -eq 'rail') ([ordered]@{ width = $seen.width; foreground = $seen.foreground })
   $second = Start-Process -FilePath $Binary -ArgumentList '--toggle' -NoNewWindow -PassThru
   $returned = $second.WaitForExit(15000)
-  $opened = Wait-For { Is-Panel (Look $hwnd) } 10
-  Pump 1000
+  $closed = Wait-For { $now = Look $hwnd; (Is-Strip $now) -and $now.foreground -eq 'other window' } 10
+  $seen = Look $hwnd
+  Note 'open-sesame --toggle closes it and gives the keyboard back to the other window' ($returned -and $closed -and $seen.refusesKeyboard) $seen
+
+  # 4. `open-sesame --toggle`: the panel opens with the keyboard, and closing gives it back.
+  $second = Start-Process -FilePath $Binary -ArgumentList '--toggle' -NoNewWindow -PassThru
+  $returned = $second.WaitForExit(15000)
+  $opened = Wait-For { $now = Look $hwnd; (Is-Panel $now) -and $now.foreground -eq 'rail' } 10
   $seen = Look $hwnd
   Note 'open-sesame --toggle opens the panel and the second process exits' ($returned -and $opened -and (At-Right-Edge $seen)) ([ordered]@{ secondProcessExited = $returned; width = $seen.width; height = $seen.height; x = $seen.x })
   Note 'the panel opened by the command has the keyboard' ($seen.foreground -eq 'rail' -and -not $seen.refusesKeyboard) ([ordered]@{ foreground = $seen.foreground; refusesKeyboard = $seen.refusesKeyboard })
@@ -214,13 +260,12 @@ try {
 
   $second = Start-Process -FilePath $Binary -ArgumentList '--toggle' -NoNewWindow -PassThru
   $returned = $second.WaitForExit(15000)
-  $closed = Wait-For { Is-Strip (Look $hwnd) } 10
-  Pump 1000
+  $closed = Wait-For { $now = Look $hwnd; (Is-Strip $now) -and $now.foreground -eq 'other window' } 10
   $seen = Look $hwnd
   Note 'open-sesame --toggle closes the panel to the strip' ($returned -and $closed -and (At-Right-Edge $seen) -and $seen.visible) ([ordered]@{ secondProcessExited = $returned; width = $seen.width; height = $seen.height; x = $seen.x; visible = $seen.visible })
   Note 'closing gives the keyboard back to the other window' ($seen.foreground -eq 'other window' -and $seen.refusesKeyboard) ([ordered]@{ foreground = $seen.foreground; refusesKeyboard = $seen.refusesKeyboard })
 
-  # 4. One application throughout.
+  # 5. One application throughout.
   $text = Get-Content -Raw $log
   $loads = ([regex]::Matches($text, 'open-sesame: page loaded')).Count
   $running = @(Get-Process -Name 'open-sesame' -ErrorAction SilentlyContinue).Count
@@ -238,7 +283,7 @@ try {
 
 $report = [ordered]@{
   passed = -not $script:failed
-  kind = 'launched development binary on a hosted Windows virtual machine; stand-in pointer; no person'
+  kind = 'launched development binary on a hosted Windows virtual machine; resting is a stand-in pointer and the click is real; no person'
   binary = $Binary
   images = $images
   steps = $steps
