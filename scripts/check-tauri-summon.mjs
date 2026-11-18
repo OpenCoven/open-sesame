@@ -234,7 +234,15 @@ function fakeBridge(status, answers = {}) {
   assert.match(window, /Session::Wayland\)\n            \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/);
   // AppKit aborts the process if a window is ordered off the main thread, and a second launch,
   // the shortcut and the bridge all call from other threads. Found in a launched app.
-  assert.match(read('src-tauri/src/panel.rs'), /\.run_on_main_thread\(move \|\| panel\.show_and_make_key\(\)\)/);
+  const panel = bare(read('src-tauri/src/panel.rs'));
+  assert.match(panel, /\.run_on_main_thread\(move \|\| \{/, 'panel::show orders the panel from the main thread');
+  // tauri-nspanel's `show_and_make_key` makes the panel's content view the first responder, which
+  // takes the keyboard from the web view: what was typed after the shortcut reached nothing (#142).
+  assert.ok(!panel.includes('show_and_make_key'), 'panel::show does not call show_and_make_key, which takes the keyboard from the web view');
+  assert.ok(!panel.includes('make_first_responder'), 'panel::show does not choose a first responder of its own');
+  // Ordered in front and made key without activating the application, then the web view (and so the
+  // element the page had focused) is given the keyboard, inside the same main-thread task.
+  assert.match(panel, /\.run_on_main_thread\(move \|\| \{\s*panel\.order_front_regardless\(\);\s*panel\.make_key_window\(\);\s*let _ = webview\.set_focus\(\);\s*\}\)/, 'panel::show orders the panel in front, makes it key, then focuses the web view');
   // Single-instance is the first plugin, so a second launch never creates a window.
   const plugins = [...entry.matchAll(/\.plugin\(([a-z_:]+)/g)].map(match => match[1]);
   assert.equal(plugins[0], 'tauri_plugin_single_instance::init');
