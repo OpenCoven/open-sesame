@@ -293,14 +293,101 @@ fn a_new_sign_in_that_fails_after_a_cancel_says_the_earlier_sign_in_is_saved() {
 }
 
 /// A new sign-in that is started again is a new attempt: while it waits in the browser the
-/// sentence is the browser's, and a Cancel of it reads as a Cancel after the save.
+/// sentence is the browser's, and a Cancel of it reads as a Cancel after the save. This
+/// holds no rule by itself: the new attempt and the Cancel each end the failed-sign-in
+/// state, and either is enough for it to pass.
 #[test]
 fn a_second_attempt_that_is_cancelled_says_cancelled() {
     let rig = new_sign_in_fails_over_an_unsaved_restore();
     let _callback = rig.begin();
+    assert_eq!(rig.message(), "Finish signing in in your browser.");
     rig.auth.cancel();
     the_earlier_credential_is_saved_and_nothing_else(&rig);
     assert_eq!(rig.message(), "Sign-in cancelled.");
+}
+
+/// A restore that was cancelled with its renewed credential unsaved, and a new sign-in
+/// waiting in the browser over it. Returns the callback the browser would send.
+fn a_sign_in_waits_over_an_unsaved_restore() -> (Rig, String) {
+    let rig = rig();
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    let auth = rig.auth.clone();
+    *rig.api.during_call.lock().unwrap() = Some(Box::new(move || auth.cancel()));
+    rig.auth.restore();
+    let callback = rig.begin();
+    (rig, callback)
+}
+
+/// Every way a new sign-in fails counts, and not only a failed exchange or a refused store:
+/// here the person refuses in the browser, so no code comes back.
+#[test]
+fn a_sign_in_refused_in_the_browser_then_says_the_earlier_sign_in_is_saved() {
+    let (rig, callback) = a_sign_in_waits_over_an_unsaved_restore();
+    rig.auth
+        .complete_sign_in(&callback.replace("code=fixture-code", "error=access_denied"));
+    assert_eq!(
+        rig.message(),
+        "Sign-in was not completed in the browser. Try again."
+    );
+    the_earlier_credential_is_saved_and_nothing_else(&rig);
+    assert_eq!(rig.message(), EARLIER_SAVED);
+    assert!(rig.api.exchange_calls.lock().unwrap().is_empty());
+}
+
+/// And here the code is exchanged for a token that cannot be verified, signed by a key the
+/// key set does not publish.
+#[test]
+fn a_sign_in_that_cannot_be_verified_then_says_the_earlier_sign_in_is_saved() {
+    let (rig, callback) = a_sign_in_waits_over_an_unsaved_restore();
+    rig.api.exchanges.lock().unwrap().push(Ok(tokens(
+        sign(other_key(), &header(), &claims()),
+        "refresh-new",
+    )));
+    rig.auth.complete_sign_in(&callback);
+    assert!(rig.message().starts_with("Could not complete sign-in."));
+    the_earlier_credential_is_saved_and_nothing_else(&rig);
+    assert_eq!(rig.message(), EARLIER_SAVED);
+}
+
+/// A session that was open and runs out before the save: neither sentence is said. The
+/// status reads that the session expired, and the next refresh renews it from the credential
+/// that was saved, as it would have anyway.
+#[test]
+fn a_session_that_runs_out_before_the_save_says_expired_and_is_renewed() {
+    let rig = rig();
+    rig.sign_in();
+    rig.advance(240);
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    rig.auth.refresh();
+    let callback = rig.begin();
+    rig.auth.complete_sign_in(&callback); // No reply scripted: the code exchange fails.
+    assert!(rig.auth.authenticated());
+    for _ in 0..2 {
+        rig.advance(20);
+        rig.auth.refresh();
+        assert!(rig.message().contains("system keychain"));
+    }
+    rig.advance(20); // 300 seconds after the sign-in: the session's deadline.
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    rig.auth.refresh();
+    assert!(!rig.auth.authenticated());
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+    assert_eq!(
+        rig.message(),
+        "Your session expired. Sign in again to use your account."
+    );
+    assert_eq!(rig.auth.next_refresh_in(), Some(Duration::ZERO));
+    reply(&rig, "refresh-three");
+    rig.auth.refresh();
+    assert_eq!(
+        *rig.api.refresh_calls.lock().unwrap(),
+        ["refresh-one", "refresh-two"]
+    );
+    assert!(rig.auth.authenticated());
 }
 
 #[test]
