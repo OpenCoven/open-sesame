@@ -73,6 +73,8 @@ export function createLifecycle({widgets, loaders, styles = {}, createSurface, l
     if (!on) await retire(e);
     visibility();
   };
+  // Resolves with the command's result, or with nothing when another show overtook this one
+  // before its widget was ready, so its command never ran.
   const show = async (id, action = 'open') => {
     const e = entry(id);
     e.on = true;
@@ -84,7 +86,7 @@ export function createLifecycle({widgets, loaders, styles = {}, createSurface, l
     await record.ready;
     if (closed || !e.on || e.live !== record || ticket !== sequence || selected !== id) return;
     visibility();
-    await record.api?.command?.(action);
+    return record.api?.command?.(action);
   };
   const restore = state => {
     for (const [id,e] of entries) if (typeof state?.on?.[id] === 'boolean') e.on = state.on[id];
