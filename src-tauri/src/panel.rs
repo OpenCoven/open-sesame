@@ -38,8 +38,15 @@ pub fn adopt(window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Shows the panel and gives it the keyboard without activating the application. Returns
+/// Shows the panel and gives the page the keyboard without activating the application. Returns
 /// `false` when the window is not a panel, which only a test's window is.
+///
+/// The panel crate's `show_and_make_key` is not used: it asks for the panel's content view as
+/// the first responder, the content view refuses, and AppKit makes the window itself the first
+/// responder. That took the keyboard from the web view, so what was typed after the shortcut
+/// reached nothing (issue #142). Here the panel is ordered in front and made key, and then the
+/// web view is made the first responder. In a launched app that gave the keyboard back to the
+/// element the page had focused, a shell's input (synthetic input on macOS, issue #142).
 pub fn show<R: Runtime>(window: &WebviewWindow<R>) -> bool {
     let app = window.app_handle();
     // Without the plugin the lookup below would panic; only a test runs without it.
@@ -47,11 +54,20 @@ pub fn show<R: Runtime>(window: &WebviewWindow<R>) -> bool {
         return false;
     }
     match app.get_webview_panel(window.label()) {
-        // AppKit aborts the process when a window is ordered from another thread, and the
-        // callers are a second launch, the shortcut and the bridge, none on the main thread.
-        Ok(panel) => window
-            .run_on_main_thread(move || panel.show_and_make_key())
-            .is_ok(),
+        // AppKit aborts the process when a window is ordered from another thread, and a second
+        // launch, the shortcut and the bridge call from other threads. A caller already on the
+        // main thread, as the Dock and the tray are, runs the task in place. The web view's
+        // focus is asked from the same task, so it follows the ordering.
+        Ok(panel) => {
+            let webview = window.as_ref().clone();
+            window
+                .run_on_main_thread(move || {
+                    panel.order_front_regardless();
+                    panel.make_key_window();
+                    let _ = webview.set_focus();
+                })
+                .is_ok()
+        }
         Err(_) => false,
     }
 }
