@@ -99,10 +99,27 @@ fn selftest_script() -> String {
     if !cfg!(debug_assertions) {
         return String::new();
     }
-    std::env::var("OPEN_SESAME_SELFTEST")
-        .ok()
-        .and_then(|text| selftest_flag(&text))
-        .unwrap_or_default()
+    selftest_request(std::env::var_os("OPEN_SESAME_SELFTEST")).unwrap_or_else(|unusable| {
+        eprintln!("open-sesame: {unusable}");
+        String::new()
+    })
+}
+
+/// Said on standard error when `OPEN_SESAME_SELFTEST` is set but is not a JSON object.
+const SELFTEST_UNUSABLE: &str = "OPEN_SESAME_SELFTEST is set but is not a JSON object, so the \
+    self-test does not run. On macOS, a script in an app started from the desktop may not read \
+    files in Documents, Desktop or Downloads; it then gets nothing to set the variable to.";
+
+/// The script for the variable's value: nothing when it is not set, and an error when it is set
+/// to something that is not a JSON object, an empty value included.
+fn selftest_request(value: Option<std::ffi::OsString>) -> Result<String, &'static str> {
+    match value {
+        None => Ok(String::new()),
+        Some(value) => value
+            .to_str()
+            .and_then(selftest_flag)
+            .ok_or(SELFTEST_UNUSABLE),
+    }
 }
 
 /// The script for a self-test request, or `None` when the text is not a JSON object. The value
@@ -447,6 +464,23 @@ mod tests {
         assert_eq!(selftest_flag("[1]"), None);
         let script = selftest_flag(r#"{"out":"/tmp/x y.json"}"#).unwrap();
         assert!(script.contains(r#"{value:Object.freeze({"out":"/tmp/x y.json"})}"#));
+    }
+
+    /// A request that is set but cannot be used is said, not dropped in silence: on macOS a
+    /// script in an app started from the desktop may not read a file in Documents, and then sets
+    /// the variable to nothing (#141).
+    #[test]
+    fn a_selftest_request_that_cannot_be_used_is_reported() {
+        assert_eq!(selftest_request(None), Ok(String::new()));
+        for unusable in ["", "not json", "[1]"] {
+            assert_eq!(
+                selftest_request(Some(unusable.into())),
+                Err(SELFTEST_UNUSABLE),
+                "{unusable:?}"
+            );
+        }
+        let script = selftest_request(Some(r#"{"out":"/tmp/x.json"}"#.into())).unwrap();
+        assert!(script.contains(r#"Object.freeze({"out":"/tmp/x.json"})"#));
     }
 
     #[test]
