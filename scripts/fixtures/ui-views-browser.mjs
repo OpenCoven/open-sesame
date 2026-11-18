@@ -430,6 +430,9 @@ try {
         await projects.locator(`[data-item="${errands.id}"]`).getByText('Bookmark · Inbox · Unsaved edit', {exact: true}).waitFor();
         const saves = () => editing.calls.filter(([method]) => method === 'items.save').length, before = saves();
         await projects.locator('[data-item-list]').getByRole('button', {name: 'Errands', exact: true}).click();
+        // Close only hides the editor, so the checks below would read the hidden one if the item
+        // did not open again.
+        assert.equal(await editor.isVisible(), true, 'the item opens again');
         assert.equal(await editor.locator('#editor-title').textContent(), 'Edit note', 'the draft reopens as the note it was opened as');
         assert.deepEqual(await editor.locator('[data-edit-field]').evaluateAll(fields => fields.map(field => field.dataset.editField)), ['title', 'body', 'projectId'], 'in the note’s fields, not the bookmark’s');
         assert.equal(await editor.locator('[data-edit-field="title"]').inputValue(), 'Errands for Saturday', 'with the person’s edit');
@@ -438,6 +441,7 @@ try {
         await status.getByText(KIND_CHANGED('bookmark')).waitFor();
         assert.equal(saves(), before, 'Save sends nothing');
         assert.equal(await status.textContent(), KIND_CHANGED('bookmark'), 'and never says Saved.');
+        assert.equal(await editor.locator('[data-edit-field="title"]').inputValue(), 'Errands for Saturday', 'the person’s edit stays to copy');
         const stored = editing.core.items.get(errands.id);
         assert.deepEqual([stored.kind, stored.text, stored.title, stored.url], ['bookmark', 'Errands', '', 'https://example.com/errands'], 'the other writer’s change stays');
         await editor.getByRole('button', {name: 'Discard changes', exact: true}).click();
