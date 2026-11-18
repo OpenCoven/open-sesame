@@ -1,7 +1,7 @@
 //! Recovery of a response whose refresh credential has already rotated (#94).
 use super::*;
 
-fn reply(rig: &Rig, refresh: &str) {
+pub(super) fn reply(rig: &Rig, refresh: &str) {
     let expiry = rig
         .clock
         .lock()
