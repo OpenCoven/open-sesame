@@ -273,6 +273,27 @@ try {
         await host.locator('.json-card').waitFor();
         assert(!await host.getByText('Sample content · no action or provider is run.',{exact:true}).count());
       });
+      await step('a file that is not a definition gets a plain warning and no empty preview',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]'),status=host.getByRole('status'),preview=host.locator(':scope > section');
+        const colour=locator=>locator.evaluate(e=>getComputedStyle(e).color);
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('hello')});
+        await status.filter({hasText:'This file is not JSON. Choose a widget definition file (.json).'}).waitFor();
+        assert.equal(await status.textContent(),'This file is not JSON. Choose a widget definition file (.json).','the engine\'s parser text is not shown');
+        assert.equal(await status.getAttribute('data-tone'),'warn');
+        assert.notEqual(await colour(status),await colour(host.getByText('Import a widget definition',{exact:false})),'a warning is not drawn in the muted colour');
+        assert(await preview.isHidden(),'the empty preview draws no box');
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'partial.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({name:definition.name}))});
+        await status.filter({hasText:'This definition cannot be installed:'}).waitFor();
+        assert((await status.textContent()).startsWith('This definition cannot be installed: '),'the field list follows a sentence');
+        assert.equal(await status.getAttribute('data-tone'),'warn');
+        assert(await preview.isHidden());
+        // A definition that can be installed clears the warning.
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await status.filter({hasText:'Review the sample'}).waitFor();
+        assert.equal(await status.getAttribute('data-tone'),null);
+        assert(await preview.isVisible());
+        await host.getByRole('button',{name:'Dismiss preview',exact:true}).click();
+      });
       await step('unknown code is rejected and markup is rendered as text',async()=>{
         const host=page.locator('[data-widget-view="declarative"]');
         await host.getByLabel('Import widget JSON').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...definition,script:'./evil.js'}))});
@@ -311,6 +332,29 @@ try {
         await page.evaluate(()=>window.__fixture__.releaseNote());
         await page.waitForTimeout(100);
         assert.equal(await host.getByRole('status').textContent(),beforeReply,'A retired action must not report its late error');
+      });
+      await step('install, remove, keep and removal each leave the keyboard on the next control',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        const focused=()=>page.evaluate(()=>{const e=document.activeElement;return {tag:e.tagName,text:e.textContent.trim(),label:e.getAttribute('aria-label'),card:e.closest('.json-card')?.dataset.instance||null};});
+        const cards=await host.locator('.json-card').count();
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await host.getByRole('button',{name:'Install widget',exact:true}).click();
+        await host.locator('.json-card').nth(cards).waitFor();
+        const card=host.locator('.json-card').nth(cards),id=await card.getAttribute('data-instance');
+        const installed=await focused();
+        assert.equal(installed.card,id,'after install the keyboard is in the new card');
+        assert.equal(installed.tag,'BUTTON');
+        await card.getByRole('button',{name:'Remove widget',exact:true}).click();
+        assert.deepEqual(await focused(),{tag:'BUTTON',text:'Confirm removal',label:null,card:id},'Remove widget moves to Confirm removal');
+        await card.getByRole('button',{name:'Keep widget',exact:true}).click();
+        assert.deepEqual(await focused(),{tag:'BUTTON',text:'Remove widget',label:null,card:id},'Keep widget goes back to Remove widget');
+        await page.keyboard.press('Enter');
+        assert.equal((await focused()).text,'Confirm removal');
+        await page.keyboard.press('Enter');
+        await host.getByRole('status').filter({hasText:'Widget removed.'}).waitFor();
+        assert.equal(await host.locator(`.json-card[data-instance="${id}"]`).count(),0);
+        const removed=await focused();
+        assert.equal(removed.label,'Import widget JSON','after removal the keyboard is on the file input');
       });
       await step('last view and installed command survive reload without JSON code loading',async()=>{
         await page.locator('[data-view="today"]').click();
