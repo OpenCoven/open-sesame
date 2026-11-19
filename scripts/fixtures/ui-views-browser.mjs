@@ -668,6 +668,18 @@ try {
         await state.getByText('Ready to start', {exact: true}).waitFor();
         assert.equal(await control(), 'start', 'Reset hands focus to Start');
       });
+      await step('a finished focus session is announced in the status line', async () => {
+        const focus = view(page, 'focus'), message = focus.locator('[data-focus-message]');
+        await focus.getByRole('button', {name: 'Start', exact: true}).click();
+        await message.getByText('Focus started.', {exact: true}).waitFor();
+        await page.clock.runFor(26 * MINUTE);
+        await focus.locator('[data-focus-state]').getByText('Session complete', {exact: true}).waitFor();
+        assert.equal(await message.getAttribute('role'), 'status', 'the line is a live region');
+        assert.equal(await message.textContent(), 'Session complete.', 'the end replaces the stale start message');
+        assert.equal(await message.getAttribute('data-tone'), null);
+        await focus.getByRole('button', {name: 'Reset', exact: true}).click();
+        await message.getByText('Timer reset.', {exact: true}).waitFor();
+      });
       await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {
         assert.deepEqual(installs.flatMap(entry => entry.blocked), []);

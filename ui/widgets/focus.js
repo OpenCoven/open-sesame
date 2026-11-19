@@ -29,7 +29,7 @@ export async function mount({surface, signal, bridge}) {
   ]));
 
   const store = createFocusStore({bridge, now: () => Date.now()});
-  let timer = null, busy = false, lengthDraft = false;
+  let timer = null, busy = false, lengthDraft = false, last = null;
 
   // `had` names the control that had keyboard focus when a press started, since a control that
   // is disabled while its write is out may lose focus in the meantime.
@@ -49,6 +49,10 @@ export async function mount({surface, signal, bridge}) {
       const target = [had, NEXT[had], ...BUTTONS[shown.status]].find(action => action && visible(action));
       if (target && controls[target] !== active) controls[target].focus();
     }
+    // The end of a session is said in the status line, a polite live region, in place of the
+    // message from when it started; the timer role itself does not announce.
+    if (last === 'running' && shown.status === 'finished' && !store.problem) status.say('Session complete.');
+    last = shown.status;
     recover.hidden = !store.recoverable;
     if (!lengthDraft) minutes.value = String(Math.round(shown.durationMs / 60_000));
     if (shown.status === 'running' && timer === null) timer = setInterval(() => { if (alive()) draw(); }, 1000);
