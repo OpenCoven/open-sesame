@@ -44,9 +44,17 @@ export function whenShown(document, signal, refresh) {
 // left the list (completed, archived or deleted), focus goes to the same control on the next row,
 // else on the previous row, else to what `fallback` returns (the list's heading or empty-state
 // line, focusable with tabindex -1), so it never falls to the document.
+const lastFocused = new WeakMap(); // list → the control in it that last had keyboard focus
 export function redraw(list, draw, fallback = () => null) {
-  const active = list.ownerDocument.activeElement;
-  const key = active && list.contains(active) ? active.dataset.focusKey : undefined;
+  if (!lastFocused.has(list)) list.addEventListener('focusin', event => lastFocused.set(list, event.target));
+  const document = list.ownerDocument, active = document.activeElement;
+  let source = active && list.contains(active) ? active : null;
+  // A control disabled while its write is out can lose focus to the document before the answer
+  // comes; it still counts as focused then. Focus the person moved elsewhere is left alone.
+  const last = lastFocused.get(list);
+  if (!source && (!active || active === document.body) && last?.disabled && list.contains(last)) source = last;
+  lastFocused.set(list, source);
+  const key = source?.dataset.focusKey;
   const keyed = () => [...list.querySelectorAll('[data-focus-key]')];
   let after = [], before = [];
   if (key) {
