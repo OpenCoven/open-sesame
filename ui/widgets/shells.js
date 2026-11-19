@@ -1,7 +1,7 @@
 import { createPane } from '../terminal.js';
 import { provideMenu } from '../context-menu.js';
 
-export async function mount({surface, signal, bridge, host, info}) {
+export async function mount({surface, signal, bridge, host, info, attention}) {
   const document = surface.ownerDocument;
   surface.innerHTML = `  <section class="terminals" data-terminals aria-label="Terminals">
     <form class="launch" data-launch autocomplete="off">
@@ -101,7 +101,12 @@ export async function mount({surface, signal, bridge, host, info}) {
       {
         onBytes: hooks.onBytes,
         onError: text => { if (!disposed) say(text); hooks.onError?.(text); },
-        onExit: () => { item.dataset.ended = 'true'; tab.textContent = `${label} (ended)`; hooks.onExit?.(); },
+        onExit: () => {
+          item.dataset.ended = 'true'; tab.textContent = `${label} (ended)`;
+          // The strip says so when the person is looking elsewhere (ui/attention.js).
+          if (!disposed && !attention?.showing('shells')) attention?.set('shells', {tone: 'attention', label: 'A shell ended'});
+          hooks.onExit?.();
+        },
       },
     );
     // The pane's own menu, in place of the native one (issue #115): the emulator keeps its

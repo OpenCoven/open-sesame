@@ -74,6 +74,9 @@ try {
     page.on('requestfailed',request=>events.push({event:'requestfailed',url:request.url(),error:request.failure()}));
     const requests=[];page.on('request',req=>requests.push(new URL(req.url()).pathname));
     const step=async(label,action)=>{await action();report.results.push({engine:name,label,passed:true});};
+    // Settings is a sheet over the view: the switches are reached with it open, the view with it closed.
+    const settingsOpen=async(target=page)=>{if(await target.locator('#widget-settings').isHidden())await target.getByRole('button',{name:'Settings',exact:true}).click();};
+    const settingsClosed=async(target=page)=>{if(!await target.locator('#widget-settings').isHidden())await target.keyboard.press('Escape');};
     try {
       await page.goto(origin+'/ui/index.html');
       await page.locator('[data-ready="true"]').waitFor();
@@ -81,7 +84,10 @@ try {
         assert(await page.locator('[data-widget-view="today"]').isVisible());
         for(const part of ['shells.js','shells.css','terminal.js','xterm.js','xterm.css','declarative.js','definitions.js'])assert(!requests.some(r=>r.endsWith('/'+part)),part+' must not load');
         assert.deepEqual(await page.evaluate(()=>Object.keys(window).filter(k=>k.startsWith('OpenSesame'))),[]);
-        // The account and shortcut of #72 and #71 sit outside every widget and answer at start.
+        // The account and shortcut of #72 and #71 sit outside every widget, in the Settings sheet,
+        // and answer at start whether or not the sheet is open.
+        assert(await page.locator('#widget-settings').isHidden(),'Settings start closed');
+        await page.getByRole('button',{name:'Settings',exact:true}).click();
         await page.locator('[data-account]').getByText('Not signed in').waitFor();
         assert.equal(await page.locator('#summon-shortcut').inputValue(),'Control+Alt+Shift+Space');
         assert(await page.locator('[data-summon-blur]').isVisible());
@@ -101,6 +107,10 @@ try {
         await changed(false);
         await account.getByText('Not signed in').waitFor();
         assert.equal(await status.textContent(),'Connected · Local workspace');
+        // The sheet covers the view while it is open and gives it back when it closes.
+        await page.keyboard.press('Escape');
+        assert(await page.locator('#widget-settings').isHidden());
+        assert(await page.locator('[data-widget-view="today"]').isVisible());
       });
       await step('off widget command is discoverable without import',async()=>{
         await page.getByRole('button',{name:'Commands',exact:true}).click();
@@ -116,7 +126,7 @@ try {
         assert(requests.some(r=>r.endsWith('/shells.js')));assert(requests.some(r=>r.endsWith('/shells.css')));
         await page.getByRole('button',{name:'New shell',exact:true}).click();
         await page.locator('.xterm').waitFor();
-        await page.getByRole('button',{name:'Widgets',exact:true}).click();
+        await page.getByRole('button',{name:'Settings',exact:true}).click();
         await page.locator('[data-widget="shells"]').uncheck();
         await page.locator('[data-widget-view="shells"]').waitFor({state:'detached'});
         await page.waitForFunction(()=>window.__fixture__.calls.some(c=>c.method==='terminal.close'));
@@ -124,8 +134,10 @@ try {
       });
       await step('repeated terminal toggles leave no pane or stylesheet behind',async()=>{
         for(let i=0;i<12;i++) {
+          await settingsOpen();
           await page.locator('[data-widget="shells"]').check();
           await page.locator('[data-launch]').waitFor();
+          await settingsClosed();
           await page.getByRole('button',{name:'New shell',exact:true}).click();
           await page.locator('.xterm').waitFor();
           if(i===0) {
@@ -133,6 +145,7 @@ try {
             assert(geometry.height>100,'Terminal keeps a usable viewport');
             await page.screenshot({path:path.join(output,`${name}-terminal.png`),fullPage:true});
           }
+          await settingsOpen();
           await page.locator('[data-widget="shells"]').uncheck();
           await page.locator('[data-widget-view="shells"]').waitFor({state:'detached'});
         }
@@ -140,7 +153,9 @@ try {
         assert.equal(await page.locator('.xterm,link[data-widget-style*="shells"]').count(),0);
       });
       await step('JSON preview is isolated and install is explicit',async()=>{
+        await settingsOpen();
         await page.locator('[data-widget="declarative"]').check();
+        await settingsClosed();
         const host=page.locator('[data-widget-view="declarative"]');
         const before=await page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='items.save').length);
         await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
@@ -227,19 +242,20 @@ try {
         const allowed=()=>requests.some(r=>r.endsWith('/xterm.js'))?['OpenSesameXterm']:[];
         assert.deepEqual(await added(),allowed(),'the shell and the widgets loaded so far add no other global');
         const ids=await page.evaluate(async()=>(await import(location.origin+'/ui/manifest.js')).widgets.map(widget=>widget.id));
-        if(await page.locator('#widget-settings').isHidden())await page.getByRole('button',{name:'Widgets',exact:true}).click();
+        await settingsOpen();
         const wasOn=new Map();
         for(const id of ids) {
           const box=page.locator(`[data-widget="${id}"]`),view=page.locator(`[data-widget-view="${id}"]`);
           wasOn.set(id,await box.isChecked());
           if(wasOn.get(id)){await box.uncheck();await view.waitFor({state:'detached'});}
           await box.check();await view.waitFor({state:'visible'});
-          if(id==='shells'){await view.getByRole('button',{name:'New shell',exact:true}).click();await view.locator('.xterm').waitFor();}
+          if(id==='shells'){await settingsClosed();await view.getByRole('button',{name:'New shell',exact:true}).click();await view.locator('.xterm').waitFor();await settingsOpen();}
           assert.deepEqual(await added(),allowed(),`turning ${id} on adds no global`);
           await box.uncheck();await view.waitFor({state:'detached'});
           assert.deepEqual(await added(),allowed(),`turning ${id} off leaves no global`);
         }
         for(const [id,on] of wasOn)if(on)await page.locator(`[data-widget="${id}"]`).check();
+        await settingsClosed();
       });
       await step('a switch turned while the first view loads is saved',async()=>{
         const loading=await context.newPage();
@@ -250,7 +266,7 @@ try {
           await loading.goto(origin+'/ui/index.html',{waitUntil:'domcontentloaded'});
           await loading.locator('[data-widget="reader"]:not([disabled])').waitFor({state:'attached'});
           assert.notEqual(await loading.locator('.shell').getAttribute('data-ready'),'true','the first view is still loading');
-          await loading.getByRole('button',{name:'Widgets',exact:true}).click();
+          await loading.getByRole('button',{name:'Settings',exact:true}).click();
           await loading.locator('[data-widget="reader"]').check();
           release();
           await loading.locator('[data-ready="true"]').waitFor();
@@ -276,6 +292,89 @@ try {
           assert(!calls.some(m=>m==='widgets.set'||m==='settings.set'),'the runtime self-test changes no preference');
           assert(!calls.includes('terminal.open'),'the runtime self-test opens no pane');
         }finally{await runner.close();}
+      });
+      await step('the rail: strip alone when closed, buttons in place when the panel opens, host-led state',async()=>{
+        // A host that reports the rail, as src-tauri/src/rail.rs does, and resizes nothing: the
+        // viewport stands in for the window the host would resize.
+        const railed=await context.newPage();
+        try {
+          await railed.addInitScript(()=>{
+            const host={presentation:'rail',shown:true,expanded:false,held:false,wide:false,edge:'right',hover:true};
+            const invoke=window.__TAURI__.core.invoke;
+            window.__TAURI__.core.invoke=async(command,payload)=>{
+              const {requestId,method,params}=payload.message;
+              if(method==='rail.status')return {requestId,result:{...host}};
+              if(method==='rail.set'){Object.assign(host,params);if('expanded' in params)host.held=params.expanded;window.__fixture__.calls.push({method,params});return {requestId,result:{...host}};}
+              return invoke(command,payload);
+            };
+            window.__rail__={host,peek:()=>{host.expanded=true;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});}};
+          });
+          await railed.setViewportSize({width:56,height:376});
+          await railed.goto(origin+'/ui/index.html');
+          await railed.locator('[data-ready="true"]').waitFor();
+          const shell=railed.locator('.shell'),panel=railed.locator('[data-panel]'),today=railed.locator('[data-view="today"]');
+          assert.deepEqual([await shell.getAttribute('data-presentation'),await shell.getAttribute('data-rail')],['rail','collapsed']);
+          assert(await panel.isHidden(),'the closed rail draws the strip alone');
+          assert.equal(await panel.evaluate(node=>node.inert),true,'the closed panel is out of the tab order');
+          assert(await railed.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight),'the strip fits the closed window');
+          for(const id of ['today','projects','focus','shells','agents'])assert(await railed.locator(`[data-view="${id}"]`).isVisible(),id+' is on the strip');
+          for(const name of ['Commands','Settings'])assert(await railed.getByRole('button',{name,exact:true}).isVisible());
+          const closed=await today.boundingBox();
+          await railed.screenshot({path:path.join(output,`${name}-rail-strip.png`)});
+          // The host opens a peek: the window grows away from the edge, around the strip.
+          await railed.setViewportSize({width:400,height:900});
+          await railed.evaluate(()=>window.__rail__.peek());
+          await panel.waitFor({state:'visible'});
+          assert.equal(await shell.getAttribute('data-rail'),'expanded');
+          assert.equal(await panel.evaluate(node=>node.inert),false);
+          const open=await today.boundingBox();
+          // Against the right edge and centred on the display: the same distance from the right
+          // edge and from the middle as in the closed window.
+          assert.equal(400-open.x,56-closed.x,'a strip button keeps its distance from the screen edge');
+          assert.equal(open.y-900/2,closed.y-376/2,'and from the middle of the display');
+          assert(await railed.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'the panel fits its width');
+          await railed.screenshot({path:path.join(output,`${name}-rail-panel.png`)});
+          // A click on a view asks the host to hold the panel open; the page does not decide.
+          await railed.locator('[data-view="focus"]').click();
+          await railed.locator('[data-widget-view="focus"]').waitFor({state:'visible'});
+          await railed.waitForFunction(()=>window.__fixture__.calls.some(c=>c.method==='rail.set'&&c.params.expanded===true));
+          assert.equal(await railed.locator('[data-view-title]').textContent(),'Focus');
+          // Shells asks for the wide panel, and another view gives the width back.
+          await railed.locator('[data-view="shells"]').click();
+          await railed.waitForFunction(()=>window.__rail__.host.wide===true);
+          await railed.setViewportSize({width:860,height:900});
+          assert.equal(await shell.getAttribute('data-rail'),'wide');
+          assert(await railed.locator('[data-wide-toggle]').isVisible());
+          await railed.screenshot({path:path.join(output,`${name}-rail-wide.png`)});
+          await railed.locator('[data-wide-toggle]').click();
+          await railed.waitForFunction(()=>window.__rail__.host.wide===false);
+          await railed.locator('[data-view="today"]').click();
+          await railed.setViewportSize({width:400,height:900});
+          assert(await railed.locator('[data-wide-toggle]').isHidden());
+          // The left edge mirrors the layout.
+          await railed.getByRole('button',{name:'Settings',exact:true}).click();
+          await railed.locator('[data-rail-edge]').selectOption('left');
+          await railed.waitForFunction(()=>document.querySelector('.shell').dataset.edge==='left');
+          assert.equal((await today.boundingBox()).x,closed.x,'on the left edge the strip is against the left of the window');
+          await railed.locator('[data-rail-edge]').selectOption('right');
+          await railed.waitForFunction(()=>document.querySelector('.shell').dataset.edge==='right');
+          // Escape closes the sheet first, then the panel.
+          await railed.keyboard.press('Escape');
+          assert(await railed.locator('#widget-settings').isHidden());
+          await railed.keyboard.press('Escape');
+          await railed.waitForFunction(()=>window.__rail__.host.expanded===false);
+          await railed.setViewportSize({width:56,height:376});
+          assert.equal(await shell.getAttribute('data-rail'),'collapsed');
+          assert(await panel.isHidden());
+          // The strip names the view that needs the person.
+          await railed.evaluate(()=>{const started=Date.now()-900001;window.__fixture__.settings['focus.session']={version:1,durationMs:900000,startedAt:started,deadlineAt:started+900000,pausedAt:null};});
+          await railed.evaluate(()=>window.__rail__.peek());
+          await railed.evaluate(()=>{const host=window.__rail__.host;host.expanded=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});});
+          await railed.locator('[data-view="focus"][data-mark="attention"]').waitFor();
+          assert.equal(await railed.locator('[data-view="focus"]').getAttribute('title'),'Focus: Session complete');
+          assert.equal(await railed.locator('[data-rail-toggle]').getAttribute('data-mark'),'attention');
+          await railed.screenshot({path:path.join(output,`${name}-rail-attention.png`)});
+        }finally{await railed.close();}
       });
       await step('initial widget failure does not strand shell restoration',async()=>{
         const recovering=await context.newPage();

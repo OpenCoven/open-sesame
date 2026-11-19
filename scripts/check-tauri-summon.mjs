@@ -207,9 +207,9 @@ function fakeBridge(status, answers = {}) {
   assert.match(host, /Launch::Toggle => \{\n            window::toggle\(app\);\n        \}/);
   assert.match(tray, /\) = \(cfg!\(windows\), event\)\s*\{\s*summon::tray_clicked\(tray\.app_handle\(\), rect\);/);
   assert.equal(tray.split('window::toggle_at').length - 1, 0, 'The tray click goes through summon::tray_clicked');
-  assert.match(window, /pub fn toggle<R: Runtime>\(app: &AppHandle<R>\) -> Option<summon::Press> \{\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
-  assert.match(window, /pub fn toggle_from_tray_menu<R: Runtime>\(app: &AppHandle<R>\) -> Option<summon::Press> \{\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::tray_item_on\(app, &window\);\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
-  assert.match(window, /pub fn toggle_at<R: Runtime>\(app: &AppHandle<R>, icon: tauri::Rect\) -> Option<summon::Press> \{\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let kept_in_place =\n        window\.is_fullscreen\(\)\.unwrap_or\(false\) \|\| window\.is_maximized\(\)\.unwrap_or\(false\);\n    if places\(press, kept_in_place\) \{\n        let _ = place_against\(&window, icon\);\n    \}\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
+  assert.match(window, /pub fn toggle<R: Runtime>\(app: &AppHandle<R>\) -> Option<summon::Press> \{\n    \/\/ The rail is never behind another window, so a press opens or closes its panel\.\n    if rail::active\(app\) \{\n        return Some\(rail::toggle\(app\)\);\n    \}\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
+  assert.match(window, /pub fn toggle_from_tray_menu<R: Runtime>\(app: &AppHandle<R>\) -> Option<summon::Press> \{\n    if rail::active\(app\) \{\n        return Some\(rail::toggle_shown\(app\)\);\n    \}\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::tray_item_on\(app, &window\);\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
+  assert.match(window, /pub fn toggle_at<R: Runtime>\(app: &AppHandle<R>, icon: tauri::Rect\) -> Option<summon::Press> \{\n    \/\/ The rail has its own place; a click on the icon opens or closes its panel\.\n    if rail::active\(app\) \{\n        return Some\(rail::toggle\(app\)\);\n    \}\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let kept_in_place =\n        window\.is_fullscreen\(\)\.unwrap_or\(false\) \|\| window\.is_maximized\(\)\.unwrap_or\(false\);\n    if places\(press, kept_in_place\) \{\n        let _ = place_against\(&window, icon\);\n    \}\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
   assert.match(tray, /button_state: MouseButtonState::Down,\n[^}]*\}\s*= &event\s*\{\s*if summon::opens_the_tray_menu\(cfg!\(windows\), \*button == MouseButton::Right\) \{\s*summon::tray_pressed\(tray\.app_handle\(\)\);/);
   assert.match(tray, /TOGGLE => \{\s*window::toggle_from_tray_menu\(app\);/);
   assert.match(host, /fn pressed<R: Runtime>\(app: &AppHandle<R>\) -> Option<Press> \{\n    if blur_just_hid\(app\) \{\n        return None;\n    \}\n    window::toggle\(app\)\n\}/);
@@ -231,8 +231,24 @@ function fakeBridge(status, answers = {}) {
   // Hide-on-blur is off unless the person turns it on.
   assert.match(host, /hide_on_blur: false,\n        \}\n    \}\n\}/);
   // On Wayland the window is not positioned and always-on-top is refused with the fixed message.
-  assert.match(window, /if summon::session\(\) == Session::Wayland \{\n        builder\n    \} else \{\n        builder\.center\(\)\n    \};/);
-  assert.equal(window.split('.center()').length - 1, 1, 'The window is centred in one place only');
+  // The ordinary window is left where the session puts it; only the rail is placed, by rail.rs,
+  // and a Wayland session gets the rail only as a layer surface, which the session places
+  // (layer.rs); without the protocol or the library it keeps the ordinary window.
+  assert.equal(window.split('.center()').length - 1, 0, 'The ordinary window is not centred or otherwise placed when it is created');
+  assert.match(window, /let builder = match presentation \{\n        Presentation::Rail => rail::shape\(builder\),\n        Presentation::Window => builder\n/);
+  const railSource = read('src-tauri/src/rail.rs');
+  assert.match(railSource, /Session::Wayland => Presentation::Window,/, 'A Wayland session keeps the ordinary window');
+  assert.match(railSource, /if session == Session::Wayland && crate::layer::supported\(\) \{\n        return Presentation::Rail;\n    \}\n    presentation_for\(session\)/, 'Only a Wayland session that can dock the window gets the rail');
+  // The layer-shell library is opened when it is there and never linked, so the application
+  // starts without it, and it is asked only before the window is first shown.
+  const layerSource = read('src-tauri/src/layer.rs');
+  assert.match(layerSource, /libc::dlopen\(\n            c"libgtk-layer-shell\.so\.0"\.as_ptr\(\),/, 'gtk-layer-shell is opened at run time');
+  assert.equal(/#\[link|extern crate|gtk_layer_shell::/.test(layerSource), false, 'gtk-layer-shell is not linked');
+  assert.match(layerSource, /if surface\.is_realized\(\) \{\n        return false;\n    \}/, 'A window that already has a surface is not docked');
+  assert.match(layerSource, /"OPEN_SESAME_LAYER_SHELL"\)\.as_deref\(\) == Ok\("off"\)/, 'The ordinary window can be asked for');
+  assert.equal(/gtk_layer_/.test(railSource), false, 'Every gtk-layer-shell call is in layer.rs');
+  assert.match(railSource, /app\.manage\(rail\);\n    if presentation != Presentation::Rail \{\n        return;\n    \}/, 'The ordinary window starts no pointer thread');
+  assert.match(railSource, /"rail\.set" => \{\n            \/\/ The ordinary window has nothing to set\.\n            if !rail\.is_rail\(\) \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/, 'rail.set is refused for the ordinary window');
   // A page that loads takes none of the old page's holds with it (issue #115). The rule is for
   // every build. This reads text and cannot show that the call runs, and nothing else in the
   // repository shows a page load releasing holds: the test in router.rs calls
@@ -740,9 +756,10 @@ function fakeBridge(status, answers = {}) {
   assert.match(shells, /provideMenu\(panel, \(\) => \[\n\s+\{ label: 'Copy', enabled: pane\.hasSelection\(\), run: \(\) => \{ pane\.copy\(\); \} \},\n\s+\{ label: 'Paste', enabled: !pane\.ended, run: \(\) => pane\.paste\(\) \},\n\s+\]\);/);
   assert.match(read('ui/terminal.js'), /hasSelection: \(\) => Boolean\(term\.getSelection\(\)\),/);
   assert.match(read('ui/shell.css'), /^\.context-menu \{ position: fixed;/m);
-  // The menu shows which item has the keyboard, and draws no ring around itself.
+  // The menu shows which item has the keyboard, with the tokens' hover fill (ui/tokens.css), and
+  // draws no ring around itself.
   assert.match(read('ui/shell.css'), /^\.context-menu:focus \{ outline: none; \}$/m);
-  assert.match(read('ui/shell.css'), /^\.context-menu button:hover:not\(:disabled\), \.context-menu button:focus-visible \{ background: var\(--page\); \}$/m);
+  assert.match(read('ui/shell.css'), /^\.context-menu button:hover:not\(:disabled\), \.context-menu button:focus-visible \{ background: var\(--fill-hover\); \}$/m);
 }
 
 console.log('Tauri summon: the shortcut settings section, drag reporting, the in-page context menu and the source rules for Wayland, the default shortcut and plugin order passed.');

@@ -1,7 +1,7 @@
 //! The one command the UI can call, and where each allowed request goes.
 
 use crate::auth::{self, Auth};
-use crate::{project, summon, terminal, window, AppState};
+use crate::{project, rail, summon, terminal, window, AppState};
 use open_sesame_core::gate::{self, Caller};
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
 use open_sesame_core::Core;
@@ -18,6 +18,8 @@ pub enum Route {
     Host,
     /// The shortcut and the other ways to make the window appear (issue #71).
     Summon,
+    /// The companion rail: open or closed, its width and its edge.
+    Rail,
     /// A pane's output channel and the clipboard (issue #74).
     Terminal,
     /// The folder dialog and the file manager (issue #74).
@@ -31,6 +33,8 @@ pub fn route(method: &str) -> Route {
         Route::Auth
     } else if window::METHODS.contains(&method) {
         Route::Host
+    } else if rail::METHODS.contains(&method) {
+        Route::Rail
     } else if summon::METHODS.contains(&method) {
         Route::Summon
     } else if terminal::METHODS.contains(&method) {
@@ -95,6 +99,7 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
         Route::Auth => auth(window.app_handle(), &request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
         Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
+        Route::Rail => rail::handle(window.app_handle(), &request.method, &request.params),
         Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
         Route::Project => project::handle(window, &request.method, &request.params),
         Route::Core => core.handle(&request.method, &request.params),
@@ -243,6 +248,8 @@ mod tests {
         // Summon's handlers answer only once its state exists, as it does after `summon::start`.
         // `None` keeps its settings in memory, so the audit writes no file.
         app.manage(summon::Summon::new(summon::Session::Wayland, None));
+        // The same for the rail. As the ordinary window it moves nothing.
+        app.manage(rail::Rail::new(rail::Presentation::Window, None));
         let main = open(&app, MAIN_WINDOW, bundled());
         for (method, issue) in PENDING {
             assert!(

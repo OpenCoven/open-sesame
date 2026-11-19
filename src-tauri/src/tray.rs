@@ -4,6 +4,8 @@
 //! menu: Tauri's tray emits no click events on Linux. On Windows a left click is the same
 //! press, with a hidden window shown against the icon as a popover, and a right click opens
 //! the menu (issue #71).
+//! Where the window is the rail (`rail.rs`), the menu item takes the whole rail off the
+//! screen and puts the strip back, and a left click on Windows opens or closes its panel.
 
 use crate::{summon, window};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};

@@ -1,17 +1,20 @@
 //! Open Sesame desktop application: the Tauri shell around the headless core.
 //!
-//! This crate owns the window, the tray and one command, [`router::bridge_request`]. Every request
-//! from the UI passes the core's gate before anything runs. The window label is not an isolation
+//! This crate owns the window (the companion rail, `rail.rs`), the tray and one command,
+//! [`router::bridge_request`]. Every request from the UI passes the core's gate before anything runs. The window label is not an isolation
 //! boundary: any script in the main document has the whole bridge, so the main window loads only
 //! bundled pages and no third-party script may ever be loaded there.
 
 mod auth;
 mod data;
 mod events;
+#[cfg(target_os = "linux")]
+mod layer;
 mod link;
 #[cfg(target_os = "macos")]
 mod panel;
 mod project;
+mod rail;
 mod router;
 #[cfg(debug_assertions)]
 mod runtime_probe;
@@ -116,10 +119,13 @@ pub fn run() {
             auth::start(app.handle(), events::emitter(app.handle()));
             #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
             link::register(app.handle());
-            window::create_main(app.handle())?;
+            let presentation = rail::presentation();
+            window::create_main(app.handle(), presentation)?;
             tray::create(app.handle())?;
             // After the window exists, so a press that arrives at once has something to show.
             summon::start(app.handle());
+            // Last: its first look at the pointer places the rail and puts it on screen.
+            rail::start(app.handle(), presentation);
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -130,6 +136,7 @@ pub fn run() {
             if let Some(auth) = app.try_state::<Arc<auth::Auth>>() {
                 auth.shutdown();
             }
+            rail::stop(app);
             if let Some(state) = app.try_state::<AppState>() {
                 state.startup.shutdown();
                 state.core.shutdown();

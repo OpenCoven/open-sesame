@@ -618,6 +618,17 @@ impl Summon {
         )
     }
 
+    /// Whether nothing keeps the window as it is: no feature holds it, the page holds it for
+    /// no reason, and it is not pinned. The rail asks before it closes a peek (`rail.rs`).
+    pub fn free(&self) -> bool {
+        hides_on_blur(
+            true,
+            self.holds.load(Ordering::SeqCst),
+            !lock(&self.held_by_page).is_empty(),
+            self.pinned.load(Ordering::SeqCst),
+        )
+    }
+
     fn status(&self) -> Value {
         let settings = lock(&self.settings).clone();
         let registration = lock(&self.registration).clone();
@@ -882,7 +893,9 @@ pub fn blurred<R: Runtime>(app: &AppHandle<R>) {
     // Development evidence of when the system says the keyboard went elsewhere.
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: window lost the keyboard");
-    if summon.should_hide_on_blur() {
+    // A peek that someone clicked in closes when they turn to something else, whatever the
+    // setting says: it was opened by resting the pointer, not to stay (`rail.rs`).
+    if summon.should_hide_on_blur() || (summon.free() && crate::rail::peeking(app)) {
         *lock(&summon.hid_on_blur) = Some(Instant::now());
         window::hide(app);
         #[cfg(debug_assertions)]

@@ -2983,8 +2983,10 @@ dependencies = [
 name = "open-sesame"
 version = "0.1.0"
 dependencies = [
+ "gtk",
  "keyring",
  "keyring-core",
+ "libc",
  "open-sesame-core",
  "serde_json",
  "tauri",

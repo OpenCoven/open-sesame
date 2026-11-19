@@ -1,5 +1,10 @@
 //! The main window: created in Rust, hidden instead of closed, and limited to bundled pages.
+//!
+//! On macOS, Windows and X11 it is the companion rail, which `rail.rs` places, opens and closes;
+//! the functions here that show, hide and toggle the window hand over to it. On Wayland it is
+//! an ordinary window the session places.
 
+use crate::rail::{self, Presentation};
 use crate::summon::{self, Session, Summon};
 use open_sesame_core::gate::{MAIN_WINDOW, NOT_ON_OS, UNSUPPORTED};
 use open_sesame_core::protocol::{BridgeError, BridgeResult};
@@ -27,14 +32,11 @@ pub const METHODS: &[&str] = &[
 
 /// Creates the one window. It is created here rather than in `tauri.conf.json` so the
 /// initialisation script is attached before any page script runs.
-pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+pub fn create_main(app: &AppHandle, presentation: Presentation) -> tauri::Result<WebviewWindow> {
     let version = app.package_info().version.to_string();
     let builder = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
         .title(TITLE)
-        .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
-        .min_inner_size(MINIMUM_SIZE.0, MINIMUM_SIZE.1)
-        .resizable(true)
-        .initialization_script(initialization_script(&version))
+        .initialization_script(initialization_script(&version, presentation))
         .initialization_script(selftest_script())
         .on_navigation({
             let dev_url = app.config().build.dev_url.clone();
@@ -42,11 +44,15 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         })
         // The page may not open another window; nothing in the shell needs one.
         .on_new_window(|_, _| NewWindowResponse::Deny);
-    // A Wayland session places windows itself; the application does not try to.
-    let builder = if summon::session() == Session::Wayland {
-        builder
-    } else {
-        builder.center()
+    // The rail is placed by `rail.rs` once it knows which display the pointer is on. The
+    // ordinary window is left where the session puts it: a Wayland session places windows
+    // itself, and the application does not try to.
+    let builder = match presentation {
+        Presentation::Rail => rail::shape(builder),
+        Presentation::Window => builder
+            .inner_size(DEFAULT_SIZE.0, DEFAULT_SIZE.1)
+            .min_inner_size(MINIMUM_SIZE.0, MINIMUM_SIZE.1)
+            .resizable(true),
     };
     let builder = builder.on_page_load(|window, payload| match payload.event() {
         // The holds of the page before this one are released: it can no longer release them.
@@ -66,29 +72,42 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     });
     let window = builder.build()?;
     #[cfg(target_os = "macos")]
-    crate::panel::adopt(&window)?;
+    crate::panel::adopt(&window, presentation)?;
     let handle = window.clone();
     window.on_window_event(move |event| match event {
-        // Closing hides the window and keeps the page alive. Quit is the tray's explicit action.
+        // Closing hides the window and keeps the page alive; the rail has no close button, and
+        // the system's own close closes its panel to the strip. Quit is the tray's explicit
+        // action.
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
-            let _ = handle.hide();
+            hide(handle.app_handle());
             #[cfg(debug_assertions)]
             eprintln!("open-sesame: hidden by the close button");
         }
-        // Hidden only if the person asked for that and nothing holds the window (issue #71).
-        WindowEvent::Focused(false) => summon::blurred(handle.app_handle()),
+        WindowEvent::Focused(focused) => {
+            let changed = rail::focus_changed(handle.app_handle(), *focused);
+            // Hidden only if the person asked for that and nothing holds the window (issue #71).
+            if !focused && changed {
+                summon::blurred(handle.app_handle());
+            }
+        }
         _ => {}
     });
     Ok(window)
 }
 
-/// Sets the flags the UI reads, before any page script runs. They cannot be reassigned.
-pub fn initialization_script(version: &str) -> String {
+/// Sets the flags the UI reads, before any page script runs. They cannot be reassigned. The
+/// presentation is among them so the page lays itself out as the rail or as the ordinary window
+/// from its first frame.
+pub fn initialization_script(version: &str, presentation: Presentation) -> String {
     let version = Value::String(version.to_string());
+    let surface = Value::String(rail::surface(presentation).to_string());
+    let presentation = Value::String(presentation.name().to_string());
     format!(
         "Object.defineProperty(window,'__OPEN_SESAME_NATIVE__',{{value:true}});\
-         Object.defineProperty(window,'__OPEN_SESAME_VERSION__',{{value:{version}}});"
+         Object.defineProperty(window,'__OPEN_SESAME_VERSION__',{{value:{version}}});\
+         Object.defineProperty(window,'__OPEN_SESAME_PRESENTATION__',{{value:{presentation}}});\
+         Object.defineProperty(window,'__OPEN_SESAME_SURFACE__',{{value:{surface}}});"
     )
 }
 
@@ -164,14 +183,22 @@ fn is_dev_server_page(dev_url: &Url, url: &Url) -> bool {
         && url.password().is_none()
 }
 
-/// Brings the window forward: a second launch, and on macOS a click on the Dock icon.
+/// Brings the window forward: a second launch, and on macOS a click on the Dock icon. The rail
+/// opens its panel to stay.
 pub fn show<R: Runtime>(app: &AppHandle<R>) {
+    if rail::active(app) {
+        return rail::open(app);
+    }
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = focus(&window);
     }
 }
 
+/// Hides the window. The rail closes its panel to the strip, which stays.
 pub fn hide<R: Runtime>(app: &AppHandle<R>) {
+    if rail::active(app) {
+        return rail::collapse(app);
+    }
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = conceal(&window);
     }
@@ -196,6 +223,10 @@ pub fn is_shown<R: Runtime>(window: &WebviewWindow<R>) -> bool {
 /// (`summon::press` has the rule).
 /// Returns which of the three it was, or nothing when there is no window.
 pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    // The rail is never behind another window, so a press opens or closes its panel.
+    if rail::active(app) {
+        return Some(rail::toggle(app));
+    }
     let window = app.get_webview_window(MAIN_WINDOW)?;
     let press = summon::press_on(app, &window);
     let _ = act(&window, press);
@@ -203,7 +234,12 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
 }
 
 /// The tray's menu item: the same three outcomes, decided by `summon::tray_item_on`.
+/// Where the window is the rail, the item takes the whole rail off the screen or puts the strip
+/// back.
 pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    if rail::active(app) {
+        return Some(rail::toggle_shown(app));
+    }
     let window = app.get_webview_window(MAIN_WINDOW)?;
     let press = summon::tray_item_on(app, &window);
     let _ = act(&window, press);
@@ -242,6 +278,10 @@ fn act<R: Runtime>(window: &WebviewWindow<R>, press: summon::Press) -> tauri::Re
 /// the work area of the screen the icon is on, and shown. A window the person made full-screen
 /// or maximized is shown where it is.
 pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option<summon::Press> {
+    // The rail has its own place; a click on the icon opens or closes its panel.
+    if rail::active(app) {
+        return Some(rail::toggle(app));
+    }
     let window = app.get_webview_window(MAIN_WINDOW)?;
     let press = summon::press_on(app, &window);
     let kept_in_place =
@@ -280,7 +320,10 @@ fn place_against<R: Runtime>(window: &WebviewWindow<R>, icon: tauri::Rect) -> ta
 fn focus<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: window shown");
-    window.show()?;
+    // Tauri's `show` would put a rail that the tray has taken off the screen back on it.
+    if !rail::active(window.app_handle()) {
+        window.show()?;
+    }
     window.unminimize()?;
     // On macOS the window is a panel that takes the keyboard without activating the
     // application, so it can appear over another application's full-screen space.
@@ -299,6 +342,10 @@ pub fn handle<R: Runtime>(
 ) -> BridgeResult {
     let unavailable = |_: tauri::Error| BridgeError::from(WINDOW_UNAVAILABLE);
     match method {
+        // The rail's size and place are its own (`rail.set`).
+        "window.size" | "window.fullscreen" if rail::active(window.app_handle()) => {
+            Err(BridgeError::from(NOT_ON_OS))
+        }
         "window.size" => {
             let (width, height) = requested_size(params)?;
             window
@@ -325,7 +372,10 @@ pub fn handle<R: Runtime>(
                 return Err(BridgeError::from(NOT_ON_OS));
             }
             let pinned = params.get("pinned") == Some(&Value::Bool(true));
-            window.set_always_on_top(pinned).map_err(unavailable)?;
+            // The rail is above other windows whether or not it is pinned.
+            if !rail::active(window.app_handle()) {
+                window.set_always_on_top(pinned).map_err(unavailable)?;
+            }
             // A pinned window also stays when it loses focus.
             if let Some(summon) = summon {
                 summon.set_pinned(pinned);
@@ -449,11 +499,20 @@ mod tests {
 
     #[test]
     fn the_initialization_script_sets_both_flags_as_valid_script() {
-        let script = initialization_script("0.1.0");
+        let script = initialization_script("0.1.0", Presentation::Rail);
         assert!(script.contains("'__OPEN_SESAME_NATIVE__',{value:true}"));
         assert!(script.contains("'__OPEN_SESAME_VERSION__',{value:\"0.1.0\"}"));
+        assert!(script.contains("'__OPEN_SESAME_PRESENTATION__',{value:\"rail\"}"));
+        let window = initialization_script("0.1.0", Presentation::Window);
+        assert!(window.contains("'__OPEN_SESAME_PRESENTATION__',{value:\"window\"}"));
+        assert!(window.contains("'__OPEN_SESAME_SURFACE__',{value:\"solid\"}"));
+        let expected = rail::surface(Presentation::Rail);
+        assert!(["material", "page", "solid"].contains(&expected));
+        assert!(script.contains(&format!(
+            "'__OPEN_SESAME_SURFACE__',{{value:\"{expected}\"}}"
+        )));
         // A version is quoted as a JSON string, so it cannot end the script early.
-        let odd = initialization_script("1.0\"});alert(1);//");
+        let odd = initialization_script("1.0\"});alert(1);//", Presentation::Rail);
         assert!(odd.contains(r#"{value:"1.0\"});alert(1);//"}"#));
     }
 

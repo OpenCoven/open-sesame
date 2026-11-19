@@ -162,6 +162,16 @@ jobs:
         run: cargo test --package open-sesame --locked -- --ignored the_real_credential_store 2>&1 | tee build/verification/rust/credential-store.log
       - name: Build the app
         run: cargo build --package open-sesame --locked 2>&1 | tee build/verification/rust/build.log
+      # The companion rail (docs/companion-rail.md) cannot be started on Windows from the Mac the
+      # rest of its evidence comes from. This starts the binary built above on the runner's
+      # desktop and writes down what its window does: where the strip is, whether it leaves the
+      # keyboard with the window that had it, and what resting on it and `open-sesame --toggle`
+      # change. The pointer is a stand-in file. A hosted virtual machine with no person and no
+      # real display: evidence of its own class, and it fills no smoke-pass cell.
+      - name: Record what the rail's window does on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/fixtures/rail-windows.ps1 -Binary target/debug/open-sesame.exe -Out build/verification/rust/rail-windows
       # Runs only when every step above succeeded, as the save of the undivided cache action did,
       # and only when the restore found no cache under this exact key.
       - name: Save the Cargo registry and build output on main

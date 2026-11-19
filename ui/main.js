@@ -1,11 +1,14 @@
 import { CHANGED_EVENT, mountAccount } from './account.js';
+import { createAttention, summary, watchFocus } from './attention.js';
 import { createBridge } from './bridge.js';
-import { widgets, paletteIndex } from './manifest.js';
+import { widgets, paletteIndex, wideViews } from './manifest.js';
 import { draftAction, paletteView } from './palette.js';
 import { loaders, styles } from './widget-loaders.js';
 import { createLifecycle } from './lifecycle.js';
 import { createPreferences } from './preferences.js';
+import { mountRail } from './rail.js';
 import { holdDuringDrag, mountSummon } from './summon.js';
+import { PANEL_SHOWN } from './widgets/view-kit.js';
 import { mountContextMenu } from './context-menu.js';
 
 const bridge = createBridge(window);
@@ -22,10 +25,27 @@ const query = shell.querySelector('[data-command-query]');
 const results = shell.querySelector('[data-command-results]');
 const paletteToggle = shell.querySelector('[data-palette-toggle]');
 const widgetToggle = shell.querySelector('[data-widgets-toggle]');
+const viewTitle = shell.querySelector('[data-view-title]');
+const wideToggle = shell.querySelector('[data-wide-toggle]');
+const attentionStatus = shell.querySelector('[data-attention-status]');
+const railToggle = shell.querySelector('[data-rail-toggle]');
+// How the window is drawn (src-tauri/src/rail.rs): 'material' where the system's material shows
+// through the page, 'page' where the window is see-through and the page draws its own rounded
+// corners, 'solid' otherwise.
+document.documentElement.dataset.surface = ['material','page'].includes(window.__OPEN_SESAME_SURFACE__) ? window.__OPEN_SESAME_SURFACE__ : 'solid';
 const message = error => error?.message || String(error);
 const report = text => {notice.textContent = text; notice.hidden = !text;};
 const prefs = createPreferences(bridge, report);
 const element = (tag, text) => {const node = document.createElement(tag); if (text) node.textContent = text;return node;};
+// An icon from the sprite in index.html, by the name after `icon-`.
+const iconTemplate = document.querySelector('#icon-template');
+const icon = name => {
+  const node = iconTemplate.content.firstElementChild.cloneNode(true);
+  node.querySelector('use').setAttribute('href',`#icon-${name}`);
+  return node;
+};
+const hiddenLabel = text => {const node = element('span',text);node.className = 'label-hidden';return node;};
+const names = new Map(widgets.map(widget => [widget.id,widget.name]));
 let commands = paletteIndex;
 let manager;
 let state;
@@ -46,15 +66,81 @@ const run = promise => promise.catch(error => report(message(error)));
 // the native one.
 mountContextMenu(bridge, document, { report });
 
+// The rail (src-tauri/src/rail.rs). `looking` is whether the person can see a view now: it is
+// the one shown, the panel is open and the window is on screen.
+const attention = createAttention();
+const looking = id => state?.lastView === id && rail.status().expanded && document.visibilityState === 'visible';
+const focusWatch = watchFocus({bridge, attention, showing: () => looking('focus')});
+// Shells opens at the wide width until the person narrows it; the choice lasts until the
+// application quits.
+let widePreferred = true;
+const wideFor = view => wideViews.includes(view) && widePreferred;
+function drawWide() {
+  const status = rail.status();
+  wideToggle.hidden = !(status.presentation === 'rail' && wideViews.includes(state?.lastView));
+  wideToggle.setAttribute('aria-pressed',String(status.wide));
+}
+function sawView() {
+  const view = state?.lastView;
+  if (!view || !looking(view)) return;
+  attention.seen(view);
+  if (view === 'focus') focusWatch.refresh();
+}
+const section = shell.querySelector('[data-rail-settings]');
+const rail = mountRail(bridge, {
+  shell, panel: shell.querySelector('[data-panel]'), toggle: railToggle,
+  toggleLabel: shell.querySelector('[data-rail-toggle-label]'),
+  collapse: shell.querySelector('[data-collapse]'),
+  section, edge: section.querySelector('[data-rail-edge]'), hover: section.querySelector('[data-rail-hover]'),
+  message: section.querySelector('[data-rail-message]'),
+  blurLabel: shell.querySelector('[data-summon-blur-label]'),
+}, (status, previous) => {
+  drawWide();
+  if (previous.expanded && !status.expanded) {
+    // The strip shows no sheet. What the palette keeps, it keeps.
+    if (!palette.hidden) {palette.hidden = true;paletteToggle.setAttribute('aria-expanded','false');}
+    showSettings(false);
+    focusWatch.refresh();
+  }
+  if (!previous.expanded && status.expanded) {
+    document.dispatchEvent(new Event(PANEL_SHOWN));
+    sawView();
+  }
+});
+function showSettings(open) {
+  settings.hidden = !open;
+  widgetToggle.setAttribute('aria-expanded',String(open));
+  drawTitle();
+}
+// The bar names what the panel shows: a sheet while one is open, otherwise the view.
+function drawTitle() {
+  viewTitle.textContent = !palette.hidden ? 'Commands' : !settings.hidden ? 'Settings' : names.get(state?.lastView) ?? 'Open Sesame';
+}
+attention.subscribe(marks => {
+  for (const [id,button] of navButtons) {
+    const mark = marks.get(id);
+    if (mark) button.dataset.mark = mark.tone;else delete button.dataset.mark;
+    button.title = mark ? `${names.get(id)}: ${mark.label}` : names.get(id);
+  }
+  const all = summary(marks,names);
+  if (all.tone) railToggle.dataset.mark = all.tone;else delete railToggle.dataset.mark;
+  attentionStatus.textContent = all.label;
+});
+
 function closePalette() {
+  if (palette.hidden) return;
   if (kept && !query.value.trim()) drop();
   palette.hidden = true;
   paletteToggle.setAttribute('aria-expanded','false');
+  drawTitle();
   paletteToggle.focus();
 }
 function openPalette() {
+  showSettings(false);
+  run(rail.open());
   palette.hidden = false;
   paletteToggle.setAttribute('aria-expanded','true');
+  drawTitle();
   query.value = kept?.text ?? '';
   renderCommands();
   query.focus();
@@ -109,7 +195,16 @@ function renderCommands() {
   if (!results.childElementCount) results.append(element('p','No commands found.'));
 }
 function changed(next) {
+  const before = state?.lastView;
   state = next;
+  drawTitle();
+  drawWide();
+  if (before !== next.lastView) {
+    // The panel takes the width the view asks for; the host is told only when that changes.
+    if (manager) run(rail.setWide(wideFor(next.lastView)));
+    if (before === 'focus') focusWatch.refresh();
+    sawView();
+  }
   for (const [id,button] of navButtons) {
     button.hidden = !next.on[id];
     if (id === next.lastView) button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
@@ -136,9 +231,16 @@ function loadStyle(href, signal) {
 }
 
 for (const widget of widgets) {
-  const button = element('button',widget.name);
-  button.type = 'button';button.dataset.view = widget.id;button.disabled = true;
-  button.addEventListener('click',() => run(manager.show(widget.id)));
+  const button = element('button');
+  button.type = 'button';button.className = 'rail-button';button.dataset.view = widget.id;button.disabled = true;
+  button.title = widget.name;
+  button.append(icon(widget.id),hiddenLabel(widget.name));
+  // A click on the strip opens the panel to stay on that view, with no sheet over it.
+  button.addEventListener('click',() => {
+    closePalette();showSettings(false);
+    run(rail.open());
+    run(manager.show(widget.id));
+  });
   navigation.append(button);navButtons.set(widget.id,button);
   const label = element('label');
   const input = element('input');
@@ -160,11 +262,17 @@ for (const widget of widgets) {
   label.append(input,element('span',widget.name));options.append(label);switches.set(widget.id,input);
 }
 
-paletteToggle.addEventListener('click',() => palette.hidden ? openPalette() : closePalette());
+paletteToggle.addEventListener('click',() => palette.hidden || !rail.status().expanded ? openPalette() : closePalette());
 shell.querySelector('[data-palette-close]').addEventListener('click',closePalette);
 widgetToggle.addEventListener('click',() => {
-  settings.hidden=!settings.hidden;
-  widgetToggle.setAttribute('aria-expanded',String(!settings.hidden));
+  const open = settings.hidden || !rail.status().expanded;
+  if (open) {closePalette();run(rail.open());}
+  showSettings(open);
+  if (open) settings.querySelector('h2')?.scrollIntoView?.({block:'nearest'});
+});
+wideToggle.addEventListener('click',() => {
+  widePreferred = !rail.status().wide;
+  run(rail.setWide(wideFor(state?.lastView)));
 });
 query.addEventListener('input',renderCommands);
 query.addEventListener('keydown',event => {
@@ -181,7 +289,9 @@ results.addEventListener('keydown',event => {
 document.addEventListener('keydown',event => {
   if ((event.metaKey||event.ctrlKey)&&!event.altKey&&event.key.toLowerCase()==='k') {event.preventDefault();openPalette();}
   if (event.key==='Escape'&&!palette.hidden) {event.preventDefault();event.stopPropagation();closePalette();}
-  else if (event.key==='Escape'&&!settings.hidden) {settings.hidden=true;widgetToggle.setAttribute('aria-expanded','false');widgetToggle.focus();}
+  else if (event.key==='Escape'&&!settings.hidden) {showSettings(false);widgetToggle.focus();}
+  // Escape closes the panel when nothing else took it. A terminal needs the key for itself.
+  else if (event.key==='Escape'&&!event.defaultPrevented&&!event.target?.closest?.('.xterm')) run(rail.collapse());
   if (event.key==='Tab'&&!palette.hidden) {
     const controls=[...palette.querySelectorAll('input,button')].filter(node=>!node.disabled);
     const first=controls[0],last=controls.at(-1);
@@ -225,8 +335,10 @@ function mountHostSettings() {
     if (message.event === CHANGED_EVENT && message.status && typeof message.status === 'object') status.textContent = connected(message.status.authenticated === true);
   });
 }
+document.addEventListener('visibilitychange',() => {if (document.visibilityState === 'visible') {focusWatch.refresh();sawView();}});
 async function start() {
   const info = await bridge.ready;
+  await rail.ready;
   shell.dataset.state = info.available?'connected':'unavailable';
   status.textContent = info.available ? connected(info.authenticated === true) : 'Desktop connection unavailable';
   if (info.available) mountHostSettings();
@@ -245,12 +357,14 @@ async function start() {
       surface.setAttribute('aria-label',widgets.find(widget=>widget.id===id).panel.title);
       views.append(surface);return surface;
     },
-    context:{bridge,host:window,info,navigate:id=>manager.show(id),report,catalogChanged},onChange:changed,
+    context:{bridge,host:window,info,navigate:id=>manager.show(id),report,catalogChanged,
+      attention:Object.freeze({set:attention.set,showing:looking})},onChange:changed,
   });
   const initial = manager.restore(saved);
   changed(manager.snapshot());
   for (const button of navButtons.values()) button.disabled=false;
   for (const input of switches.values()) input.disabled=false;
+  if (info.available) focusWatch.refresh();
   // show() records the restored view before its first await; only that record is skipped. A
   // switch or view the person changes while the first view is still loading is saved.
   try {
