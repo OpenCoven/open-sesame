@@ -561,13 +561,13 @@ mod tests {
         let changed = result(call(
             &main,
             "summon.setShortcut",
-            json!({"shortcut": " Control+Alt+K "}),
+            json!({"shortcut": " Control+Shift+K "}),
         ));
-        assert_eq!(changed["shortcut"], json!("Control+Alt+K"));
+        assert_eq!(changed["shortcut"], json!("Control+Shift+K"));
         assert_eq!(changed["registered"], json!(false));
         assert_eq!(changed["message"], json!(summon::WAYLAND));
         let kept = summon::Settings::load(&folder.join("summon.json"));
-        assert_eq!(kept.shortcut, "Control+Alt+K");
+        assert_eq!(kept.shortcut, "Control+Shift+K");
 
         assert_eq!(
             error(call(
@@ -761,6 +761,52 @@ mod tests {
         assert!(!summon::blur_just_hid(app.handle()));
         drop(dialog);
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// A saved shortcut the default replaced is said in `summon.status` until the person sets
+    /// a shortcut. The other setting and a refused change leave it; the refusal has the
+    /// sentence for what was wrong (issue #115).
+    #[test]
+    fn the_notice_for_a_replaced_shortcut_ends_when_one_is_set() {
+        let app = app();
+        let folder = Folder(
+            std::env::temp_dir().join(format!("open-sesame-router-notice-{}", std::process::id())),
+        );
+        let _ = std::fs::remove_dir_all(&*folder);
+        std::fs::create_dir_all(&*folder).unwrap();
+        std::fs::write(folder.join("summon.json"), r#"{"shortcut":"Shift+Up"}"#).unwrap();
+        app.manage(summon::Summon::new(
+            summon::Session::Wayland,
+            Some(folder.join("summon.json")),
+        ));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let result = |reply: Result<Value, Value>| reply.unwrap()["result"].clone();
+        let error = |reply: Result<Value, Value>| reply.unwrap()["error"].clone();
+        let notice = || result(call(&main, "summon.status", json!({})))["notice"].clone();
+        let replaced = json!(summon::replaced("Shift+Up"));
+        assert_eq!(notice(), replaced);
+        result(call(
+            &main,
+            "summon.setHideOnBlur",
+            json!({"enabled": true}),
+        ));
+        assert_eq!(notice(), replaced);
+        assert_eq!(
+            error(call(
+                &main,
+                "summon.setShortcut",
+                json!({"shortcut": "Shift+A"})
+            )),
+            json!(summon::SHIFT_ALONE)
+        );
+        assert_eq!(notice(), replaced);
+        let changed = result(call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": "Control+Shift+K"}),
+        ));
+        assert_eq!(changed["notice"], json!(""));
+        assert_eq!(notice(), json!(""));
     }
 
     #[test]

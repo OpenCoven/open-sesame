@@ -38,7 +38,7 @@ const MINUTE = 60_000;
 const SAVE_FAILED = 'Could not save. Your changes were not stored; try again.';
 const OVERTAKEN = 'That capture was not saved because another view opened first. The palette keeps it; try again.';
 const NO_RESPONSE = 'The desktop connection did not respond.';
-const KIND_CHANGED = 'That item was changed to a task after you opened it. Your changes were not saved; copy them if you need them, then choose Discard changes to edit the task.';
+const KIND_CHANGED = kind => `That item was changed to a ${kind} after you opened it. Your changes were not saved; copy them if you need them, then choose Discard changes to edit the ${kind}.`;
 
 // The host: the shell's own commands in the shapes src-tauri answers, settings and widget
 // states as the core keeps them, and items and projects through the stand-in.
@@ -47,11 +47,15 @@ function createHost({settings = {}} = {}) {
   const state = {settings: structuredClone(settings), widgets: {}}, calls = [], faults = [];
   return {
     core, state, calls,
-    fault(method, value) { faults.push({method, value}); },
+    // A fault is taken by the first request for `method` whose params hold every entry of
+    // `match`, so a step can refuse one write while the shell's own writes of the same method
+    // go through.
+    fault(method, value, match = {}) { faults.push({method, value, match}); },
     writes: () => calls.filter(([method]) => /\.(set|save|delete)$/.test(method)),
     async request(method, params = {}) {
       calls.push([method, structuredClone(params)]);
-      const index = faults.findIndex(fault => fault.method === method);
+      const index = faults.findIndex(fault => fault.method === method
+        && Object.entries(fault.match).every(([name, expected]) => params[name] === expected));
       if (index >= 0) return {ok: false, error: faults.splice(index, 1)[0].value};
       try {
         let result = true;
@@ -400,16 +404,52 @@ try {
         editing.core.write({...editing.core.items.get(other.id), kind: 'task', text: 'Shopping', title: ''});
         const saves = () => editing.calls.filter(([method]) => method === 'items.save').length;
         await editor.getByRole('button', {name: 'Save', exact: true}).click();
-        await status.getByText(KIND_CHANGED).waitFor();
+        await status.getByText(KIND_CHANGED('task')).waitFor();
         assert.equal(await title.inputValue(), 'Shopping list', 'the person’s edit stays to copy');
         const before = saves();
         await editor.getByRole('button', {name: 'Save', exact: true}).click();
-        await status.getByText(KIND_CHANGED).waitFor();
+        await status.getByText(KIND_CHANGED('task')).waitFor();
         assert.equal(saves(), before, 'saving again sends nothing');
-        assert.equal(await status.textContent(), KIND_CHANGED, 'and never says Saved.');
+        assert.equal(await status.textContent(), KIND_CHANGED('task'), 'and never says Saved.');
         assert.deepEqual([editing.core.items.get(other.id).kind, editing.core.items.get(other.id).text], ['task', 'Shopping'], 'the other writer’s change stays');
         await editor.getByRole('button', {name: 'Discard changes', exact: true}).click();
         assert.equal(await editor.locator('[data-edit-field="text"]').inputValue(), 'Shopping', 'Discard changes opens the task');
+        await editor.getByRole('button', {name: 'Close', exact: true}).click();
+      });
+      await step('a kept draft reopens in its own kind’s fields after another writer’s change of kind', async () => {
+        // The editor is built again on reopening, after the view has read the newer row, so this
+        // step fails if the form follows the newer row's kind instead of the draft's (issue #150).
+        const projects = view(page, 'projects'), editor = projects.locator('[data-editor]'), status = projects.locator('[data-editor-status]');
+        const errands = editing.core.seed({kind: 'note', text: 'Errands', title: 'Errands', body: 'post office', id: '00000000-0000-4000-8000-000000000003'});
+        await page.locator('[data-view="focus"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await projects.locator('[data-item-list]').getByRole('button', {name: 'Errands', exact: true}).click();
+        await editor.locator('[data-edit-field="title"]').fill('Errands for Saturday');
+        await editor.getByRole('button', {name: 'Close', exact: true}).click();
+        await projects.locator(`[data-item="${errands.id}"]`).getByText('Note · Inbox · Unsaved edit', {exact: true}).waitFor();
+        editing.core.write({...editing.core.items.get(errands.id), kind: 'bookmark', text: 'Errands', title: '', body: '', url: 'https://example.com/errands'});
+        // Showing the view again reads the newer row, so the list and the reopened editor see it.
+        await page.locator('[data-view="focus"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await projects.locator(`[data-item="${errands.id}"]`).getByText('Bookmark · Inbox · Unsaved edit', {exact: true}).waitFor();
+        const saves = () => editing.calls.filter(([method]) => method === 'items.save').length, before = saves();
+        await projects.locator('[data-item-list]').getByRole('button', {name: 'Errands', exact: true}).click();
+        // Close only hides the editor, so the checks below would read the hidden one if the item
+        // did not open again.
+        assert.equal(await editor.isVisible(), true, 'the item opens again');
+        assert.equal(await editor.locator('#editor-title').textContent(), 'Edit note', 'the draft reopens as the note it was opened as');
+        assert.deepEqual(await editor.locator('[data-edit-field]').evaluateAll(fields => fields.map(field => field.dataset.editField)), ['title', 'body', 'projectId'], 'in the note’s fields, not the bookmark’s');
+        assert.equal(await editor.locator('[data-edit-field="title"]').inputValue(), 'Errands for Saturday', 'with the person’s edit');
+        assert.equal(await editor.locator('[data-edit-field="body"]').inputValue(), 'post office', 'and the body as the person last saw it');
+        await editor.getByRole('button', {name: 'Save', exact: true}).click();
+        await status.getByText(KIND_CHANGED('bookmark')).waitFor();
+        assert.equal(saves(), before, 'Save sends nothing');
+        assert.equal(await status.textContent(), KIND_CHANGED('bookmark'), 'and never says Saved.');
+        assert.equal(await editor.locator('[data-edit-field="title"]').inputValue(), 'Errands for Saturday', 'the person’s edit stays to copy');
+        const stored = editing.core.items.get(errands.id);
+        assert.deepEqual([stored.kind, stored.text, stored.title, stored.url], ['bookmark', 'Errands', '', 'https://example.com/errands'], 'the other writer’s change stays');
+        await editor.getByRole('button', {name: 'Discard changes', exact: true}).click();
+        assert.equal(await editor.locator('[data-edit-field="url"]').inputValue(), 'https://example.com/errands', 'Discard changes opens the bookmark');
         await editor.getByRole('button', {name: 'Close', exact: true}).click();
       });
       await step('projects group items; archive, restore and delete need the core’s answer', async () => {
@@ -465,7 +505,9 @@ try {
       await step('a failed focus write changes nothing', async () => {
         await page.locator('[data-view="focus"]').click();
         assert.deepEqual([await clock(), await state()], ['25:00', 'Ready to start']);
-        timing.fault('settings.set', SAVE_FAILED);
+        // Opening the view also makes the shell write `shell.lastView`, so the fault names
+        // Start's key: only that write can take it.
+        timing.fault('settings.set', SAVE_FAILED, {key: 'focus.session'});
         await view(page, 'focus').getByRole('button', {name: 'Start', exact: true}).click();
         await view(page, 'focus').locator('[data-focus-message]').getByText(SAVE_FAILED).waitFor();
         assert.deepEqual([await clock(), await state()], ['25:00', 'Ready to start']);

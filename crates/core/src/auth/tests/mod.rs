@@ -6,6 +6,7 @@ mod callback;
 mod controller;
 mod pkce;
 mod refresh;
+mod store_wait;
 mod token;
 
 use super::*;
@@ -192,11 +193,21 @@ pub(super) struct FakeStore {
     /// Runs inside `load`, after the saved value has been read and before it is returned.
     #[allow(clippy::type_complexity)]
     pub during_load: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// Runs at the start of `save` and of `delete`, before anything is changed: a test makes
+    /// the call wait here, as a keyring waits for its unlock prompt.
+    #[allow(clippy::type_complexity)]
+    pub before_write: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl FakeStore {
     pub fn saved(&self) -> Option<String> {
         self.token.lock().unwrap().clone()
+    }
+    fn wait_before_write(&self) {
+        let hook = self.before_write.lock().unwrap().clone();
+        if let Some(hook) = hook {
+            hook();
+        }
     }
 }
 
@@ -213,6 +224,7 @@ impl CredentialStore for FakeStore {
     }
     fn save(&self, refresh_token: &str) -> Result<(), AuthError> {
         self.saves.fetch_add(1, Ordering::SeqCst);
+        self.wait_before_write();
         if self.fail_save.load(Ordering::SeqCst) {
             return Err(AuthError::Store);
         }
@@ -220,6 +232,7 @@ impl CredentialStore for FakeStore {
         Ok(())
     }
     fn delete(&self) -> Result<(), AuthError> {
+        self.wait_before_write();
         if self.fail_delete.load(Ordering::SeqCst) {
             return Err(AuthError::Store);
         }
@@ -247,12 +260,17 @@ pub(super) struct Rig {
 }
 
 pub(super) fn rig() -> Rig {
+    rig_with(None)
+}
+
+/// A rig whose store calls are measured against `(soon, limit)` in place of the defaults.
+pub(super) fn rig_with(store_limits: Option<(Duration, Duration)>) -> Rig {
     let api = Arc::new(FakeApi::default());
     let store = Arc::new(FakeStore::default());
     let clock = Arc::new(Mutex::new(now()));
     let changes = Arc::new(AtomicUsize::new(0));
     let (time, count) = (clock.clone(), changes.clone());
-    let auth = Arc::new(AuthController::new(AuthParts {
+    let auth = AuthController::new(AuthParts {
         api: api.clone(),
         store: store.clone(),
         marker: store.clone(),
@@ -260,7 +278,11 @@ pub(super) fn rig() -> Rig {
         on_change: Arc::new(move || {
             count.fetch_add(1, Ordering::SeqCst);
         }),
-    }));
+    });
+    let auth = Arc::new(match store_limits {
+        Some((soon, limit)) => auth.store_limits(soon, limit),
+        None => auth,
+    });
     Rig {
         api,
         store,

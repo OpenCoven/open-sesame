@@ -1094,21 +1094,29 @@ pub fn collapse<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// The shortcut and `open-sesame --toggle`: a panel that is open to stay closes, and anything
-/// else, a peek and a hidden rail included, opens to stay.
-pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
+/// else, a peek and a hidden rail included, opens to stay. Answers which it was, in the terms of
+/// a press on the ordinary window (`summon::Press`): `Hide` for closing to the strip, `Show`
+/// for opening. The rail is above other windows, so it is never `Forward`.
+pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
     let open_to_stay = app.try_state::<Rail>().is_some_and(|rail| {
         let state = lock(&rail.state);
         state.shown && state.expanded && state.held
     });
     if open_to_stay {
         collapse(app);
+        summon::Press::Hide
     } else {
         open(app);
+        summon::Press::Show
     }
 }
 
-/// The tray's Show or Hide: takes the rail off the screen, or puts the strip back.
-pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) {
+/// The tray's menu item: takes the rail off the screen (`Hide`), or puts the strip back
+/// (`Show`).
+pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
+    let was_shown = app
+        .try_state::<Rail>()
+        .is_some_and(|rail| lock(&rail.state).shown);
     on_main(app, |app| {
         let Some(rail) = app.try_state::<Rail>() else {
             return;
@@ -1128,6 +1136,11 @@ pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) {
         );
         settle(app, Focus::Leave);
     });
+    if was_shown {
+        summon::Press::Hide
+    } else {
+        summon::Press::Show
+    }
 }
 
 /// Whether a person is typing in the rail's window. `remembered` is what the window's own focus

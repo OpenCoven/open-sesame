@@ -9,6 +9,7 @@ import { createPreferences } from './preferences.js';
 import { mountRail } from './rail.js';
 import { holdDuringDrag, mountSummon } from './summon.js';
 import { PANEL_SHOWN } from './widgets/view-kit.js';
+import { mountContextMenu } from './context-menu.js';
 
 const bridge = createBridge(window);
 const shell = document.querySelector('.shell');
@@ -60,6 +61,10 @@ const drop = () => {if (kept && notice.textContent === kept.error) report('');ke
 const navButtons = new Map();
 const switches = new Map();
 const run = promise => promise.catch(error => report(message(error)));
+// The native context menu is never opened (issue #115); see context-menu.js. It is mounted
+// before the host answers. Until this module has run, and if it fails to load, the page has
+// the native one.
+mountContextMenu(bridge, document, { report });
 
 // The rail (src-tauri/src/rail.rs). `looking` is whether the person can see a view now: it is
 // the one shown, the panel is open and the window is on screen.

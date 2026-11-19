@@ -169,6 +169,7 @@ export function createPane(deps, element, launch, hooks = {}) {
 
   return Object.freeze({
     id, opened, stats, close, copy, paste, send,
+    hasSelection: () => Boolean(term.getSelection()),
     focus: () => term.focus(),
     fit: refit,
     get ended() { return ended; },

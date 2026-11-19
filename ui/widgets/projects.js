@@ -151,7 +151,8 @@ export async function mount({surface, signal, bridge, host}) {
     if (focused) editor.querySelector(`[data-edit-field="${focused}"]`)?.focus();
   }
   // Another writer changed the item's kind: its fields no longer match the draft's, so nothing is
-  // sent and the draft stays shown in its own fields for the person to copy.
+  // saved and the draft stays shown in its own fields for the person to copy. Once the change has
+  // been read, Save sends nothing; a Save sent before that was refused by the core as a conflict.
   function kindChanged(draft, item) {
     if (item.kind === draft.kind) return false;
     editorStatus.say(KIND_CHANGED(KINDS[item.kind]?.toLowerCase() ?? 'item'), true);

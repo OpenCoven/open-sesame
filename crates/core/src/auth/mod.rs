@@ -61,6 +61,9 @@ pub enum AuthError {
     Network,
     /// A sign-in is already in progress.
     Busy,
+    /// The credential store is being waited for, for example at a keyring's unlock prompt,
+    /// and what was asked for has to wait for it too. Nothing was changed.
+    StoreBusy,
     /// The operating system's random number source failed.
     Random,
 }

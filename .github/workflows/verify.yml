@@ -77,6 +77,14 @@ jobs:
       RUST_TOOLCHAIN: '1.95.0'
       CARGO_TERM_COLOR: never
       CARGO_INCREMENTAL: '0'
+      # What the cache holds. The restore step and the save step both read this one list, because
+      # a cache saved for one list of paths is not found by a restore that names another. The
+      # name does not start with CARGO_, which is where Cargo looks for its own settings.
+      RUST_CACHE_PATHS: |
+        ~/.cargo/registry/index
+        ~/.cargo/registry/cache
+        ~/.cargo/git/db
+        target
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       # Package list: the Debian block of https://v2.tauri.app/start/prerequisites/ (page last
@@ -108,22 +116,31 @@ jobs:
           rustup default "$RUST_TOOLCHAIN"
           mkdir -p build/verification/rust
           { rustc --version --verbose; cargo --version; } | tee build/verification/rust/toolchain.txt
-      - name: Cache the Cargo registry and build output
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Issue #126, decided on 16 November 2026: only main saves a cache. A cache saved by a pull
+      # request can be restored by that pull request alone, and with every pull request saving
+      # its own the repository held 11.7 GB of them and none from main; a cache main had saved
+      # was once gone ten minutes later. Every run restores here; the save step comes after the
+      # last cargo step and runs on main only. A pull request that changes Cargo.lock finds
+      # main's cache through the prefix and rebuilds what changed on each of its runs. A run on
+      # main takes the exact key or nothing: an older target directory carried forward through
+      # the prefix is what made each saved cache larger than the last.
+      - name: Restore the Cargo registry and build output
+        id: cargo-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
+          path: ${{ env.RUST_CACHE_PATHS }}
           key: cargo-${{ matrix.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ matrix.os }}-${{ env.RUST_TOOLCHAIN }}-
+          restore-keys: ${{ github.ref != 'refs/heads/main' && format('cargo-{0}-{1}-', matrix.os, env.RUST_TOOLCHAIN) || '' }}
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Lint with warnings as errors
         run: cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee build/verification/rust/clippy.log
+      # Issue #99, decided on 16 November 2026: this step gets a limit of its own, so a test in it
+      # that hangs ends the step after 15 minutes and not the whole job after 30. The longest this
+      # step has taken in a hosted run up to that day is 5 minutes 50 seconds, on macOS with
+      # nothing cached (job 133063649770). The later steps that run tests have only the job's.
       - name: Test the workspace
+        timeout-minutes: 15
         run: cargo test --workspace --locked 2>&1 | tee build/verification/rust/test.log
       # Issue #97: what the process runner's Windows-only tests measured. A passing test's output
       # is hidden in the step above, so they run once more here with it shown. The name filter
@@ -155,6 +172,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/fixtures/rail-windows.ps1 -Binary target/debug/open-sesame.exe -Out build/verification/rust/rail-windows
+      # Runs only when every step above succeeded, as the save of the undivided cache action did,
+      # and only when the restore found no cache under this exact key.
+      - name: Save the Cargo registry and build output on main
+        if: github.ref == 'refs/heads/main' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.RUST_CACHE_PATHS }}
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
       - name: Retain executed-check evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

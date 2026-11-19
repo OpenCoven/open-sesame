@@ -133,6 +133,440 @@ fn relative_install_roots_fall_back_to_absolute_home_locations() {
     );
 }
 
+/// The environment of an application launched with a home directory and nothing else.
+fn launched_from(home: &Path, extra: &[(&str, &str)]) -> ShellEnv {
+    let mut all = vec![(
+        if cfg!(windows) { "USERPROFILE" } else { "HOME" },
+        home.to_str().unwrap(),
+    )];
+    all.extend_from_slice(extra);
+    ShellEnv::from_vars(vars(&all))
+}
+
+/// Where Node version managers and npm put programs is searched when the login shell's `PATH`
+/// could not be had (issue #97): fnm's default version, the version nvm's default alias names,
+/// npm's per-user global folder and the shims of Volta and mise, and after the system's
+/// folders the shims of asdf.
+#[cfg(unix)]
+#[test]
+fn version_manager_folders_under_the_home_directory_are_searched() {
+    let home = tempfile::tempdir().unwrap();
+    let at = |rest: &str| home.path().join(rest);
+    std::fs::create_dir_all(at(".nvm/alias")).unwrap();
+    std::fs::write(at(".nvm/alias/default"), "22\n").unwrap();
+    let expected = [
+        install(&at(".volta/bin"), "tool-volta"),
+        install(&at(".local/share/mise/shims"), "tool-mise"),
+        install(&at(".asdf/shims"), "tool-asdf"),
+        install(&at(".local/share/fnm/aliases/default/bin"), "tool-fnm-xdg"),
+        install(
+            &at("Library/Application Support/fnm/aliases/default/bin"),
+            "tool-fnm-mac",
+        ),
+        install(&at(".fnm/aliases/default/bin"), "tool-fnm-old"),
+        install(&at(".nvm/versions/node/v22.11.0/bin"), "tool-nvm"),
+        install(&at(".npm-global/bin"), "tool-npm"),
+    ];
+    install(&at(".nvm/versions/node/v22.11.0/bin"), "node");
+    // The same name in several of them: a folder of real programs is searched before the
+    // shims, and asdf's shims after everything, because a shim of asdf that cannot reach
+    // `asdf` would hide a copy that can start.
+    let real = install(&at(".nvm/versions/node/v22.11.0/bin"), "tool-twice");
+    install(&at(".asdf/shims"), "tool-twice");
+    install(&at(".volta/bin"), "tool-twice");
+    // Volta's and mise's start by themselves, so they come before the system's folders, as
+    // in a shell set up for them: a system copy does not hide the version the person chose.
+    // `env` stands for such a tool, because the system has one of that name.
+    assert!(Path::new("/usr/bin/env").is_file());
+    let chosen = install(&at(".volta/bin"), "env");
+    install(&at(".asdf/shims"), "env");
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    assert!(finder.known_dirs.iter().all(|dir| dir.is_absolute()));
+    for program in expected {
+        let name = program.file_name().unwrap().to_str().unwrap();
+        assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
+    }
+    assert_eq!(finder.find("tool-twice", None), Some(real));
+    assert_eq!(finder.find("env", None), Some(chosen));
+    let place = |rest: &str| {
+        let dir = if rest.starts_with('/') {
+            PathBuf::from(rest)
+        } else {
+            at(rest)
+        };
+        finder
+            .known_dirs
+            .iter()
+            .position(|known| *known == dir)
+            .unwrap_or_else(|| panic!("{rest} is not searched"))
+    };
+    let order = [
+        ".local/share/fnm/aliases/default/bin",
+        ".nvm/versions/node/v22.11.0/bin",
+        ".npm-global/bin",
+        ".volta/bin",
+        ".local/share/mise/shims",
+        "/opt/homebrew/bin",
+        "/usr/bin",
+        ".coven/bin",
+        ".asdf/shims",
+    ];
+    for pair in order.windows(2) {
+        assert!(
+            place(pair[0]) < place(pair[1]),
+            "{} before {}",
+            pair[0],
+            pair[1]
+        );
+    }
+}
+
+/// Each manager's own variable for its folder is honoured when it names an absolute one, and
+/// the manager's folder under the home directory is then not searched, as the manager itself
+/// would not use it. npm is the exception: `~/.npm-global` is a folder people make by hand, so
+/// it is searched beside the prefix the variable names. A relative value is passed over for
+/// the home folder, as for Cargo and Bun.
+#[cfg(unix)]
+#[test]
+fn version_manager_folders_follow_their_variables() {
+    let home = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let at = |rest: &str| other.path().join(rest);
+    std::fs::create_dir_all(at("nvm/alias")).unwrap();
+    std::fs::write(at("nvm/alias/default"), "v20.1.0\n").unwrap();
+    let expected = [
+        install(&at("volta/bin"), "tool-volta"),
+        install(&at("mise/shims"), "tool-mise"),
+        install(&at("asdf/shims"), "tool-asdf"),
+        install(&at("fnm/aliases/default/bin"), "tool-fnm"),
+        install(&at("nvm/versions/node/v20.1.0/bin"), "tool-nvm"),
+        install(&at("npm/bin"), "tool-npm"),
+    ];
+    install(&at("nvm/versions/node/v20.1.0/bin"), "node");
+    let text = |rest: &str| at(rest).to_str().unwrap().to_string();
+    let named = [
+        ("VOLTA_HOME", text("volta")),
+        ("MISE_DATA_DIR", text("mise")),
+        ("ASDF_DATA_DIR", text("asdf")),
+        ("FNM_DIR", text("fnm")),
+        ("NVM_DIR", text("nvm")),
+        ("NPM_CONFIG_PREFIX", text("npm")),
+    ];
+    let pairs: Vec<(&str, &str)> = named
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    // The managers' folders under the home directory, which the variables replace.
+    let under_home = |rest: &str| install(&home.path().join(rest), "only-under-home");
+    let shadowed = under_home(".volta/bin");
+    under_home(".local/share/mise/shims");
+    under_home(".asdf/shims");
+    under_home(".local/share/fnm/aliases/default/bin");
+    under_home(".fnm/aliases/default/bin");
+    under_home("Library/Application Support/fnm/aliases/default/bin");
+    under_home(".nvm/versions/node/v20.1.0/bin");
+    install(&home.path().join(".nvm/versions/node/v20.1.0/bin"), "node");
+    std::fs::create_dir_all(home.path().join(".nvm/alias")).unwrap();
+    std::fs::write(home.path().join(".nvm/alias/default"), "v20.1.0\n").unwrap();
+    let finder = Search::from_env(&launched_from(home.path(), &pairs));
+    for program in &expected {
+        let name = program.file_name().unwrap().to_str().unwrap();
+        assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
+    }
+    assert_eq!(finder.find("only-under-home", None), None);
+    // Without the variables each of those is searched, and npm's hand-made folder is searched
+    // with its variable set too.
+    let plain = Search::from_env(&launched_from(home.path(), &[]));
+    assert!(plain.find("only-under-home", None).is_some());
+    let by_hand = install(&home.path().join(".npm-global/bin"), "tool-npm-by-hand");
+    let finder = Search::from_env(&launched_from(home.path(), &pairs));
+    assert_eq!(finder.find("tool-npm-by-hand", None), Some(by_hand));
+
+    // npm also reads the variable in lower case, and mise and fnm follow XDG_DATA_HOME.
+    let data = tempfile::tempdir().unwrap();
+    let mise = install(&data.path().join("mise/shims"), "tool-mise-xdg");
+    let fnm = install(&data.path().join("fnm/aliases/default/bin"), "tool-fnm-xdg");
+    let finder = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("npm_config_prefix", &text("npm")),
+            ("XDG_DATA_HOME", data.path().to_str().unwrap()),
+        ],
+    ));
+    assert_eq!(finder.find("tool-npm", None), Some(expected[5].clone()));
+    assert_eq!(finder.find("tool-mise-xdg", None), Some(mise));
+    assert_eq!(finder.find("tool-fnm-xdg", None), Some(fnm));
+
+    // mise's own variable for the shims folder comes before its data folder, and nvm is under
+    // the configuration folder when that variable is set.
+    let config = tempfile::tempdir().unwrap();
+    let shims = install(&other.path().join("mise shims"), "tool-mise-shims");
+    std::fs::create_dir_all(config.path().join("nvm/alias")).unwrap();
+    std::fs::write(config.path().join("nvm/alias/default"), "node\n").unwrap();
+    let nvm = install(
+        &config.path().join("nvm/versions/node/v24.0.1/bin"),
+        "tool-nvm-config",
+    );
+    install(nvm.parent().unwrap(), "node");
+    let finder = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("MISE_SHIMS_DIR", shims.parent().unwrap().to_str().unwrap()),
+            ("MISE_DATA_DIR", &text("mise")),
+            ("XDG_CONFIG_HOME", config.path().to_str().unwrap()),
+        ],
+    ));
+    assert_eq!(finder.find("tool-mise-shims", None), Some(shims));
+    assert_eq!(finder.find("tool-mise", None), None);
+    assert_eq!(finder.find("tool-nvm-config", None), Some(nvm));
+
+    let relative = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("VOLTA_HOME", "relative-volta"),
+            ("NVM_DIR", "relative-nvm"),
+        ],
+    ));
+    assert!(relative.known_dirs.iter().all(|dir| dir.is_absolute()));
+    assert!(relative
+        .known_dirs
+        .contains(&shadowed.parent().unwrap().to_path_buf()));
+}
+
+/// nvm has no folder of shims: the folder to search is the `bin` of the version its default
+/// alias names, worked out from nvm's own files and never by running nvm.
+#[cfg(unix)]
+#[test]
+fn the_nvm_folder_is_the_one_its_default_alias_names() {
+    let home = tempfile::tempdir().unwrap();
+    let nvm = home.path().join(".nvm");
+    let mut programs = BTreeMap::new();
+    // A version nvm would use has `node` in its `bin`.
+    let version = |name: &str| {
+        let bin = nvm.join("versions/node").join(name).join("bin");
+        install(&bin, "node");
+        install(&bin, "tool")
+    };
+    for name in ["v9.11.2", "v20.1.0", "v22.3.0", "v22.11.0", "v24.0.1"] {
+        programs.insert(name, version(name));
+    }
+    // A folder that is not a version is never chosen.
+    version("v99.broken");
+    let alias = |name: &str, names: &str| {
+        let file = nvm.join("alias").join(name);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, names).unwrap();
+    };
+    alias("lts/*", "lts/jod\n");
+    alias("lts/jod", "v22.11.0\n");
+    alias("mine", "20\n");
+    alias("round", "about\n");
+    alias("about", "round\n");
+    // An alias file is followed first even when its name looks like a version: nvm does so.
+    alias("9", "v20.1.0\n");
+    // A file beside the alias folder, which would name a version if it were followed.
+    std::fs::write(nvm.join("outside"), "v24.0.1\n").unwrap();
+    // Twenty aliases in a row, the last naming a version.
+    for hop in 1..=20 {
+        let names = if hop == 20 {
+            "22".to_string()
+        } else {
+            format!("hop{}", hop + 1)
+        };
+        alias(&format!("hop{hop}"), &names);
+    }
+    let long_comment = format!("#{}\n22.3.0\n", "x".repeat(253));
+    // Longer than is read, and cut at that length it would say `22`, which is another version.
+    let too_long = format!("#{}\n22.3.0\n", "x".repeat(4092));
+    let cases = [
+        ("v20.1.0", Some("v20.1.0")),
+        ("20.1.0", Some("v20.1.0")),
+        // Part of a version is the highest installed one that starts so, by number: 22.11
+        // is above 22.3, and 9 is not above 22.
+        ("22", Some("v22.11.0")),
+        ("v22.3", Some("v22.3.0")),
+        ("22.", Some("v22.11.0")),
+        ("22.3.", Some("v22.3.0")),
+        ("2", None),
+        // nvm compares text: these are not 22.
+        ("022", None),
+        (" 22", None),
+        // Only one dot at the end is passed over.
+        ("22..", None),
+        // The blanks nvm drops in a terminal's UTF-8 locale are dropped, at the end of a line
+        // and in a line that says nothing: a no-break space and a vertical tab among them.
+        ("22\u{a0}\n", Some("v22.11.0")),
+        ("\u{a0}\n22\n", Some("v22.11.0")),
+        ("22\u{b}\n", Some("v22.11.0")),
+        ("22\t\u{c}\n", Some("v22.11.0")),
+        ("9", Some("v20.1.0")),
+        (long_comment.as_str(), Some("v22.3.0")),
+        ("hop8", Some("v22.11.0")),
+        ("node", Some("v24.0.1")),
+        ("stable", Some("v24.0.1")),
+        ("lts/*", Some("v22.11.0")),
+        ("mine", Some("v20.1.0")),
+        ("22.3.0  \nsecond line\n", Some("v22.3.0")),
+        (
+            "# a comment\n\n22.3.0 # and one after it\n",
+            Some("v22.3.0"),
+        ),
+        // Nothing to add: the system's Node, a version that is not installed, an alias that
+        // names nothing, two that name each other, a name that leaves the alias folder, an
+        // alias stored with one of the flags nvm 0.41 introduced, a long-term name with a
+        // capital letter (nvm refuses it, and on a disk that ignores case the file would be
+        // found), a file longer than is read, and more aliases in a row than are followed.
+        ("system", None),
+        ("lts/Jod", None),
+        ("../outside", None),
+        (too_long.as_str(), None),
+        ("hop1", None),
+        ("--lts node", None),
+        ("--only=lts 22", None),
+        ("v18.0.0", None),
+        ("99", None),
+        ("missing", None),
+        ("round", None),
+        ("../versions/node/v24.0.1", None),
+        ("/etc/hostname", None),
+        ("", None),
+    ];
+    for (default, expected) in cases {
+        alias("default", default);
+        let finder = Search::from_env(&launched_from(home.path(), &[]));
+        assert_eq!(
+            finder.find("tool", None),
+            expected.map(|version| programs[version].clone()),
+            "default alias {default:?}"
+        );
+    }
+    // An alias file named as nvm's own word for the newest version is followed first too.
+    alias("stable", "v20.1.0\n");
+    alias("default", "stable\n");
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    assert_eq!(finder.find("tool", None), Some(programs["v20.1.0"].clone()));
+    std::fs::remove_file(nvm.join("alias/stable")).unwrap();
+
+    // A prerelease is a version: it is the newest when its numbers are the highest, as nvm
+    // has it, and can be named in part or in full. Of several folders with the same three
+    // numbers nvm takes the first by name, so an earlier prerelease before a later one.
+    let candidate = version("v25.0.0-rc.1");
+    version("v25.0.0-rc.2");
+    for default in ["node", "25", "v25.0.0-rc.1"] {
+        alias("default", default);
+        let finder = Search::from_env(&launched_from(home.path(), &[]));
+        assert_eq!(
+            finder.find("tool", None),
+            Some(candidate.clone()),
+            "{default}"
+        );
+    }
+    // And the release itself before any of its prereleases.
+    let release = version("v25.0.0");
+    for default in ["node", "stable", "25", "25.0", "25.0.0"] {
+        alias("default", default);
+        let finder = Search::from_env(&launched_from(home.path(), &[]));
+        assert_eq!(
+            finder.find("tool", None),
+            Some(release.clone()),
+            "{default}"
+        );
+    }
+    alias("default", "v25.0.0-rc.2");
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    let named_in_full = nvm.join("versions/node/v25.0.0-rc.2/bin/tool");
+    assert_eq!(finder.find("tool", None), Some(named_in_full));
+
+    // A version folder without `node`, as an install that was cut short leaves, is the
+    // newest by its name and is no version to use: nvm puts nothing on `PATH` then, and no
+    // older version in its place.
+    let cut_short = nvm.join("versions/node/v26.0.0/bin");
+    install(&cut_short, "tool");
+    for default in ["node", "26", "v26.0.0"] {
+        alias("default", default);
+        let finder = Search::from_env(&launched_from(home.path(), &[]));
+        assert!(!finder.known_dirs.contains(&cut_short), "{default}");
+        assert_eq!(finder.find("tool", None), None, "{default}");
+    }
+    alias("default", "25");
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    assert_eq!(finder.find("tool", None), Some(release));
+
+    // A pipe left under the alias's name is not opened: opening it would wait for a writer
+    // that never comes, and every search for a tool would wait with it.
+    std::fs::remove_file(nvm.join("alias/default")).unwrap();
+    let pipe = std::ffi::CString::new(nvm.join("alias/default").to_str().unwrap()).unwrap();
+    // SAFETY: the path is NUL-terminated and lives through the call.
+    assert_eq!(unsafe { libc::mkfifo(pipe.as_ptr(), 0o600) }, 0);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let env = launched_from(home.path(), &[]);
+    std::thread::spawn(move || {
+        let _ = sender.send(Search::from_env(&env).find("tool", None));
+    });
+    let found = receiver.recv_timeout(Duration::from_secs(10));
+    // Let a search that did open the pipe go, so the failure is this assertion and not a
+    // thread left waiting.
+    let _ = std::os::unix::fs::OpenOptionsExt::custom_flags(
+        std::fs::OpenOptions::new().write(true),
+        libc::O_NONBLOCK,
+    )
+    .open(nvm.join("alias/default"));
+    assert_eq!(found, Ok(None), "a pipe as the default alias");
+
+    std::fs::remove_file(nvm.join("alias/default")).unwrap();
+    let finder = Search::from_env(&launched_from(home.path(), &[]));
+    assert_eq!(finder.find("tool", None), None, "no default alias");
+}
+
+/// On Windows the folders are under the two application-data folders, and npm puts programs
+/// in its prefix itself, with no `bin` under it.
+#[cfg(windows)]
+#[test]
+fn version_manager_folders_on_windows_are_searched() {
+    let home = tempfile::tempdir().unwrap();
+    let local = home.path().join("AppData").join("Local");
+    let roaming = home.path().join("AppData").join("Roaming");
+    let expected = [
+        install(&local.join("Volta").join("bin"), "tool-volta"),
+        install(&local.join("mise").join("shims"), "tool-mise"),
+        install(
+            &roaming.join("fnm").join("aliases").join("default"),
+            "tool-fnm",
+        ),
+        install(
+            &home.path().join(".fnm").join("aliases").join("default"),
+            "tool-fnm-old",
+        ),
+        install(&roaming.join("npm"), "tool-npm"),
+    ];
+    let finder = Search::from_env(&launched_from(
+        home.path(),
+        &[
+            ("LOCALAPPDATA", local.to_str().unwrap()),
+            ("APPDATA", roaming.to_str().unwrap()),
+        ],
+    ));
+    for program in expected {
+        let name = program.file_stem().unwrap().to_str().unwrap();
+        assert_eq!(finder.find(name, None), Some(program.clone()), "{name}");
+    }
+    // Real programs before the shims, as on Unix.
+    let place = |dir: PathBuf| {
+        finder
+            .known_dirs
+            .iter()
+            .position(|known| *known == dir)
+            .unwrap_or_else(|| panic!("{} is not searched", dir.display()))
+    };
+    let order = [
+        place(roaming.join("fnm").join("aliases").join("default")),
+        place(roaming.join("npm")),
+        place(local.join("Volta").join("bin")),
+        place(local.join("mise").join("shims")),
+    ];
+    assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{order:?}");
+}
+
 /// An override the user set is used as it is. A bad override is reported as missing; the search
 /// never quietly picks a different program.
 #[test]
@@ -381,8 +815,10 @@ mod login_shell {
     /// tests without running them (issue #97). Unset, a missing shell is only noted. A shell is
     /// matched by its file name, so a test that finds its shell through `shell` or `installed`
     /// uses the path named here in place of its own, and a named shell that such a test cannot
-    /// find anywhere fails it. The tests that came with #105 name their shell outright and
-    /// fail without it whatever this says.
+    /// find anywhere fails it. Two tests that came with #105 name their shell outright and
+    /// fail without it whatever this says: `capture_honors_variables_unset_by_the_login_profile`
+    /// (`/bin/sh`) and, on macOS, `cancelling_a_hanging_login_shell_kills_its_child_before_returning`
+    /// in `runtime.rs` (`/bin/zsh`).
     const REQUIRED: &str = "OPEN_SESAME_REQUIRE_SHELLS";
 
     fn required() -> Vec<PathBuf> {
@@ -852,15 +1288,447 @@ mod login_shell {
         assert_eq!(env.get("SHLVL"), Some("41"));
     }
 
+    /// A variable the application was launched with under a name that is not a shell name,
+    /// such as `config.key`, is still there after the capture (issue #136). bash, ksh and fish
+    /// pass such a variable on; dash and the zsh macOS ships leave it out of the environment
+    /// of everything they start, with or without startup files, so the capture puts the
+    /// launch value back. A variable with an ordinary name that the startup file unsets
+    /// stays gone beside it (the rule of #105). Each shell is skipped where it is not
+    /// installed, unless `OPEN_SESAME_REQUIRE_SHELLS` names it.
     #[test]
     fn capture_preserves_environment_names_that_are_not_shell_identifiers() {
-        let shell = Path::new("/bin/bash");
-        assert!(shell.is_file(), "the bash prerequisite must exist");
-        let (_home, mut inherited) = home(&[(".bash_profile", String::new())]);
-        inherited.insert("config.key".into(), "still-present".into());
-        let env = ShellEnv::capture(Some(shell), inherited, LIMIT);
+        const ODD_NAMES: [&str; 3] = ["config.key", "with-dash", "dotted.and-dashed"];
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let unset = if kind.startup_file == FISH_STARTUP {
+                "set -e REMOVED_BY_PROFILE\n"
+            } else {
+                "unset REMOVED_BY_PROFILE\n"
+            };
+            let startup = format!("{unset}{}", (kind.export)("AFTER", "ok"));
+            let (_home, mut inherited) = home(&[(kind.startup_file, startup)]);
+            for name in ODD_NAMES {
+                inherited.insert(name.into(), format!("launch value of {name}"));
+            }
+            inherited.insert("REMOVED_BY_PROFILE".into(), "stale-value".into());
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            for name in ODD_NAMES {
+                assert_eq!(
+                    env.get(name),
+                    Some(format!("launch value of {name}").as_str()),
+                    "{name} under {}",
+                    shell.display()
+                );
+            }
+            assert_eq!(env.get("REMOVED_BY_PROFILE"), None, "{}", shell.display());
+            assert_eq!(
+                env.get("FROM_LAUNCHER"),
+                Some("kept"),
+                "{}",
+                shell.display()
+            );
+        }
+    }
+
+    /// What a startup file removed is not put back, whatever its name: a function bash
+    /// exported and its profile then forgot, and under ksh, where it is installed, a name in
+    /// Greek letters that the profile unset. Both came back when every name that is not a
+    /// shell name was put back.
+    #[test]
+    fn a_variable_a_startup_file_removed_under_an_unusual_name_stays_removed() {
+        if let Some(bash) = installed(&["/bin/bash"]) {
+            let startup = "unset -f gone\nexport AFTER=ok\n".to_string();
+            let (_home, mut inherited) = home(&[(".bash_profile", startup)]);
+            inherited.insert("BASH_FUNC_gone%%".into(), "() {  :\n}".into());
+            inherited.insert("config.key".into(), "kept".into());
+            let env = ShellEnv::capture(Some(&bash), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell);
+            assert_eq!(env.get("AFTER"), Some("ok"));
+            assert_eq!(env.get("BASH_FUNC_gone%%"), None);
+            assert_eq!(env.get("config.key"), Some("kept"));
+        }
+        if let Some(ksh) = shell("/bin/ksh") {
+            let startup = "unset όνομα\nexport AFTER=ok\n".to_string();
+            let (_home, mut inherited) = home(&[(".profile", startup)]);
+            inherited.insert("LC_ALL".into(), "en_US.UTF-8".into());
+            inherited.insert("όνομα".into(), "launch".into());
+            inherited.insert("config.key".into(), "kept".into());
+            let env = ShellEnv::capture(Some(&ksh), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell);
+            assert_eq!(env.get("AFTER"), Some("ok"));
+            assert_eq!(env.get("όνομα"), None);
+            assert_eq!(env.get("config.key"), Some("kept"));
+        }
+        // fish erases a name that starts with a digit, and passes one it did not erase on.
+        if let Some(fish) = installed(&FISH) {
+            let startup = "set -e 1gone\nset -gx AFTER ok\n".to_string();
+            let (_home, mut inherited) = home(&[(FISH_STARTUP, startup)]);
+            inherited.insert("1gone".into(), "launch".into());
+            inherited.insert("1kept".into(), "launch".into());
+            let env = ShellEnv::capture(Some(&fish), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell);
+            assert_eq!(env.get("AFTER"), Some("ok"));
+            assert_eq!(env.get("1gone"), None);
+            assert_eq!(env.get("1kept"), Some("launch"));
+        }
+    }
+
+    /// What ksh's startup file did to a name that is not a shell name is what the capture
+    /// gives, whatever that was. The ksh macOS ships (93u+ of 2012) keeps a dotted name as a
+    /// member of a compound variable and takes more characters for letters than this code
+    /// would guess, so its startup file can remove `config.key`, `.hidden` and a Thai word,
+    /// and they must stay removed; the ksh of Ubuntu 24.04 (93u+m) passes the same names on
+    /// untouched whatever the file says, and they must stay. So the expectation is not
+    /// written here: ksh is run with the same commands and no startup file, and the capture
+    /// has to agree with it. A note says which way this ksh went.
+    #[test]
+    fn a_name_ksh_can_reach_is_left_as_its_startup_file_left_it() {
+        let Some(ksh) = shell("/bin/ksh") else {
+            return;
+        };
+        let thai = "\u{0e19}\u{0e49}\u{0e33}";
+        let unset_thai = format!("unset {thai}\nexport AFTER=ok\n");
+        for (startup, launch, name) in [
+            (
+                "config=()\nunset config.key\nexport AFTER=ok\n",
+                vec![("config.key", "launch")],
+                "config.key",
+            ),
+            (
+                "unset config.key\nexport AFTER=ok\n",
+                vec![("config", "x"), ("config.key", "launch")],
+                "config.key",
+            ),
+            (
+                "unset .hidden\nexport AFTER=ok\n",
+                vec![(".hidden", "launch")],
+                ".hidden",
+            ),
+            (
+                unset_thai.as_str(),
+                vec![("LC_ALL", "en_US.UTF-8"), (thai, "launch")],
+                thai,
+            ),
+            (
+                "config=(key=changed)\nexport AFTER=ok\n",
+                vec![("config.key", "launch")],
+                "config.key",
+            ),
+            (
+                "export AFTER=ok\n",
+                vec![("config.key", "launch")],
+                "config.key",
+            ),
+        ] {
+            let (_home, mut inherited) = home(&[(".profile", startup.to_string())]);
+            for (name, value) in launch {
+                inherited.insert(name.into(), value.into());
+            }
+            // The same commands in a ksh that reads no startup file, then the environment.
+            let alone = std::process::Command::new(&ksh)
+                .arg("-c")
+                .arg(format!("{startup}/usr/bin/env -0"))
+                .env_clear()
+                .envs(&inherited)
+                .stderr(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            let entry = format!("{name}=");
+            let expected = alone
+                .stdout
+                .split(|byte| *byte == 0)
+                .filter_map(|entry| std::str::from_utf8(entry).ok())
+                .find_map(|text| text.strip_prefix(entry.as_str()));
+            eprintln!("ksh leaves {name:?} as {expected:?} after {startup:?}");
+            let env = ShellEnv::capture(Some(&ksh), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{startup:?}");
+            assert_eq!(env.get("AFTER"), Some("ok"), "{startup:?}");
+            assert_eq!(env.get(name), expected, "{name} after {startup:?}");
+        }
+    }
+
+    /// What a shell leaves out of the environment by itself, before any startup file runs,
+    /// is put back whatever the name looks like (issue #136): a name that starts with a
+    /// digit, one in letters outside ASCII, and a function bash exported, beside the dotted
+    /// name. The zsh that macOS ships and dash leave such names out; a shell that passes them
+    /// on shows the same result here.
+    #[test]
+    fn what_the_shell_itself_leaves_out_is_put_back_whatever_its_name() {
+        const NAMES: [&str; 4] = ["config.key", "1digit", "όνομα", "BASH_FUNC_helper%%"];
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let startup = (kind.export)("AFTER", "ok");
+            let (_home, mut inherited) = home(&[(kind.startup_file, startup)]);
+            for name in NAMES {
+                let value = if name.starts_with("BASH_FUNC_") {
+                    "() {  :\n}"
+                } else {
+                    "launch"
+                };
+                inherited.insert(name.into(), value.into());
+            }
+            let env = ShellEnv::capture(Some(&shell), inherited, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{}", shell.display());
+            assert_eq!(env.get("AFTER"), Some("ok"), "{}", shell.display());
+            for name in NAMES {
+                // bash may write its function out again in its own words.
+                assert!(env.get(name).is_some(), "{name} under {}", shell.display());
+            }
+            assert_eq!(env.get("config.key"), Some("launch"));
+        }
+    }
+
+    /// When the shell cannot be asked what it passes on by itself, nothing is put back: the
+    /// missing variable may have been removed on purpose. The stand-in is `sh` under the name
+    /// `fish`, which refuses the option that runs fish without its startup files, as a fish
+    /// older than 3.3 does. Its startup file forgets a function that bash exported; dash, as
+    /// `sh`, leaves that name out by itself. Either way it is missing and stays missing.
+    #[test]
+    fn when_the_shell_cannot_be_asked_nothing_is_put_back() {
+        let Some(sh) = shell("/bin/sh") else {
+            return;
+        };
+        let named = tempfile::tempdir().unwrap();
+        let fish = named.path().join("fish");
+        std::os::unix::fs::symlink(&sh, &fish).unwrap();
+        let startup = "unset -f gone\nexport AFTER=ok\n".to_string();
+        let (_home, mut inherited) = home(&[(".profile", startup)]);
+        inherited.insert("BASH_FUNC_gone%%".into(), "() {  :\n}".into());
+        let env = ShellEnv::capture(Some(&fish), inherited, LIMIT);
         assert_eq!(env.source(), &EnvSource::LoginShell);
-        assert_eq!(env.get("config.key"), Some("still-present"));
+        assert_eq!(env.get("AFTER"), Some("ok"));
+        assert_eq!(env.get("BASH_FUNC_gone%%"), None);
+    }
+
+    /// How a stand-in leaves `config.key` out of what it starts, as dash and the zsh of macOS
+    /// leave out every name that is not a shell name.
+    const WITHOUT: &str = "/usr/bin/env -u config.key";
+
+    /// A stand-in for a shell, for the rules of the second run that no installed shell can
+    /// show: a script under the shell's name that notes each run in `log` beside it, with
+    /// whether it was given `ENV` and `BASH_ENV` and, for the second run, its arguments. A run
+    /// that starts with `-i` is the login run and does `login`; any other is the second run
+    /// and does `bare`. The script is bash's, because bash passes every launch variable on to
+    /// what it starts, so the script alone decides what is left out; under dash, which is
+    /// `sh` on Ubuntu, `config.key` would be gone before the script's first line. `None`,
+    /// with a note, where there is no bash. The script is copied into place by another
+    /// program, so that no child of a test running beside this one can hold it open for
+    /// writing when it is started.
+    fn stand_in(name: &str, login: &str, bare: &str) -> Option<(tempfile::TempDir, PathBuf)> {
+        use std::os::unix::fs::PermissionsExt;
+        let bash = shell("/bin/bash")?;
+        let bash = bash.display();
+        let dir = tempfile::tempdir().unwrap();
+        let text = dir.path().join("text");
+        let shell = dir.path().join(name);
+        let script = format!(
+            "#!{bash}\nhere=${{0%/*}}\nnoted=\"ENV=${{ENV-unset}} BASH_ENV=${{BASH_ENV-unset}}\"\n\
+             if [ \"$1\" = -i ]; then\n  echo \"login $noted\" >> \"$here/log\"\n  {login}\nfi\n\
+             echo \"bare $noted $*\" >> \"$here/log\"\n{bare}\n"
+        );
+        std::fs::write(&text, script).unwrap();
+        let copied = std::process::Command::new("/bin/cp")
+            .args([&text, &shell])
+            .status()
+            .unwrap();
+        assert!(copied.success());
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Some((dir, shell))
+    }
+
+    /// The login run of a stand-in: the capture's own command, with `config.key` left out.
+    fn login_run() -> String {
+        format!("exec {WITHOUT} /bin/sh -c \"$4\"")
+    }
+
+    fn noted(shell: &Path) -> Vec<String> {
+        std::fs::read_to_string(shell.with_file_name("log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// The launch a stand-in is captured from: one variable whose name is not a shell name,
+    /// and the two that name a file a shell reads even when it is not a login shell.
+    fn odd_launch() -> (tempfile::TempDir, BTreeMap<String, String>) {
+        let (home, mut inherited) = home(&[]);
+        inherited.insert("config.key".into(), "launch".into());
+        inherited.insert("ENV".into(), "/nonexistent/env".into());
+        inherited.insert("BASH_ENV".into(), "/nonexistent/bash-env".into());
+        (home, inherited)
+    }
+
+    fn gone(pid: i32) -> bool {
+        let ended = Instant::now() + Duration::from_secs(5);
+        loop {
+            if unsafe { libc::kill(pid, 0) } == -1 {
+                return std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+            }
+            if Instant::now() > ended {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// The second run, for every shell name the capture knows: it is made once, with the
+    /// arguments that keep that shell from its startup files and without `ENV` and `BASH_ENV`,
+    /// which the login run still has; what it leaves out is put back. A launch with no such
+    /// variable makes no second run at all.
+    #[test]
+    fn the_second_run_is_made_as_each_shell_needs_and_only_for_a_missing_variable() {
+        let cases = [
+            ("zsh", "-f -c"),
+            ("bash", "--noprofile --norc -c"),
+            ("fish", "--no-config -c"),
+            ("sh", "-c"),
+            ("dash", "-c"),
+            ("ksh", "-c"),
+        ];
+        for (name, arguments) in cases {
+            let bare = format!("exec {WITHOUT} /usr/bin/env -0");
+            let Some((_dir, shell)) = stand_in(name, &login_run(), &bare) else {
+                return;
+            };
+            let (_home, launch) = odd_launch();
+            let env = ShellEnv::capture(Some(&shell), launch.clone(), LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
+            assert_eq!(env.get("config.key"), Some("launch"), "{name}");
+            assert_eq!(
+                noted(&shell),
+                [
+                    "login ENV=/nonexistent/env BASH_ENV=/nonexistent/bash-env".to_string(),
+                    format!("bare ENV=unset BASH_ENV=unset {arguments} /usr/bin/env -0"),
+                ],
+                "{name}"
+            );
+            let mut plain = launch;
+            plain.remove("config.key");
+            let env = ShellEnv::capture(Some(&shell), plain, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{name}");
+            assert_eq!(noted(&shell).len(), 3, "{name}: {:?}", noted(&shell));
+            assert!(noted(&shell)[2].starts_with("login "), "{name}");
+        }
+    }
+
+    /// Nothing is put back unless the second run ended well, printed the variables exactly
+    /// and left the variable out: not when it still has the variable (a startup file removed
+    /// it), not when it ends with a failure, and not when it prints them without the NUL
+    /// separators. And when the login run itself could print them only without those, which
+    /// cannot show such a name at all, no second run is made.
+    #[test]
+    fn a_second_run_that_keeps_the_variable_fails_or_cannot_be_read_puts_nothing_back() {
+        let cases = [
+            ("it keeps the variable", "exec /usr/bin/env -0".to_string()),
+            (
+                "it ends with a failure",
+                format!("{WITHOUT} /usr/bin/env -0; exit 3"),
+            ),
+            (
+                "it prints without NUL separators",
+                format!("exec {WITHOUT} /usr/bin/env"),
+            ),
+        ];
+        for (what, bare) in cases {
+            let Some((_dir, shell)) = stand_in("zsh", &login_run(), &bare) else {
+                return;
+            };
+            let (_home, launch) = odd_launch();
+            let env = ShellEnv::capture(Some(&shell), launch, LIMIT);
+            assert_eq!(env.source(), &EnvSource::LoginShell, "{what}");
+            assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"), "{what}");
+            assert_eq!(env.get("config.key"), None, "{what}");
+            assert_eq!(noted(&shell).len(), 2, "{what}: {:?}", noted(&shell));
+        }
+        let login = format!(
+            "exec {WITHOUT} /bin/sh -c \"$(printf '%s' \"$4\" | sed 's#/usr/bin/env -0#/usr/bin/false#g')\""
+        );
+        let bare = format!("exec {WITHOUT} /usr/bin/env -0");
+        let Some((_dir, shell)) = stand_in("zsh", &login, &bare) else {
+            return;
+        };
+        let (_home, launch) = odd_launch();
+        let env = ShellEnv::capture(Some(&shell), launch, LIMIT);
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        assert_eq!(env.get("config.key"), None);
+        assert_eq!(noted(&shell).len(), 1, "{:?}", noted(&shell));
+    }
+
+    /// A second run that does not end is given up at its own limit of five seconds and
+    /// killed; the capture keeps what the login run gave and puts nothing back.
+    #[test]
+    fn a_second_run_that_hangs_is_given_up_at_its_limit_and_killed() {
+        let Some((dir, shell)) = stand_in(
+            "zsh",
+            &login_run(),
+            "echo $$ > \"$here/pid\"\nexec sleep 600",
+        ) else {
+            return;
+        };
+        let (_home, launch) = odd_launch();
+        let started = Instant::now();
+        let env = ShellEnv::capture(Some(&shell), launch, LIMIT);
+        let took = started.elapsed();
+        assert!(
+            took >= Duration::from_secs(4) && took < Duration::from_secs(12),
+            "{took:?}"
+        );
+        assert_eq!(env.source(), &EnvSource::LoginShell);
+        assert_eq!(env.get("FROM_LAUNCHER"), Some("kept"));
+        assert_eq!(env.get("config.key"), None);
+        let pid: i32 = std::fs::read_to_string(dir.path().join("pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(gone(pid), "the second run is still there");
+    }
+
+    /// Quit during the second run ends it at once: the host's cancellation reaches that run
+    /// too.
+    #[test]
+    fn quitting_during_the_second_run_ends_it_at_once() {
+        let Some((dir, shell)) = stand_in(
+            "zsh",
+            &login_run(),
+            "echo $$ > \"$here/pid\"\nexec sleep 600",
+        ) else {
+            return;
+        };
+        let cancel = open_sesame_core::process::Cancel::new();
+        let pid_file = dir.path().join("pid");
+        let quit = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                let ended = Instant::now() + Duration::from_secs(10);
+                let pid = loop {
+                    let read = std::fs::read_to_string(&pid_file).unwrap_or_default();
+                    if let Ok(pid) = read.trim().parse::<i32>() {
+                        break pid;
+                    }
+                    assert!(Instant::now() < ended, "the second run never started");
+                    std::thread::sleep(Duration::from_millis(10));
+                };
+                cancel.cancel();
+                (pid, Instant::now())
+            })
+        };
+        let (_home, launch) = odd_launch();
+        let env = ShellEnv::capture_cancellable(Some(&shell), launch, LIMIT, cancel);
+        let returned = Instant::now();
+        let (pid, cancelled) = quit.join().unwrap();
+        let after = returned.saturating_duration_since(cancelled);
+        assert!(after < Duration::from_secs(3), "{after:?}");
+        assert_eq!(env.get("config.key"), None);
+        assert!(gone(pid), "the second run is still there");
     }
 
     /// Startup files print banners, and may even print something that looks like a marker.

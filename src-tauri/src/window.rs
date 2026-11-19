@@ -118,10 +118,27 @@ fn selftest_script() -> String {
     if !cfg!(debug_assertions) {
         return String::new();
     }
-    std::env::var("OPEN_SESAME_SELFTEST")
-        .ok()
-        .and_then(|text| selftest_flag(&text))
-        .unwrap_or_default()
+    selftest_request(std::env::var_os("OPEN_SESAME_SELFTEST")).unwrap_or_else(|unusable| {
+        eprintln!("open-sesame: {unusable}");
+        String::new()
+    })
+}
+
+/// Said on standard error when `OPEN_SESAME_SELFTEST` is set but is not a JSON object.
+const SELFTEST_UNUSABLE: &str = "OPEN_SESAME_SELFTEST is set but is not a JSON object, so the \
+    self-test does not run. On macOS, a script in an app started from the desktop may not read \
+    files in Documents, Desktop or Downloads; it then gets nothing to set the variable to.";
+
+/// The script for the variable's value: nothing when it is not set, and an error when it is set
+/// to something that is not a JSON object, an empty value included.
+fn selftest_request(value: Option<std::ffi::OsString>) -> Result<String, &'static str> {
+    match value {
+        None => Ok(String::new()),
+        Some(value) => value
+            .to_str()
+            .and_then(selftest_flag)
+            .ok_or(SELFTEST_UNUSABLE),
+    }
 }
 
 /// The script for a self-test request, or `None` when the text is not a JSON object. The value
@@ -201,51 +218,79 @@ pub fn is_shown<R: Runtime>(window: &WebviewWindow<R>) -> bool {
     window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
 }
 
-/// Shows the window if it is hidden and hides it if it is shown: the tray menu, the shortcut
-/// and `open-sesame --toggle` all end here.
-pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
+/// One press of the shortcut or one `open-sesame --toggle`: shows the window if it is hidden,
+/// brings it to the front if it is open but behind, and hides it if it is in front
+/// (`summon::press` has the rule).
+/// Returns which of the three it was, or nothing when there is no window.
+pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    // The rail is never behind another window, so a press opens or closes its panel.
     if rail::active(app) {
-        return rail::toggle(app);
+        return Some(rail::toggle(app));
     }
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        let _ = if is_shown(&window) {
-            conceal(&window)
-        } else {
-            focus(&window)
-        };
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    let press = summon::press_on(app, &window);
+    let _ = act(&window, press);
+    Some(press)
+}
+
+/// The tray's menu item: the same three outcomes, decided by `summon::tray_item_on`.
+/// Where the window is the rail, the item takes the whole rail off the screen or puts the strip
+/// back.
+pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    if rail::active(app) {
+        return Some(rail::toggle_shown(app));
+    }
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    let press = summon::tray_item_on(app, &window);
+    let _ = act(&window, press);
+    Some(press)
+}
+
+/// Whether a press ends with the window out of sight. Only `Hide` does: a window that is open
+/// but behind is brought to the front, never hidden (issue #115).
+fn conceals(press: summon::Press) -> bool {
+    match press {
+        summon::Press::Hide => true,
+        summon::Press::Show | summon::Press::Forward => false,
     }
 }
 
-/// The tray menu's Show or Hide. The rail leaves the screen altogether or comes back as the
-/// strip; the ordinary window toggles as it does for the shortcut.
-pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) {
-    if rail::active(app) {
-        rail::toggle_shown(app);
+/// Whether the tray popover moves the window against the icon first. Only a hidden window is
+/// moved, and not one the person made full-screen or maximized (`kept_in_place`): a window
+/// that is open stays where the person put it.
+fn places(press: summon::Press, kept_in_place: bool) -> bool {
+    press == summon::Press::Show && !kept_in_place
+}
+
+fn act<R: Runtime>(window: &WebviewWindow<R>, press: summon::Press) -> tauri::Result<()> {
+    // Development evidence of which of the three a press was.
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: press {press:?}");
+    if conceals(press) {
+        conceal(window)
     } else {
-        toggle(app);
+        focus(window)
     }
 }
 
-/// The tray popover: hides the window if it is shown; otherwise moves it against the tray icon
-/// at `icon`, inside the work area of the screen the icon is on, and shows it. A window the
-/// person made full-screen or maximized is shown where it is.
-pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) {
+/// The tray popover: hides the window if it is in front and brings it to the front where it is
+/// if it is open but behind; a hidden window is moved against the tray icon at `icon`, inside
+/// the work area of the screen the icon is on, and shown. A window the person made full-screen
+/// or maximized is shown where it is.
+pub fn toggle_at<R: Runtime>(app: &AppHandle<R>, icon: tauri::Rect) -> Option<summon::Press> {
     // The rail has its own place; a click on the icon opens or closes its panel.
     if rail::active(app) {
-        return rail::toggle(app);
+        return Some(rail::toggle(app));
     }
-    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
-        return;
-    };
-    if is_shown(&window) {
-        let _ = conceal(&window);
-        return;
-    }
-    let placed = window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
-    if !placed {
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    let press = summon::press_on(app, &window);
+    let kept_in_place =
+        window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false);
+    if places(press, kept_in_place) {
         let _ = place_against(&window, icon);
     }
-    let _ = focus(&window);
+    let _ = act(&window, press);
+    Some(press)
 }
 
 fn place_against<R: Runtime>(window: &WebviewWindow<R>, icon: tauri::Rect) -> tauri::Result<()> {
@@ -366,6 +411,22 @@ mod tests {
         value.as_object().unwrap().clone()
     }
 
+    /// What each of the three presses does to the window: only `Hide` takes it out of sight,
+    /// and only a hidden window is moved against the tray icon.
+    #[test]
+    fn a_window_that_is_behind_is_never_hidden_or_moved() {
+        use summon::Press::{Forward, Hide, Show};
+        assert_eq!([Show, Forward, Hide].map(conceals), [false, false, true]);
+        assert_eq!(
+            [Show, Forward, Hide].map(|press| places(press, false)),
+            [true, false, false]
+        );
+        assert_eq!(
+            [Show, Forward, Hide].map(|press| places(press, true)),
+            [false; 3]
+        );
+    }
+
     #[test]
     fn only_bundled_pages_are_bundled() {
         let bundled = if cfg!(windows) {
@@ -462,6 +523,23 @@ mod tests {
         assert_eq!(selftest_flag("[1]"), None);
         let script = selftest_flag(r#"{"out":"/tmp/x y.json"}"#).unwrap();
         assert!(script.contains(r#"{value:Object.freeze({"out":"/tmp/x y.json"})}"#));
+    }
+
+    /// A request that is set but cannot be used is said, not dropped in silence: on macOS a
+    /// script in an app started from the desktop may not read a file in Documents, and then sets
+    /// the variable to nothing (#141).
+    #[test]
+    fn a_selftest_request_that_cannot_be_used_is_reported() {
+        assert_eq!(selftest_request(None), Ok(String::new()));
+        for unusable in ["", "not json", "[1]"] {
+            assert_eq!(
+                selftest_request(Some(unusable.into())),
+                Err(SELFTEST_UNUSABLE),
+                "{unusable:?}"
+            );
+        }
+        let script = selftest_request(Some(r#"{"out":"/tmp/x.json"}"#.into())).unwrap();
+        assert!(script.contains(r#"Object.freeze({"out":"/tmp/x.json"})"#));
     }
 
     #[test]
