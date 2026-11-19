@@ -55,7 +55,7 @@ export async function mount({surface, signal, bridge, host, navigate}) {
     taskCount.textContent = `${shown.tasks.open} open · ${shown.tasks.done} done`;
     redraw(taskList, () => taskList.replaceChildren(...(shown.tasks.entries.length ? shown.tasks.entries.map(task => h('li', {'data-item': task.id}, [
       h('label', {}, [h('input', {type: 'checkbox', 'data-complete': task.id, 'data-focus-key': `done:${task.id}`}), h('span', {text: title(task)})]),
-    ])) : [h('li', {class: 'muted', text: 'No open tasks.'})])));
+    ])) : [h('li', {class: 'muted', tabindex: -1, text: 'No open tasks.'})])), () => taskList.querySelector('li[tabindex]'));
   }
   function drawFocus() {
     const shown = focus.view();

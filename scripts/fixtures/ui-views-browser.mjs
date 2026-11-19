@@ -573,6 +573,81 @@ try {
         assert.equal(unreadable.state.settings['focus.session'].startedAt, null);
       });
       await page.close();
+
+      // ---- Keyboard focus, announcements and failed reads ----
+      const keys = createHost();
+      const keyboard = await install(browser, keys, name);
+      installs.push(keyboard);
+      for (const text of ['Sweep the hall', 'Sort the post', 'Oil the hinge']) keys.core.seed({kind: 'task', text});
+      for (const text of ['First note', 'Second note', 'Third note']) keys.core.seed({kind: 'note', text, title: text});
+      for (const project of ['Garden', 'Garage']) keys.core.seedProject(project);
+      page = await keyboard.open(START);
+      const focused = () => page.evaluate(() => {
+        const node = document.activeElement;
+        return node === document.body || !node ? 'BODY' : node.dataset.focusKey || node.dataset.itemEmpty !== undefined && 'empty' || node.id || node.textContent;
+      });
+      await step('keyboard focus moves to a neighbouring row when a row leaves a list', async () => {
+        // Today: Space on a task's checkbox completes it and the row leaves.
+        const today = view(page, 'today'), boxes = today.locator('[data-today-tasks] [data-complete]');
+        await boxes.first().waitFor();
+        const order = await boxes.evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        assert.equal(order.length, 3);
+        await boxes.first().focus();
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => document.querySelector('[data-today-task-count]')?.textContent === '2 open · 1 done');
+        assert.equal(await focused(), order[1], 'Today: the next task’s checkbox');
+        await boxes.last().focus();
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => document.querySelector('[data-today-task-count]')?.textContent === '1 open · 2 done');
+        assert.equal(await focused(), order[1], 'Today: the previous task’s checkbox when the last one leaves');
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => document.querySelector('[data-today-task-count]')?.textContent === '0 open · 3 done');
+        assert.equal(await focused(), 'No open tasks.', 'Today: the empty-state line when no task is left');
+        // Projects: Enter on Archive, and Delete then Confirm delete.
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects'), list = projects.locator('[data-item-list]');
+        await list.getByText('Third note', {exact: true}).waitFor();
+        const archives = await list.locator('[data-archive]').evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        assert.equal(archives.length, 3);
+        await list.locator(`[data-focus-key="${archives[0]}"]`).focus();
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-item-list] li').length === 2);
+        assert.equal(await focused(), archives[1], 'Projects: the next row’s Archive after Archive');
+        const deletes = await list.locator('[data-delete]').evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        await list.locator(`[data-focus-key="${deletes[1]}"]`).focus();
+        await page.keyboard.press('Enter');
+        await list.getByRole('button', {name: 'Confirm delete', exact: true}).waitFor();
+        assert.equal(await focused(), deletes[1], 'Projects: arming Delete keeps focus on the button');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-item-list] li').length === 1);
+        assert.equal(await focused(), deletes[0], 'Projects: the previous row’s Delete after the last row is deleted');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-item-list] li').length === 0);
+        assert.equal(await focused(), 'empty', 'Projects: the empty-state line after the only row is deleted');
+        // Projects: deleting a project.
+        const removes = await projects.locator('[data-project-list] [data-remove-project]').evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        assert.equal(removes.length, 2);
+        await projects.locator(`[data-focus-key="${removes[0]}"]`).focus();
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-project-list] li').length === 1);
+        assert.equal(await focused(), removes[1], 'Projects: the next project’s Delete after a project is deleted');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-project-list] li').length === 0);
+        assert.equal(await focused(), 'project-admin-title', 'Projects: the projects heading when no project is left');
+        // Close in the editor gives focus back to the item it showed.
+        const note = keys.core.seed({kind: 'note', text: 'Fourth note', title: 'Fourth note'});
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await list.getByRole('button', {name: 'Fourth note', exact: true}).click();
+        await projects.locator('[data-editor]').getByRole('button', {name: 'Close', exact: true}).focus();
+        await page.keyboard.press('Enter');
+        await projects.locator('[data-editor]').waitFor({state: 'hidden'});
+        assert.equal(await focused(), `open:${note.id}`, 'Projects: the item’s own button after Close');
+      });
+      await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {
         assert.deepEqual(installs.flatMap(entry => entry.blocked), []);
         assert.deepEqual(installs.flatMap(entry => entry.errors), []);

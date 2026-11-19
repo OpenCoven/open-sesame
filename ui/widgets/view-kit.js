@@ -40,12 +40,27 @@ export function whenShown(document, signal, refresh) {
   }
 }
 
-// Draws a list again and gives keyboard focus back to the same row's control.
-export function redraw(list, draw) {
+// Draws a list again and gives keyboard focus back to the same row's control. When that row has
+// left the list (completed, archived or deleted), focus goes to the same control on the next row,
+// else on the previous row, else to what `fallback` returns (the list's heading or empty-state
+// line, focusable with tabindex -1), so it never falls to the document.
+export function redraw(list, draw, fallback = () => null) {
   const active = list.ownerDocument.activeElement;
   const key = active && list.contains(active) ? active.dataset.focusKey : undefined;
+  const keyed = () => [...list.querySelectorAll('[data-focus-key]')];
+  let after = [], before = [];
+  if (key) {
+    // The same control on other rows: keys share the part before the first colon.
+    const kind = key.slice(0, key.indexOf(':') + 1);
+    const same = keyed().map(node => node.dataset.focusKey).filter(other => other === key || (kind && other.startsWith(kind)));
+    const at = same.indexOf(key);
+    after = same.slice(at + 1); before = same.slice(0, Math.max(at, 0)).reverse();
+  }
   draw();
-  if (key) [...list.querySelectorAll('[data-focus-key]')].find(node => node.dataset.focusKey === key)?.focus();
+  if (!key) return;
+  const now = new Map(keyed().map(node => [node.dataset.focusKey, node]));
+  const target = [key, ...after, ...before].map(other => now.get(other)).find(Boolean) ?? fallback();
+  target?.focus();
 }
 
 // A status line: a sentence, marked as a warning when something was not done.

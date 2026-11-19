@@ -38,9 +38,11 @@ export async function mount({surface, signal, bridge, host}) {
   const addForm = h('form', {class: 'capture', autocomplete: 'off', 'aria-label': 'New item', 'data-add': true}, [addText, addUrl, h('div', {class: 'view-row'}, [addKind, addSave]), added.line]);
   // List, editor and projects.
   const list = h('ul', {class: 'item-list', 'data-item-list': true});
-  const empty = h('p', {class: 'muted', 'data-item-empty': true, text: 'Nothing here yet.'});
+  // The empty-state line and the projects heading take focus when the last row leaves a list.
+  const empty = h('p', {class: 'muted', tabindex: -1, 'data-item-empty': true, text: 'Nothing here yet.'});
   const listed = statusLine(h, {'data-list-status': true});
   const editor = h('section', {class: 'card editor', hidden: true, 'aria-labelledby': 'editor-title', 'data-editor': true});
+  const projectHeading = h('h3', {id: 'project-admin-title', tabindex: -1, text: 'Projects'});
   const projectName = h('input', {type: 'text', name: 'name', maxlength: 40, 'aria-label': 'New project name', placeholder: 'New project', 'data-project-name': true});
   const projectForm = h('form', {class: 'view-row', autocomplete: 'off', 'data-project-add': true}, [projectName, h('button', {type: 'submit', text: 'Add project'})]);
   const projectList = h('ul', {class: 'project-list', 'data-project-list': true});
@@ -52,7 +54,7 @@ export async function mount({surface, signal, bridge, host}) {
     h('div', {class: 'view-row filters'}, [projectFilter, kindFilter, h('div', {role: 'group', 'aria-label': 'Show', class: 'view-row'}, [activeButton, archiveButton]), tally]),
     h('div', {class: 'view-row'}, [problem.line, retry]),
     addForm, listed.line, list, empty, editor,
-    h('section', {class: 'card', 'aria-labelledby': 'project-admin-title'}, [h('h3', {id: 'project-admin-title', text: 'Projects'}), projectForm, projectList, projectStatus.line]),
+    h('section', {class: 'card', 'aria-labelledby': 'project-admin-title'}, [projectHeading, projectForm, projectList, projectStatus.line]),
   ]));
 
   const store = itemStore({bridge, host, signal, draw: value => draw(value)});
@@ -66,9 +68,9 @@ export async function mount({surface, signal, bridge, host}) {
     const tallied = counts(rows);
     tally.textContent = `${tallied.active} of ${LIMITS.active} active · ${tallied.total} of ${LIMITS.items} items`;
     const shown = collection(rows, filter);
-    redraw(list, () => list.replaceChildren(...shown.map(row)));
     empty.hidden = shown.length > 0;
-    redraw(projectList, () => projectList.replaceChildren(...projects.map(projectRow)));
+    redraw(list, () => list.replaceChildren(...shown.map(row)), () => empty.hidden ? null : empty);
+    redraw(projectList, () => projectList.replaceChildren(...projects.map(projectRow)), () => projectHeading);
     if (selected) drawEditor();
   }
   function row(item) {
@@ -202,9 +204,12 @@ export async function mount({surface, signal, bridge, host}) {
   editor.addEventListener('submit', event => { event.preventDefault(); saveEdit(); });
   editor.addEventListener('click', event => {
     if (event.target.closest('[data-editor-close]')) {
-      // A changed draft is kept for this item; reopening it shows the draft again.
-      if (!drafts.get(selected)?.edited.size) drafts.delete(selected);
+      // A changed draft is kept for this item; reopening it shows the draft again. Focus goes
+      // back to the item's own button, not the hidden editor.
+      const id = selected;
+      if (!drafts.get(id)?.edited.size) drafts.delete(id);
       selected = null; editor.hidden = true; draw();
+      [...list.querySelectorAll('[data-open]')].find(node => node.dataset.open === id)?.focus();
     } else if (event.target.closest('[data-editor-discard]')) {
       const id = selected, item = rows.find(entry => entry.id === id);
       drafts.delete(id);
