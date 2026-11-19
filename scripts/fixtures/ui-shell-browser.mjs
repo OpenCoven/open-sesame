@@ -54,14 +54,19 @@ try {
       const states=JSON.parse(sessionStorage.getItem('fixture.states')||'{}');
       const calls=[];let noteReply,releaseOpen;
       const listeners=[],savedItems=[];
-      window.__fixture__={settings,states,calls,holdNotes:false,holdOpen:false,releaseNote:()=>noteReply?.(),releaseOpen:()=>releaseOpen?.(),emit:payload=>{for(const handler of listeners)handler({payload});}};
+      window.__fixture__={auth:{authenticated:false,busy:false,message:'',name:'',email:''},refuseSignIn:false,settings,states,calls,holdNotes:false,holdOpen:false,releaseNote:()=>noteReply?.(),releaseOpen:()=>releaseOpen?.(),emit:payload=>{for(const handler of listeners)handler({payload});}};
       window.__OPEN_SESAME_NATIVE__=true;
       window.__TAURI__={event:{listen:async(name,handler)=>{listeners.push(handler);return()=>{};}},core:{Channel:class{},invoke:async(command,{message})=>{
         const {requestId,method,params}=message;calls.push({method,params:{...params,channel:undefined}});
         let result;
         if(method==='system.info')result={available:true,platform:'darwin',authenticated:false};
         // The host settings of #71 and #72, in the shapes src-tauri/src/summon.rs and auth.rs answer.
-        else if(method==='auth.status')result={authenticated:false,busy:false,message:'',name:'',email:''};
+        // auth.signIn only changes this synthetic status (or refuses); nothing opens a browser or a network.
+        else if(method==='auth.status')result={...window.__fixture__.auth};
+        else if(method==='auth.signIn') {
+          if(window.__fixture__.refuseSignIn)return {requestId,error:'Sign-in is not set up in this build.'};
+          window.__fixture__.auth={...window.__fixture__.auth,busy:true,message:'Finish signing in in your browser.'};result=true;
+        }
         else if(method==='summon.status')result={session:'macos',shortcut:'Control+Alt+Shift+Space',defaultShortcut:'Control+Alt+Shift+Space',registered:true,message:'',toggleCommand:'open-sesame --toggle',hideOnBlur:false};
         else if(method==='settings.all')result={settings};
         else if(method==='widgets.list')result={widgets:states};
@@ -124,6 +129,32 @@ try {
         await page.keyboard.press('Escape');
         assert(await page.locator('#widget-settings').isHidden());
         assert(await page.locator('[data-widget-view="today"]').isVisible());
+      });
+      await step('the account control keeps the keyboard through sign-in and announces a refusal',async()=>{
+        await settingsOpen();
+        const account=page.locator('[data-account]'),detail=account.locator('[data-account-detail]');
+        const focused=()=>page.evaluate(()=>{const e=document.activeElement;return e===document.body?'BODY':e?.textContent.trim()||e?.tagName;});
+        // A refusal: the sentence is an alert and the keyboard stays on Sign in (#197, #198).
+        await page.evaluate(()=>{window.__fixture__.refuseSignIn=true;});
+        await account.getByRole('button',{name:'Sign in',exact:true}).focus();
+        await page.keyboard.press('Enter');
+        await detail.getByText('Sign-in is not set up in this build.').waitFor();
+        assert.equal(await detail.getAttribute('role'),'alert','a refusal is announced as an alert');
+        assert.equal(await focused(),'Sign in','after a refusal the keyboard is still on Sign in');
+        // Sign in: the host's busy status hides Sign in, and Cancel sign-in takes the keyboard.
+        await page.evaluate(()=>{window.__fixture__.refuseSignIn=false;});
+        await page.keyboard.press('Enter');
+        await account.getByText('Signing in',{exact:true}).waitFor();
+        assert.equal(await detail.getAttribute('role'),'status','an ordinary sentence is a polite status');
+        assert.equal(await focused(),'Cancel sign-in','while signing in the keyboard is on Cancel sign-in');
+        // The browser comes back: Sign out takes the keyboard.
+        await page.evaluate(()=>{const status={authenticated:true,busy:false,message:'',name:'',email:'person@example.com'};window.__fixture__.auth=status;window.__fixture__.emit({event:'auth.changed',status});});
+        await account.getByText('Signed in as person@example.com').waitFor();
+        assert.equal(await focused(),'Sign out','signed in, the keyboard is on Sign out');
+        await page.evaluate(()=>{const status={authenticated:false,busy:false,message:'',name:'',email:''};window.__fixture__.auth=status;window.__fixture__.emit({event:'auth.changed',status});});
+        await account.getByText('Not signed in').waitFor();
+        await settingsClosed();
+        assert(await page.locator('#widget-settings').isHidden());
       });
       await step('off widget command is discoverable without import',async()=>{
         await page.getByRole('button',{name:'Commands',exact:true}).click();
