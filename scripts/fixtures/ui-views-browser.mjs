@@ -44,9 +44,12 @@ const KIND_CHANGED = kind => `That item was changed to a ${kind} after you opene
 // states as the core keeps them, and items and projects through the stand-in.
 function createHost({settings = {}} = {}) {
   const core = createStorageCore();
-  const state = {settings: structuredClone(settings), widgets: {}}, calls = [], faults = [];
+  const state = {settings: structuredClone(settings), widgets: {}}, calls = [], faults = [], refused = new Map();
   return {
     core, state, calls,
+    // A refusal fails every request for `method` until it is lifted.
+    refuse(method, value) { refused.set(method, value); },
+    lift(method) { refused.delete(method); },
     // A fault is taken by the first request for `method` whose params hold every entry of
     // `match`, so a step can refuse one write while the shell's own writes of the same method
     // go through.
@@ -54,6 +57,7 @@ function createHost({settings = {}} = {}) {
     writes: () => calls.filter(([method]) => /\.(set|save|delete)$/.test(method)),
     async request(method, params = {}) {
       calls.push([method, structuredClone(params)]);
+      if (refused.has(method)) return {ok: false, error: refused.get(method)};
       const index = faults.findIndex(fault => fault.method === method
         && Object.entries(fault.match).every(([name, expected]) => params[name] === expected));
       if (index >= 0) return {ok: false, error: faults.splice(index, 1)[0].value};
@@ -727,6 +731,48 @@ try {
         await page.keyboard.press('Escape');
         assert.equal(await removeProject.textContent(), 'Delete', 'Escape disarms a project’s Delete');
         assert(keys.core.projects.has(shed.id), 'the project is kept');
+      });
+      await page.close();
+
+      // ---- A read that fails is not shown as an empty store ----
+      const failing = createHost();
+      const broken = await install(browser, failing, name);
+      installs.push(broken);
+      failing.core.seed({kind: 'note', text: 'Kept note', title: 'Kept note'});
+      failing.core.seed({kind: 'task', text: 'Kept task'});
+      failing.refuse('items.list', 'Could not read your saved data. Try again.');
+      page = await broken.open(START);
+      await step('a failed read hides counts, lists and empty states, with its error under the capture field', async () => {
+        const today = view(page, 'today'), problem = today.locator('[data-today-problem]');
+        await problem.getByText('Could not read your saved data. Try again.').waitFor();
+        await page.setViewportSize({width: 400, height: 760});
+        await page.screenshot({path: path.join(output, `${name}-today-read-failed.png`), fullPage: true});
+        await page.setViewportSize({width: 1090, height: 760});
+        assert(await today.locator('[data-today-retry]').isVisible(), 'Today offers Try again');
+        assert.equal(await today.locator('[data-today-note]').isVisible(), false, 'Today: no empty Latest note card');
+        assert.equal(await today.locator('[data-today-tasks]').isVisible(), false, 'Today: no Tasks card');
+        assert(await today.locator('[data-today-focus]').isVisible(), 'Today: the focus card, read separately, stays');
+        assert.equal(await today.locator('[data-capture] + .view-row [data-today-problem]').count(), 1, 'Today: the error sits just after the capture form, as in Projects');
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects');
+        await projects.locator('[data-projects-problem]').getByText('Could not read your saved data. Try again.').waitFor();
+        await page.setViewportSize({width: 400, height: 760});
+        await page.screenshot({path: path.join(output, `${name}-projects-read-failed.png`), fullPage: true});
+        await page.setViewportSize({width: 1090, height: 760});
+        assert(await projects.locator('[data-projects-retry]').isVisible(), 'Projects offers Try again');
+        assert.equal(await projects.locator('[data-projects-counts]').isVisible(), false, 'Projects: no counts');
+        assert.equal(await projects.locator('[data-item-empty]').isVisible(), false, 'Projects: no “Nothing here yet.”');
+        assert.equal(await projects.locator('[data-item-list]').isVisible(), false, 'Projects: no list');
+        // Try again after the read works shows them all.
+        failing.lift('items.list');
+        await projects.locator('[data-projects-retry]').click();
+        await projects.locator('[data-item-list]').getByText('Kept note', {exact: true}).waitFor();
+        assert.equal(await projects.locator('[data-projects-counts]').textContent(), '2 of 30 active · 2 of 300 items');
+        assert.equal(await projects.locator('[data-projects-retry]').isVisible(), false);
+        await page.locator('[data-view="today"]').click();
+        await today.locator('[data-today-note-title]').getByText('Kept note', {exact: true}).waitFor();
+        assert(await today.locator('[data-today-tasks]').getByText('Kept task', {exact: true}).isVisible());
+        assert.equal(await today.locator('[data-today-retry]').isVisible(), false);
       });
       await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {

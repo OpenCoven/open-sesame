@@ -36,7 +36,7 @@ export async function mount({surface, signal, bridge, host, navigate}) {
   const problem = statusLine(h, {'data-today-problem': true});
   const retry = h('button', {type: 'button', hidden: true, 'data-today-retry': true, text: 'Try again'});
   surface.append(h('section', {class: 'view today'}, [
-    h('header', {}, [date, h('h2', {text: 'Today'})]), form, h('div', {class: 'today-cards'}, [note, focusCard]), tasks, h('div', {class: 'view-row'}, [problem.line, retry]),
+    h('header', {}, [date, h('h2', {text: 'Today'})]), form, h('div', {class: 'view-row'}, [problem.line, retry]), h('div', {class: 'today-cards'}, [note, focusCard]), tasks,
   ]));
 
   const items = itemStore({bridge, host, signal, draw: value => drawItems(value)});
@@ -72,6 +72,8 @@ export async function mount({surface, signal, bridge, host, navigate}) {
     if (!alive()) return;
     problem.say(read.ok ? '' : read.error, !read.ok);
     retry.hidden = read.ok;
+    // A failed read is not an empty store: the note and task cards wait for a read that works.
+    note.hidden = !read.ok; tasks.hidden = !read.ok;
     drawFocus();
   }
 

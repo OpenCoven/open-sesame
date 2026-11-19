@@ -21,7 +21,7 @@ export async function mount({surface, signal, bridge, host}) {
   const filter = {projectId: 'all', kind: 'all', archived: false};
   const drafts = new Map(); // item ID → {opened, kind, fields, edited}: an edit not yet saved, the kind it was opened as, and the names of the fields the person changed
   const renames = new Map(); // project ID → a new name not yet saved
-  let selected = null, confirming = null, rows = [], projects = [], addNumber = 0, projectNumber = 0;
+  let selected = null, confirming = null, rows = [], projects = [], addNumber = 0, projectNumber = 0, unread = false;
 
   // Filters and counts.
   const projectFilter = h('select', {'aria-label': 'Project', 'data-filter-project': true});
@@ -68,7 +68,9 @@ export async function mount({surface, signal, bridge, host}) {
     const tallied = counts(rows);
     tally.textContent = `${tallied.active} of ${LIMITS.active} active · ${tallied.total} of ${LIMITS.items} items`;
     const shown = collection(rows, filter);
-    empty.hidden = shown.length > 0;
+    // A failed read is not an empty store: no counts, list or empty-state line until a read works.
+    tally.hidden = unread; list.hidden = unread;
+    empty.hidden = unread || shown.length > 0;
     redraw(list, () => list.replaceChildren(...shown.map(row)), () => empty.hidden ? null : empty);
     redraw(projectList, () => projectList.replaceChildren(...projects.map(projectRow)), () => projectHeading);
     if (selected) drawEditor();
@@ -361,6 +363,7 @@ export async function mount({surface, signal, bridge, host}) {
     const read = await store.load();
     if (!alive()) return;
     disarm();
+    unread = !read.ok;
     problem.say(read.ok ? '' : read.error, !read.ok);
     retry.hidden = read.ok;
     draw();
