@@ -22,7 +22,7 @@
   --line: rgb(255 255 255 / 0.08);
   --line-strong: rgb(255 255 255 / 0.16);
   /* A field's edge is its boundary as a control, so it reaches 3:1 against the panel. */
-  --line-control: rgb(255 255 255 / 0.35);
+  --line-control: rgb(255 255 255 / 0.4);
 
   --ink: #eef0f4;
   --muted: #a3a9b6;
@@ -94,7 +94,7 @@
     --surface-sheet: rgb(247 248 250 / 0.96);
     --line: rgb(16 20 30 / 0.1);
     --line-strong: rgb(16 20 30 / 0.2);
-    --line-control: rgb(16 20 30 / 0.46);
+    --line-control: rgb(16 20 30 / 0.5);
     --ink: #14171d;
     --muted: #565d6b;
     --faint: #838a98;

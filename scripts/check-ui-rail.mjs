@@ -259,24 +259,25 @@ const fieldBackground = fieldRule.match(/background: (var\(--[a-z0-9-]+\));/)[1]
 const placeholder = tokens.match(/input::placeholder, textarea::placeholder \{ color: (var\(--[a-z0-9-]+\)); \}/)[1];
 const contrast = {}, shortfalls = [];
 // Every shortfall is listed before the check fails, so one run names them all.
-const require = (pass, message) => { if (!pass) shortfalls.push(message); };
+const note = (pass, message) => { if (!pass) shortfalls.push(message); };
 for (const [name, theme] of Object.entries(themes)) {
   const surface = colour(theme, '--surface');
   const wash = over(colour(theme, '--warn-wash'), surface);
   contrast[name] = {
     notice: ratio(over(colour(theme, '--warn'), wash), wash),
-    fieldEdge: Math.min(...['--surface', '--raised'].map(back => ratio(over(colour(theme, fieldBorder), colour(theme, back)), colour(theme, back)))),
+    // The rail's material surface (--surface-tint) lets the desktop show through, so it is measured over a black, a mid-grey and a white backdrop.
+    fieldEdge: Math.min(...[...['--surface', '--raised'].map(back => colour(theme, back)), ...[[0, 0, 0, 1], [128, 128, 128, 1], [255, 255, 255, 1]].map(backdrop => over(colour(theme, '--surface-tint'), backdrop))].map(back => ratio(over(colour(theme, fieldBorder), back), back))),
     placeholder: ratio(over(colour(theme, placeholder), colour(theme, fieldBackground)), colour(theme, fieldBackground)),
   };
-  require(contrast[name].notice >= 4.5, `${name}: the notice's text reaches 4.5:1 on its wash (${contrast[name].notice.toFixed(2)})`);
-  require(contrast[name].fieldEdge >= 3, `${name}: a field's border reaches 3:1 against the panel (${contrast[name].fieldEdge.toFixed(2)})`);
-  require(contrast[name].placeholder >= 4.5, `${name}: placeholder text reaches 4.5:1 in its field (${contrast[name].placeholder.toFixed(2)})`);
+  note(contrast[name].notice >= 4.5, `${name}: the notice's text reaches 4.5:1 on its wash (${contrast[name].notice.toFixed(2)})`);
+  note(contrast[name].fieldEdge >= 3, `${name}: a field's border reaches 3:1 against the panel and the material surface (${contrast[name].fieldEdge.toFixed(2)})`);
+  note(contrast[name].placeholder >= 4.5, `${name}: placeholder text reaches 4.5:1 in its field (${contrast[name].placeholder.toFixed(2)})`);
 }
 // Pointing at a field makes its edge stronger, never weaker.
 const hoverBorder = tokens.match(/input:hover, select:hover, textarea:hover \{ border-color: (var\(--[a-z0-9-]+\)); \}/)[1];
 for (const [name, theme] of Object.entries(themes)) {
   const surface = colour(theme, '--surface');
-  require(ratio(over(colour(theme, hoverBorder), surface), surface) > ratio(over(colour(theme, fieldBorder), surface), surface), `${name}: a hovered field's edge is stronger than at rest`);
+  note(ratio(over(colour(theme, hoverBorder), surface), surface) > ratio(over(colour(theme, fieldBorder), surface), surface), `${name}: a hovered field's edge is stronger than at rest`);
 }
 assert.deepEqual(shortfalls, [], 'Every measured pair reaches its contrast');
 console.log(`Contrast: notice, field edge and placeholder pass in both themes (${Object.entries(contrast).map(([name, value]) => `${name} ${Object.entries(value).map(([part, n]) => `${part} ${n.toFixed(2)}`).join(', ')}`).join('; ')}).`);
