@@ -647,6 +647,27 @@ try {
         await projects.locator('[data-editor]').waitFor({state: 'hidden'});
         assert.equal(await focused(), `open:${note.id}`, 'Projects: the item’s own button after Close');
       });
+      await step('keyboard focus stays on the timer controls after Start, Pause, Resume and Reset', async () => {
+        await page.locator('[data-view="focus"]').click();
+        const focus = view(page, 'focus'), state = focus.locator('[data-focus-state]');
+        const control = () => page.evaluate(() => document.activeElement?.dataset.focusAction ?? document.activeElement?.tagName);
+        await focus.getByRole('button', {name: 'Start', exact: true}).focus();
+        await page.keyboard.press('Enter');
+        await state.getByText('Running', {exact: true}).waitFor();
+        assert.equal(await control(), 'pause', 'Start hands focus to Pause');
+        await page.keyboard.press('Enter');
+        await state.getByText('Paused', {exact: true}).waitFor();
+        assert.equal(await control(), 'resume', 'Pause hands focus to Resume');
+        await page.keyboard.press('Enter');
+        await state.getByText('Running', {exact: true}).waitFor();
+        assert.equal(await control(), 'pause', 'Resume hands focus to Pause');
+        await page.clock.runFor(26 * MINUTE);
+        await state.getByText('Session complete', {exact: true}).waitFor();
+        assert.equal(await control(), 'reset', 'a finished session hands focus from Pause to Reset');
+        await page.keyboard.press('Enter');
+        await state.getByText('Ready to start', {exact: true}).waitFor();
+        assert.equal(await control(), 'start', 'Reset hands focus to Start');
+      });
       await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {
         assert.deepEqual(installs.flatMap(entry => entry.blocked), []);
