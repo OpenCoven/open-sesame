@@ -31,6 +31,7 @@ const wideToggle = shell.querySelector('[data-wide-toggle]');
 const attentionStatus = shell.querySelector('[data-attention-status]');
 const railToggle = shell.querySelector('[data-rail-toggle]');
 const empty = shell.querySelector('[data-empty]');
+const inertSupported = 'inert' in HTMLElement.prototype;
 // How the window is drawn (src-tauri/src/rail.rs): 'material' where the system's material shows
 // through the page, 'page' where the window is see-through and the page draws its own rounded
 // corners, 'solid' otherwise.
@@ -326,6 +327,13 @@ document.addEventListener('keydown',event => {
   else if (event.key==='Escape'&&!settings.hidden) {showSettings(false);widgetToggle.focus();}
   // Escape closes the panel when nothing else took it. A terminal needs the key for itself.
   else if (event.key==='Escape'&&!event.defaultPrevented&&!event.target?.closest?.('.xterm')) run(rail.collapse());
+  // An engine without `inert` (older WebKitGTK) keeps the palette's own Tab wrap instead.
+  if (event.key==='Tab'&&!palette.hidden&&!inertSupported) {
+    const controls=[...palette.querySelectorAll('input,button')].filter(node=>!node.disabled);
+    const first=controls[0],last=controls.at(-1);
+    if (event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
+    else if (!event.shiftKey&&document.activeElement===last) {event.preventDefault();first.focus();}
+  }
 });
 renderCommands();
 
