@@ -680,6 +680,17 @@ try {
         await focus.getByRole('button', {name: 'Reset', exact: true}).click();
         await message.getByText('Timer reset.', {exact: true}).waitFor();
       });
+      await step('a Projects row says Unsaved edit only after a field has changed', async () => {
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects'), editor = projects.locator('[data-editor]');
+        const row = projects.locator('[data-item-list] li', {hasText: 'Fourth note'});
+        await row.getByRole('button', {name: 'Fourth note', exact: true}).click();
+        await editor.waitFor({state: 'visible'});
+        assert.equal(await row.locator('.item-main > p.muted').first().textContent(), 'Note · Inbox', 'opening an item changes nothing');
+        await editor.locator('[data-edit-field="title"]').fill('Fourth note, edited');
+        await editor.getByRole('button', {name: 'Close', exact: true}).click();
+        assert.equal(await row.locator('.item-main > p.muted').first().textContent(), 'Note · Inbox · Unsaved edit', 'a changed field is kept as an unsaved edit');
+      });
       await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {
         assert.deepEqual(installs.flatMap(entry => entry.blocked), []);

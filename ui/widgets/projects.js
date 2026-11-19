@@ -80,7 +80,7 @@ export async function mount({surface, signal, bridge, host}) {
       item.kind === 'task' ? h('input', {type: 'checkbox', checked: archived, 'aria-label': `Done: ${name}`, 'data-complete': item.id, 'data-focus-key': `done:${item.id}`}) : null,
       h('div', {class: 'item-main'}, [
         h('button', {type: 'button', class: 'item-open', 'data-open': item.id, 'data-focus-key': `open:${item.id}`, 'aria-current': item.id === selected ? 'true' : null, text: name}),
-        h('p', {class: 'muted', text: `${KINDS[item.kind] ?? item.kind} · ${nameOf(item.projectId) || 'Inbox'}${drafts.has(item.id) ? ' · Unsaved edit' : ''}`}),
+        h('p', {class: 'muted', text: `${KINDS[item.kind] ?? item.kind} · ${nameOf(item.projectId) || 'Inbox'}${drafts.get(item.id)?.edited.size ? ' · Unsaved edit' : ''}`}),
         detail && detail !== name ? h('p', {class: 'muted item-detail', text: detail}) : null,
       ]),
       h('div', {class: 'view-row'}, [
