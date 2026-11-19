@@ -232,7 +232,8 @@ function loadStyle(href, signal) {
 
 for (const widget of widgets) {
   const button = element('button');
-  button.type = 'button';button.className = 'rail-button';button.dataset.view = widget.id;button.disabled = true;
+  // tabIndex: WebKit leaves a button out of Tab unless it asks to be in it.
+  button.type = 'button';button.className = 'rail-button';button.tabIndex = 0;button.dataset.view = widget.id;button.disabled = true;
   button.title = widget.name;
   button.append(icon(widget.id),hiddenLabel(widget.name));
   // A click on the strip opens the panel to stay on that view, with no sheet over it.

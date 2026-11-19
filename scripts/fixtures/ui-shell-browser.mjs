@@ -29,6 +29,19 @@ const origin=`http://127.0.0.1:${server.address().port}`;
 const browsers=process.env.UI_SHELL_ENGINES?.split(',')||['chromium','webkit'];
 const report={kind:'browser with synthetic host; no native/device/provider acceptance',platform:process.platform,results:[]};
 const definition=JSON.parse(await readFile(path.join(root,'dist/tools/meeting-notes/tool.json'),'utf8'));
+// A host that reports the rail, as src-tauri/src/rail.rs does, and resizes nothing: the
+// viewport stands in for the window the host would resize.
+const railHost=()=>{
+  const host={presentation:'rail',shown:true,expanded:false,held:false,wide:false,edge:'right',hover:true};
+  const invoke=window.__TAURI__.core.invoke;
+  window.__TAURI__.core.invoke=async(command,payload)=>{
+    const {requestId,method,params}=payload.message;
+    if(method==='rail.status')return {requestId,result:{...host}};
+    if(method==='rail.set'){Object.assign(host,params);if('expanded' in params)host.held=params.expanded;window.__fixture__.calls.push({method,params});return {requestId,result:{...host}};}
+    return invoke(command,payload);
+  };
+  window.__rail__={host,peek:()=>{host.expanded=true;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});},close:()=>{host.expanded=false;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});}};
+};
 // The first view at startup is Today (#77); holding or failing its module holds or fails the first view.
 const FIRST_VIEW='**/ui/widgets/today.js';
 try {
@@ -298,17 +311,7 @@ try {
         // viewport stands in for the window the host would resize.
         const railed=await context.newPage();
         try {
-          await railed.addInitScript(()=>{
-            const host={presentation:'rail',shown:true,expanded:false,held:false,wide:false,edge:'right',hover:true};
-            const invoke=window.__TAURI__.core.invoke;
-            window.__TAURI__.core.invoke=async(command,payload)=>{
-              const {requestId,method,params}=payload.message;
-              if(method==='rail.status')return {requestId,result:{...host}};
-              if(method==='rail.set'){Object.assign(host,params);if('expanded' in params)host.held=params.expanded;window.__fixture__.calls.push({method,params});return {requestId,result:{...host}};}
-              return invoke(command,payload);
-            };
-            window.__rail__={host,peek:()=>{host.expanded=true;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});}};
-          });
+          await railed.addInitScript(railHost);
           await railed.setViewportSize({width:56,height:376});
           await railed.goto(origin+'/ui/index.html');
           await railed.locator('[data-ready="true"]').waitFor();
@@ -374,6 +377,59 @@ try {
           assert.equal(await railed.locator('[data-view="focus"]').getAttribute('title'),'Focus: Session complete');
           assert.equal(await railed.locator('[data-rail-toggle]').getAttribute('data-mark'),'attention');
           await railed.screenshot({path:path.join(output,`${name}-rail-attention.png`)});
+        }finally{await railed.close();}
+      });
+      await step('the rail: every strip and bar button in Tab, names that say what they do, the keyboard kept when the panel closes',async()=>{
+        // With no rail the mark is the brand, not a disabled control (#187).
+        const brand=page.locator('[data-rail-toggle]');
+        assert.equal(await brand.getAttribute('aria-hidden'),'true');
+        assert.equal(await brand.getAttribute('aria-expanded'),null);
+        assert.equal(await brand.getAttribute('aria-controls'),null);
+        assert.equal(await page.getByRole('button',{name:'Open Sesame',exact:true}).count(),0);
+        const railed=await context.newPage();
+        try {
+          await railed.addInitScript(railHost);
+          await railed.setViewportSize({width:56,height:376});
+          await railed.goto(origin+'/ui/index.html');
+          await railed.locator('[data-ready="true"]').waitFor();
+          const mark=railed.locator('[data-rail-toggle]');
+          const where=()=>railed.evaluate(()=>{const e=document.activeElement;if(!e||e===document.body)return 'BODY';return e.matches('[data-rail-toggle]')?'mark':e.matches('[data-collapse]')?'collapse':e.dataset.view||e.querySelector('.label-hidden')?.textContent||e.tagName;});
+          const tabs=async count=>{await railed.evaluate(()=>document.activeElement?.blur());const seen=[];for(let i=0;i<count;i++){await railed.keyboard.press('Tab');seen.push(await where());}return seen;};
+          // Every button on the strip is reached with Tab, in WebKit too (#183).
+          const strip=await tabs(9);
+          for(const id of ['mark','today','projects','focus','shells','agents','Commands','Settings'])assert(strip.includes(id),`Tab reaches ${id} on the strip; reached ${strip.join(' ')}`);
+          // A peek: the mark keeps the open panel open; it does not offer to open it (#186).
+          await railed.setViewportSize({width:400,height:900});
+          await railed.evaluate(()=>window.__rail__.peek());
+          await railed.locator('[data-panel]').waitFor({state:'visible'});
+          assert.equal(await mark.getAttribute('aria-expanded'),'true');
+          assert.equal(await railed.getByRole('button',{name:'Keep the panel open',exact:true}).count(),1);
+          // Open to stay: the mark and the bar's control have a name each (#186).
+          await railed.locator('[data-view="today"]').click();
+          await railed.waitForFunction(()=>window.__rail__.host.held===true);
+          assert.equal(await railed.getByRole('button',{name:'Close the panel',exact:true}).count(),1);
+          assert.equal(await railed.getByRole('button',{name:'Close panel',exact:true}).count(),1);
+          // The bar's control is reached with Tab, and closing the panel with it leaves the
+          // keyboard on the mark, not on the page (#183, #182).
+          const held=await tabs(14);
+          assert(held.includes('collapse'),`Tab reaches the bar's close control; reached ${held.join(' ')}`);
+          await railed.locator('[data-collapse]').focus();
+          await railed.keyboard.press('Enter');
+          await railed.waitForFunction(()=>window.__rail__.host.expanded===false);
+          assert.equal(await where(),'mark','closing from the bar puts the keyboard on the mark');
+          // Escape from a control in a view.
+          await railed.locator('[data-view="projects"]').click();
+          await railed.locator('[data-widget-view="projects"]').waitFor({state:'visible'});
+          await railed.locator('[data-widget-view="projects"]').locator('button,input,textarea,select').first().focus();
+          await railed.keyboard.press('Escape');
+          await railed.waitForFunction(()=>window.__rail__.host.expanded===false);
+          assert.equal(await where(),'mark','Escape from a view puts the keyboard on the mark');
+          // The host closes the panel while the keyboard is on a setting.
+          await railed.getByRole('button',{name:'Settings',exact:true}).click();
+          await railed.locator('[data-rail-edge]').focus();
+          await railed.evaluate(()=>window.__rail__.close());
+          await railed.waitForFunction(()=>document.querySelector('.shell').dataset.rail==='collapsed');
+          assert.equal(await where(),'mark','a close from the host puts the keyboard on the mark');
         }finally{await railed.close();}
       });
       await step('initial widget failure does not strand shell restoration',async()=>{
