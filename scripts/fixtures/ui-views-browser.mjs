@@ -95,7 +95,7 @@ async function install(browser, host, name) {
       return reply.ok ? {requestId, result: reply.result} : {requestId, error: reply.error};
     }}};
   });
-  if (name === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'], {origin});
+  // No clipboard permission: the palette copies through the host's clipboard (issue #177).
   return {
     context, blocked, errors,
     async open(time) {
@@ -223,21 +223,88 @@ try {
         await view(page, 'projects').locator('[data-item-list]').getByText(done[0].text, {exact: true}).waitFor();
         await view(page, 'projects').locator('[data-show-archived="false"]').click();
       });
+      await step('the view under Commands and Settings is out of reach', async () => {
+        await page.locator('[data-view="today"]').click();
+        await view(page, 'today').locator('[data-capture-text]').waitFor();
+        const host = page.locator('[data-view-host]');
+        const outside = async label => {
+          for (let press = 0; press < 6; press++) {
+            await page.keyboard.press('Tab');
+            assert.equal(await host.evaluate(node => node.contains(document.activeElement)), false, `${label}: Tab ${press + 1} stays out of the covered view`);
+          }
+        };
+        // Issue #174: Settings, from its last switch, and Commands, from its search field.
+        await page.getByRole('button', {name: 'Settings', exact: true}).click();
+        await page.locator('[data-widget-options] input').last().focus();
+        await outside('Settings');
+        assert.equal(await host.evaluate(node => node.inert), true, 'Settings makes the view inert');
+        await page.keyboard.press('Escape');
+        assert.equal(await host.evaluate(node => node.inert), false, 'the view is back once Settings closes');
+        await page.keyboard.press('Control+k');
+        assert.equal(await page.locator('[data-command-query]').evaluate(node => node === document.activeElement), true);
+        await outside('Commands');
+        assert.equal(await host.evaluate(node => node.inert), true, 'Commands makes the view inert');
+        await page.keyboard.press('Escape');
+        assert.equal(await page.getByRole('button', {name: 'Commands', exact: true}).evaluate(node => node === document.activeElement), true, 'Escape returns focus to Commands');
+      });
+      await step('a command moves focus to the view it opened', async () => {
+        // Issue #175.
+        await palette(page, 'open projects');
+        await page.locator('[data-command-query]').press('Enter');
+        await view(page, 'projects').waitFor({state: 'visible'});
+        const focused = () => page.evaluate(() => document.querySelector('[data-widget-view="projects"]').contains(document.activeElement) ? 'projects' : document.activeElement?.title || document.activeElement?.tagName);
+        await page.waitForFunction(() => document.querySelector('[data-widget-view="projects"]').contains(document.activeElement), null, {timeout: 5000}).catch(() => {});
+        assert.equal(await focused(), 'projects', 'focus is in the view the command opened');
+        // A click on the strip leaves focus where the click put it, never on Commands.
+        await page.getByRole('button', {name: 'Commands', exact: true}).click();
+        await page.locator('[data-view="today"]').click();
+        await view(page, 'today').waitFor({state: 'visible'});
+        assert.equal(await page.getByRole('button', {name: 'Commands', exact: true}).evaluate(node => node === document.activeElement), false, 'a strip click does not send focus to Commands');
+        if (name === 'chromium') assert.equal(await page.locator('[data-view="today"]').evaluate(node => node === document.activeElement), true, 'the clicked strip button keeps focus');
+        // Close commands returns focus to Commands, as Escape does.
+        await page.getByRole('button', {name: 'Commands', exact: true}).click();
+        await page.getByRole('button', {name: 'Close commands', exact: true}).click();
+        assert.equal(await page.getByRole('button', {name: 'Commands', exact: true}).evaluate(node => node === document.activeElement), true, 'Close commands returns focus to Commands');
+      });
       await step('calculator and world-clock answers show in the palette and save nothing', async () => {
         const before = host.writes().length;
+        // The results are announced through a status line (issue #176).
+        const said = page.locator('#command-palette [role="status"]');
+        assert.equal(await said.count(), 1, 'the palette has one status line');
         await palette(page, '2+2');
         const answer = page.locator('[data-command-answer]');
         await answer.getByText('4', {exact: true}).waitFor();
         assert.match(await answer.textContent(), /2 \+ 2/);
+        assert.equal(await said.textContent(), 'Answer: 4');
         assert.equal(await page.locator('[data-command]').count(), 0, 'no command or capture is offered for a sum');
+        // The answer is copied through the host's clipboard, as the context menu copies (issue #177).
+        const copyDone = () => page.waitForFunction(() => /Copied|Could not copy/.test(document.querySelector('[data-command-answer]')?.textContent || ''));
         await page.locator('[data-command-query]').press('Enter');
-        await page.waitForFunction(() => /Copied|Could not copy/.test(document.querySelector('[data-command-answer]')?.textContent || ''));
-        if (name === 'chromium') assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '4');
+        await copyDone();
+        assert.equal(await answer.textContent(), '4 2 + 2 · Copied');
+        assert.deepEqual(host.calls.filter(([method]) => method === 'terminal.clipboard.write').at(-1), ['terminal.clipboard.write', {text: '4'}]);
+        assert.equal(await said.textContent(), 'Copied 4.');
+        // A clipboard that refuses says why and how to try again, and says it aloud.
+        host.fault('terminal.clipboard.write', 'The clipboard is unavailable.');
+        await palette(page, '6*7');
+        await page.locator('[data-command-query]').press('Enter');
+        await copyDone();
+        assert.equal(await answer.textContent(), '42 6 × 7 · Could not copy: The clipboard is unavailable. Choose it to try again.');
+        assert.equal(await said.textContent(), 'Could not copy: The clipboard is unavailable. Choose it to try again.');
+        await answer.click();
+        await answer.getByText('6 × 7 · Copied', {exact: false}).waitFor();
+        assert.equal(await said.textContent(), 'Copied 42.');
+        assert.deepEqual(host.calls.filter(([method]) => method === 'terminal.clipboard.write').at(-1), ['terminal.clipboard.write', {text: '42'}]);
+        await palette(page, '/zzzz');
+        assert.equal(await said.textContent(), 'No commands found.');
+        await palette(page, 'open projects');
+        assert.match(await said.textContent(), /^\d+ commands?$/);
         await palette(page, 'time in Tokyo');
         assert.match(await answer.textContent(), /^\d{1,2}:\d{2}:\d{2}\s?[AP]M.*Asia\/Tokyo/);
         assert.equal(await page.locator('[data-command$=".text"]').count(), 0);
         await palette(page, '(1+');
         await page.locator('[data-command-answer="error"]').getByText('Finish the expression to calculate.').waitFor();
+        assert.match(await said.textContent(), /^Finish the expression to calculate\./);
         // An answer that is only an error leaves the capture offers, but Enter does not choose them.
         await palette(page, '(555) 123-4567');
         await page.locator('[data-command-answer="error"]').waitFor();
