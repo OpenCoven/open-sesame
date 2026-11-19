@@ -691,6 +691,43 @@ try {
         await editor.getByRole('button', {name: 'Close', exact: true}).click();
         assert.equal(await row.locator('.item-main > p.muted').first().textContent(), 'Note · Inbox · Unsaved edit', 'a changed field is kept as an unsaved edit');
       });
+      await step('an armed Confirm delete is said, and disarmed by Escape, leaving it and leaving the view', async () => {
+        const projects = view(page, 'projects'), listed = projects.locator('[data-list-status]');
+        const remove = projects.locator('[data-item-list] li', {hasText: 'Fourth note'}).locator('[data-delete]');
+        const label = () => remove.textContent();
+        const arm = async () => {
+          await remove.focus();
+          await page.keyboard.press('Enter');
+          await remove.getByText('Confirm delete', {exact: true}).waitFor();
+          assert.equal(await listed.textContent(), 'Press Confirm delete to delete Fourth note.', 'arming is said in the list’s status line');
+        };
+        await arm();
+        await page.keyboard.press('Escape');
+        assert.equal(await label(), 'Delete', 'Escape disarms it');
+        assert.equal(await listed.textContent(), '', 'and clears the sentence');
+        assert(await projects.isVisible(), 'Escape is taken by the button, not by the panel');
+        await arm();
+        await projects.locator('[data-add-text]').focus();
+        assert.equal(await label(), 'Delete', 'moving focus away disarms it');
+        await arm();
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await projects.locator('[data-item-list]').getByText('Fourth note', {exact: true}).waitFor();
+        assert.equal(await label(), 'Delete', 'leaving the view and coming back disarms it');
+        assert(keys.core.items.size > 0 && rows(keys, item => item.title === 'Fourth note').length === 1, 'nothing was deleted');
+        // A project row the same way.
+        const shed = keys.core.seedProject('Shed');
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        const removeProject = projects.locator(`[data-remove-project="${shed.id}"]`);
+        await removeProject.focus();
+        await page.keyboard.press('Enter');
+        await removeProject.getByText('Confirm delete', {exact: true}).waitFor();
+        assert.equal(await projects.locator('[data-project-status]').textContent(), 'Press Confirm delete to delete Shed.');
+        await page.keyboard.press('Escape');
+        assert.equal(await removeProject.textContent(), 'Delete', 'Escape disarms a project’s Delete');
+        assert(keys.core.projects.has(shed.id), 'the project is kept');
+      });
       await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {
         assert.deepEqual(installs.flatMap(entry => entry.blocked), []);

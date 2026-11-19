@@ -250,7 +250,7 @@ export async function mount({surface, signal, bridge, host}) {
     }
     if (target.dataset.delete) {
       const id = target.dataset.delete;
-      if (confirming !== `item:${id}`) { confirming = `item:${id}`; draw(); return; }
+      if (confirming !== `item:${id}`) { arm(`item:${id}`, title(rows.find(entry => entry.id === id) ?? {}), listed); return; }
       confirming = null;
       target.disabled = true;
       const result = await store.remove(id);
@@ -305,7 +305,7 @@ export async function mount({surface, signal, bridge, host}) {
     }
     if (target.dataset.removeProject) {
       const id = target.dataset.removeProject;
-      if (confirming !== `project:${id}`) { confirming = `project:${id}`; draw(); return; }
+      if (confirming !== `project:${id}`) { arm(`project:${id}`, nameOf(id), projectStatus); return; }
       confirming = null;
       const result = await store.removeProject(id);
       if (!alive()) return;
@@ -314,9 +314,53 @@ export async function mount({surface, signal, bridge, host}) {
     }
   });
 
+  // Delete asks once more before it deletes. The armed button says so, its sentence is said in
+  // the list's status line, and Escape, moving focus off it or showing the view again disarm it.
+  let armed = null; // {line, sentence}: the status line that says what is armed
+  function arm(key, name, line) {
+    disarm();
+    confirming = key;
+    armed = {line, sentence: `Press Confirm delete to delete ${name}.`};
+    line.say(armed.sentence);
+    draw();
+  }
+  const armedButton = () => {
+    if (!confirming) return undefined;
+    const at = confirming.indexOf(':'), scope = confirming.slice(0, at), id = confirming.slice(at + 1);
+    const [where, name] = scope === 'item' ? [list, 'delete'] : [projectList, 'removeProject'];
+    return [...where.querySelectorAll('button')].find(node => node.dataset[name] === id);
+  };
+  function disarm() {
+    if (!confirming) return;
+    const button = armedButton();
+    confirming = null;
+    // The label changes in place, so the list is not drawn again under the person's focus.
+    if (button) button.textContent = 'Delete';
+    if (armed && armed.line.line.textContent === armed.sentence) armed.line.say('');
+    armed = null;
+  }
+  for (const where of [list, projectList]) {
+    where.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !confirming) return;
+      // The Escape cancels the delete; it does not also close the panel.
+      event.preventDefault();
+      disarm();
+    });
+    where.addEventListener('focusout', event => {
+      const left = event.target;
+      // Checked once the page has settled: drawing the list again puts focus back on the armed
+      // button, which leaves it armed.
+      queueMicrotask(() => {
+        const button = alive() && confirming ? armedButton() : undefined;
+        if (button && left.dataset.focusKey === button.dataset.focusKey && document.activeElement !== button) disarm();
+      });
+    });
+  }
+
   async function refresh() {
     const read = await store.load();
     if (!alive()) return;
+    disarm();
     problem.say(read.ok ? '' : read.error, !read.ok);
     retry.hidden = read.ok;
     draw();
