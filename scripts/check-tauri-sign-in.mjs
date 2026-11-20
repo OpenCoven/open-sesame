@@ -288,6 +288,20 @@ function fakeBridge(status, answers = {}) {
   // One scheme, the one the WorkOS application already redirects to.
   assert.deepEqual(config.plugins['deep-link'], { desktop: { schemes: ['opensesame'] } });
   assert.match(read('crates/core/src/auth/mod.rs'), /pub const REDIRECT: &str = "opensesame:\/\/auth\/callback";/);
+  // The Mac preview (#161, docs/mac-preview.md) is installed beside the Swift app, which owns
+  // `com.perch.widgetstudio`, `Open Sesame.app` and the `opensesame` scheme. Its overlay gives it
+  // its own identifier and name and registers no scheme, so the system never hands the Swift
+  // app's sign-in callback to the preview; sign-in in the preview waits for #87 and #132.
+  const preview = JSON.parse(read('src-tauri/preview.conf.json'));
+  assert.equal(preview.identifier, 'org.opencoven.open-sesame.preview', 'The owner chose this identifier for the preview on 20 November 2026');
+  assert.notEqual(preview.identifier, config.identifier);
+  assert.notEqual(preview.identifier, 'com.perch.widgetstudio');
+  assert.equal(preview.productName, 'Open Sesame Preview');
+  assert.notEqual(preview.productName, 'Open Sesame', 'The preview cannot replace Open Sesame.app in /Applications');
+  assert.deepEqual(preview.plugins['deep-link'], { desktop: { schemes: [] } }, 'The preview registers no URL scheme');
+  assert.deepEqual(preview.bundle, { targets: ['app'] }, 'The preview is an unsigned application bundle and nothing else');
+  assert.deepEqual(Object.keys(preview).sort(), ['bundle', 'identifier', 'plugins', 'productName']);
+  assert.equal(JSON.parse(read('package.json')).scripts['build:preview'], 'cd src-tauri && cargo tauri build --config preview.conf.json --bundles app');
 
   // The page is granted neither plugin: it cannot register a scheme or open an address. The
   // opener plugin is registered for the file manager of issue #74, with no permission for the
