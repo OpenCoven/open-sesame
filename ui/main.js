@@ -145,6 +145,9 @@ function closePalette({restore = false} = {}) {
   drawTitle();
   if (restore) paletteToggle.focus();
 }
+// The keyboard is on nothing a person can see: the page, or the closed palette, which WebKit
+// leaves focused for a moment after it is hidden.
+const nowhere = () => !document.activeElement || document.activeElement === document.body || (palette.hidden && palette.contains(document.activeElement));
 // After a command, the keyboard goes to the view it opened: its first control, or the view
 // itself. A view that took focus for itself, such as Today's capture field, keeps it, and so
 // does anything the person focused meanwhile.
@@ -212,12 +215,15 @@ function renderCommands() {
       closePalette();
       run(manager.show(command.widget,command.capture ? draftAction(command.action,draft) : command.action).then(result => {
         focusView(command.widget);
+        // The view did not come or did not take the keyboard (it failed, or another view
+        // overtook it): the keyboard goes back to Commands rather than to the page.
+        if (palette.hidden && nowhere()) paletteToggle.focus();
         if (!command.capture) return;
         if (result?.saved === true) {if (kept?.draft === draft) drop();}
         else keep(typed,draft,OVERTAKEN);
       },error => {
         // The view never came: the keyboard goes back to Commands rather than to the page.
-        if (!document.activeElement || document.activeElement === document.body) paletteToggle.focus();
+        if (palette.hidden && nowhere()) paletteToggle.focus();
         if (!command.capture) throw error;
         keep(typed,draft,message(error));
         openPalette();
