@@ -48,6 +48,11 @@ pub const NO_BROWSER: &str =
 /// (issue #116). One press may not ask: an answer that came after its own press had been
 /// refused is given to the next press within thirty seconds (issue #130).
 pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the system keyring, and none is available. Install a Secret Service keyring such as GNOME Keyring or KWallet, then try again. Everything on this computer works without signing in.";
+/// Shown on Linux when the keyring answers and has no default collection, which is where a
+/// sign-in is saved: a keyring just installed and never set up has none, and every save is then
+/// refused, after the browser (issue #130, decided on 18 November 2026). Written for that
+/// change; it waits for the owner's reading.
+pub const NO_DEFAULT_COLLECTION: &str = "Open Sesame keeps your sign-in in the system keyring, and it has no default keyring to keep it in. Open your desktop's passwords settings (Passwords and Keys on GNOME, KWalletManager on KDE), create a keyring and make it the default, then try again. Everything on this computer works without signing in.";
 /// Shown when the system has a credential store that would not answer: a keyring that is
 /// locked, or whose prompt was dismissed.
 pub const NO_KEYCHAIN: &str = "Open Sesame could not reach the system's credential store to keep your sign-in. Unlock it and try again. Everything on this computer works without signing in.";
@@ -214,10 +219,11 @@ impl WorkosApi for HttpApi {
 ///   stand-in program in place of the unlock dialog. By reading, the store crate turns some
 ///   other failures of a prompt into a platform failure, which this rule would ask again.
 ///
-/// Two cases this does not reach, both seen in a container: a keyring that was just installed
-/// and has no default collection passes the look and then refuses the save, and a keyring
-/// that dies while its unlock prompt is open leaves the call waiting, because the library
-/// waits for the prompt with no limit.
+/// A keyring that was just installed and has no default collection answers every read and
+/// refuses every save; the look before Sign in asks for that collection itself
+/// ([`KeychainStore::has_default_collection`], issue #130). One case this does not reach, seen
+/// in a container: a keyring that dies while its unlock prompt is open leaves the call waiting,
+/// because the library waits for the prompt with no limit.
 ///
 /// Nothing here keeps a secret, and there is no other place a secret is written when the store
 /// cannot be reached.
@@ -308,6 +314,23 @@ impl KeychainStore {
         self.load().is_ok()
     }
 
+    /// Whether the store has the default collection a sign-in is saved in. Only the Secret
+    /// Service can be without one: a keyring just installed and never set up has none, and
+    /// then every save is refused (issue #130). This asks the service for its `default`
+    /// alias, which shows no prompt. When the question itself fails the answer is yes, so
+    /// nothing is refused on a guess: the save then says what happened. Elsewhere the system's
+    /// store needs no collection. Not to be asked on the main thread.
+    pub fn has_default_collection(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            default_alias().unwrap_or(true)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            true
+        }
+    }
+
     /// Whether the system has a credential store at all. On Linux this looks again each time
     /// it is asked while no store has been opened, so a Secret Service that appears while the
     /// application runs is seen. Elsewhere the system always has one, and the `keyring`
@@ -344,6 +367,25 @@ impl CredentialStore for KeychainStore {
             Err(_) => Err(AuthError::Store),
         }
     }
+}
+
+/// Whether the Secret Service's `default` alias names a collection. `None` when the question
+/// could not be asked or answered. The service answers the object path `/` for an alias that
+/// names nothing.
+#[cfg(target_os = "linux")]
+fn default_alias() -> Option<bool> {
+    let bus = zbus::blocking::Connection::session().ok()?;
+    let reply = bus
+        .call_method(
+            Some("org.freedesktop.secrets"),
+            "/org/freedesktop/secrets",
+            Some("org.freedesktop.Secret.Service"),
+            "ReadAlias",
+            &("default",),
+        )
+        .ok()?;
+    let path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize().ok()?;
+    Some(path.as_str() != "/")
 }
 
 /// The name of the saved credential for an application with this bundle identifier.
@@ -399,17 +441,34 @@ pub type Browser = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 pub type StoreCheck = Arc<dyn Fn() -> Option<&'static str> + Send + Sync>;
 
 /// Why a sign-in could not be kept on this computer, if it could not. `answered` is whether
-/// the store could be read just now and `exists` whether the system has one at all. Only a
-/// Linux desktop can be without one; everywhere else, and on Linux when the keyring is there
-/// but locked, the store is one to unlock.
-fn store_problem(answered: bool, exists: bool) -> Option<&'static str> {
+/// the store could be read just now, `exists` whether the system has one at all, and
+/// `has_default` whether it has the default collection a sign-in is saved in. Only a Linux
+/// desktop can be without a store, or have one without that collection; everywhere else, and
+/// on Linux when the keyring is there but locked, the store is one to unlock.
+fn store_problem(answered: bool, exists: bool, has_default: bool) -> Option<&'static str> {
     if answered {
-        None
+        (cfg!(target_os = "linux") && !has_default).then_some(NO_DEFAULT_COLLECTION)
     } else if cfg!(target_os = "linux") && !exists {
         Some(NO_SECRET_SERVICE)
     } else {
         Some(NO_KEYCHAIN)
     }
+}
+
+/// The look before Sign in, for this store: whether it answers a read, whether the system has
+/// one, and, once it has answered, whether it has a default collection (issue #130). It reads
+/// the store, which on a locked keyring waits for the unlock prompt, so the host asks it on a
+/// thread of its own ([`Auth::look_at_store`]).
+fn store_check(store: &Arc<KeychainStore>) -> StoreCheck {
+    let probe = Arc::clone(store);
+    Arc::new(move || {
+        let answered = probe.available();
+        store_problem(
+            answered,
+            probe.exists(),
+            !answered || probe.has_default_collection(),
+        )
+    })
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -844,9 +903,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
     let store = Arc::new(KeychainStore::new(credential_service(
         &app.config().identifier,
     )));
-    let probe = Arc::clone(&store);
-    let store_check: StoreCheck =
-        Arc::new(move || store_problem(probe.available(), probe.exists()));
+    let check = store_check(&store);
     let saved = Arc::clone(&store);
     let browser: Browser = Arc::new(|url| tauri_plugin_opener::open_url(url, None::<&str>).is_ok());
     let (auth, wakes) = Auth::new(
@@ -854,7 +911,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
         store,
         Arc::new(Marker::new(marker_path())),
         browser,
-        store_check,
+        check,
     );
     auth.run(wakes, move |status| {
         // A development build says what changed, for the launched-application checks: the two
@@ -2160,14 +2217,14 @@ mod tests {
 
     #[test]
     fn a_missing_store_and_a_locked_one_are_told_apart() {
-        assert_eq!(store_problem(true, true), None);
-        assert_eq!(store_problem(true, false), None);
+        assert_eq!(store_problem(true, true, true), None);
+        assert_eq!(store_problem(true, false, true), None);
         // A store that is there and would not answer is one to unlock, on every system.
-        assert_eq!(store_problem(false, true), Some(NO_KEYCHAIN));
+        assert_eq!(store_problem(false, true, true), Some(NO_KEYCHAIN));
         assert!(NO_KEYCHAIN.contains("Unlock it and try again"));
         // Only Linux can be without one. A keyring installed while the application runs is
         // found by the next attempt, so the sentence says to try again, not to start again.
-        let missing = store_problem(false, false);
+        let missing = store_problem(false, false, true);
         if cfg!(target_os = "linux") {
             assert_eq!(missing, Some(NO_SECRET_SERVICE));
         } else {
@@ -2178,6 +2235,26 @@ mod tests {
         for sentence in [NO_SECRET_SERVICE, NO_KEYCHAIN] {
             assert!(sentence.contains("works without signing in"), "{sentence}");
         }
+    }
+
+    /// #130 line 3, decided on 18 November 2026: a keyring that answers and has no default
+    /// collection, as one just installed and never set up, refuses the save after the browser.
+    /// On Linux the look before Sign in says so instead, and how to set one up. Elsewhere the
+    /// system's store needs no collection, and nothing changes.
+    #[test]
+    fn a_keyring_without_a_default_collection_is_told_apart() {
+        let none = store_problem(true, true, false);
+        if cfg!(target_os = "linux") {
+            assert_eq!(none, Some(NO_DEFAULT_COLLECTION));
+        } else {
+            assert_eq!(none, None);
+        }
+        assert_eq!(store_problem(true, true, true), None);
+        // A store that did not answer is told as before, whatever was found about collections.
+        assert_eq!(store_problem(false, true, false), Some(NO_KEYCHAIN));
+        assert!(NO_DEFAULT_COLLECTION.contains("no default"));
+        assert!(NO_DEFAULT_COLLECTION.contains("then try again"));
+        assert!(NO_DEFAULT_COLLECTION.contains("works without signing in"));
     }
 
     #[test]
@@ -2445,6 +2522,55 @@ mod tests {
             stop();
         }
 
+        /// #130 line 3: a keyring that answers and has no default collection, as gnome-keyring
+        /// does when it is started with no keyring set up, is refused before the browser opens,
+        /// with the sentence that says how to set one up; with a default collection the look
+        /// lets Sign in through. The save that the look now spares the person is tried too, to
+        /// show it is refused.
+        #[test]
+        #[ignore = "ends the user's gnome-keyring-daemon; by hand in a disposable container only"]
+        fn a_keyring_without_a_default_collection_is_refused_before_the_browser() {
+            disposable();
+            if running() {
+                stop();
+            }
+            assert!(
+                sh("rm -rf \"$HOME/.local/share/keyrings\" && gnome-keyring-daemon --daemonize --components=secrets > /dev/null 2>&1"),
+                "the keyring service could not be started without a keyring"
+            );
+            let bare = Arc::new(store("no-default"));
+            assert!(
+                eventually(|| bare.available()),
+                "no Secret Service answered"
+            );
+            assert!(
+                !bare.has_default_collection(),
+                "the keyring had a default collection"
+            );
+            assert_eq!(bare.save("not-a-token-1"), Err(AuthError::Store));
+            let (auth, _changes, opened) = wired_to(&bare, None);
+            assert_eq!(
+                answered(&auth, "auth.signIn"),
+                Err(BridgeError::from(NO_DEFAULT_COLLECTION))
+            );
+            assert!(opened.lock().unwrap().is_empty(), "the browser was opened");
+            auth.shutdown();
+            stop();
+            start();
+            let set_up = Arc::new(store("with-default"));
+            assert!(
+                eventually(|| set_up.available()),
+                "no Secret Service answered"
+            );
+            assert!(set_up.has_default_collection(), "no default collection");
+            let (auth, _changes, opened) = wired_to(&set_up, None);
+            assert_eq!(answered(&auth, "auth.signIn"), Ok(json!(true)));
+            assert_eq!(opened.lock().unwrap().len(), 1);
+            assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
+            auth.shutdown();
+            stop();
+        }
+
         /// A keyring service that is restarted while the application runs is reached again,
         /// and what was saved before the restart is read after it (issue #116).
         #[test]
@@ -2508,13 +2634,12 @@ mod tests {
                 record.lock().unwrap().push(url.to_string());
                 true
             });
-            let probe = Arc::clone(store);
             let (auth, wakes) = Auth::with_limits(
                 Arc::new(api(&stand_in(vec![]))),
                 Arc::clone(store) as Arc<dyn CredentialStore>,
                 Arc::new(Marker::new(None)),
                 browser,
-                Arc::new(move || store_problem(probe.available(), probe.exists())),
+                store_check(store),
                 limits,
             );
             let (tx, changes) = channel();
