@@ -27,7 +27,7 @@ The shortcut is Control+Option+Shift+Space. If Settings says another application
 
 Each line is one check with your own pointer and keyboard. Write pass or fail with a few words in the macOS column of [the smoke pass](desktop-smoke-pass.md#checklist), with the commit printed by `git -C <clone> rev-parse --short HEAD` where you built it, and open an issue for any failure.
 
-1. **First launch.** The strip appears against the right edge of the display your pointer is on, centred on its height. Say whether the preview took the keyboard for a moment when it started (an agent saw it in front for about a second; see below), and whether the window you were typing in has it afterwards: type a few characters there.
+1. **First launch.** The strip appears against the right edge of the display your pointer is on, centred on its height. Say whether the preview took the keyboard when it started (an agent saw it stay in front for six seconds and more, [#212](https://github.com/OpenCoven/open-sesame/issues/212)), and whether the window you were typing in has it afterwards: type a few characters there.
 2. **R1.** Move the pointer to another display and wait a second: the strip follows. Open the panel, then move the pointer to the other display: the panel stays.
 3. **R2.** Rest the pointer on the strip: the panel opens, and the icons under the pointer do not move. The keyboard stays in your other app. Move away: it closes. Rest again, click inside the panel, then click another window: it closes.
 4. **R3.** Click Projects on the strip: the panel opens on Projects and stays when the pointer leaves, and typing goes into it. Press Escape: it closes, and typing goes into the app you were in.
