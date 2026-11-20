@@ -198,6 +198,7 @@ try {
         // #196: the emulator keeps an accessibility tree and a live region for screen readers.
         assert.equal(await shown.locator('.xterm-accessibility-tree').count(),1,'the terminal has its accessibility tree');
         assert.equal(await shown.locator('[aria-live]').count(),1,'and a live region');
+        assert.equal(await shown.locator('.xterm-helper-textarea').getAttribute('writingsuggestions'),'false','and its input field offers no writing suggestions, which resend typed text in WKWebView');
         // #193: the tabs are one stop in the tab order and the arrows, Home and End move along them.
         const tab=n=>view.getByRole('tab',{name:`Shell ${n}`,exact:true});
         const selected=()=>view.evaluate(node=>{const active=document.activeElement;return {selected:node.querySelector('[role="tab"][aria-selected="true"]')?.textContent,focused:active?.getAttribute('role')==='tab'?active.textContent:active?.tagName};});

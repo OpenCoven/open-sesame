@@ -51,6 +51,9 @@ export function createPane(deps, element, launch, hooks = {}) {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(element);
+  // Screen-reader mode leaves what was typed in the input field, where macOS's inline word
+  // suggestions (WKWebView) can complete a word and send the field's text to the shell again.
+  term.textarea?.setAttribute('writingsuggestions', 'false');
   const refit = () => { try { fit.fit(); } catch { /* not laid out yet */ } };
   refit();
 

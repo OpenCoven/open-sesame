@@ -18,7 +18,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 class Terminal {
   constructor(options) { this.options = options; this.cols = 91; this.rows = 27; this.written = []; this.callbacks = []; this.pasted = []; this.selection = ''; this.disposed = false; this.listeners = {}; }
   loadAddon(addon) { this.addon = addon; }
-  open(element) { this.element = element; }
+  open(element) { this.element = element; this.textarea = { attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } }; }
   write(data, callback) { this.written.push(data); this.callbacks.push(callback); }
   parse(count = this.callbacks.length) { for (const callback of this.callbacks.splice(0, count)) callback(); }
   on(name, listener) { this.listeners[name] = listener; return { dispose: () => { delete this.listeners[name]; } }; }
@@ -79,6 +79,9 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
   // Issue #196: the emulator keeps its accessibility tree and live region, so a screen reader
   // can read what the shell prints, not only the input field.
   assert.equal(term.options.screenReaderMode, true, 'The emulator is created in screen-reader mode');
+  // In that mode the input field keeps what was typed, and macOS's inline word suggestions
+  // (WKWebView) then send part of it to the shell a second time: "echo previ" + "echo previ".
+  assert.equal(term.textarea.attributes.writingsuggestions, 'false', 'The input field offers no writing suggestions');
   assert.equal(requests.length, 1);
   assert.equal(requests[0].method, 'terminal.open');
   assert.deepEqual({ ...requests[0].params, channel: undefined }, { id: 'pane-1', mode: 'local', cwd: '/tmp/a b', host: '', user: '', launcher: 'shell', prompt: '', cols: 91, rows: 27, channel: undefined });
