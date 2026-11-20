@@ -24,8 +24,8 @@
 use crate::summon;
 use open_sesame_core::auth::{
     authenticate_url, error_from_response, exchange_body, jwks_url, parse_jwks, parse_tokens,
-    refresh_body, AuthController, AuthError, AuthParts, CredentialStore, Jwks, SignedOutMarker,
-    Tokens, WorkosApi, API, CLIENT_ID, REDIRECT, SIGNED_OUT,
+    refresh_body, Attempt, AuthController, AuthError, AuthParts, CredentialStore, Jwks,
+    SignedOutMarker, Tokens, WorkosApi, API, CLIENT_ID, REDIRECT, SIGNED_OUT,
 };
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Emit};
 use serde_json::{json, Value};
@@ -54,8 +54,22 @@ pub const NO_KEYCHAIN: &str = "Open Sesame could not reach the system's credenti
 
 /// Shown when Sign in, Cancel or Sign out is pressed while the credential store is being
 /// waited for, which on a locked keyring is while its unlock prompt is open (issue #130).
-/// Nothing was changed by the press, so it says to try again.
+/// Nothing was changed by the press, so it says to try again. On Linux the store is the
+/// Secret Service, which its own prompt calls a keyring (#153 item 5c).
+#[cfg(target_os = "linux")]
+pub const KEYCHAIN_WAITING: &str = "Open Sesame is waiting for your system keyring. If it is asking for your password, answer it, then try again.";
+#[cfg(not(target_os = "linux"))]
 pub const KEYCHAIN_WAITING: &str = "Open Sesame is waiting for your system keychain. If it is asking for your password, answer it, then try again.";
+
+/// Shown when Sign in is pressed while a call to the credential store that was given up at the
+/// limit is still out (#153 item 5a, decided on 18 November 2026). Asking the person to answer
+/// a prompt cannot help when the keyring has died with its prompt open, so this names the
+/// keyring and suggests restarting it or the application. Written for this change; the
+/// sentences wait for the owner's reading.
+#[cfg(target_os = "linux")]
+pub const KEYCHAIN_GIVEN_UP: &str = "Open Sesame has had no answer from your system keyring for two minutes. If it is not asking for your password, restart the keyring (GNOME Keyring, KWallet or another Secret Service) or Open Sesame, then try again.";
+#[cfg(not(target_os = "linux"))]
+pub const KEYCHAIN_GIVEN_UP: &str = "Open Sesame has had no answer from your system keychain for two minutes. If it is not asking for your password, quit and reopen Open Sesame, then try again.";
 
 /// The event the page receives whenever the sign-in status may have changed.
 pub const CHANGED_EVENT: &str = "auth.changed";
@@ -555,21 +569,21 @@ impl Auth {
                 // the same for this press: the status says so already, and a read made beside
                 // it would wait behind the same prompt, or fail there and name another trouble.
                 if self.controller.store_busy() {
-                    return Err(BridgeError::from(KEYCHAIN_WAITING));
+                    return Err(BridgeError::from(self.store_busy_sentence()));
                 }
                 if let Some(problem) = self.look_at_store()? {
                     return Err(BridgeError::from(problem));
                 }
-                let url = self.controller.begin_sign_in().map_err(|error| {
+                let (url, attempt) = self.controller.begin_attempt().map_err(|error| {
                     BridgeError::from(match error {
                         AuthError::Busy => BUSY,
-                        AuthError::StoreBusy => KEYCHAIN_WAITING,
+                        AuthError::StoreBusy => self.store_busy_sentence(),
                         _ => NOT_STARTED,
                     })
                 })?;
                 *lock(&self.hold) = hold();
                 if !(may_open(&url) && (self.browser)(&url)) {
-                    self.cancel_unasked();
+                    self.cancel_unasked(attempt);
                     return Err(BridgeError::from(NO_BROWSER));
                 }
                 Ok(Value::Bool(true))
@@ -580,6 +594,17 @@ impl Auth {
             },
             "auth.signOut" => self.sign_out(),
             _ => Err(BridgeError::from(open_sesame_core::gate::UNSUPPORTED)),
+        }
+    }
+
+    /// Why Sign in is refused while the store is held up: a call given up at the limit is still
+    /// out, which a prompt answered now will not end, or a call is being waited for, which an
+    /// answered prompt does.
+    fn store_busy_sentence(&self) -> &'static str {
+        if self.controller.store_given_up() {
+            KEYCHAIN_GIVEN_UP
+        } else {
+            KEYCHAIN_WAITING
         }
     }
 
@@ -651,13 +676,15 @@ impl Auth {
     /// The host's own cancel, when the browser would not open for a sign-in that had just
     /// begun. The person has been told about the browser already, so this must not fail or
     /// wait: when the store is being waited for it is left to a thread, which cancels when the
-    /// store has answered.
-    fn cancel_unasked(&self) {
-        if self.controller.cancel_now().is_err() {
+    /// store has answered. It names the attempt it is for (#153 item 4): by the time that
+    /// thread runs the person may have pressed Sign in again, and that attempt is not its to
+    /// cancel.
+    fn cancel_unasked(&self, attempt: Attempt) {
+        if self.controller.cancel_attempt_now(attempt).is_err() {
             let controller = Arc::clone(&self.controller);
             let _ = std::thread::Builder::new()
                 .name("auth-cancel".into())
-                .spawn(move || controller.cancel());
+                .spawn(move || controller.cancel_attempt(attempt));
         }
     }
 
@@ -879,6 +906,13 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// How the core's status begins while a store call is waited for, which names the store
+    /// as each system's prompt does.
+    #[cfg(target_os = "linux")]
+    const WAITING_FOR_STORE: &str = "Waiting for your system keyring";
+    #[cfg(not(target_os = "linux"))]
+    const WAITING_FOR_STORE: &str = "Waiting for your system keychain";
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::AtomicUsize;
@@ -1288,7 +1322,7 @@ mod tests {
         let waiting = until(&changes, |status| {
             status["message"]
                 .as_str()
-                .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
+                .is_some_and(|message| message.starts_with(WAITING_FOR_STORE))
         });
         assert_eq!(waiting["authenticated"], json!(false));
         assert!(!auth.authenticated());
@@ -1535,7 +1569,7 @@ mod tests {
     fn says_waiting(auth: &Auth) -> bool {
         auth.status()["message"]
             .as_str()
-            .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
+            .is_some_and(|message| message.starts_with(WAITING_FOR_STORE))
     }
 
     fn until_no_look_is_out(auth: &Auth) {
@@ -1816,7 +1850,7 @@ mod tests {
         }
         assert_eq!(
             answered(&auth, "auth.signIn"),
-            Err(BridgeError::from(KEYCHAIN_WAITING))
+            Err(BridgeError::from(KEYCHAIN_GIVEN_UP))
         );
         assert_eq!(looks.load(Ordering::SeqCst), 0, "the store was asked");
         assert!(opened.lock().unwrap().is_empty());
@@ -2544,7 +2578,7 @@ mod tests {
         fn says_waiting(status: &Value) -> bool {
             status["message"]
                 .as_str()
-                .is_some_and(|message| message.starts_with("Waiting for your system keychain"))
+                .is_some_and(|message| message.starts_with(WAITING_FOR_STORE))
         }
 
         /// While the keyring's unlock prompt is left open after Sign out, every request is
@@ -2652,10 +2686,11 @@ mod tests {
             assert!(!says_waiting(&answered(&auth, "auth.status").unwrap()));
             assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
             // With that call still out a sign-in could not be saved: none is begun, and the
-            // browser is not opened.
+            // browser is not opened. The press is told the keyring has not answered and that a
+            // restart may help, since answering a prompt cannot (#153 item 5a).
             assert_eq!(
                 answered(&auth, "auth.signIn"),
-                Err(BridgeError::from(KEYCHAIN_WAITING))
+                Err(BridgeError::from(KEYCHAIN_GIVEN_UP))
             );
             assert!(opened.lock().unwrap().is_empty());
             // The call that was given up is still out, so the process is not shut down in an

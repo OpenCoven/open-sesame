@@ -22,6 +22,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub(super) const USER_ID: &str = "user_fixture";
 pub(super) const SESSION_ID: &str = "session_fixture";
 pub(super) const KID: &str = "fixture";
+/// What the sign-in sentences call the credential store: on Linux the Secret Service, whose own
+/// prompt says keyring (#153 item 5c), and elsewhere the system keychain.
+#[cfg(target_os = "linux")]
+pub(super) const STORE: &str = "system keyring";
+#[cfg(not(target_os = "linux"))]
+pub(super) const STORE: &str = "system keychain";
 /// A fixed "now" so no test depends on the wall clock.
 pub(super) const NOW: u64 = 1_800_000_000;
 

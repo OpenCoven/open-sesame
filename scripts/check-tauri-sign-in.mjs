@@ -307,7 +307,7 @@ function fakeBridge(status, answers = {}) {
 
   // The store is checked before the browser opens, so nobody signs in to a session that cannot
   // be kept, and the Linux sentence names what to install.
-  assert.ok(code.indexOf('self.look_at_store()?') < code.indexOf('self.controller.begin_sign_in()'));
+  assert.ok(code.indexOf('self.controller.begin_attempt()') > 0 && code.indexOf('self.look_at_store()?') < code.indexOf('self.controller.begin_attempt()'));
   // A request from the page is not held by the credential store (issue #130): a locked keyring
   // answers only when its unlock prompt is answered. This reads auth.rs as text, so what it
   // holds is that certain spellings occur and certain others do not; the same thing spelled
@@ -325,14 +325,16 @@ function fakeBridge(status, answers = {}) {
   //   sentence; a look given up neither ends the look after it nor has its answer kept; an
   //   answer is kept thirty seconds;
   // - Cancel answers through `cancel_now`, and a browser that will not open through
-  //   `cancel_unasked`, which tries `cancel_now` first and otherwise leaves the cancel to a
-  //   thread;
+  //   `cancel_unasked`, which names the attempt that was begun, tries `cancel_attempt_now`
+  //   first and otherwise leaves `cancel_attempt` to a thread (#153 item 4);
+  // - a press of Sign in while a call given up is out is refused with its own sentence, and
+  //   one while a call is waited for with the keychain sentence (#153 item 5a);
   // - Sign out's thread sends the address with its first word, and the request waits for that
   //   word without a time of its own, opens the address when the word says it began, and
   //   refuses when it says so;
   // - Sign in waits `STORE_SOON` three times at most (the look, the state, and the host's own
   //   cancel when the browser will not open), and that is below the page's default limit in
-  //   ui/bridge.js, the shortest it gives any request (Sign in has a longer one of its own);
+  //   ui/bridge.js, the shortest it gives any request and the one Sign in has (#153 item 5d);
   // - the host takes its two times from the controller, whose own are `STORE_SOON` and
   //   `STORE_LIMIT` unless `store_limits` sets others, and the host calls that in one place,
   //   for the limits a test hands to `with_limits`; `new` hands it none, and outside the
@@ -342,17 +344,24 @@ function fakeBridge(status, answers = {}) {
   // constructors and the controller) have their comments taken out first, so a rule left
   // behind as a comment is not read as kept. The spellings that must not occur, the thirty
   // seconds and the sentences are read with comments in, which refuses more and not less.
-  // Not read: what the controller does behind `begin_sign_in`, `cancel_now` and `sign_out_now`,
-  // which the core's tests hold; the fallback in `sign_out` for when no thread can be started,
-  // which waits as long as the store does; that the thread `cancel_unasked` starts cancels the
-  // attempt it was started for and not a later one; and the limits beyond that comparison.
+  // Not read: what the controller does behind `begin_attempt`, `cancel_now`, `cancel_attempt`
+  // and `sign_out_now`, which the core's tests hold (that a cancel for an attempt leaves a later
+  // one waiting among them); the fallback in `sign_out` for when no thread can be started,
+  // which waits as long as the store does; and the limits beyond that comparison.
   for (const waits of ['(self.store_check)()', 'self.controller.cancel()', 'self.controller.sign_out()', '.sign_out()?']) assert.ok(!production.includes(waits), `auth.rs does not call ${waits} outside its tests`);
   const handler = strip(code.slice(code.indexOf('pub fn handle('), code.indexOf('fn look_at_store(')));
-  assert.match(handler, /if self\.controller\.store_busy\(\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
-  assert.match(handler, /AuthError::StoreBusy => KEYCHAIN_WAITING,/);
+  assert.match(handler, /if self\.controller\.store_busy\(\) \{\n\s+return Err\(BridgeError::from\(self\.store_busy_sentence\(\)\)\);\n\s+\}\n\s+if let Some\(problem\) = self\.look_at_store\(\)\? \{/);
+  assert.match(handler, /AuthError::StoreBusy => self\.store_busy_sentence\(\),/);
+  // A call given up and still out has its own sentence, which suggests a restart: asking the
+  // person to answer a prompt cannot help when the keyring has died with it open (#153 item 5a).
+  const busy = strip(code.slice(code.indexOf('fn store_busy_sentence('), code.indexOf('fn look_at_store(')));
+  assert.match(busy, /if self\.controller\.store_given_up\(\) \{\n\s+KEYCHAIN_GIVEN_UP\n\s+\} else \{\n\s+KEYCHAIN_WAITING\n\s+\}/);
   assert.match(handler, /"auth\.cancel" => match self\.controller\.cancel_now\(\) \{\n\s+Ok\(\(\)\) => Ok\(Value::Bool\(true\)\),\n\s+Err\(_\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
   assert.match(handler, /"auth\.signOut" => self\.sign_out\(\),/);
-  assert.match(handler, /if !\(may_open\(&url\) && \(self\.browser\)\(&url\)\) \{\n\s+self\.cancel_unasked\(\);/);
+  // The host's own cancel names the attempt it is for, so a thread left to make it cannot
+  // cancel a sign-in begun after it (#153 item 4).
+  assert.match(handler, /let \(url, attempt\) = self\.controller\.begin_attempt\(\)/);
+  assert.match(handler, /if !\(may_open\(&url\) && \(self\.browser\)\(&url\)\) \{\n\s+self\.cancel_unasked\(attempt\);/);
   const look = strip(code.slice(code.indexOf('fn look_at_store('), code.indexOf('fn cancel_unasked(')));
   assert.match(look, /if look\.began\.is_some_and\(\|began\| began\.elapsed\(\) < self\.limit\) \{\n\s+return Err\(BridgeError::from\(KEYCHAIN_WAITING\)\);/);
   assert.match(look, /\.spawn\(move \|\| \{\n\s+let answer = catch_unwind\(AssertUnwindSafe\(\|\| check\(\)\)\);/);
@@ -362,7 +371,8 @@ function fakeBridge(status, answers = {}) {
   assert.match(look, /if came\.elapsed\(\) < LOOK_KEPT \{\n\s+return Ok\(answer\);/);
   assert.match(code, /^const LOOK_KEPT: Duration = Duration::from_secs\(30\);$/m);
   const unasked = strip(code.slice(code.indexOf('fn cancel_unasked('), code.indexOf('fn sign_out(&self)')));
-  assert.match(unasked, /if self\.controller\.cancel_now\(\)\.is_err\(\) \{\n\s+let controller = Arc::clone\(&self\.controller\);\n\s+let _ = std::thread::Builder::new\(\)\n\s+\.name\("auth-cancel"\.into\(\)\)\n\s+\.spawn\(move \|\| controller\.cancel\(\)\);/);
+  assert.match(unasked, /if self\.controller\.cancel_attempt_now\(attempt\)\.is_err\(\) \{\n\s+let controller = Arc::clone\(&self\.controller\);\n\s+let _ = std::thread::Builder::new\(\)\n\s+\.name\("auth-cancel"\.into\(\)\)\n\s+\.spawn\(move \|\| controller\.cancel_attempt\(attempt\)\);/);
+  assert.ok(!unasked.includes('cancel_now()') && !unasked.includes('.cancel()'), 'the host\'s own cancel names its attempt');
   const signOut = strip(code.slice(code.indexOf('fn sign_out(&self)'), code.indexOf('/// An address the system handed over.')));
   assert.match(signOut, /match told\.recv\(\) \{\n\s+Ok\(SignOut::Began\(url\)\) => \{\n\s+end_remote_session\(&self\.browser, url\);\n\s+Ok\(Value::Bool\(true\)\)/);
   assert.match(signOut, /Ok\(SignOut::Refused\) => Err\(BridgeError::from\(KEYCHAIN_WAITING\)\),/);
@@ -385,7 +395,15 @@ function fakeBridge(status, answers = {}) {
   const pageLimit = Number(read('ui/bridge.js').match(/^const DEFAULT_LIMIT = (\d+);/m)?.[1]);
   assert.ok(soon > 0 && pageLimit > 0, 'STORE_SOON and the page default limit are read');
   assert.ok(3 * soon * 1000 < pageLimit, `Sign in waits ${3 * soon} s at most, below the shortest limit the page gives, ${pageLimit} ms`);
-  assert.match(code, /pub const KEYCHAIN_WAITING: &str = "[^"]*waiting for your system keychain[^"]*try again\."/);
+  // On Linux the sentences say keyring, as the Secret Service's own prompt does (#153 item 5c).
+  assert.match(code, /#\[cfg\(target_os = "linux"\)\]\npub const KEYCHAIN_WAITING: &str = "[^"]*waiting for your system keyring[^"]*try again\."/);
+  assert.match(code, /#\[cfg\(not\(target_os = "linux"\)\)\]\npub const KEYCHAIN_WAITING: &str = "[^"]*waiting for your system keychain[^"]*try again\."/);
+  assert.match(code, /#\[cfg\(target_os = "linux"\)\]\npub const KEYCHAIN_GIVEN_UP: &str = "[^"]*system keyring[^"]*restart the keyring[^"]*try again\."/);
+  assert.match(code, /#\[cfg\(not\(target_os = "linux"\)\)\]\npub const KEYCHAIN_GIVEN_UP: &str = "[^"]*system keychain[^"]*reopen Open Sesame[^"]*try again\."/);
+  for (const name of ['STORE_UNWRITABLE', 'WAITING_FOR_STORE']) {
+    assert.match(core, new RegExp(`#\\[cfg\\(target_os = "linux"\\)\\]\\nconst ${name}: &str =\\n?\\s*"[^"]*system keyring`), `${name} says keyring on Linux`);
+    assert.match(core, new RegExp(`#\\[cfg\\(not\\(target_os = "linux"\\)\\)\\]\\nconst ${name}: &str =\\n?\\s*"[^"]*system keychain`), `${name} says keychain elsewhere`);
+  }
   assert.match(code, /pub const NO_SECRET_SERVICE: &str = "[^"]*Secret Service[^"]*GNOME Keyring[^"]*works without signing in\."/);
   // On Linux the store is looked for again on every attempt (issue #116), so a keyring installed
   // or started later needs another press of Sign in, not a restart, and the sentence says so.
