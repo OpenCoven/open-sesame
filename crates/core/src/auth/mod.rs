@@ -32,7 +32,7 @@ pub use api::{
     refresh_body, Tokens, User, WorkosApi,
 };
 pub use callback::{authorization_code, carries_state};
-pub use controller::{AuthController, AuthParts};
+pub use controller::{Attempt, AuthController, AuthParts};
 pub use pkce::{authorize_url, generate_pkce, logout_url, Pkce};
 pub use store::{CredentialStore, SignedOutMarker};
 pub use token::{verify_access_token, Jwk, Jwks, Verified};

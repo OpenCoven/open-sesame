@@ -714,7 +714,7 @@ fn store_failure_reports_keychain_message() {
     assert!(signed_out(&rig));
     assert_eq!(
         rig.message(),
-        "Could not save your sign-in in your system keychain. Unlock it and try again."
+        format!("Could not save your sign-in in your {STORE}. Unlock it and try again.")
     );
     assert_eq!(rig.auth.next_refresh_in(), None);
 }
@@ -748,4 +748,49 @@ fn status_never_contains_a_token() {
     let mut keys: Vec<String> = rig.status().as_object().unwrap().keys().cloned().collect();
     keys.sort();
     assert_eq!(keys, ["authenticated", "busy", "email", "message", "name"]);
+}
+
+/// #153 item 4: a cancel that names the attempt it is for ends that attempt and no later one.
+/// The host's own cancel, when the browser would not open, can be left to a thread that runs
+/// after the person has pressed Sign in again; it used to cancel whatever sign-in was pending.
+#[test]
+fn a_cancel_for_an_earlier_attempt_leaves_a_later_one_waiting() {
+    let rig = rig();
+    let (_, first) = rig.auth.begin_attempt().expect("begin the first attempt");
+    rig.auth.cancel();
+    let (_, second) = rig.auth.begin_attempt().expect("begin the second attempt");
+    assert_ne!(first, second);
+    rig.auth.cancel_attempt(first);
+    assert_eq!(rig.status()["busy"], json!(true));
+    assert_eq!(rig.message(), "Finish signing in in your browser.");
+    assert_eq!(rig.auth.cancel_attempt_now(first), Ok(()));
+    assert_eq!(rig.status()["busy"], json!(true));
+    rig.auth.cancel_attempt(second);
+    assert_eq!(rig.status()["busy"], json!(false));
+    assert_eq!(rig.message(), "Sign-in cancelled.");
+}
+
+/// And an attempt that has already ended is not cancelled again: a completed sign-in stays.
+#[test]
+fn a_cancel_for_an_attempt_that_completed_changes_nothing() {
+    let rig = rig();
+    rig.api
+        .exchanges
+        .lock()
+        .unwrap()
+        .push(Ok(tokens(jwt(&claims()), "refresh-one")));
+    let (url, attempt) = rig.auth.begin_attempt().expect("begin");
+    let state = query_value(&url, "state").expect("authorisation URL carries state");
+    rig.auth.complete_sign_in(&format!(
+        "opensesame://auth/callback?code=fixture-code&state={state}"
+    ));
+    assert!(rig.auth.authenticated());
+    let changes = rig.changes.load(std::sync::atomic::Ordering::SeqCst);
+    rig.auth.cancel_attempt(attempt);
+    assert!(rig.auth.authenticated());
+    assert_eq!(rig.message(), "Signed in.");
+    assert_eq!(
+        rig.changes.load(std::sync::atomic::Ordering::SeqCst),
+        changes
+    );
 }

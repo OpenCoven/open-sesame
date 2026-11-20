@@ -160,9 +160,12 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   await picker;
 }
 
-// 6b. Sign in waits for the person too: the host reads the saved sign-in before it opens the
-// browser, and with one saved in a locked keyring that read answers only after the unlock
-// prompt (issue #116). Every other method the host answers gets 15 seconds: each one in the
+// 6b. Sign in no longer waits for the person (#153 item 5d, decided on 18 November 2026): since
+// #151 the host answers it within three times the core's `STORE_SOON` however long the keyring's
+// prompt stays open, which check-tauri-sign-in.mjs holds below this limit, so it gets the 15
+// seconds every other method gets. It used to get 180 seconds, for a look at the saved sign-in
+// that waited for the unlock prompt (issue #116). Every method the host answers gets 15
+// seconds except the folder dialog, which waits for the person: each one in the
 // gate's list is sent through `bridge.request` with no parameters, after the bridge has
 // connected, on a stand-in host that says it is Linux, and the limit the page set for that
 // request is read from the timer. So the table in ui/bridge.js may be written in any way. What
@@ -176,7 +179,7 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
   const signIn = bridge.request('auth.signIn').then(() => { outcome = 'resolved'; }, error => { outcome = error.message; });
   await settle();
   const [[, limit]] = [...timers];
-  assert.equal(limit.delay, 180000, 'Sign in waits for the keyring prompt, not for 15 seconds');
+  assert.equal(limit.delay, 15000, 'Sign in waits 15 seconds, as every request that does not wait for the person');
   invokes[1].resolve({ requestId: invokes[1].args.message.requestId, result: true });
   await signIn;
   assert.equal(outcome, 'resolved');
@@ -203,7 +206,7 @@ for (const options of [{ tauri: false }, { native: false }, { native: false, tau
     await pending;
     timers.clear(); // the fake keeps a timer that has fired
   }
-  assert.deepEqual(long.sort(), ['auth.signIn=180000', 'project.chooseFolder=180000'], 'Every method the host answers waits 15 seconds, except the folder dialog and Sign in, which wait 180');
+  assert.deepEqual(long.sort(), ['project.chooseFolder=180000'], 'Every method the host answers waits 15 seconds, except the folder dialog, which waits 180');
 }
 
 // 7. Events: host messages with an `event` key reach every subscriber, in order, until it unsubscribes.
