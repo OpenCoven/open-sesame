@@ -376,6 +376,44 @@ try {
           await railed.screenshot({path:path.join(output,`${name}-rail-attention.png`)});
         }finally{await railed.close();}
       });
+      // Rendered contrast in each scheme (#184, #185, #168): the notice's text on its wash, a field's
+      // edge against the panel at rest, and placeholder text in its field. Computed colours are
+      // read from the page; a translucent one is laid over what it sits on (WCAG 2.x luminance).
+      await step('notice text, field edge and placeholder reach their contrast in both schemes',async()=>{
+        const parse=value=>{const n=value.match(/[0-9.]+/g).map(Number);return [n[0],n[1],n[2],n[3]??1];};
+        const over=([r,g,b,a],[R,G,B])=>[r*a+R*(1-a),g*a+G*(1-a),b*a+B*(1-a),1];
+        const lum=c=>{const [r,g,b]=c.slice(0,3).map(v=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
+        const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((m,n)=>n-m);return (x+0.05)/(y+0.05);};
+        const measured={},shortfalls=[];
+        for(const colorScheme of ['dark','light']) {
+          const themed=await context.newPage();
+          try {
+            // Reduced motion, so a colour is read at rest and not part-way through a transition.
+            await themed.emulateMedia({colorScheme,reducedMotion:'reduce'});
+            await themed.setViewportSize({width:400,height:700});
+            // A first view that cannot load leaves the shell's notice up.
+            await themed.route(FIRST_VIEW,route=>route.abort());
+            await themed.goto(origin+'/ui/index.html');
+            await themed.locator('[data-shell-notice]:not([hidden])').waitFor();
+            const notice=await themed.locator('[data-shell-notice]').evaluate(e=>({color:getComputedStyle(e).color,wash:getComputedStyle(e).backgroundColor,surface:getComputedStyle(document.body).backgroundColor}));
+            await themed.getByRole('button',{name:'Commands',exact:true}).click();
+            const query=themed.locator('[data-command-query]');
+            await query.waitFor();
+            // At rest: the keyboard elsewhere, so the edge is the field's own and not the focus ring.
+            await query.evaluate(e=>e.blur());
+            const field=await query.evaluate(e=>({edge:getComputedStyle(e).borderTopColor,fill:getComputedStyle(e).backgroundColor,placeholder:getComputedStyle(e,'::placeholder').color,panel:getComputedStyle(e.closest('.palette')).backgroundColor,text:e.placeholder}));
+            assert(field.text,'The command field shows a placeholder');
+            const surface=parse(notice.surface),wash=over(parse(notice.wash),surface),panel=over(parse(field.panel),surface),fill=over(parse(field.fill),panel);
+            const result=measured[colorScheme]={notice:ratio(over(parse(notice.color),wash),wash),fieldEdge:ratio(over(parse(field.edge),panel),panel),placeholder:ratio(over(parse(field.placeholder),fill),fill)};
+            await themed.screenshot({path:path.join(output,`${name}-${colorScheme}-contrast.png`)});
+            if(!(result.notice>=4.5))shortfalls.push(`${colorScheme} notice ${result.notice.toFixed(2)}`);
+            if(!(result.fieldEdge>=3))shortfalls.push(`${colorScheme} field edge ${result.fieldEdge.toFixed(2)} (${field.edge} on ${field.panel})`);
+            if(!(result.placeholder>=4.5))shortfalls.push(`${colorScheme} placeholder ${result.placeholder.toFixed(2)}`);
+          }finally{await themed.close();}
+        }
+        report.results.push({engine:name,label:'measured contrast',contrast:Object.fromEntries(Object.entries(measured).map(([scheme,values])=>[scheme,Object.fromEntries(Object.entries(values).map(([part,n])=>[part,Number(n.toFixed(2))]))]))});
+        assert.deepEqual(shortfalls,[],'Every measured pair reaches its contrast in both schemes');
+      });
       await step('initial widget failure does not strand shell restoration',async()=>{
         const recovering=await context.newPage();
         try {

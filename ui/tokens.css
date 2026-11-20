@@ -21,6 +21,8 @@
   /* Lines are the ink at a low opacity, so they hold on every surface. */
   --line: rgb(255 255 255 / 0.08);
   --line-strong: rgb(255 255 255 / 0.16);
+  /* A field's edge is its boundary as a control, so it reaches 3:1 against the panel. */
+  --line-control: rgb(255 255 255 / 0.4);
 
   --ink: #eef0f4;
   --muted: #a3a9b6;
@@ -92,6 +94,7 @@
     --surface-sheet: rgb(247 248 250 / 0.96);
     --line: rgb(16 20 30 / 0.1);
     --line-strong: rgb(16 20 30 / 0.2);
+    --line-control: rgb(16 20 30 / 0.5);
     --ink: #14171d;
     --muted: #565d6b;
     --faint: #838a98;
@@ -100,10 +103,10 @@
     --accent-wash: rgb(70 88 216 / 0.12);
     --on-accent: #ffffff;
     --ok: #1f8a56;
-    --warn: #a25a0c;
+    --warn: #8f4f0a;
     --danger: #c8322f;
     --attention: #b86200;
-    --warn-wash: rgb(162 90 12 / 0.1);
+    --warn-wash: rgb(143 79 10 / 0.1);
     --attention-ring: rgb(184 98 0 / 0.45);
     --fill: rgb(16 20 30 / 0.05);
     --fill-hover: rgb(16 20 30 / 0.09);
@@ -151,14 +154,14 @@ button[aria-pressed="true"] { background: var(--accent-wash); border-color: var(
 input, select, textarea {
   min-height: 30px;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--radius-control);
   background: var(--sunken);
   transition: border-color var(--quick) var(--ease), box-shadow var(--quick) var(--ease);
 }
-input:hover, select:hover, textarea:hover { border-color: var(--line-strong); }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 input[type="text"], input[type="search"], input[type="url"], input[type="number"], textarea { -webkit-user-select: text; user-select: text; cursor: text; }
-input::placeholder, textarea::placeholder { color: var(--faint); }
+input::placeholder, textarea::placeholder { color: var(--muted); }
 input[type="checkbox"] { min-height: 0; width: 15px; height: 15px; padding: 0; margin: 0; accent-color: var(--accent); }
 textarea { resize: vertical; }
 
