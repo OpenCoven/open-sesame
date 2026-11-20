@@ -295,11 +295,23 @@ pub struct AuthController {
 /// panics there is covered too; the injected clock is read just before that, under no guard.
 /// What it releases is admission only: after a panic at that point the status stays busy
 /// until Cancel, sign-out or a new sign-in.
+///
+/// A credential still unsaved when a refresh ends gets its save-only retry here if nothing
+/// scheduled one. A Cancel made while a refresh is out leaves the save to that refresh
+/// ([`AuthController::cancel`]), and every way the refresh's save fails schedules the retry
+/// itself; this covers a refresh that ended before it got to the save, as one does when the
+/// change callback panics as it starts.
 struct RefreshFlight<'a>(&'a AuthController);
 
 impl Drop for RefreshFlight<'_> {
     fn drop(&mut self) {
-        self.0.lock().refreshing = false;
+        {
+            let mut state = self.0.lock();
+            state.refreshing = false;
+            if state.unsaved && state.retry_at.is_none() && !state.closed {
+                state.retry_at = Some(self.0.now() + RETRY_AFTER);
+            }
+        }
         self.0.drained.notify_all();
         if std::thread::panicking() {
             // A second panic while the first unwinds would end the process.
@@ -951,7 +963,13 @@ impl AuthController {
         state.interrupt();
         state.sign_in_failed = false;
         state.message = CANCELLED;
-        state.retry_at = (state.unsaved && !state.closed).then(|| self.now() + RETRY_AFTER);
+        // An unsaved credential gets a save-only retry, unless a refresh is out: that refresh
+        // saves it next, and schedules the retry itself if the save fails. A retry scheduled
+        // here as well would outlive a save that succeeds, and with nothing left to save it
+        // would be admitted as an exchange: the person who cancelled would be signed in 20
+        // seconds later (issue #148).
+        state.retry_at =
+            (state.unsaved && !state.closed && !state.refreshing).then(|| self.now() + RETRY_AFTER);
         drop(state);
         self.changed();
     }
