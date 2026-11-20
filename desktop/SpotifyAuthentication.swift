@@ -95,6 +95,12 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
         guard ["tracks", "playlists"].contains(kind), (0...100000).contains(offset) else { throw Issue.invalid }
         return URL(string: "https://api.spotify.com/v1/me/" + kind + "?limit=50&offset=\(offset)")!
     }
+    static func artwork(_ value: Any?) -> String {
+        for image in value as? [[String: Any]] ?? [] {
+            if let raw = image["url"] as? String, raw.utf8.count <= 2048, let url = URL(string: raw), url.scheme == "https", ["i.scdn.co", "mosaic.scdn.co"].contains(url.host ?? ""), url.user == nil, url.password == nil, url.port == nil { return url.absoluteString }
+        }
+        return ""
+    }
     static func libraryPage(_ data: [String: Any], kind: String, offset: Int) throws -> [String: Any] {
         _ = try libraryURL(kind: kind, offset: offset)
         guard let entries = data["items"] as? [Any] else { throw Issue.invalid }
@@ -103,7 +109,7 @@ final class OpenSesameSpotify: NSObject, ASWebAuthenticationPresentationContextP
                   let id = item["id"] as? String, id.range(of: "^[a-zA-Z0-9]{22}$", options: .regularExpression) != nil, let title = item["name"] as? String, !title.isEmpty else { return nil }
             let artists = item["artists"] as? [[String: Any]] ?? []
             let detail = kind == "tracks" ? artists.compactMap { $0["name"] as? String }.joined(separator: ", ") : (item["owner"] as? [String: Any])?["display_name"] as? String ?? ""
-            return ["id": id, "name": String(title.prefix(500)), "detail": String(detail.prefix(500)), "url": "https://open.spotify.com/" + (kind == "tracks" ? "track/" : "playlist/") + id]
+            return ["id": id, "name": String(title.prefix(500)), "detail": String(detail.prefix(500)), "url": "https://open.spotify.com/" + (kind == "tracks" ? "track/" : "playlist/") + id, "image": Self.artwork((kind == "tracks" ? (item["album"] as? [String: Any])?["images"] : item["images"]))]
         }
         return ["items": items, "nextOffset": data["next"] as? String != nil && offset + 50 <= 100000 ? offset + 50 as Any : NSNull()]
     }

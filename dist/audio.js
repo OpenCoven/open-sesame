@@ -239,6 +239,16 @@ function stopAudio(message=$('audio-record').checked?'Recording ready · save yo
 $('audio-start').addEventListener('click',startAudio);$('audio-stop').addEventListener('click',()=>window.OpenSesameLive?.demoRunning?window.OpenSesameLive.endDemo():stopAudio(undefined,audioSession.stopping));
 $('audio-download').addEventListener('click',async event=>{if(!audioSession.nativeRecording)return;event.preventDefault();try{if(await openSesameBridge.request('record.save',{id:audioSession.nativeRecording}))toast('Audio saved.')}catch(error){toast(error.message||'Could not save audio.')}});
 $('transcript-clear').addEventListener('click',()=>{if(audioSession.active||audioSession.starting||audioSession.stopping)return;audioSession.final='';audioSession.interim='';renderTranscript()});
+let transcriptSavePending=false;
+$('transcript-download').addEventListener('click',async event=>{
+  if(!window.__OPEN_SESAME_NATIVE__)return;
+  event.preventDefault();if(transcriptSavePending)return;
+  const text=window.OpenSesameSpeakers?.exportText()||audioSession.final;if(!text.trim())return;
+  transcriptSavePending=true;
+  try{const result=await openSesameBridge.request('transcript.save',{text});toast(result.saved?'Transcript saved.':'Save cancelled. Your transcript is kept.')}
+  catch(error){toast(error.message||'Could not save the transcript.')}
+  finally{transcriptSavePending=false}
+});
 $('transcript-copy').addEventListener('click',async()=>{const text=(window.OpenSesameSpeakers?.exportText()||audioSession.final).trim();if(!text)return;try{await navigator.clipboard.writeText(text);toast('Transcript copied.')}catch{toast('Use Export .txt to save the complete transcript.')}});
 $('transcript-note').addEventListener('click',()=>{
   if(!audioSession.final.trim())return;if(activeItems().length>=30||items.length>=300){toast('Make room in Projects to save this transcript.');return}

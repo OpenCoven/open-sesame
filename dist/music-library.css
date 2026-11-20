@@ -1,0 +1,48 @@
+/* Library-led music: content owns the space; a selected player is a compact dock. */
+#music-link-toggle{display:none}
+#music-provider[data-library=true][data-service=spotify] #music-link-toggle{display:block;margin-left:auto;width:auto;padding:0 10px;font-size:11px;white-space:nowrap}
+#music-provider[data-library=true]:not([data-link-open=true]) #music-url,#music-provider[data-library=true]:not([data-link-open=true]) #music-source-form>button[type=submit]{display:none}
+#music-provider[data-library=true][data-loaded=false] #music-provider-stage{display:none}
+#music-provider[data-library=true][data-loaded=true] #music-provider-stage{flex:0 0 152px;min-height:152px;border-radius:12px}
+#music-provider[data-library=true] #music-service-note{display:none}
+#widget-panel .spotify-library{flex:1;min-height:100px;max-height:none;padding:14px 8px 4px;border:0;background:transparent;gap:14px;overflow:hidden}
+.spotify-library-heading{flex:none;flex-wrap:wrap;gap:12px}
+.spotify-library-identity{flex:1;min-width:100px}
+.spotify-library-identity h2{margin:0 0 4px;font-size:22px;font-weight:550;letter-spacing:-.8px;color:#ece8f1}
+#spotify-library-subtitle{color:#9c95a5;font-size:11px}
+.spotify-library-filters{flex:none;gap:3px;padding:3px;background:#ffffff04;border:1px solid #ffffff09;border-radius:20px}
+#widget-panel .spotify-library-filters button{border:0;border-radius:16px;background:transparent;padding:7px 12px;font-size:11px;color:#a9a2b1}
+#widget-panel .spotify-library-filters [aria-pressed=true]{background:#d4c7e21a;color:#eee4f6}
+#widget-panel #spotify-library-refresh{padding:5px;width:28px;height:28px;border:0;background:transparent;color:#aba3b5;font-size:20px}
+#widget-panel .spotify-library-items{flex:1;display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto;scrollbar-width:thin;overscroll-behavior:contain;padding:2px}
+#widget-panel .spotify-library .spotify-library-item{display:grid;grid-template-columns:42px minmax(0,1fr) 24px;grid-template-rows:auto auto;align-items:center;column-gap:12px;row-gap:3px;min-height:62px;padding:8px 10px;border-radius:10px;background:transparent;border:1px solid transparent;position:relative}
+#widget-panel .spotify-library-item:hover,#widget-panel .spotify-library-item:focus-visible{background:#ffffff06;border-color:#ffffff0a}
+#widget-panel .spotify-library-item .spotify-item-title{grid-column:2;grid-row:1;align-self:end;font-size:13px;color:#e4dfe9;font-weight:450;line-height:1.3;max-width:100%}
+#widget-panel .spotify-library-item .spotify-item-detail{grid-column:2;grid-row:2;align-self:start;max-width:100%;font-size:11px;color:#98919f;line-height:1.3}
+#widget-panel .spotify-library-item .spotify-item-cover{grid-column:1;grid-row:1/3;position:relative;width:42px;height:42px;border-radius:8px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(145deg,#51495c,#26252d);color:#e2d8ed;font-size:19px;font-weight:500;box-shadow:0 3px 9px #0003}
+.spotify-item-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#widget-panel .spotify-library-item:after{content:'▶';grid-column:3;grid-row:1/3;font-size:10px;color:#cfc0df;opacity:0;transition:opacity .15s}
+#widget-panel .spotify-library-item:hover:after,#widget-panel .spotify-library-item:focus-visible:after{opacity:1}
+#widget-panel .spotify-library[data-kind=playlists] .spotify-library-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));align-content:start;gap:14px}
+#widget-panel .spotify-library[data-kind=playlists] .spotify-library-item{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:10px;min-height:0}
+#widget-panel .spotify-library[data-kind=playlists] .spotify-item-cover{order:-1;width:100%;height:auto;aspect-ratio:1;border-radius:10px;font-size:36px;margin-bottom:5px}
+#widget-panel .spotify-library[data-kind=playlists] .spotify-item-title,#widget-panel .spotify-library[data-kind=playlists] .spotify-item-detail{align-self:stretch}
+#widget-panel .spotify-library[data-kind=playlists] .spotify-library-item:after{position:absolute;right:20px;bottom:66px;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#e2d4ef;color:#27212e;box-shadow:0 3px 12px #0004}
+#widget-panel #spotify-library-more{flex:none;align-self:center;border:0;background:transparent;color:#bfb1cc;font-size:11px;padding:6px 16px}
+@media(max-height:540px){#music-provider[data-library=true]{overflow-y:auto}#widget-panel .spotify-library{flex:1 0 150px;padding-top:6px;gap:7px}.spotify-library-identity h2{font-size:17px}#widget-panel .spotify-library .spotify-library-item{min-height:52px;padding:5px 8px}}
+/* A closed player never grows vertically to accommodate playback or volume. */
+.notch-mode.has-compact-media:not(.expanded) .compact-widget{height:var(--notch-height);max-height:calc(var(--notch-height)*1.1);align-items:center;padding:0 var(--compact-actions-width,166px) 0 12px;overflow:hidden}
+.notch-mode.has-compact-media .compact-left{height:100%;min-width:0}
+.notch-mode.has-compact-media .compact-media-controls{top:0;bottom:0;right:112px;height:var(--notch-height);gap:1px}
+.notch-mode.has-compact-media .compact-media-controls button,.notch-mode.has-compact-media .compact-media-controls #compact-media-play{width:24px;height:min(26px,calc(var(--notch-height) - 4px));padding:3px}
+.notch-mode.has-compact-media .compact-media-controls svg{width:12px;height:12px;max-height:100%}
+#compact-media-volume{left:auto;right:9px;top:0;bottom:0;width:96px;height:var(--notch-height);display:flex;align-items:center;gap:4px}
+#compact-media-volume input{min-width:0;width:60px;max-height:var(--notch-height)}
+#compact-media-volume output{display:none}
+#compact-media-volume button{width:22px;height:min(26px,calc(var(--notch-height) - 4px));padding:3px}
+
+#widget-panel.content-focused #music-provider[data-library=true] #spotify-library{display:flex!important}
+
+#widget-panel .spotify-library[data-kind=playlists] .spotify-item-cover,#widget-panel .spotify-library[data-kind=playlists] .spotify-item-title,#widget-panel .spotify-library[data-kind=playlists] .spotify-item-detail{flex:none}
+#widget-panel .spotify-library-item[aria-current=true]{background:#c5b3db0c;border-color:#c5b3db23}
+#widget-panel .spotify-library-item[aria-current=true]:after{opacity:1}

@@ -1,0 +1,1053 @@
+//! The one command the UI can call, and where each allowed request goes.
+
+use crate::auth::{self, Auth};
+use crate::{project, rail, summon, terminal, window, AppState};
+use open_sesame_core::gate::{self, Caller};
+use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
+use open_sesame_core::Core;
+use serde_json::json;
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
+
+/// Who answers an allowed method.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Route {
+    /// Sign-in: the application's wiring around the core's sign-in logic (issue #72).
+    Auth,
+    /// Needs the window, so the application answers it.
+    Host,
+    /// The shortcut and the other ways to make the window appear (issue #71).
+    Summon,
+    /// The companion rail: open or closed, its width and its edge.
+    Rail,
+    /// A pane's output channel and the clipboard (issue #74).
+    Terminal,
+    /// The folder dialog and the file manager (issue #74).
+    Project,
+    /// Everything else: the headless core.
+    Core,
+}
+
+pub fn route(method: &str) -> Route {
+    if method.starts_with("auth.") {
+        Route::Auth
+    } else if window::METHODS.contains(&method) {
+        Route::Host
+    } else if rail::METHODS.contains(&method) {
+        Route::Rail
+    } else if summon::METHODS.contains(&method) {
+        Route::Summon
+    } else if terminal::METHODS.contains(&method) {
+        Route::Terminal
+    } else if project::METHODS.contains(&method) {
+        Route::Project
+    } else {
+        Route::Core
+    }
+}
+
+/// Whether a verified session is within its deadline. No method in the first release needs one
+/// (issue #60), so every local feature runs whatever this says.
+fn authenticated<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<Arc<Auth>>()
+        .is_some_and(|auth| auth.authenticated())
+}
+
+/// Sign-in. Before the wiring has started there is no session and nothing to start one with.
+fn auth<R: Runtime>(app: &AppHandle<R>, method: &str) -> BridgeResult {
+    match app.try_state::<Arc<Auth>>() {
+        // The guard keeps a window that hides on blur in place while the person is in the browser.
+        Some(auth) => auth.handle(method, || summon::hold(app)),
+        None if method == "auth.status" => Ok(json!({
+            "authenticated": false, "busy": false, "message": "", "name": "", "email": "",
+        })),
+        None => Err(BridgeError::from(auth::NOT_STARTED)),
+    }
+}
+
+/// Serves one UI request. The gate decides first; a request from any window other than `main`,
+/// or from a page that is not the application's own, is dropped: nothing runs and the call is rejected with
+/// no message.
+#[tauri::command]
+pub async fn bridge_request<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, AppState>,
+    message: Request,
+) -> Result<Reply, ()> {
+    let dev_url = window.app_handle().config().build.dev_url.as_ref();
+    if !window
+        .url()
+        .is_ok_and(|url| window::is_app_page(dev_url, &url))
+    {
+        return Err(());
+    }
+    let core = Arc::clone(&state.core);
+    // Handlers may block, and window calls made from the UI thread can deadlock, so the whole
+    // exchange runs on the blocking pool.
+    tauri::async_runtime::spawn_blocking(move || answer(&window, &core, &message))
+        .await
+        .map_err(|_| ())?
+        .ok_or(())
+}
+
+fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request) -> Option<Reply> {
+    let caller = Caller {
+        window: window.label(),
+        authenticated: authenticated(window.app_handle()),
+    };
+    let reply = gate::dispatch(request, &caller, |request| match route(&request.method) {
+        Route::Auth => auth(window.app_handle(), &request.method),
+        Route::Host => window::handle(window, &request.method, &request.params),
+        Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
+        Route::Rail => rail::handle(window.app_handle(), &request.method, &request.params),
+        Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
+        Route::Project => project::handle(window, &request.method, &request.params),
+        Route::Core => core.handle(&request.method, &request.params),
+    });
+    #[cfg(debug_assertions)]
+    if reply.is_some() {
+        crate::runtime_probe::record(window.app_handle(), "bridge");
+    }
+    reply
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_sesame_core::gate::{Gate, MAIN_WINDOW, NOT_IN_VERSION, PORTED, UNSUPPORTED};
+    use serde_json::Value;
+    use tauri::ipc::{CallbackFn, InvokeBody};
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime};
+    use tauri::webview::InvokeRequest;
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    /// The application's command behind Tauri's own request handling, with windows that draw
+    /// nothing. The real capability file is not loaded here, so only the command's own rules
+    /// are under test.
+    fn app() -> tauri::App<MockRuntime> {
+        app_with_core(Core::with_storage(
+            open_sesame_core::storage::Storage::open_in_memory(),
+        ))
+    }
+
+    fn app_with_core(core: Core) -> tauri::App<MockRuntime> {
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![bridge_request])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        app.manage(AppState {
+            core: Arc::new(core),
+            startup: crate::startup::Startup::start(
+                open_sesame_core::process::ShellEnv::from_vars(Default::default()),
+            ),
+            emit: crate::events::emitter(app.handle()),
+        });
+        app
+    }
+
+    fn open(
+        app: &tauri::App<MockRuntime>,
+        label: &str,
+        url: WebviewUrl,
+    ) -> WebviewWindow<MockRuntime> {
+        WebviewWindowBuilder::new(app, label, url).build().unwrap()
+    }
+
+    fn bundled() -> WebviewUrl {
+        WebviewUrl::App("index.html".into())
+    }
+
+    /// Calls `bridge_request` from `window` the way the page does. `Ok` is the reply the page
+    /// receives; `Err` is the value its call is rejected with.
+    fn call(
+        window: &WebviewWindow<MockRuntime>,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, Value> {
+        call_from(window, window.url().unwrap(), method, params)
+    }
+
+    /// The same call, with the page address the request claims to come from given separately.
+    fn call_from(
+        window: &WebviewWindow<MockRuntime>,
+        origin: tauri::Url,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, Value> {
+        let message = json!({"requestId": "r1", "method": method, "params": params});
+        get_ipc_response(
+            window,
+            InvokeRequest {
+                cmd: "bridge_request".into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: origin,
+                body: InvokeBody::Json(json!({ "message": message })),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|body| body.deserialize::<Value>().unwrap())
+    }
+
+    #[test]
+    fn storage_open_errors_reach_the_page_without_reporting_saved_or_rejecting_other_local_requests(
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-a-directory");
+        std::fs::write(&file, b"keep").unwrap();
+        let app = app_with_core(Core::with_storage(
+            open_sesame_core::storage::Storage::open_in(&file.join("data")),
+        ));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        for (method, params) in [
+            ("items.list", json!({})),
+            (
+                "items.save",
+                json!({"item":{"kind":"note","text":"unsaved"}}),
+            ),
+        ] {
+            let reply = call(&main, method, params).unwrap();
+            assert_eq!(
+                reply["error"],
+                "Open Sesame could not open its data file. The file has not been changed."
+            );
+            assert!(reply.get("result").is_none());
+        }
+        assert!(call(&main, "system.info", json!({}))
+            .unwrap()
+            .get("result")
+            .is_some());
+        assert_eq!(std::fs::read(file).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn a_newer_schema_error_reaches_the_page_as_a_sentence() {
+        // The real newer-file refusal and unchanged bytes are exercised in core/tests/runtime.rs.
+        let app = app_with_core(Core::with_storage(Err(
+            open_sesame_core::storage::StorageError::NewerSchema {
+                found: 999,
+                supported: 1,
+            },
+        )));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let reply = call(&main, "items.list", json!({})).unwrap();
+        assert_eq!(
+            reply["error"],
+            "This data was saved by a newer version of Open Sesame. Update the app to open it."
+        );
+        assert!(reply.get("result").is_none());
+    }
+
+    #[test]
+    fn every_ported_method_reaches_a_handler_or_its_named_pending_issue() {
+        // An admitted method still waiting for its issue goes here as (method, issue). #72's
+        // sign-in now answers every auth action, so none is waiting.
+        const PENDING: &[(&str, u32)] = &[];
+        let app = app();
+        // Summon's handlers answer only once its state exists, as it does after `summon::start`.
+        // `None` keeps its settings in memory, so the audit writes no file.
+        app.manage(summon::Summon::new(summon::Session::Wayland, None));
+        // The same for the rail. As the ordinary window it moves nothing.
+        app.manage(rail::Rail::new(rail::Presentation::Window, None));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        for (method, issue) in PENDING {
+            assert!(
+                PORTED.contains(method),
+                "stale pending exception {method} #{issue}"
+            );
+        }
+        for method in PORTED {
+            // Invalid typed input avoids native dialogs, clipboard access and pane creation,
+            // while still passing the gate and invoking the real route's handler.
+            let reply = call(&main, method, json!({"unexpected":true}))
+                .unwrap_or_else(|error| panic!("{method} did not return a reply: {error}"));
+            assert_ne!(
+                reply["error"], UNSUPPORTED,
+                "admitted method lost its handler: {method}"
+            );
+            if PENDING.iter().any(|(pending, _)| pending == method) {
+                assert_eq!(
+                    reply["error"], NOT_IN_VERSION,
+                    "remove the pending exception when {method} is implemented"
+                );
+            } else {
+                assert_ne!(
+                    reply["error"], NOT_IN_VERSION,
+                    "unrecorded pending handler: {method}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn folder_dialog_bad_input_is_refused_before_the_plugin_runs() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "project.chooseFolder", json!({"unexpected":true})),
+            Ok(json!({"requestId":"r1","error":"Invalid folder request."}))
+        );
+    }
+
+    #[test]
+    fn storage_save_and_list_reach_the_core_through_the_command() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let saved = call(
+            &main,
+            "items.save",
+            json!({"item": {"kind": "note", "text": "runtime wiring"}}),
+        )
+        .unwrap();
+        assert!(saved.get("error").is_none(), "{saved}");
+        let id = saved["result"]["item"]["id"].as_str().unwrap();
+        let listed = call(&main, "items.list", json!({})).unwrap();
+        assert_eq!(listed["result"]["items"][0]["id"], id);
+        assert_eq!(listed["result"]["items"][0]["text"], "runtime wiring");
+    }
+
+    #[test]
+    fn the_main_window_gets_one_reply_per_request() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "system.info", json!({})),
+            Ok(json!({
+                "requestId": "r1",
+                "result": {"platform": gate::platform(), "authenticated": false},
+            }))
+        );
+        assert_eq!(
+            call(&main, "auth.status", json!({})),
+            Ok(json!({
+                "requestId": "r1",
+                "result": {"authenticated": false, "busy": false, "message": "", "name": "", "email": ""},
+            }))
+        );
+        assert_eq!(
+            call(&main, "window.keepOpen", json!({"pinned": true})),
+            Ok(json!({"requestId": "r1", "result": {"pinned": true}}))
+        );
+        assert_eq!(
+            call(&main, "window.focus", json!({})),
+            Ok(json!({"requestId": "r1", "result": true}))
+        );
+    }
+
+    #[test]
+    fn refusals_reach_the_page_as_the_fixed_sentences() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let error = |message: &str| Ok(json!({"requestId": "r1", "error": message}));
+        assert_eq!(
+            call(&main, "speech.start", json!({})),
+            error(NOT_IN_VERSION)
+        );
+        // Without the sign-in wiring there is nothing to start a sign-in with.
+        assert_eq!(
+            call(&main, "auth.signIn", json!({})),
+            error(auth::NOT_STARTED)
+        );
+        assert_eq!(call(&main, "nope.nothing", json!({})), error(UNSUPPORTED));
+        // Requests the application answers refuse bad input before they touch a plugin.
+        assert_eq!(
+            call(&main, "terminal.open", json!({"id": "main"})),
+            error(open_sesame_core::terminal::NO_CHANNEL)
+        );
+        assert_eq!(
+            call(
+                &main,
+                "terminal.open",
+                json!({"id": "bad id", "channel": "__CHANNEL__:7"})
+            ),
+            error("Invalid pane ID.")
+        );
+        assert_eq!(
+            call(&main, "terminal.clipboard.read", json!({"x": 1})),
+            error("Invalid terminal clipboard request.")
+        );
+        assert_eq!(
+            call(&main, "terminal.clipboard.write", json!({"text": 5})),
+            error("Invalid terminal clipboard request.")
+        );
+        assert_eq!(
+            call(&main, "project.reveal", json!({"path": "relative"})),
+            error("Folder unavailable.")
+        );
+        assert_eq!(
+            call(&main, "window.size", json!({"width": "wide"})),
+            error(window::INVALID_DIMENSIONS)
+        );
+    }
+
+    #[test]
+    fn a_request_from_any_other_window_is_dropped() {
+        let app = app();
+        let _main = open(&app, MAIN_WINDOW, bundled());
+        for label in ["other", "main-2", "Main", "settings"] {
+            let other = open(&app, label, bundled());
+            for method in ["system.info", "auth.status", "window.focus", "speech.start"] {
+                assert_eq!(
+                    call(&other, method, json!({})),
+                    Err(Value::Null),
+                    "{label} {method}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_request_from_a_page_that_is_not_the_applications_own_is_dropped() {
+        let app = app();
+        let elsewhere = WebviewUrl::External("https://example.com/".parse().unwrap());
+        let main = open(&app, MAIN_WINDOW, elsewhere);
+        // The address Tauri serves bundled files from on this system; any other address is a
+        // remote page to Tauri, which refuses it before the command runs.
+        let bundled_origin: tauri::Url = if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        }
+        .parse()
+        .unwrap();
+        for method in ["system.info", "auth.status", "window.focus"] {
+            // Tauri refuses a remote page before the command runs, with its own message.
+            let refused = call(&main, method, json!({}));
+            assert!(
+                matches!(&refused, Err(Value::String(reason)) if reason.contains("not allowed")),
+                "{method} {refused:?}"
+            );
+            // If a request ever claimed a bundled origin while the window shows another page,
+            // the command itself drops it.
+            assert_eq!(
+                call_from(&main, bundled_origin.clone(), method, json!({})),
+                Err(Value::Null),
+                "{method}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_message_is_rejected_before_the_command_runs() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let request = |body: Value| InvokeRequest {
+            cmd: "bridge_request".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: main.url().unwrap(),
+            body: InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        };
+        for body in [
+            json!({}),
+            json!({"message": {"method": "system.info"}}),
+            json!({"message": {"requestId": 7, "method": "system.info"}}),
+            json!({"message": {"requestId": "r1", "method": "system.info", "params": [1]}}),
+        ] {
+            assert!(
+                get_ipc_response(&main, request(body.clone())).is_err(),
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn sign_in_methods_go_to_auth() {
+        for method in ["auth.status", "auth.signIn", "auth.cancel", "auth.signOut"] {
+            assert_eq!(route(method), Route::Auth, "{method}");
+        }
+    }
+
+    #[test]
+    fn window_methods_stay_in_the_host() {
+        for method in [
+            "window.size",
+            "window.focus",
+            "window.fullscreen",
+            "window.keepOpen",
+        ] {
+            assert_eq!(route(method), Route::Host, "{method}");
+        }
+    }
+
+    #[test]
+    fn summon_methods_go_to_summon() {
+        for method in summon::METHODS {
+            assert_eq!(route(method), Route::Summon, "{method}");
+            assert!(PORTED.contains(method), "{method} must be ported");
+        }
+        // A method the gate allows must not fall through because the application forgot it.
+        for method in PORTED.iter().filter(|method| method.starts_with("summon.")) {
+            assert_eq!(route(method), Route::Summon, "{method}");
+        }
+    }
+
+    /// The application with summon state for `session` and a settings file in a folder of its
+    /// own. The shortcut plugin is not loaded, so the system refuses every registration.
+    fn app_in(session: summon::Session, name: &str) -> (tauri::App<MockRuntime>, Folder) {
+        let app = app();
+        let folder =
+            std::env::temp_dir().join(format!("open-sesame-router-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        app.manage(summon::Summon::new(
+            session,
+            Some(folder.join("summon.json")),
+        ));
+        (app, Folder(folder))
+    }
+
+    /// A test's settings folder. It is removed when the test ends, also when an assertion
+    /// fails before the test's own last line.
+    struct Folder(std::path::PathBuf);
+
+    impl AsRef<std::path::Path> for Folder {
+        fn as_ref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl std::ops::Deref for Folder {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Folder {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn the_page_reads_and_changes_the_summon_settings() {
+        let (app, folder) = app_in(summon::Session::Wayland, "wayland");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let result = |reply: Result<Value, Value>| reply.unwrap()["result"].clone();
+        let error = |reply: Result<Value, Value>| reply.unwrap()["error"].clone();
+
+        let status = result(call(&main, "summon.status", json!({})));
+        assert_eq!(status["session"], json!("wayland"));
+        assert_eq!(status["shortcut"], json!(summon::DEFAULT_SHORTCUT));
+        assert_eq!(status["registered"], json!(false));
+        assert_eq!(status["hideOnBlur"], json!(false));
+        assert_eq!(status["toggleCommand"], json!("open-sesame --toggle"));
+
+        // A shortcut that cannot be one is refused and nothing changes.
+        for bad in [
+            json!({"shortcut": "Space"}),
+            json!({"shortcut": "Alt+Nothing"}),
+        ] {
+            assert_eq!(
+                error(call(&main, "summon.setShortcut", bad)),
+                json!(summon::INVALID_SHORTCUT)
+            );
+        }
+        for bad in [json!({}), json!({"shortcut": 7}), json!({"shortcut": null})] {
+            assert_eq!(
+                error(call(&main, "summon.setShortcut", bad)),
+                json!(summon::INVALID_REQUEST)
+            );
+        }
+        assert_eq!(
+            result(call(&main, "summon.status", json!({})))["shortcut"],
+            json!(summon::DEFAULT_SHORTCUT)
+        );
+
+        // A good one is kept for the next launch, and on Wayland the reply names the command.
+        let changed = result(call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": " Control+Shift+K "}),
+        ));
+        assert_eq!(changed["shortcut"], json!("Control+Shift+K"));
+        assert_eq!(changed["registered"], json!(false));
+        assert_eq!(changed["message"], json!(summon::WAYLAND));
+        let kept = summon::Settings::load(&folder.join("summon.json"));
+        assert_eq!(kept.shortcut, "Control+Shift+K");
+
+        assert_eq!(
+            error(call(
+                &main,
+                "summon.setHideOnBlur",
+                json!({"enabled": "yes"})
+            )),
+            json!(summon::INVALID_REQUEST)
+        );
+        let blur = result(call(
+            &main,
+            "summon.setHideOnBlur",
+            json!({"enabled": true}),
+        ));
+        assert_eq!(blur["hideOnBlur"], json!(true));
+        assert!(summon::Settings::load(&folder.join("summon.json")).hide_on_blur);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_refused_shortcut_reaches_the_page_and_the_old_one_is_kept() {
+        let (app, folder) = app_in(summon::Session::X11, "refused");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let reply = call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": "Alt+Space"}),
+        )
+        .unwrap();
+        assert_eq!(reply["error"], json!(summon::refused("Alt+Space")));
+        let status = call(&main, "summon.status", json!({})).unwrap()["result"].clone();
+        assert_eq!(
+            status["shortcut"],
+            json!(summon::DEFAULT_SHORTCUT),
+            "the setting did not change"
+        );
+        assert!(!folder.join("summon.json").exists(), "nothing was saved");
+
+        // None is a choice: it registers nothing, is not an error, and is kept.
+        let none =
+            call(&main, "summon.setShortcut", json!({"shortcut": ""})).unwrap()["result"].clone();
+        assert_eq!(none["shortcut"], json!(""));
+        assert_eq!(none["registered"], json!(false));
+        assert_eq!(none["message"], json!(""));
+        assert_eq!(
+            summon::Settings::load(&folder.join("summon.json")).shortcut,
+            ""
+        );
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_dialog_a_drag_and_a_pin_each_keep_the_window_on_blur() {
+        let (app, folder) = app_in(summon::Session::X11, "blur");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let hides = || app.state::<summon::Summon>().should_hide_on_blur();
+        assert!(!hides(), "off unless turned on");
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        assert!(hides());
+
+        // A drag, reported by the page.
+        assert_eq!(
+            call(&main, "summon.hold", json!({"held": true})).unwrap()["result"],
+            json!({"held": true})
+        );
+        assert!(!hides());
+        call(&main, "summon.hold", json!({"held": false})).unwrap();
+        assert!(hides());
+        assert_eq!(
+            call(&main, "summon.hold", json!({})).unwrap()["error"],
+            json!(summon::INVALID_REQUEST)
+        );
+
+        // Two reasons at once: the end of one does not release the other (issue #115). A hold
+        // with no reason is the drag.
+        let hold = |held: bool, reason: Option<&str>| {
+            let params = match reason {
+                Some(reason) => json!({"held": held, "reason": reason}),
+                None => json!({"held": held}),
+            };
+            call(&main, "summon.hold", params).unwrap()
+        };
+        assert_eq!(hold(true, Some("menu"))["result"], json!({"held": true}));
+        hold(true, None);
+        assert_eq!(hold(false, None)["result"], json!({"held": false}));
+        assert!(
+            !hides(),
+            "the end of a drag released a hold it did not take"
+        );
+        hold(true, Some("drag"));
+        hold(false, Some("menu"));
+        assert!(
+            !hides(),
+            "a drag named as one is the same hold as an unnamed one"
+        );
+        hold(false, None);
+        assert!(hides());
+        // Releasing what is not held, or holding twice, changes nothing, and neither is an
+        // error: the answer is the state that was asked for.
+        assert_eq!(hold(false, Some("menu"))["result"], json!({"held": false}));
+        assert_eq!(hold(false, None)["result"], json!({"held": false}));
+        hold(true, Some("menu"));
+        hold(true, Some("menu"));
+        hold(false, Some("menu"));
+        assert!(hides());
+        // A reason is a short name, and the page cannot make the host keep an endless list.
+        for bad in [
+            json!(""),
+            json!(7),
+            json!(null),
+            json!("with space"),
+            json!("x".repeat(33)),
+        ] {
+            assert_eq!(
+                call(&main, "summon.hold", json!({"held": true, "reason": bad})).unwrap()["error"],
+                json!(summon::INVALID_REQUEST)
+            );
+        }
+        let longest = "x".repeat(32);
+        assert_eq!(hold(true, Some(&longest))["result"], json!({"held": true}));
+        hold(false, Some(&longest));
+        assert!(hides());
+        for index in 0..summon::MAX_PAGE_HOLDS {
+            hold(true, Some(&format!("reason-{index}")));
+        }
+        assert_eq!(
+            call(
+                &main,
+                "summon.hold",
+                json!({"held": true, "reason": "one-more"})
+            )
+            .unwrap()["error"],
+            json!(summon::INVALID_REQUEST)
+        );
+        // One already held can still be named, and all can be released.
+        assert_eq!(
+            hold(true, Some("reason-0"))["result"],
+            json!({"held": true})
+        );
+        for index in 0..summon::MAX_PAGE_HOLDS {
+            hold(false, Some(&format!("reason-{index}")));
+        }
+        assert!(hides());
+
+        // A page that loads takes none of the holds of the page before it: that page is gone
+        // and cannot release them.
+        hold(true, Some("menu"));
+        hold(true, None);
+        assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(
+            hides(),
+            "a hold of the page before this one outlived the page load"
+        );
+
+        // A native dialog or a browser sign-in, held by the feature that opened it. It is not
+        // the page's, so a page load leaves it.
+        let dialog = summon::hold(app.handle()).unwrap();
+        assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(!hides());
+        drop(dialog);
+        assert!(hides());
+
+        // The pin. It is the person's, not the page's, so a page load leaves it too.
+        call(&main, "window.keepOpen", json!({"pinned": true})).unwrap();
+        assert!(!hides());
+        summon::page_replaced(app.handle());
+        assert!(!hides(), "a page load took the pin off");
+        call(&main, "window.keepOpen", json!({"pinned": false})).unwrap();
+        assert!(hides());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_hide_on_blur_excuses_the_one_press_or_click_that_caused_it() {
+        let (app, folder) = app_in(summon::Session::X11, "excuse");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        // Off: losing focus hides nothing, so there is nothing to excuse.
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        // On: the press or click that took the focus must not show the window again, and the
+        // one after it toggles as usual. The shortcut and the tray click both ask this.
+        call(&main, "summon.setHideOnBlur", json!({"enabled": true})).unwrap();
+        summon::blurred(app.handle());
+        assert!(summon::blur_just_hid(app.handle()));
+        assert!(!summon::blur_just_hid(app.handle()), "asked once");
+        // A window something holds does not hide, so the next press toggles.
+        let dialog = summon::hold(app.handle()).unwrap();
+        summon::blurred(app.handle());
+        assert!(!summon::blur_just_hid(app.handle()));
+        drop(dialog);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// A saved shortcut the default replaced is said in `summon.status` until the person sets
+    /// a shortcut. The other setting and a refused change leave it; the refusal has the
+    /// sentence for what was wrong (issue #115).
+    #[test]
+    fn the_notice_for_a_replaced_shortcut_ends_when_one_is_set() {
+        let app = app();
+        let folder = Folder(
+            std::env::temp_dir().join(format!("open-sesame-router-notice-{}", std::process::id())),
+        );
+        let _ = std::fs::remove_dir_all(&*folder);
+        std::fs::create_dir_all(&*folder).unwrap();
+        std::fs::write(folder.join("summon.json"), r#"{"shortcut":"Shift+Up"}"#).unwrap();
+        app.manage(summon::Summon::new(
+            summon::Session::Wayland,
+            Some(folder.join("summon.json")),
+        ));
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let result = |reply: Result<Value, Value>| reply.unwrap()["result"].clone();
+        let error = |reply: Result<Value, Value>| reply.unwrap()["error"].clone();
+        let notice = || result(call(&main, "summon.status", json!({})))["notice"].clone();
+        let replaced = json!(summon::replaced("Shift+Up"));
+        assert_eq!(notice(), replaced);
+        result(call(
+            &main,
+            "summon.setHideOnBlur",
+            json!({"enabled": true}),
+        ));
+        assert_eq!(notice(), replaced);
+        assert_eq!(
+            error(call(
+                &main,
+                "summon.setShortcut",
+                json!({"shortcut": "Shift+A"})
+            )),
+            json!(summon::SHIFT_ALONE)
+        );
+        assert_eq!(notice(), replaced);
+        let changed = result(call(
+            &main,
+            "summon.setShortcut",
+            json!({"shortcut": "Control+Shift+K"}),
+        ));
+        assert_eq!(changed["notice"], json!(""));
+        assert_eq!(notice(), json!(""));
+    }
+
+    #[test]
+    fn wayland_refuses_always_on_top_with_the_fixed_message() {
+        let (app, _folder) = app_in(summon::Session::Wayland, "pin");
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "window.keepOpen", json!({"pinned": true})),
+            Ok(json!({"requestId": "r1", "error": open_sesame_core::gate::NOT_ON_OS}))
+        );
+        assert!(!app.state::<summon::Summon>().should_hide_on_blur());
+    }
+
+    #[test]
+    fn summon_without_its_state_is_a_fixed_reply() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        assert_eq!(
+            call(&main, "summon.status", json!({})),
+            Ok(json!({"requestId": "r1", "error": UNSUPPORTED}))
+        );
+    }
+
+    #[test]
+    fn everything_else_goes_to_the_core() {
+        for method in [
+            "system.info",
+            "terminal.input",
+            "terminal.resize",
+            "terminal.close",
+            "terminal.ack",
+        ] {
+            assert_eq!(route(method), Route::Core, "{method}");
+        }
+    }
+
+    #[test]
+    fn methods_that_need_the_window_or_a_plugin_stay_in_the_application() {
+        for method in [
+            "terminal.open",
+            "terminal.clipboard.read",
+            "terminal.clipboard.write",
+        ] {
+            assert_eq!(route(method), Route::Terminal, "{method}");
+        }
+        for method in ["project.chooseFolder", "project.reveal"] {
+            assert_eq!(route(method), Route::Project, "{method}");
+        }
+    }
+
+    /// When the window loads a page again, the panes the page before it opened are closed: the
+    /// new page has no way to reach them.
+    #[test]
+    fn a_page_that_loads_again_finds_no_panes_of_the_page_before() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let opened = call(
+            &main,
+            "terminal.open",
+            json!({"id": "main", "mode": "local", "channel": "__CHANNEL__:7"}),
+        )
+        .unwrap();
+        let pid = opened["result"]["pid"].as_u64().expect("no process ID") as u32;
+        assert!(crate::test_support::alive(pid));
+        crate::terminal::page_replaced(app.handle());
+        assert_eq!(
+            call(&main, "terminal.input", json!({"id": "main", "data": "x"})),
+            Ok(json!({"requestId": "r1", "error": "Open this shell before sending input."}))
+        );
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while crate::test_support::alive(pid) && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            !crate::test_support::alive(pid),
+            "the shell of the page before is still running"
+        );
+    }
+
+    /// A pane opened through the command is a real shell, and closing it through the command
+    /// leaves no process. The channel's messages go nowhere on this windowless runtime; the
+    /// stream itself is tested in the core.
+    #[test]
+    fn a_pane_opens_and_closes_through_the_command() {
+        let app = app();
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let opened = call(
+            &main,
+            "terminal.open",
+            json!({"id": "main", "mode": "local", "channel": "__CHANNEL__:7"}),
+        )
+        .unwrap();
+        let pid = opened["result"]["pid"].as_u64().expect("no process ID") as u32;
+        assert_eq!(opened["result"]["id"], "main");
+        assert!(crate::test_support::alive(pid));
+        let ok = Ok(json!({"requestId": "r1", "result": true}));
+        assert_eq!(
+            call(&main, "terminal.ack", json!({"id": "main", "bytes": 10})),
+            ok
+        );
+        assert_eq!(
+            call(
+                &main,
+                "terminal.resize",
+                json!({"id": "main", "cols": 100, "rows": 30})
+            ),
+            ok
+        );
+        assert_eq!(call(&main, "terminal.close", json!({"id": "main"})), ok);
+        assert!(
+            !crate::test_support::alive(pid),
+            "the shell is still running after terminal.close returned"
+        );
+        // Another window cannot reach the panes either.
+        let other = open(&app, "other", bundled());
+        assert_eq!(
+            call(
+                &other,
+                "terminal.open",
+                json!({"id": "x", "channel": "__CHANNEL__:8"})
+            ),
+            Err(Value::Null)
+        );
+    }
+
+    #[test]
+    fn every_ported_host_method_has_a_handler() {
+        // A method the gate allows must not fall through to the unknown-method reply because the
+        // application forgot it.
+        for method in PORTED.iter().filter(|method| method.starts_with("window.")) {
+            assert_eq!(route(method), Route::Host, "{method}");
+        }
+    }
+
+    #[test]
+    fn without_the_wiring_the_app_is_signed_out() {
+        let app = app();
+        assert!(!authenticated(app.handle()));
+        for method in ["auth.signIn", "auth.cancel", "auth.signOut"] {
+            assert_eq!(
+                auth(app.handle(), method),
+                Err(BridgeError::from(auth::NOT_STARTED))
+            );
+        }
+        let caller = Caller {
+            window: MAIN_WINDOW,
+            authenticated: authenticated(app.handle()),
+        };
+        assert_eq!(gate::gate("system.info", &caller), Gate::SignedOutInfo);
+    }
+
+    /// The wiring with nothing real behind it: no server, a store that is empty, and a browser
+    /// that records what it was asked to open.
+    fn wire(app: &tauri::App<MockRuntime>) -> Arc<std::sync::Mutex<Vec<String>>> {
+        use open_sesame_core::auth::{AuthError, CredentialStore, Jwks, Tokens, WorkosApi};
+        struct Unreachable;
+        impl WorkosApi for Unreachable {
+            fn exchange_code(&self, _: &str, _: &str) -> Result<Tokens, AuthError> {
+                Err(AuthError::Network)
+            }
+            fn refresh(&self, _: &str) -> Result<Tokens, AuthError> {
+                Err(AuthError::Network)
+            }
+            fn jwks(&self) -> Result<Jwks, AuthError> {
+                Err(AuthError::Network)
+            }
+        }
+        struct Empty;
+        impl CredentialStore for Empty {
+            fn load(&self) -> Result<Option<String>, AuthError> {
+                Ok(None)
+            }
+            fn save(&self, _: &str) -> Result<(), AuthError> {
+                Ok(())
+            }
+            fn delete(&self) -> Result<(), AuthError> {
+                Ok(())
+            }
+        }
+        let opened = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = Arc::clone(&opened);
+        let (auth, wakes) = Auth::new(
+            Arc::new(Unreachable),
+            Arc::new(Empty),
+            Arc::new(auth::Marker::new(None)),
+            Arc::new(move |url| {
+                record.lock().unwrap().push(url.to_string());
+                true
+            }),
+            Arc::new(|| None),
+        );
+        auth.run(wakes, |_| {});
+        app.manage(auth);
+        opened
+    }
+
+    #[test]
+    fn the_page_starts_cancels_and_ends_a_sign_in_through_the_bridge() {
+        let app = app();
+        let opened = wire(&app);
+        let main = open(&app, MAIN_WINDOW, bundled());
+        let ok = |result: Value| Ok(json!({"requestId": "r1", "result": result}));
+        let status = |window: &WebviewWindow<MockRuntime>| {
+            call(window, "auth.status", json!({})).unwrap()["result"].clone()
+        };
+        assert_eq!(status(&main)["authenticated"], json!(false));
+        assert_eq!(status(&main)["busy"], json!(false));
+
+        assert_eq!(call(&main, "auth.signIn", json!({})), ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        assert!(opened.lock().unwrap()[0].starts_with("https://api.workos.com/"));
+        assert_eq!(status(&main)["busy"], json!(true));
+        // The reply to the page never carries the address, the state or the verifier.
+        let reply = call(&main, "auth.status", json!({})).unwrap().to_string();
+        assert!(
+            !reply.contains("workos") && !reply.contains("state="),
+            "{reply}"
+        );
+
+        assert_eq!(
+            call(&main, "auth.signIn", json!({})),
+            Ok(json!({"requestId": "r1", "error": auth::BUSY}))
+        );
+        assert_eq!(call(&main, "auth.cancel", json!({})), ok(json!(true)));
+        assert_eq!(status(&main)["busy"], json!(false));
+        assert_eq!(call(&main, "auth.signOut", json!({})), ok(json!(true)));
+        assert_eq!(opened.lock().unwrap().len(), 1, "sign-out opened nothing");
+
+        // Signed out, every local method is still served: sign-in is not a door (issue #60).
+        assert!(!authenticated(app.handle()));
+        assert_eq!(call(&main, "window.focus", json!({})), ok(json!(true)));
+    }
+
+    #[test]
+    fn another_window_cannot_start_or_read_a_sign_in() {
+        let app = app();
+        let opened = wire(&app);
+        let other = open(&app, "other", bundled());
+        for method in ["auth.status", "auth.signIn", "auth.cancel", "auth.signOut"] {
+            assert!(call(&other, method, json!({})).is_err(), "{method}");
+        }
+        assert!(opened.lock().unwrap().is_empty());
+    }
+}
