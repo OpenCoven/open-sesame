@@ -2686,10 +2686,11 @@ mod tests {
             assert!(!says_waiting(&answered(&auth, "auth.status").unwrap()));
             assert_eq!(answered(&auth, "auth.cancel"), Ok(json!(true)));
             // With that call still out a sign-in could not be saved: none is begun, and the
-            // browser is not opened.
+            // browser is not opened. The press is told the keyring has not answered and that a
+            // restart may help, since answering a prompt cannot (#153 item 5a).
             assert_eq!(
                 answered(&auth, "auth.signIn"),
-                Err(BridgeError::from(KEYCHAIN_WAITING))
+                Err(BridgeError::from(KEYCHAIN_GIVEN_UP))
             );
             assert!(opened.lock().unwrap().is_empty());
             // The call that was given up is still out, so the process is not shut down in an
