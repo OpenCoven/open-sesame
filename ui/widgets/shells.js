@@ -80,15 +80,16 @@ export async function mount({surface, signal, bridge, host, info, attention}) {
     await entry.pane.close();
   };
 
-  // The tabs are one stop in the tab order: arrows, Home and End move along them, and Delete
-  // closes the focused one (the close buttons are for the pointer and stay out of the tab order).
+  // The tabs are one stop in the tab order: arrows, Home and End move along them, and Delete or
+  // Backspace (the key a Mac laptop marks delete) closes the focused one; a held key closes only
+  // one. The close buttons are for the pointer and stay out of the tab order.
   tabs.addEventListener('keydown', event => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const ids = [...open.keys()];
     const at = ids.findIndex(key => open.get(key).tab === event.target);
     if (at < 0) return;
     const moves = { ArrowRight: (at + 1) % ids.length, ArrowLeft: (at - 1 + ids.length) % ids.length, Home: 0, End: ids.length - 1 };
-    if (event.key === 'Delete') { event.preventDefault(); remove(ids[at], 'tab'); }
+    if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); if (!event.repeat) remove(ids[at], 'tab'); }
     else if (event.key in moves) { event.preventDefault(); select(ids[moves[event.key]], 'tab'); }
   });
 
@@ -115,15 +116,15 @@ export async function mount({surface, signal, bridge, host, info, attention}) {
     tab.id = `${id}-tab`;
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-controls', panel.id);
-    tab.setAttribute('aria-keyshortcuts', 'Delete');
+    tab.setAttribute('aria-keyshortcuts', 'Delete Backspace');
     tab.textContent = label;
     tab.addEventListener('click', () => select(id));
     const closer = document.createElement('button');
     closer.type = 'button';
     closer.className = 'close';
     closer.setAttribute('aria-label', `Close ${label}`);
-    closer.title = `Close ${label}`;
-    // Only tabs belong in the tablist: Delete on the tab is the keyboard's way to close.
+    closer.title = `Close ${label} (Delete on its tab)`;
+    // Only tabs belong in the tablist: Delete or Backspace on the tab is the keyboard's way to close.
     closer.tabIndex = -1;
     closer.setAttribute('aria-hidden', 'true');
     closer.textContent = '×';

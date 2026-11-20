@@ -166,6 +166,15 @@ try {
         const shown=view.locator('.pane:not([hidden]) .xterm');
         await shown.click();
         await view.locator('.pane:not([hidden]) .xterm.focus').waitFor();
+        // Shift+Tab goes to the shell and the keyboard stays in it, as Tab does (review of #211).
+        const inputs=()=>page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='terminal.input').map(c=>c.params.data));
+        const before=(await inputs()).length;
+        for(const key of ['Shift+Tab','Tab']){
+          await page.keyboard.press(key);
+          assert(await page.evaluate(()=>Boolean(document.activeElement?.closest('.pane:not([hidden]) .xterm'))),`${key} keeps the keyboard in the terminal`);
+        }
+        await page.waitForFunction(before=>window.__fixture__.calls.filter(c=>c.method==='terminal.input').length>=before+2,before);
+        assert.deepEqual((await inputs()).slice(before),['\u001b[Z','\t'],'and both reach the shell');
         await page.screenshot({path:path.join(output,`${name}-shells-narrow.png`)});
         // #190: the emulator marks itself `focus`; the Focus view's rule must not reach it.
         assert.deepEqual(await shown.evaluate(node=>{const style=getComputedStyle(node);return [style.textAlign==='center',style.paddingTop];}),[false,'0px'],'a focused terminal is not centred or pushed down');
@@ -217,6 +226,14 @@ try {
         await page.keyboard.press('Delete');
         assert.deepEqual(await selected(),{selected:'Shell 3',focused:'Shell 3'},'Delete on a tab focuses the next tab');
         assert.equal(await view.getByRole('tab').count(),2);
+        // A held key closes one shell, not each one it reaches.
+        await page.evaluate(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',repeat:true,bubbles:true,cancelable:true})));
+        assert.equal(await view.getByRole('tab').count(),2,'a repeated Delete closes nothing more');
+        await newShell.click();
+        await page.waitForFunction(()=>document.querySelectorAll('[role="tab"]').length===3);
+        await tab(3).focus();
+        await page.keyboard.press('Backspace');
+        assert.equal(await view.getByRole('tab').count(),2,'Backspace on a tab closes it, for the key a Mac laptop marks delete');
         await view.locator('.tab .close').nth(1).click();
         assert.equal(await view.getByRole('tab').count(),1);
         assert(await page.evaluate(()=>Boolean(document.activeElement?.closest('.pane:not([hidden])'))),'closing the shown shell focuses the next terminal');
