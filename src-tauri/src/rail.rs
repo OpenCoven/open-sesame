@@ -1163,11 +1163,13 @@ pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
             state.dwell = Dwell::default();
             state.shown
         };
-        #[cfg(debug_assertions)]
-        eprintln!(
-            "open-sesame: rail {}",
-            if shown { "shown" } else { "hidden" }
-        );
+        // `cfg!` and not `#[cfg]`: a release build reads `shown` too, so it has no unused variable.
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "open-sesame: rail {}",
+                if shown { "shown" } else { "hidden" }
+            );
+        }
         settle(app, Focus::Leave);
     });
     if was_shown {
