@@ -58,7 +58,7 @@
 .field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--text-small); }
 .field input, .field select, .field textarea { color: var(--ink); font-size: var(--text); }
 
-.focus { justify-items: center; text-align: center; padding-top: var(--space-5); }
+.view.focus { justify-items: center; text-align: center; padding-top: var(--space-5); }
 .focus .view-row { justify-content: center; }
 .focus-clock { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
 .focus input[type="number"] { width: 5rem; }
