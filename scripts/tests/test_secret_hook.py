@@ -35,6 +35,37 @@ class SecretHookTests(unittest.TestCase):
             git('add', '.')
             self.assertNotEqual(scan().returncode, 0)
 
+
+    def test_staged_privacy_checks_block_addresses_hosts_and_home_paths(self):
+        with tempfile.TemporaryDirectory() as folder:
+            subprocess.run(['git', 'init', '-q'], cwd=folder, check=True, capture_output=True)
+            target = Path(folder) / 'notes.txt'
+            (Path(folder) / '.gitattributes').write_text('notes.txt -diff\n')
+            subprocess.run(['git', 'add', '.gitattributes'], cwd=folder, check=True)
+            candidates = [
+                ('network address', '.'.join(('10', '23', '45', '67'))),
+                ('network address', '.'.join(('93', '184', '216', '34'))),
+                ('network address', ':'.join(('fd12', '', 'a'))),
+                ('network address', ':'.join(('fd12', '', ''))),
+                ('internal hostname', '.'.join(('dev-box', 'sample-tailnet', 'ts', 'net'))),
+                ('internal hostname', 'https://' + '.'.join(('dev-box', 'internal'))),
+                ('local home path', '/'.join(('', 'Users', 'fixture-owner', 'private'))),
+            ]
+            for category, value in candidates:
+                with self.subTest(category=category):
+                    target.write_text('Address: ' + value + '.\n')
+                    subprocess.run(['git', 'add', 'notes.txt'], cwd=folder, check=True)
+                    target.write_text('Unstaged replacement\n')
+                    result = subprocess.run([sys.executable, str(SCANNER)], cwd=folder, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(category, result.stderr)
+                    self.assertNotIn(value, result.stdout + result.stderr)
+
+            target.write_text('http://127.0.0.1:3000 https://192.0.2.42 https://[2001:db8::42] https://example.ts.net /home/user/demo\n')
+            subprocess.run(['git', 'add', 'notes.txt'], cwd=folder, check=True)
+            result = subprocess.run([sys.executable, str(SCANNER)], cwd=folder, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 class MissingScannerTests(unittest.TestCase):
     def test_missing_scanner_fails_closed(self):
         env = dict(os.environ, PATH='')

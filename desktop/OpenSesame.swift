@@ -45,6 +45,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
     var screenNotes = OpenSesameScreenNotes()
     var computerAgent = OpenSesameComputerAgent()
     var imageSaveBusy = false
+    var transcriptSaveBusy = false
     var trackingNativeMenus = Set<ObjectIdentifier>()
     var pendingLauncher = false
     var dockedScreenID: NSNumber?
@@ -495,7 +496,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 let width = min(contentArea.width, max(560, preferredWidth))
                 let height = min(contentArea.height, max(360, preferredHeight))
                 panel.contentMinSize = NSSize(width: min(560, contentArea.width), height: min(360, contentArea.height))
-                panel.contentAspectRatio = .zero
+                OpenSesameWindowSizing.allowFreeResize(panel)
                 let size = panel.frameRect(forContentRect: NSRect(x: 0, y: 0, width: width, height: height)).size
                 let x = max(area.minX, min(area.maxX-size.width, detachedFrame?.minX ?? area.midX-size.width/2))
                 let y = max(area.minY, min(area.maxY-size.height, detachedFrame?.minY ?? area.midY-size.height/2))
@@ -503,7 +504,7 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
             }
             surface.layer?.cornerRadius = 0
         } else {
-            panel.contentAspectRatio = .zero
+            OpenSesameWindowSizing.allowFreeResize(panel)
             panel.contentMinSize = .zero
             panel.styleMask = [.borderless]
             panel.minSize = .zero
@@ -774,8 +775,8 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
         }
         if method == "window.fullscreen" {
             if detached, let screen = panel.screen ?? NSScreen.main {
-                if let previous = beforeFullscreen { panel.contentAspectRatio = .zero; panel.setFrame(previous, display: true); beforeFullscreen = nil }
-                else { beforeFullscreen = panel.frame; panel.contentAspectRatio = .zero; panel.setFrame(screen.visibleFrame, display: true) }
+                if let previous = beforeFullscreen { OpenSesameWindowSizing.allowFreeResize(panel); panel.setFrame(previous, display: true); beforeFullscreen = nil }
+                else { beforeFullscreen = panel.frame; OpenSesameWindowSizing.allowFreeResize(panel); panel.setFrame(screen.visibleFrame, display: true) }
             }
             respond(requestId, result: ["fullscreen": beforeFullscreen != nil]); return
         }
@@ -822,6 +823,20 @@ final class OpenSesameApp: NSObject, NSApplicationDelegate, WKScriptMessageHandl
                 guard response == .OK, let url = picker.url else { self?.respond(requestId, result: ["saved": false]); return }
                 do { try data.write(to: url, options: .atomic); self?.respond(requestId, result: ["saved": true]) }
                 catch { self?.respond(requestId, error: "Could not save the EPUB to this location.") }
+            }
+            return
+        }
+        if method == "transcript.save" {
+            guard !transcriptSaveBusy else { respond(requestId, error: "Finish the current transcript save first."); return }
+            guard let data = OpenSesameTranscriptExport.data(params) else { respond(requestId, error: "Choose a nonempty transcript under 4 MiB."); return }
+            let picker = NSSavePanel(); picker.allowedFileTypes = ["txt"]; picker.canCreateDirectories = true; picker.nameFieldStringValue = "open-sesame-transcript.txt"
+            transcriptSaveBusy = true
+            NSApp.activate(ignoringOtherApps: true)
+            picker.beginSheetModal(for: panel) { [weak self] response in
+                self?.transcriptSaveBusy = false
+                guard let self, self.authentication.authenticated, response == .OK, let url = picker.url else { self?.respond(requestId, result: ["saved": false]); return }
+                do { try data.write(to: url, options: .atomic); self.respond(requestId, result: ["saved": true]) }
+                catch { self.respond(requestId, error: "Could not save the transcript. Choose another location.") }
             }
             return
         }

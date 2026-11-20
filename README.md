@@ -35,7 +35,7 @@ Use Node.js 22 (matching CI), Python 3, and Git. GitHub CLI (`gh`) is needed for
 | `npm run dev:macos` | Build, sign for local development, and open `build/Open Sesame.app`. |
 | `bash desktop/build-macos.sh` | Compile the Mac bundle without launching. |
 | `npm run hooks:install` | Install versioned pre-commit secret checks for this worktree after checking prerequisites/custom hooks. |
-| `npm run check:secrets` | Scan staged paths and staged changes with the required Gitleaks scanner; no history audit. |
+| `npm run check:secrets` | Check staged content for secrets, literal network addresses, internal hosts, and machine-specific home paths. |
 | `npm run test:vnc:browser` | Run the optional synthetic framebuffer probe after installing its separate prerequisites. |
 | `npm run check:docs` | Validate first-party Markdown links, source paths and heading anchors without network access. |
 | `npm run tools -- create my-tool` | Scaffold a declarative tool package; validate it with `npm run tools -- validate my-tool`. |

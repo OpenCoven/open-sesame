@@ -20,7 +20,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -46,9 +46,145 @@ jobs:
         run: npm run verify
       - name: Retain executed-check evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verification-${{ matrix.os }}
           path: build/verification/
+          if-no-files-found: error
+          retention-days: 14
+
+  # The Rust workspace of the desktop restart (epic #58, issue #68). It runs on all three systems
+  # from the first Rust commit, so a break on one of them shows up in the pull request that
+  # causes it. Every step runs on every system except the Linux package install; cargo is run
+  # directly, not through scripts/run_bounded.py, because that script uses os.waitid, which
+  # Windows does not have.
+  rust:
+    name: Rust workspace (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        # Explicit, so Windows uses bash too and every pipeline fails when any part of it fails
+        # (GitHub runs an explicit bash with -eo pipefail).
+        shell: bash
+    env:
+      # The toolchain the local evidence for the restart was produced with. Raise it on purpose,
+      # in a change of its own: a new clippy can add lints, and warnings are errors here.
+      RUST_TOOLCHAIN: '1.95.0'
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+      # What the cache holds. The restore step and the save step both read this one list, because
+      # a cache saved for one list of paths is not found by a restore that names another. The
+      # name does not start with CARGO_, which is where Cargo looks for its own settings.
+      RUST_CACHE_PATHS: |
+        ~/.cargo/registry/index
+        ~/.cargo/registry/cache
+        ~/.cargo/git/db
+        target
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      # Package list: the Debian block of https://v2.tauri.app/start/prerequisites/ (page last
+      # updated 20 August 2026, read 13 November 2026). It is the page's full list, which is
+      # longer than the one in the restart plan. The tray package is libayatana-appindicator3-dev.
+      - name: Install the Tauri system packages on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      # Issue #97: the login-shell tests note a missing shell and pass without running. Naming the
+      # shells here turns a missing one into a failure on the systems that are meant to have it.
+      # zsh and fish are not on the Linux image; fish is not on the macOS image, so its case
+      # runs on Linux only.
+      - name: Install and require the shells the login-shell tests use
+        if: runner.os != 'Windows'
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get install -y zsh fish
+            shells=/bin/sh:/bin/bash:/bin/zsh:/usr/bin/fish
+          else
+            shells=/bin/sh:/bin/bash:/bin/zsh
+          fi
+          for shell in ${shells//:/ }; do test -x "$shell" || { echo "missing $shell"; exit 1; }; done
+          echo "OPEN_SESAME_REQUIRE_SHELLS=$shells" >> "$GITHUB_ENV"
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          mkdir -p build/verification/rust
+          { rustc --version --verbose; cargo --version; } | tee build/verification/rust/toolchain.txt
+      # Issue #126, decided on 16 November 2026: only main saves a cache. A cache saved by a pull
+      # request can be restored by that pull request alone, and with every pull request saving
+      # its own the repository held 11.7 GB of them and none from main; a cache main had saved
+      # was once gone ten minutes later. Every run restores here; the save step comes after the
+      # last cargo step and runs on main only. A pull request that changes Cargo.lock finds
+      # main's cache through the prefix and rebuilds what changed on each of its runs. A run on
+      # main takes the exact key or nothing: an older target directory carried forward through
+      # the prefix is what made each saved cache larger than the last.
+      - name: Restore the Cargo registry and build output
+        id: cargo-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.RUST_CACHE_PATHS }}
+          key: cargo-${{ matrix.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ github.ref != 'refs/heads/main' && format('cargo-{0}-{1}-', matrix.os, env.RUST_TOOLCHAIN) || '' }}
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Lint with warnings as errors
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee build/verification/rust/clippy.log
+      # Issue #99, decided on 16 November 2026: this step gets a limit of its own, so a test in it
+      # that hangs ends the step after 15 minutes and not the whole job after 30. The longest this
+      # step has taken in a hosted run up to that day is 5 minutes 50 seconds, on macOS with
+      # nothing cached (job 133063649770). The later steps that run tests have only the job's.
+      - name: Test the workspace
+        timeout-minutes: 15
+        run: cargo test --workspace --locked 2>&1 | tee build/verification/rust/test.log
+      # Issue #97: what the process runner's Windows-only tests measured. A passing test's output
+      # is hidden in the step above, so they run once more here with it shown. The name filter
+      # passes when it matches no test, so the step fails unless both tests left their lines.
+      - name: Record the Windows process-runner measurements
+        if: runner.os == 'Windows'
+        run: |
+          log=build/verification/rust/windows-process-runner.log
+          cargo test -p open-sesame-core --locked on_windows -- --nocapture --test-threads=1 2>&1 | tee "$log"
+          for line in 'WINDOWS-97 resume:' 'WINDOWS-97 cmd tool:'; do
+            grep -qF "$line" "$log" || { echo "No \"$line\" line: a Windows process-runner test did not run."; exit 1; }
+          done
+      # Sign-in keeps its refresh token in the system's credential store (issue #72). This test
+      # writes a value that is not a token under a name nothing else uses, reads it back,
+      # replaces it and removes it. It is ignored in the ordinary run because a machine without
+      # a store cannot run it; the Linux runner has no Secret Service, so it runs on the others.
+      - name: Round-trip a value through the system's credential store
+        if: runner.os != 'Linux'
+        run: cargo test --package open-sesame --locked -- --ignored the_real_credential_store 2>&1 | tee build/verification/rust/credential-store.log
+      - name: Build the app
+        run: cargo build --package open-sesame --locked 2>&1 | tee build/verification/rust/build.log
+      # The companion rail (docs/companion-rail.md) cannot be started on Windows from the Mac the
+      # rest of its evidence comes from. This starts the binary built above on the runner's
+      # desktop and writes down what its window does: where the strip is, whether it leaves the
+      # keyboard with the window that had it, and what resting on it and `open-sesame --toggle`
+      # change. The pointer is a stand-in file. A hosted virtual machine with no person and no
+      # real display: evidence of its own class, and it fills no smoke-pass cell.
+      - name: Record what the rail's window does on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/fixtures/rail-windows.ps1 -Binary target/debug/open-sesame.exe -Out build/verification/rust/rail-windows
+      # Runs only when every step above succeeded, as the save of the undivided cache action did,
+      # and only when the restore found no cache under this exact key.
+      - name: Save the Cargo registry and build output on main
+        if: github.ref == 'refs/heads/main' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.RUST_CACHE_PATHS }}
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
+      - name: Retain executed-check evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-verification-${{ matrix.os }}
+          path: build/verification/rust/
           if-no-files-found: error
           retention-days: 14

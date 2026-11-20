@@ -17,8 +17,9 @@ The [iOS/iPadOS local host candidate](../ios/README.md) documents native storage
 | Familiars | [CLI integration contract](coven-familiars-integration.md), [persistent chat and commands](familiar-chat-commands.md) | [Permissions and layout](familiar-permissions-and-layout.md) |
 | Window and display | [Display following](notch-display-follow.md), [display pinning and shared Spotify](display-pinning-and-spotify.md) | [Desktop setup and smoke pass](../desktop/README.md) |
 | Screen, voice and audio | [Screen notes and capture](screen-notes-and-capture.md), [Protected Share](protected-share.md) | [System audio and media](system-audio-and-media.md), [transcription startup repair](system-audio-transcription.md) |
-| Authentication | [Native login contract](workos-login.md), [public HTTPS login handoff](../web/auth-entrypoint/README.md) | Public deployment and saved provider settings require their own live evidence |
+| Authentication | [Native login contract](workos-login.md), [Rust refresh recovery](auth-refresh-recovery.md), [public HTTPS login handoff](../web/auth-entrypoint/README.md) | Public deployment and saved provider settings require their own live evidence |
 | Mobile architecture | [Host ADR and approval status](mobile/adr-001-mobile-host.md), [mobile index](mobile/README.md) | [Canonical source/transport inventory](mobile/source-inventory.md), [capability and recovery states](mobile/capabilities.md); device support is not yet qualified |
+| Desktop restart acceptance | [Three-OS smoke pass](desktop-smoke-pass.md): one column each for macOS, Windows, Linux X11 and Linux Wayland, and the owner's steps | [Tauri shell instructions](../src-tauri/AGENTS.md); compilation, hosted CI and fixtures never fill a smoke-pass cell |
 | Remote desktops | [VNC connection types, lifecycle and checks](vnc-desktops.md) | [Controller setup](../desktop/controller-setup.md) covers a separate optional message receiver |
 | Message controllers | [Controller setup](../desktop/controller-setup.md) | [Capability boundaries](capabilities.md) distinguish optional adapters from qualified providers |
 
@@ -34,3 +35,5 @@ Local tests, hosted checks, rendered browser observations, installed native oper
 
 
 [Local speaker labels](speaker-diarization.md) explains opt-in NeMo setup, timestamp alignment, anonymous names, responsive Stop and private temporary-audio cleanup.
+
+The restart's [ES-module shell contract](ui-shell.md) covers metadata-only command discovery, widget lifetimes, the JSON tier, persistence boundaries and rendered/native-renderer checks. Its [default views](default-views.md) (Today, Projects and Focus) cover items, projects, the focus timer and palette capture and answers. The restart's window is the [companion rail](companion-rail.md): a strip against a screen edge on the display the pointer is on that opens into the panel, with its states, the systems it runs on, the visual tokens and the evidence so far.

@@ -78,7 +78,17 @@ def build(root=ROOT, verify_only=False):
     engine = root / 'desktop/engine'
     inputs = {p.relative_to(engine).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in [engine / 'Cargo.toml', engine / 'Cargo.lock', *sorted((engine / 'src').rglob('*'))] if p.is_file()}
-    environment_hash = hashlib.sha256(json.dumps({k: os.environ.get(k, '') for k in ['RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_TARGET']}, sort_keys=True).encode()).hexdigest()
+    environment = dict(os.environ, CARGO_TARGET_DIR=str(root / 'build/coven-engine-target'))
+    separator = '\x1f'
+    existing_flags = environment.get('CARGO_ENCODED_RUSTFLAGS')
+    flags = existing_flags.split(separator) if existing_flags is not None else environment.get('RUSTFLAGS', '').split()
+    home = Path.home().resolve()
+    cargo_home = Path(environment.get('CARGO_HOME') or home / '.cargo').expanduser().resolve()
+    for source_path, mapped_path in ((home, '/build-home'), (cargo_home, '/cargo'), (root.resolve(), '/open-sesame')):
+        if source_path != Path(source_path.anchor):
+            flags.append(f'--remap-path-prefix={source_path}={mapped_path}')
+    environment['CARGO_ENCODED_RUSTFLAGS'] = separator.join(filter(None, flags))
+    environment_hash = hashlib.sha256(json.dumps({k: environment.get(k, '') for k in ['CARGO_ENCODED_RUSTFLAGS', 'CARGO_BUILD_TARGET']}, sort_keys=True).encode()).hexdigest()
     fingerprint = hashlib.sha256(json.dumps({'pin': pin, 'compiler': compiler, 'inputs': inputs, 'environment': environment_hash}, sort_keys=True).encode()).hexdigest()
     out = root / 'build/coven-engine'; out.mkdir(exist_ok=True)
     if out.is_symlink():
@@ -92,7 +102,6 @@ def build(root=ROOT, verify_only=False):
     except (OSError, ValueError, KeyError):
         cached = False
     if not cached:
-        environment = dict(os.environ, CARGO_TARGET_DIR=str(root / 'build/coven-engine-target'))
         subprocess.run(['cargo', 'build', '--release', '--locked', '--manifest-path', str(engine / 'Cargo.toml')], cwd=root, env=environment, check=True)
         verify_source(source, archive_files(root / pin['archive'], pin['sha256'])[0])
         built = root / 'build/coven-engine-target/release/open-sesame-computer-agent'

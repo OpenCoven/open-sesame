@@ -52,6 +52,9 @@ class EmbeddedEngineBuildTests(unittest.TestCase):
     def test_cache_binds_adapter_lock_compiler_and_binary(self):
         calls = []
         def compile_engine(*args, **kwargs):
+            flags = kwargs['env']['CARGO_ENCODED_RUSTFLAGS'].split('\x1f')
+            self.assertIn(f'--remap-path-prefix={self.root.resolve()}=/open-sesame', flags)
+            self.assertIn(f'--remap-path-prefix={Path.home().resolve()}=/build-home', flags)
             calls.append(args[0]); binary = self.root / 'build/coven-engine-target/release/open-sesame-computer-agent'
             binary.parent.mkdir(parents=True, exist_ok=True); binary.write_bytes(b'compiled fixture')
         with patch.object(engine.subprocess, 'check_output', return_value='rustc fixture'), patch.object(engine.subprocess, 'run', side_effect=compile_engine):

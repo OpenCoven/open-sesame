@@ -42,3 +42,9 @@ xcrun swiftc -o "$open_sesame_check/speaker-diarization-tests" "$open_sesame_roo
 
 xcrun swiftc -o "$open_sesame_check/local-media-player-tests" "$open_sesame_root/desktop/EmbeddedWebSurface.swift" "$open_sesame_root/desktop/LocalMediaPlayers.swift" "$open_sesame_root/desktop/tests/LocalMediaPlayersTests.swift" -framework AppKit -framework WebKit
 "$open_sesame_check/local-media-player-tests"
+
+xcrun swiftc -o "$open_sesame_check/transcript-export-tests" "$open_sesame_root/desktop/TranscriptExport.swift" "$open_sesame_root/desktop/tests/TranscriptExportTests.swift"
+"$open_sesame_check/transcript-export-tests"
+
+xcrun swiftc -o "$open_sesame_check/window-sizing-tests" "$open_sesame_root/desktop/WindowSizing.swift" "$open_sesame_root/desktop/tests/WindowSizingTests.swift" -framework AppKit
+"$open_sesame_check/window-sizing-tests"
