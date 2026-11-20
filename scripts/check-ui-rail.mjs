@@ -252,5 +252,10 @@ for (const id of wideViews) assert(widgets.some(widget => widget.id === id));
 for (const [tag] of page.matchAll(/<button [^>]*class="(?:rail|bar)-button[^>]*>/g)) assert(tag.includes('tabindex="0"'), `${tag} is in the Tab order in WebKit`);
 assert.match(main, /button\.className = 'rail-button';[^\n]*button\.tabIndex = 0;/, 'The view buttons on the strip are in the Tab order in WebKit');
 assert.match(page, /<button [^>]*data-collapse title="Close panel"[^>]*>[\s\S]*?<span class="label-hidden">Close panel<\/span>/);
+// The keyboard the panel had is left on the mark when the panel closes, and every close gives
+// the keyboard to another application, so the closed strip draws no ring while it is away.
+assert.match(main, /addEventListener\('blur', \(\) => windowFocus\(false\)\);/);
+assert.match(main, /addEventListener\('focus', \(\) => windowFocus\(true\)\);/);
+assert.match(read('ui/shell.css'), /\.shell\[data-window-focus="false"\] \.rail-mark:focus-visible \{ outline: none; \}/);
 assert.deepEqual([...wideViews], ['shells']);
 console.log('Rail source rules: sizes, corner, event, methods, presentation flags, tokens-only colours, reduced motion and icons pass.');

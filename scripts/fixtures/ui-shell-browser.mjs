@@ -430,6 +430,22 @@ try {
           await railed.evaluate(()=>window.__rail__.close());
           await railed.waitForFunction(()=>document.querySelector('.shell').dataset.rail==='collapsed');
           assert.equal(await where(),'mark','a close from the host puts the keyboard on the mark');
+          // A keyboard user's close: the mark has the keyboard and its ring, until the window
+          // loses the keyboard to another application, which every close in the app does. The
+          // closed strip then shows no ring, and the ring is back when the window has the keyboard.
+          await railed.locator('[data-view="today"]').click();
+          await railed.waitForFunction(()=>window.__rail__.host.held===true);
+          await railed.locator('[data-view="today"]').focus();
+          for(let i=0;i<20&&!(await railed.evaluate(()=>document.querySelector('[data-panel]').contains(document.activeElement)));i++)await railed.keyboard.press('Tab');
+          assert(await railed.evaluate(()=>document.querySelector('[data-panel]').contains(document.activeElement)),'Tab reaches the panel');
+          await railed.evaluate(()=>window.__rail__.close());
+          await railed.waitForFunction(()=>document.querySelector('.shell').dataset.rail==='collapsed');
+          const ring=()=>mark.evaluate(e=>({focused:document.activeElement===e,visible:e.matches(':focus-visible'),outline:getComputedStyle(e).outlineStyle}));
+          assert.deepEqual(await ring(),{focused:true,visible:true,outline:'solid'},'a keyboard close leaves the keyboard and its ring on the mark while the window has the keyboard');
+          await railed.evaluate(()=>window.dispatchEvent(new Event('blur')));
+          assert.deepEqual(await ring(),{focused:true,visible:true,outline:'none'},'the closed strip shows no ring once the window has lost the keyboard');
+          await railed.evaluate(()=>window.dispatchEvent(new Event('focus')));
+          assert.deepEqual(await ring(),{focused:true,visible:true,outline:'solid'},'the ring is back when the window has the keyboard again');
         }finally{await railed.close();}
       });
       await step('initial widget failure does not strand shell restoration',async()=>{

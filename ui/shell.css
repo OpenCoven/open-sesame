@@ -118,6 +118,8 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
 .rail-mark { color: var(--ink); }
 .rail-mark:disabled { color: var(--ink); }
 .rail-mark .icon { width: 24px; height: 24px; }
+/* The keyboard was handed back to another application with the mark focused: no ring on the strip until it returns. */
+.shell[data-window-focus="false"] .rail-mark:focus-visible { outline: none; }
 
 /* The panel: one raised sheet beside the strip. */
 .panel {
