@@ -303,11 +303,16 @@ pub enum Act {
 /// One tick of the pointer thread. Only a collapsed rail follows the pointer to another display,
 /// only a peek nobody is using closes by itself, and a pointer between displays changes nothing.
 pub fn decide(glance: &Glance, dwell: &mut Dwell, pointer: (f64, f64), screens: &[Screen]) -> Act {
-    if let Some(index) = screens
+    // Only a display the rail's work area names alone: two that share it (mirrored) would
+    // otherwise take turns, a new placement every tick.
+    let mut same = screens
         .iter()
-        .position(|screen| Some(screen.area) == glance.area && screen.unit != glance.unit)
-    {
-        return Act::Rescale(index);
+        .enumerate()
+        .filter(|(_, screen)| Some(screen.area) == glance.area);
+    if let (Some((index, screen)), None) = (same.next(), same.next()) {
+        if screen.unit != glance.unit {
+            return Act::Rescale(index);
+        }
     }
     let Some(index) = screens
         .iter()
@@ -971,19 +976,65 @@ fn place<R: Runtime>(window: &WebviewWindow<R>, frame: Rect, screens: &[Screen])
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = screens;
-        // Moved first and sized after. On Windows a move onto a display with another scale
-        // makes the toolkit resize the window to keep its size in points, which would undo a
-        // size set before the move. Then moved again, because the unseen border below is
+        // On Windows a window that reaches a display with another scale is resized by the
+        // toolkit to keep its size in points, which would undo the size set here. So the order
+        // is the one whose window in between stays on the frame's display: sized first when it
+        // shrinks where it is (a panel closing to the strip), moved first when it grows or goes
+        // to another display. Then moved again on Windows, because the unseen border below is
         // measured in the new display's pixels.
-        move_to(window, frame);
-        let _ = window.set_size(tauri::PhysicalSize::new(
-            frame.width as u32,
-            frame.height as u32,
-        ));
+        let current = match (window.inner_position(), window.inner_size()) {
+            (Ok(at), Ok(size)) => Some(Rect {
+                x: f64::from(at.x),
+                y: f64::from(at.y),
+                width: f64::from(size.width),
+                height: f64::from(size.height),
+            }),
+            _ => None,
+        };
+        let size = || {
+            let _ = window.set_size(tauri::PhysicalSize::new(
+                frame.width as u32,
+                frame.height as u32,
+            ));
+        };
+        if current.is_some_and(|current| size_before_move(current, frame, screens)) {
+            size();
+            move_to(window, frame);
+        } else {
+            move_to(window, frame);
+            size();
+        }
         #[cfg(windows)]
         move_to(window, frame);
     }
+}
+
+/// Whether a window at `current` that is to be at `frame` should be sized before it is moved:
+/// only when that keeps the window in between on the frame's display and moving first would not.
+#[cfg(any(not(target_os = "macos"), test))]
+pub fn size_before_move(current: Rect, frame: Rect, screens: &[Screen]) -> bool {
+    let centre = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
+    let Some(display) = screens.iter().find(|screen| screen.bounds.contains(centre)) else {
+        return false;
+    };
+    let on = |rect: Rect| {
+        let bounds = display.bounds;
+        rect.x >= bounds.x
+            && rect.y >= bounds.y
+            && rect.x + rect.width <= bounds.x + bounds.width
+            && rect.y + rect.height <= bounds.y + bounds.height
+    };
+    let moved_first = Rect {
+        width: current.width,
+        height: current.height,
+        ..frame
+    };
+    let sized_first = Rect {
+        width: frame.width,
+        height: frame.height,
+        ..current
+    };
+    !on(moved_first) && on(sized_first)
 }
 
 /// Puts what a person sees of the window at `frame`'s corner, in physical pixels.
@@ -1329,6 +1380,31 @@ mod tests {
     }
 
     #[test]
+    fn the_window_in_between_stays_on_the_frames_display() {
+        // A laptop at 150% with a monitor at 100% to its right, the rail on the right edge.
+        let screens = [screen(0.0, 2560.0, 1.5), screen(2560.0, 1920.0, 1.0)];
+        let rect = |x: f64, width: f64| Rect {
+            x,
+            y: 100.0,
+            width,
+            height: 600.0,
+        };
+        let panel = rect(2560.0 - 600.0, 600.0);
+        let strip = rect(2560.0 - 96.0, 96.0);
+        // Closing: moved first, the wide window would sit mostly on the monitor.
+        assert!(size_before_move(panel, strip, &screens));
+        // Opening: sized first, it would.
+        assert!(!size_before_move(strip, panel, &screens));
+        // To the other display, and a frame on no display: moved first.
+        let there = rect(2560.0 + 1920.0 - 96.0, 96.0);
+        assert!(!size_before_move(panel, there, &screens));
+        assert!(!size_before_move(panel, rect(9000.0, 96.0), &screens));
+        // On the left edge either order stays put; moved first, as before.
+        let left = [screen(0.0, 2560.0, 1.5)];
+        assert!(!size_before_move(rect(0.0, 600.0), rect(0.0, 96.0), &left));
+    }
+
+    #[test]
     fn the_strip_is_centred_against_the_edge_and_the_panel_fills_the_height() {
         let strip = frame(AREA, 1.0, Edge::Right, Shape::Collapsed);
         assert_eq!(
@@ -1432,6 +1508,14 @@ mod tests {
             decide(&unchanged, &mut dwell, (100.0, 100.0), &[before, other]),
             Act::Rescale(0)
         );
+        // Two displays with that work area (mirrored) at different scales: neither, or the rail
+        // would be placed on each in turn.
+        for screens in [[after, before], [before, after]] {
+            assert!(!matches!(
+                decide(&unchanged, &mut dwell, (100.0, 100.0), &screens),
+                Act::Rescale(_)
+            ));
+        }
     }
 
     #[test]
