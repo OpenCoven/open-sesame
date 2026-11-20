@@ -149,6 +149,8 @@ function closePalette({restore = false} = {}) {
 // itself. A view that took focus for itself, such as Today's capture field, keeps it, and so
 // does anything the person focused meanwhile.
 function focusView(id) {
+  // A palette opened again meanwhile keeps the keyboard.
+  if (!palette.hidden) return;
   const surface = views.querySelector(`[data-widget-view="${id}"]`);
   if (!surface || surface.hidden || state?.lastView !== id) return;
   const active = document.activeElement;
@@ -214,6 +216,8 @@ function renderCommands() {
         if (result?.saved === true) {if (kept?.draft === draft) drop();}
         else keep(typed,draft,OVERTAKEN);
       },error => {
+        // The view never came: the keyboard goes back to Commands rather than to the page.
+        if (!document.activeElement || document.activeElement === document.body) paletteToggle.focus();
         if (!command.capture) throw error;
         keep(typed,draft,message(error));
         openPalette();

@@ -265,6 +265,18 @@ try {
         await page.getByRole('button', {name: 'Commands', exact: true}).click();
         await page.getByRole('button', {name: 'Close commands', exact: true}).click();
         assert.equal(await page.getByRole('button', {name: 'Commands', exact: true}).evaluate(node => node === document.activeElement), true, 'Close commands returns focus to Commands');
+        // A command whose view cannot load leaves the keyboard on Commands, not on the page. Its
+        // own install, so the failed import and the view it leaves behind touch no other step.
+        const failingApp = await install(browser, createHost(), name);
+        installs.push(failingApp);
+        const failing = await failingApp.open(START);
+        try {
+          await failing.route('**/ui/widgets/focus.js', route => route.abort());
+          await palette(failing, 'open focus');
+          await failing.locator('[data-command-query]').press('Enter');
+          await failing.waitForFunction(() => !document.querySelector('[data-shell-notice]').hidden);
+          assert.equal(await failing.evaluate(() => document.activeElement?.title || document.activeElement?.tagName), 'Commands', 'a command that fails returns focus to Commands');
+        } finally { await failing.close(); }
       });
       await step('calculator and world-clock answers show in the palette and save nothing', async () => {
         const before = host.writes().length;
