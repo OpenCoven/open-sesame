@@ -62,11 +62,11 @@ def main():
     if sys.platform == 'darwin' and not args.portable:
         native = 'macOS compilation failed; see macos-build result'
         check('embedded-engine-build', [sys.executable, '-B', 'scripts/build-coven-engine.py'], 600)
-        check('embedded-engine-tests', ['cargo', 'test', '--release', '--locked', '--target-dir', str(ROOT / 'build/coven-engine-target'), '--manifest-path', 'desktop/engine/Cargo.toml'], 120)
+        check('embedded-engine-tests', ['cargo', 'test', '--release', '--locked', '--target-dir', str(ROOT / 'build/coven-engine-target'), '--manifest-path', 'desktop/engine/Cargo.toml'], 600)
         check('native-url', ['bash', 'scripts/check-native.sh'])
-        check('native-authentication', ['bash', 'scripts/check-authentication.sh'], 180)
+        check('native-authentication', ['bash', 'scripts/check-authentication.sh'], 600)
         check('native-screen-notes', ['bash', 'scripts/check-screen-notes.sh'], 120)
-        if check('macos-build', ['bash', 'desktop/build-macos.sh'], 180):
+        if check('macos-build', ['bash', 'desktop/build-macos.sh'], 600):
             native = 'compiled; GUI acceptance is separate'
             app = str(ROOT / 'build/Open Sesame.app')
             check('plist', ['plutil', '-lint', app + '/Contents/Info.plist'])

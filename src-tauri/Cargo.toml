@@ -1,0 +1,48 @@
+[package]
+name = "open-sesame"
+version = "0.1.0"
+description = "Open Sesame desktop application: the Tauri shell around the headless core."
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+# A different name from the binary, so the two do not collide in the Windows build output.
+name = "open_sesame_lib"
+
+[dependencies]
+keyring = "4"
+# The store API behind `keyring`: the entries are asked through it, and on Linux the Secret
+# Service store is opened here so that it can be opened again (issue #116).
+keyring-core = "1"
+open-sesame-core = { path = "../crates/core" }
+serde_json = "1.0.154"
+# macos-private-api lets the web view be see-through, which the rail's window material needs
+# (rail.rs). It is the one private call; the application is not sandboxed and cannot be, because
+# it starts shells.
+tauri = { version = "2.12.5", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-clipboard-manager = "2.5.0"
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-opener = "2.7.3"
+tauri-plugin-single-instance = "2"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+# Test-only: Tauri's windowless runtime, so the command is tested behind Tauri's own request handling.
+tauri = { version = "2.12.5", features = ["test"] }
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The rail on Wayland (layer.rs): the GTK window Tauri made, in the version Tauri uses, and
+# `dlopen` for gtk-layer-shell, which is opened when it is there and never linked.
+gtk = "0.18"
+libc = "0.2"
+# The same store, with the same feature, that `keyring` uses on Linux.
+zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
