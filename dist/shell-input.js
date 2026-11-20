@@ -50,8 +50,8 @@
   input.addEventListener('input',saveDraft);
   function refresh(){sync();renderDraft()}
   window.addEventListener('open-sesame-terminal-changed',refresh);
-  window.addEventListener('open-sesame-view-changed',()=>{refresh();if(active()&&state.expanded&&el('terminal-connect-form').hidden&&el('terminal-project-form').hidden)input.focus({preventScroll:true})});
+  window.addEventListener('open-sesame-view-changed',async ()=>{refresh();if(active()&&state.expanded&&el('terminal-connect-form').hidden&&el('terminal-project-form').hidden)input.focus({preventScroll:true})});
   window.addEventListener('pagehide',saveDraft);
-  document.addEventListener('DOMContentLoaded',()=>{ready=true;refresh()});
+  (window.OpenSesameWorkspaceBoot?.onReady || (fn=>document.addEventListener('DOMContentLoaded',fn)))(()=>{ready=true;refresh()});
   window.OpenSesameShellInput={sync,interpret,submit,saveDraft,finishCommand,get commandContext(){return context},get active(){return active()},get busy(){return busy}};
 })();

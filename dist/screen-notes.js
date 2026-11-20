@@ -52,20 +52,20 @@
     finally{bitmap?.close();if(ticket===generation){busy=false;controls()}}
 
   });
-  save.addEventListener('click',()=>{
+  save.addEventListener('click',async ()=>{
     const body=note.value.trim();if(!body||busy)return;
     if(activeItems().length>=30||items.length>=300){error('Make room in Projects to save these notes.');return}
     if(projectId&&!projects.some(p=>p.id===projectId)){error('This project is unavailable. Your draft is kept.');return}
     const title=el('screen-notes-title').value.trim()||'Screen notes',item={id:newId(),kind:'note',title,text:title,body,url:'',projectId,done:false,createdAt:Date.now()};
-    items.push(item);if(!saveItems()){const index=items.indexOf(item);if(index>=0)items.splice(index,1);error('Could not save. Your draft is kept.');return}
+    items.push(item);if(!(await saveItems())){const index=items.indexOf(item);if(index>=0)items.splice(index,1);error('Could not save. Your draft is kept.');return}
     close();note.value='';source='';requestContext='';dirty=false;el('screen-notes-title').value='Screen notes';el('screen-notes-preview').hidden=true;el('screen-notes-image').removeAttribute('src');
     switchProject(projectId||'inbox');categoryFilter='note';expandedCategories.clear();expandedCategories.add('note');changeScenario('items');openItem(item.id);toast('Screen notes saved.');
   });
-  el('screen-notes-capture').addEventListener('click',()=>acquire('capture'));el('screen-notes-import').addEventListener('click',()=>acquire('import'));
-  el('screen-notes-close').addEventListener('click',close);el('screen-notes-cancel').addEventListener('click',close);el('capture-screen-context').addEventListener('click',()=>open());note.addEventListener('input',()=>{dirty=true;controls()});
-  el('screen-notes-replace').addEventListener('click',()=>{if(pendingKind)acquire(pendingKind,true)});el('screen-notes-keep').addEventListener('click',()=>{pendingKind='';el('screen-notes-replace-prompt').hidden=true});
-  dialog.addEventListener('cancel',event=>{event.preventDefault();close()});
-  window.addEventListener('open-sesame-layout',()=>{if(!state.expanded&&dialog.open)close()});
+  el('screen-notes-capture').addEventListener('click',async ()=>acquire('capture'));el('screen-notes-import').addEventListener('click',async ()=>acquire('import'));
+  el('screen-notes-close').addEventListener('click',close);el('screen-notes-cancel').addEventListener('click',close);el('capture-screen-context').addEventListener('click',async ()=>open());note.addEventListener('input',async ()=>{dirty=true;controls()});
+  el('screen-notes-replace').addEventListener('click',async ()=>{if(pendingKind)acquire(pendingKind,true)});el('screen-notes-keep').addEventListener('click',async ()=>{pendingKind='';el('screen-notes-replace-prompt').hidden=true});
+  dialog.addEventListener('cancel',async event=>{event.preventDefault();close()});
+  window.addEventListener('open-sesame-layout',async ()=>{if(!state.expanded&&dialog.open)close()});
   window.addEventListener('pagehide',close);
   window.OpenSesameScreenNotes={open,close};
 })();

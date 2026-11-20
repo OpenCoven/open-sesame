@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 // Exercise real renderer owners with synthetic local content; no native/provider turn is available.
 export async function checkMobilePreservation(page){
  await page.setViewportSize({width:390,height:844});
- await page.evaluate(()=>{
+ await page.evaluate(async()=>{
   items=[{id:'mobile-note',kind:'note',text:'Open this exact note',body:'Long note\n'.repeat(100),updatedAt:10},{id:'mobile-reading',kind:'bookmark',text:'Saved article',url:'https://example.org',readingLater:true},...Array.from({length:25},(_,i)=>({id:'mobile-task-'+i,kind:'task',text:'Task '+i,createdAt:i,updatedAt:i,done:false}))];
-  saveItems();OpenSesameWidgetLifecycle.set('task-manager','active');OpenSesamePageWidgets.open('builtin-task-manager');
+  await saveItems();await OpenSesameWidgetLifecycle.set('task-manager','active');await OpenSesamePageWidgets.open('builtin-task-manager');
  });
  await page.locator('#task-manager-title').fill('Keep this installed widget draft');
  await page.locator('#page-widget-view-projects').evaluate(n=>{n.scrollTop=200});
@@ -40,12 +40,10 @@ export async function checkMobilePreservation(page){
  await page.locator('#reading-content-focus').click();await page.evaluate(()=>OpenSesameMobile.navigate('today'));
  assert.equal(await page.evaluate(()=>OpenSesameContentFocus.active),false,'Today retires the content-only presentation without remounting the pane');
  const definition=await page.request.get(new URL('/dist/tools/meeting-notes/tool.json',page.url()).href).then(r=>r.json());
- await page.evaluate(definition=>{
-  const instance=OpenSesameToolsModel.instance({...definition,page:'focus'});instance.id='mobile-focus-notes';
-  const value=JSON.stringify([instance]);localStorage.setItem('open-sesame-tools-v1',value);
-  window.dispatchEvent(new StorageEvent('storage',{key:'open-sesame-tools-v1',newValue:value}));
-  OpenSesamePageWidgets.open(instance.id);
- },definition);
+ await page.locator('[data-mobile-destination=widgets]').click();await page.evaluate(()=>OpenSesameTools.open());
+ await page.locator('.tools-dialog input[type=file]').setInputFiles({name:'meeting-notes.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...definition,page:'focus'}))});
+ await page.getByRole('button',{name:'Install as a new instance',exact:true}).click();await page.waitForFunction(()=>OpenSesameTools.list().some(n=>n.page==='focus'));
+ const instanceId=await page.evaluate(()=>OpenSesameTools.list().find(n=>n.page==='focus').id);await page.locator('.tools-dialog').getByRole('button',{name:'Close tools',exact:true}).click();await page.evaluate(id=>OpenSesamePageWidgets.open(id),instanceId);
  const notes=page.locator('#page-widget-view-focus textarea');await notes.fill('Retain this imported tool draft');
  await page.locator('[data-mobile-destination=today]').click();
  await page.locator('[data-mobile-destination=focus]').click();
@@ -70,7 +68,7 @@ export async function checkMobilePreservation(page){
  await page.locator('[data-mobile-destination=console]').click();
  assert.equal(await page.evaluate(()=>state.scenario),'terminal','Saved Console subview survives destination navigation');
  assert.equal(await page.locator('#capture-input').inputValue(),'A shell draft, never sent');
- assert.equal(await page.evaluate(()=>localStorage.getItem('open-sesame-familiar-queued-draft-v1')),'Queued disconnected familiar message');
+ await page.evaluate(()=>OpenSesameWorkspaceData.flush());assert.equal(await page.evaluate(()=>(window.OpenSesameWorkspaceData||localStorage).getItem('open-sesame-familiar-queued-draft-v1')),'Queued disconnected familiar message');
  assert.equal(await page.evaluate(()=>OpenSesameFamiliars.snapshot().connected),false,'A fixture draft never fabricates connection success');
  const script=await page.request.get(new URL('/dist/mobile-shell.js',page.url()).href).then(r=>r.text());
  const duplicate=await page.evaluate(source=>{

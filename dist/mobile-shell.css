@@ -41,7 +41,7 @@ html.open-sesame-mobile{--mobile-paper:#eee9df;--mobile-accent:#c7b9dc;--mobile-
 .open-sesame-mobile.mobile-capture-open .launcher-keys{display:none}
 @media(prefers-reduced-motion:reduce){.open-sesame-mobile *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 @media(forced-colors:active){.open-sesame-mobile #widget-panel,.open-sesame-mobile #widget-panel .mobile-card{background:Canvas;color:CanvasText}.open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{color:Highlight;border-color:Highlight}.open-sesame-mobile #widget-panel button:focus-visible{outline-color:Highlight}}
-.open-sesame-mobile #widget-anchor.expanded #widget-panel{transform:none!important;--expanded-scale:1}
+.open-sesame-mobile #widget-anchor.expanded #widget-panel{transform:none!important;transition:none!important;--expanded-scale:1}
 .open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{display:flex!important}
 .open-sesame-mobile.mobile-capture-open #widget-anchor.expanded{max-height:none!important;top:var(--mobile-top)!important}
 .open-sesame-mobile.mobile-capture-open #widget-panel #capture-form{height:auto!important;flex:1;overflow:auto;min-height:100px}
@@ -130,7 +130,7 @@ html.open-sesame-mobile{--mobile-base:#121214;--mobile-raised:#1b1b1e;--mobile-p
 .open-sesame-mobile #widget-panel .mobile-navigation button{position:relative;border-radius:0;color:#a6a0ae}
 .open-sesame-mobile #widget-panel .mobile-navigation [aria-current=page]{border-color:transparent;background:transparent;color:#e3d8ef}
 .open-sesame-mobile .mobile-navigation [aria-current=page]:before{content:'';position:absolute;top:0;left:calc(50% - 3.5px);width:7px;height:3px;background:var(--mobile-violet)}
-.open-sesame-mobile .mobile-navigation svg:has(use){fill:currentColor;stroke:none}
+.open-sesame-mobile .mobile-navigation svg.mobile-brand-mark{fill:currentColor;stroke:none}
 .open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar:not(:has(img)){position:relative;display:grid;place-items:center;flex:none;border:1px solid #8b729d;border-radius:50% 50% 42% 42%;font-size:0;color:#d9c8e8;background:transparent}
 .open-sesame-mobile #widget-anchor #widget-panel #familiar-list .familiar-avatar:not(:has(img))>svg{display:none}
 .open-sesame-mobile .familiar-avatar:not(:has(img)):before{content:attr(data-initial);font:italic 1.125rem/1 "Open Sesame Mobile Serif",Georgia,serif}

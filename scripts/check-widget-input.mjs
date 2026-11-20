@@ -23,10 +23,10 @@ window.OpenSesameLauncher.open();document.activeElement=null;window.OpenSesameLa
 
 const source=fs.readFileSync('dist/app.js','utf8');let current={id:'one',url:'https://old.example/',text:'https://old.example/',title:'',projectId:''},persist=true,saves=0,preview=0;
 const bookmark={currentItem:()=>current,$:el,pageUrl:raw=>{try{const u=new URL(raw.includes('://')?raw:'https://'+raw);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.href:''}catch{return ''}},clearTimeout(){},bookmarkUrlTimer:0,items:[current],OpenSesameBookmarkModel:{duplicate:()=>false},saveItems:()=>{saves++;return persist},renderBookmarkMeta(){},renderItems(){},setBookmarkPreview:()=>preview++,bookmarkPreview:true,toast(){},Date};
-vm.createContext(bookmark);vm.runInContext(source.slice(source.indexOf('function applyBookmarkUrl('),source.indexOf("$('bookmark-edit-url').addEventListener")),bookmark);
-el('detail-url').value='new.example/path';assert.equal(bookmark.applyBookmarkUrl(),true);assert.equal(current.url,'https://new.example/path');assert.equal(current.text,current.url);assert.equal(preview,1);
-const saved=JSON.stringify(current);persist=false;el('detail-url').value='another.example';assert.equal(bookmark.applyBookmarkUrl(),false);assert.equal(JSON.stringify(current),saved);assert.equal(preview,1,'Failed persistence must preserve the current page');
-el('detail-url').value='javascript:alert(1)';assert.equal(bookmark.applyBookmarkUrl(),false);assert.equal(JSON.stringify(current),saved);
+vm.createContext(bookmark);vm.runInContext(source.slice(source.indexOf('async function applyBookmarkUrl('),source.indexOf("$('bookmark-edit-url').addEventListener")),bookmark);
+el('detail-url').value='new.example/path';assert.equal(await bookmark.applyBookmarkUrl(),true);assert.equal(current.url,'https://new.example/path');assert.equal(current.text,current.url);assert.equal(preview,1);
+const saved=JSON.stringify(current);persist=false;el('detail-url').value='another.example';assert.equal(await bookmark.applyBookmarkUrl(),false);assert.equal(JSON.stringify(current),saved);assert.equal(preview,1,'Failed persistence must preserve the current page');
+el('detail-url').value='javascript:alert(1)';assert.equal(await bookmark.applyBookmarkUrl(),false);assert.equal(JSON.stringify(current),saved);
 
 const terminal=fs.readFileSync('dist/terminal.js','utf8'),pane={id:'one',name:'Shell'},row=new Node(),button=el('terminal-pane-one'),label=new Node();label.className='terminal-pane-name';button.append(label);row.append(button);
 let renamed=0;const rename={renaming:null,lastNameClick:{},panes:[pane],mounted:new Map(),selected:'one',el,document,save:()=>renamed++};vm.createContext(rename);

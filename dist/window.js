@@ -6,17 +6,20 @@
   let detached=embedded,nativeDetached=false,nativeMaximized=false,active=null,opening=false,collapsing=false,owner=null,restoreSize='medium',lastFull=false,preferPopup=false;
   try{if(embedded)owner=window.parent.__openSesameOwner||null}catch{}
   const clone=data=>JSON.parse(JSON.stringify(data));
-  function snapshot(){
-    document.activeElement?.blur();if(window.OpenSesameNotes?.finish(false)===false)throw Error('Save the current note before moving it.');
+  function snapshotData(){
     return {
       tools:window.OpenSesameTools?.handoff(),taskManager:window.OpenSesameTaskManager?.handoff(),
       state:{...state},items:clone(items),projects:clone(projects),
       view:{libraryOpen,detailFullWidth,selectedItemId,projectFilter,categoryFilter,itemsArchive,itemsView,itemsPage,libraryQuery,categories:[...expandedCategories]},
       draft:{text:el('capture-input').value,type:el('capture-type').value,project:el('capture-project').value,attachedUrl,ignoredInlineUrl},
-      focus:{focusMinutes,focusRemaining,focusRunning,focusEnd,focusElapsedMs,focusStartedAt,focusTopics:clone(focusTopics),focusPage},
+      focus:{focusMinutes,focusRemaining,focusRunning,focusEnd,focusElapsedMs,focusStartedAt,focusTopics:clone(focusTopics),focusPage,focusSessionId:typeof focusSessionId==='undefined'?'':focusSessionId,focusCompletedIds:typeof focusCompletedIds==='undefined'?[]:[...focusCompletedIds]},
       reader:window.openSesameReading?.handoff(),calendar:window.OpenSesameFocusCalendar?.handoff(),live:window.OpenSesameLive?.handoff(),
       transcript:transcriptEditor.get(),media:window.OpenSesameLocalMedia?.handoff()
     };
+  }
+  async function snapshot(){
+    document.activeElement?.blur();if((await window.OpenSesameNotes?.finish(false))===false)throw Error('Save the current note before moving it.');
+    if(window.OpenSesameWorkspaceData)await window.OpenSesameWorkspaceData.flush();return snapshotData();
   }
   function accept(data){
     if(!data)return;
@@ -26,6 +29,7 @@
     ({libraryOpen,detailFullWidth,selectedItemId,projectFilter,categoryFilter,itemsArchive,itemsView,itemsPage,libraryQuery}=data.view);
     expandedCategories.clear();data.view.categories.forEach(c=>expandedCategories.add(c));el('library-search').value=libraryQuery;
     ({focusMinutes,focusRemaining,focusRunning,focusEnd,focusElapsedMs,focusStartedAt,focusTopics,focusPage}=clone(data.focus));
+    if(typeof focusSessionId!=='undefined'){focusSessionId=data.focus.focusSessionId||'';focusCompletedIds=data.focus.focusCompletedIds||[]}
     if(focusRunning)focusRemaining=Math.max(0,Math.ceil((focusEnd-Date.now())/1000));
     window.OpenSesameFocusCalendar?.handoff(data.calendar);window.openSesameReading?.handoff(data.reader);
     transcriptEditor.set(data.transcript);audioSession.final=data.transcript;window.OpenSesameLive?.handoff(data.live);
@@ -62,10 +66,11 @@
     if(!detached){restoreSize=state.size;state.size='full';state.expanded=true;render()}
     try{if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else if(detached)toast('Use your window’s maximize control to fill the display.')}catch{toast('Filling this window. Your browser did not allow full screen.')}sync();
   }
-  function dock(force=false,{focus=true}={}){
+  async function dock(force=false,{focus=true}={}){
     if(active){
       const current=active;let data=current.latest||current.initial;
-      try{if((!force||!current.latest)&&current.frame.contentWindow.OpenSesameWindow){if(!force&&current.frame.contentWindow.OpenSesameWindow.busy()){toast('Stop recording or finish the current answer before docking.');current.host.focus();return}data=current.frame.contentWindow.OpenSesameWindow.snapshot()}}catch{}
+      try{if((!force||!current.latest)&&current.frame.contentWindow.OpenSesameWindow){if(!force&&current.frame.contentWindow.OpenSesameWindow.busy()){toast('Stop recording or finish the current answer before docking.');current.host.focus();return}data=await current.frame.contentWindow.OpenSesameWindow.snapshot()}}catch{}
+      try{if(window.OpenSesameWorkspaceData)await window.OpenSesameWorkspaceData.reconcile()}catch(error){toast('Storage needs recovery. The floating workspace and drafts are retained.');if(!current.host.closed)return false}
       active=null;clearInterval(current.poll);el('window-away').hidden=true;document.querySelector('.app-body').inert=false;
       accept(data);current.host.close();sync();popout.focus({preventScroll:true});return;
     }
@@ -100,7 +105,7 @@
       try{await openSesameBridge.request('window.detach',{detached:true,pinned:state.pinned===true,aspectRatio:window.OpenSesameFrameModel.ratio});nativeDetached=detached=true;state.expanded=true;render()}catch(error){toast(error.message)}return;
     }
     if(busy()){toast('Stop recording or finish the current answer before popping out.');return}
-    let initial;try{initial=snapshot()}catch{toast('Could not move this workspace. Your current window is unchanged.');return}let width=el('widget-anchor').getBoundingClientRect().width,savedHeight=null;
+    let initial;try{initial=await snapshot()}catch{toast('Could not move this workspace. Your current window is unchanged.');return}let width=el('widget-anchor').getBoundingClientRect().width,savedHeight=null;
     try{const saved=JSON.parse(localStorage.getItem('open-sesame-floating-size')||'null');if(Number.isFinite(saved?.width)&&saved.width>=360){width=saved.width;if(Number.isFinite(saved.height)&&saved.height>=300)savedHeight=saved.height}}catch{}
     const size=window.OpenSesameFrameModel.floating(width,screen.availWidth,screen.availHeight,savedHeight);
     opening=true;let host,kind='window';
@@ -115,26 +120,28 @@
       active={host,frame,kind,initial,poll:0};pausePlayback();focusRunning=false;clearTimeout(hoverTimer);
       document.querySelector('.app-body').inert=true;el('window-away').hidden=false;
       el('window-away-description').textContent=kind==='pip'?'Always on top · Drag the window edges to resize. Keep this tab open.':'Drag the window edges to resize. Always on top is unavailable in this browser; the Mac companion supports it.';
-      host.addEventListener('resize',()=>{try{localStorage.setItem('open-sesame-floating-size',JSON.stringify({width:host.innerWidth,height:host.innerHeight}))}catch{}});
-      host.addEventListener('pagehide',()=>{if(active?.host===host)dock(true)},{once:true});
+      host.addEventListener('resize',async ()=>{try{localStorage.setItem('open-sesame-floating-size',JSON.stringify({width:host.innerWidth,height:host.innerHeight}))}catch{}});
+      host.addEventListener('pagehide',async ()=>{if(active?.host===host)dock(true)},{once:true});
       host.document.body.replaceChildren(frame);active.poll=setInterval(()=>{if(active?.host===host&&host.closed)dock(true)},750);sync();
     }catch(error){if(host&&!active)host.close();if(window.documentPictureInPicture&&!preferPopup){preferPopup=true;toast('Always-on-top mode was unavailable. Click Pop out again for a standard window.')}else toast(error.message||'Could not open a floating window. Try from Open Sesame in its own browser tab.')}finally{opening=false}
   }
-  popout.addEventListener('click',open);full.addEventListener('click',()=>fullscreen().catch(error=>toast(error.message)));
-  el('window-focus').addEventListener('click',()=>active?.host.focus());el('window-return').addEventListener('click',()=>dock());
+  popout.addEventListener('click',open);full.addEventListener('click',async ()=>fullscreen().catch(error=>toast(error.message)));
+  el('window-focus').addEventListener('click',async ()=>active?.host.focus());el('window-return').addEventListener('click',async ()=>dock());
   // Docking is distinct from collapsing: a detached window always uses its available area.
-  el('panel-close').addEventListener('click',event=>{if(detached){event.preventDefault();event.stopImmediatePropagation();dock()}},true);
-  document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&!detached&&state.size==='full')state.size=restoreSize;render()});
-  document.addEventListener('pointerdown',event=>{
+  el('panel-close').addEventListener('click',async event=>{if(detached){event.preventDefault();event.stopImmediatePropagation();dock()}},true);
+  document.addEventListener('fullscreenchange',async ()=>{if(!document.fullscreenElement&&!detached&&state.size==='full')state.size=restoreSize;render()});
+  document.addEventListener('pointerdown',async event=>{
     if(![0,1,2].includes(event.button))return;
     if(event.composedPath().some(node=>['widget-anchor','menu-trigger','desktop-notification','open-sesame-select-menu'].includes(node.id)))return;
     void collapse({outside:true});
   });
-  window.addEventListener('resize',()=>{if(!detached&&state.size!=='full')return;sync();window.dispatchEvent(new Event('open-sesame-layout'))});
-  window.addEventListener('pagehide',()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
+  window.addEventListener('resize',async ()=>{if(!detached&&state.size!=='full')return;sync();window.dispatchEvent(new Event('open-sesame-layout'))});
+  window.addEventListener('pagehide',async ()=>{if(active){active=null;/* Browser closes PiP; a regular pop-out can continue independently. */}});
   function show(){if(window.OpenSesameLauncher?.active)window.OpenSesameLauncher.close(true);else setExpanded(true,{focus:true})}
   function toggle(){if(state.expanded||window.OpenSesameLauncher?.active)return collapse({focus:true});show()}
   window.OpenSesameWindow={sync,keepOpen(pinned){if(window.__OPEN_SESAME_NATIVE__)openSesameBridge.request('window.keepOpen',{pinned:pinned===true}).catch(()=>toast('Could not update the window pin.'))},open,dock,collapse,show,toggle,ready,snapshot,accept,busy,owns(child){return active?.frame.contentWindow===child},checkpoint(child,data){if(active?.frame.contentWindow===child)active.latest=data},get detached(){return detached}};
-  window.addEventListener('beforeunload',()=>{try{if(owner?.OpenSesameWindow?.owns(window))owner.OpenSesameWindow.checkpoint(window,snapshot())}catch{}});
-  if(embedded){state.expanded=true;document.title='Open Sesame · Floating workspace';render();if(owner?.OpenSesameWindow)owner.OpenSesameWindow.ready(window)}else sync();
+  function checkpoint(){try{if(owner?.OpenSesameWindow?.owns(window))owner.OpenSesameWindow.checkpoint(window,snapshotData())}catch{}}
+  for(const type of ['input','change','open-sesame-items-changed','open-sesame-projects-changed','open-sesame-view-changed','open-sesame-focus-changed','open-sesame-tools-changed'])window.addEventListener(type,checkpoint);
+  window.addEventListener('beforeunload',checkpoint);
+  if(embedded){state.expanded=true;document.title='Open Sesame · Floating workspace';render();const notify=()=>{if(owner?.OpenSesameWindow)owner.OpenSesameWindow.ready(window)};if(window.OpenSesameWorkspaceBoot&&!window.OpenSesameWorkspaceBoot.ready)window.addEventListener('open-sesame-workspace-ready',notify,{once:true});else notify()}else sync();
 })();
