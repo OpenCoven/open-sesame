@@ -399,8 +399,14 @@ function fakeBridge(status, answers = {}) {
   // At launch the store is asked on the restore thread, never in `start`, which runs on the main
   // thread before the window exists: a locked keyring answers only after its unlock prompt.
   const start = code.slice(code.indexOf('pub fn start<'));
-  assert.equal(start.split('.available()').length - 1, 2, 'The store is asked in two closures only');
-  assert.match(start, /Arc::new\(move \|\| store_problem\(probe\.available\(\), probe\.exists\(\)\)\);/);
+  assert.equal(start.split('.available()').length - 1, 1, 'The store is asked in the restore closure only');
+  assert.match(start, /let check = store_check\(&store\);/);
+  // The look before Sign in is a closure that the host runs on a thread of its own; it asks for
+  // the default collection only once the store has answered (issue #130 line 3).
+  const check = strip(code.slice(code.indexOf('fn store_check('), code.indexOf('fn lock<T>(')));
+  assert.match(check, /Arc::new\(move \|\| \{\n\s+let answered = probe\.available\(\);\n\s+store_problem\(\n\s+answered,\n\s+probe\.exists\(\),\n\s+!answered \|\| probe\.has_default_collection\(\),\n\s+\)\n\s+\}\)/);
+  assert.match(code, /if answered \{\n\s+\(cfg!\(target_os = "linux"\) && !has_default\)\.then_some\(NO_DEFAULT_COLLECTION\)/);
+  assert.match(code, /pub const NO_DEFAULT_COLLECTION: &str = "[^"]*no default keyring[^"]*then try again\.[^"]*works without signing in\."/);
   assert.match(start, /auth\.restore\(move \|\| !cfg!\(target_os = "linux"\) \|\| saved\.available\(\)\);/);
   // A refresh that is due before the next attempt is allowed is waited for, not spun on.
   assert.match(code, /recv_timeout\(pause\(due, allowed_in\)\)/);
