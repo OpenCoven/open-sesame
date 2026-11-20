@@ -42,8 +42,10 @@ export function whenShown(document, signal, refresh) {
 
 // Draws a list again and gives keyboard focus back to the same row's control. When that row has
 // left the list (completed, archived or deleted), focus goes to the same control on the next row,
-// else on the previous row, else to what `fallback` returns (the list's heading or empty-state
-// line, focusable with tabindex -1), so it never falls to the document.
+// else on the previous row; where no other row has that control (a task's checkbox in a list of
+// notes), to the first control of the next row, else of the previous row; else to what `fallback`
+// returns (the list's heading or empty-state line, focusable with tabindex -1), so it never falls
+// to the document.
 const lastFocused = new WeakMap(); // list → the control in it that last had keyboard focus
 export function redraw(list, draw, fallback = () => null) {
   if (!lastFocused.has(list)) list.addEventListener('focusin', event => lastFocused.set(list, event.target));
@@ -56,8 +58,14 @@ export function redraw(list, draw, fallback = () => null) {
   lastFocused.set(list, source);
   const key = source?.dataset.focusKey;
   const keyed = () => [...list.querySelectorAll('[data-focus-key]')];
-  let after = [], before = [];
+  let after = [], before = [], rowAfter = [], rowBefore = [];
   if (key) {
+    // The rows are the list's children; each one's first control stands for it.
+    let row = source;
+    while (row && row.parentElement !== list) row = row.parentElement;
+    const rows = [...list.children], place = rows.indexOf(row);
+    const first = some => some.map(other => other.querySelector('[data-focus-key]')?.dataset.focusKey).filter(Boolean);
+    if (place >= 0) { rowAfter = first(rows.slice(place + 1)); rowBefore = first(rows.slice(0, place).reverse()); }
     // The same control on other rows: keys share the part before the first colon.
     const kind = key.slice(0, key.indexOf(':') + 1);
     const same = keyed().map(node => node.dataset.focusKey).filter(other => other === key || (kind && other.startsWith(kind)));
@@ -67,7 +75,7 @@ export function redraw(list, draw, fallback = () => null) {
   draw();
   if (!key) return;
   const now = new Map(keyed().map(node => [node.dataset.focusKey, node]));
-  const target = [key, ...after, ...before].map(other => now.get(other)).find(Boolean) ?? fallback();
+  const target = [key, ...after, ...before, ...rowAfter, ...rowBefore].map(other => now.get(other)).find(Boolean) ?? fallback();
   target?.focus();
 }
 

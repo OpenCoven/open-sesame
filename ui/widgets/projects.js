@@ -319,6 +319,12 @@ export async function mount({surface, signal, bridge, host}) {
   // Delete asks once more before it deletes. The armed button says so, its sentence is said in
   // the list's status line, and Escape, moving focus off it or showing the view again disarm it.
   let armed = null; // {line, sentence}: the status line that says what is armed
+  let pressed = null; // the button under a pointer that is down, until it comes up
+  const release = () => { pressed = null; };
+  for (const name of ['pointerup', 'pointercancel']) {
+    document.addEventListener(name, release, true);
+    signal.addEventListener('abort', () => document.removeEventListener(name, release, true), {once: true});
+  }
   function arm(key, name, line) {
     disarm();
     confirming = key;
@@ -348,13 +354,16 @@ export async function mount({surface, signal, bridge, host}) {
       event.preventDefault();
       disarm();
     });
+    // WebKit focuses no clicked button: a press on an armed Confirm delete takes focus from it to
+    // the page before the click arrives, and that is not leaving it.
+    where.addEventListener('pointerdown', event => { pressed = event.target.closest?.('button') ?? null; });
     where.addEventListener('focusout', event => {
       const left = event.target;
       // Checked once the page has settled: drawing the list again puts focus back on the armed
       // button, which leaves it armed.
       queueMicrotask(() => {
         const button = alive() && confirming ? armedButton() : undefined;
-        if (button && left.dataset.focusKey === button.dataset.focusKey && document.activeElement !== button) disarm();
+        if (button && left.dataset.focusKey === button.dataset.focusKey && document.activeElement !== button && pressed !== button) disarm();
       });
     });
   }

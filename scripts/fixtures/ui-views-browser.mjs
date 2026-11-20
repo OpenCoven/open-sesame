@@ -719,6 +719,25 @@ try {
         await projects.locator('[data-item-list]').getByText('Fourth note', {exact: true}).waitFor();
         assert.equal(await label(), 'Delete', 'leaving the view and coming back disarms it');
         assert(keys.core.items.size > 0 && rows(keys, item => item.title === 'Fourth note').length === 1, 'nothing was deleted');
+        // Armed from the keyboard and then clicked, it deletes: WebKit takes focus from a pressed
+        // button to the page, which is not leaving it (review of #210).
+        await arm();
+        await remove.click();
+        await page.waitForFunction(() => ![...document.querySelectorAll('[data-item-list] li')].some(node => node.textContent.includes('Fourth note')));
+        assert.equal(rows(keys, item => item.title === 'Fourth note').length, 0, 'a click on an armed Confirm delete deletes');
+        // A task completed in a list of notes gives the keyboard to a neighbouring row's first
+        // control, as no other row has a checkbox (review of #210).
+        keys.core.seed({kind: 'note', text: 'Fifth note', title: 'Fifth note'});
+        keys.core.seed({kind: 'task', text: 'Wind the clock'});
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        const done = projects.locator('[data-item-list] li', {hasText: 'Wind the clock'}).locator('[data-complete]');
+        await done.focus();
+        await projects.locator('[data-item-list]').getByText('Fifth note', {exact: true}).waitFor();
+        assert.equal(await projects.locator('[data-item-list] [data-complete]').count(), 1, 'the task is the only row with a checkbox');
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => ![...document.querySelectorAll('[data-item-list] li')].some(node => node.textContent.includes('Wind the clock')));
+        assert.match(await focused(), /^open:/, 'the neighbouring row’s first control has the keyboard');
         // A project row the same way.
         const shed = keys.core.seedProject('Shed');
         await page.locator('[data-view="today"]').click();
