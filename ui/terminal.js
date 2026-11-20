@@ -23,6 +23,7 @@ const THEME = {
 };
 const OPTIONS = {
   cursorBlink: false, cursorStyle: 'block', cursorInactiveStyle: 'outline', scrollback: 5000, allowTransparency: false,
+  screenReaderMode: true,
   fontFamily: '"SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace', fontSize: 12, lineHeight: 1.25, theme: THEME,
 };
 

@@ -76,6 +76,9 @@ const bytes = count => new Uint8Array(count).fill(120).buffer;
   const term = Terminal.latest;
   assert.equal(term.element.name, 'element');
   assert(term.addon instanceof FitAddon && FitAddon.fits >= 1);
+  // Issue #196: the emulator keeps its accessibility tree and live region, so a screen reader
+  // can read what the shell prints, not only the input field.
+  assert.equal(term.options.screenReaderMode, true, 'The emulator is created in screen-reader mode');
   assert.equal(requests.length, 1);
   assert.equal(requests[0].method, 'terminal.open');
   assert.deepEqual({ ...requests[0].params, channel: undefined }, { id: 'pane-1', mode: 'local', cwd: '/tmp/a b', host: '', user: '', launcher: 'shell', prompt: '', cols: 91, rows: 27, channel: undefined });

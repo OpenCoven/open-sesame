@@ -43,26 +43,54 @@ export async function mount({surface, signal, bridge, host, info, attention}) {
   const mac = info.platform === 'darwin';
   let disposed = false;
 
-  const select = id => {
+  const newShell = form.querySelector('button[type="submit"]');
+
+  // Shows one pane. `focus` says where the keyboard goes: 'pane' (its terminal), 'tab' (its tab,
+  // when the person is moving along the tabs) or 'none'.
+  const select = (id, focus = 'pane') => {
     for (const [key, entry] of open) {
       const current = key === id;
       entry.tab.setAttribute('aria-selected', String(current));
       entry.tab.tabIndex = current ? 0 : -1;
       entry.panel.hidden = !current;
-      if (current) { entry.pane.fit(); entry.pane.focus(); }
+      if (current) {
+        entry.pane.fit();
+        if (focus === 'tab') entry.tab.focus();
+        else if (focus === 'pane') entry.pane.focus();
+      }
     }
   };
 
-  const remove = async id => {
+  // Closes a pane. The pane shown next is the closed one's neighbour, or the one already shown;
+  // with none left, the keyboard goes to New shell rather than to the page.
+  const remove = async (id, focus = 'pane') => {
     const entry = open.get(id);
     if (!entry) return;
+    const ids = [...open.keys()];
+    const at = ids.indexOf(id);
+    const shown = entry.tab.getAttribute('aria-selected') === 'true';
     open.delete(id);
     entry.item.remove();
     entry.panel.remove();
+    if (!disposed && !signal.aborted) {
+      const next = shown ? (ids[at + 1] ?? ids[at - 1]) : [...open].find(([, other]) => other.tab.getAttribute('aria-selected') === 'true')?.[0];
+      if (next) select(next, focus);
+      else if (focus !== 'none') newShell.focus();
+    }
     await entry.pane.close();
-    const next = [...open.keys()].pop();
-    if (next) select(next);
   };
+
+  // The tabs are one stop in the tab order: arrows, Home and End move along them, and Delete
+  // closes the focused one (the close buttons are for the pointer and stay out of the tab order).
+  tabs.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const ids = [...open.keys()];
+    const at = ids.findIndex(key => open.get(key).tab === event.target);
+    if (at < 0) return;
+    const moves = { ArrowRight: (at + 1) % ids.length, ArrowLeft: (at - 1 + ids.length) % ids.length, Home: 0, End: ids.length - 1 };
+    if (event.key === 'Delete') { event.preventDefault(); remove(ids[at], 'tab'); }
+    else if (event.key in moves) { event.preventDefault(); select(ids[moves[event.key]], 'tab'); }
+  });
 
   // Opens a pane and its tab. `hooks` lets a caller watch the pane's bytes and its end.
   const launch = async (request, hooks = {}) => {
@@ -74,21 +102,30 @@ export async function mount({surface, signal, bridge, host, info, attention}) {
 
     const panel = document.createElement('div');
     panel.className = 'pane';
+    panel.id = `${id}-panel`;
     panel.setAttribute('role', 'tabpanel');
-    panel.setAttribute('aria-label', label);
+    panel.setAttribute('aria-labelledby', `${id}-tab`);
     panes.append(panel);
 
     const item = document.createElement('span');
     item.className = 'tab';
+    item.setAttribute('role', 'presentation');
     const tab = document.createElement('button');
     tab.type = 'button';
+    tab.id = `${id}-tab`;
     tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-controls', panel.id);
+    tab.setAttribute('aria-keyshortcuts', 'Delete');
     tab.textContent = label;
     tab.addEventListener('click', () => select(id));
     const closer = document.createElement('button');
     closer.type = 'button';
     closer.className = 'close';
     closer.setAttribute('aria-label', `Close ${label}`);
+    closer.title = `Close ${label}`;
+    // Only tabs belong in the tablist: Delete on the tab is the keyboard's way to close.
+    closer.tabIndex = -1;
+    closer.setAttribute('aria-hidden', 'true');
     closer.textContent = '×';
     closer.addEventListener('click', () => remove(id));
     item.append(tab, closer);
@@ -120,7 +157,7 @@ export async function mount({surface, signal, bridge, host, info, attention}) {
     select(id);
     try {
       const result = await pane.opened;
-      if (request.mode !== 'ssh' && !request.name && result?.machine) panel.setAttribute('aria-label', `${label} on ${result.machine}`);
+      if (request.mode !== 'ssh' && !request.name && result?.machine) tab.title = `${label} on ${result.machine}`;
       return { id, pane, result, close: () => remove(id) };
     } catch (error) {
       await remove(id);
