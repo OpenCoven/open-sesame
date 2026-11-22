@@ -21,7 +21,7 @@ export async function mount({surface, signal, bridge, host}) {
   const filter = {projectId: 'all', kind: 'all', archived: false};
   const drafts = new Map(); // item ID → {opened, kind, fields, edited}: an edit not yet saved, the kind it was opened as, and the names of the fields the person changed
   const renames = new Map(); // project ID → a new name not yet saved
-  let selected = null, confirming = null, rows = [], projects = [], addNumber = 0, projectNumber = 0;
+  let selected = null, confirming = null, rows = [], projects = [], addNumber = 0, projectNumber = 0, unread = false;
 
   // Filters and counts.
   const projectFilter = h('select', {'aria-label': 'Project', 'data-filter-project': true});
@@ -38,9 +38,11 @@ export async function mount({surface, signal, bridge, host}) {
   const addForm = h('form', {class: 'capture', autocomplete: 'off', 'aria-label': 'New item', 'data-add': true}, [addText, addUrl, h('div', {class: 'view-row'}, [addKind, addSave]), added.line]);
   // List, editor and projects.
   const list = h('ul', {class: 'item-list', 'data-item-list': true});
-  const empty = h('p', {class: 'muted', 'data-item-empty': true, text: 'Nothing here yet.'});
+  // The empty-state line and the projects heading take focus when the last row leaves a list.
+  const empty = h('p', {class: 'muted', tabindex: -1, 'data-item-empty': true, text: 'Nothing here yet.'});
   const listed = statusLine(h, {'data-list-status': true});
   const editor = h('section', {class: 'card editor', hidden: true, 'aria-labelledby': 'editor-title', 'data-editor': true});
+  const projectHeading = h('h3', {id: 'project-admin-title', tabindex: -1, text: 'Projects'});
   const projectName = h('input', {type: 'text', name: 'name', maxlength: 40, 'aria-label': 'New project name', placeholder: 'New project', 'data-project-name': true});
   const projectForm = h('form', {class: 'view-row', autocomplete: 'off', 'data-project-add': true}, [projectName, h('button', {type: 'submit', text: 'Add project'})]);
   const projectList = h('ul', {class: 'project-list', 'data-project-list': true});
@@ -52,7 +54,7 @@ export async function mount({surface, signal, bridge, host}) {
     h('div', {class: 'view-row filters'}, [projectFilter, kindFilter, h('div', {role: 'group', 'aria-label': 'Show', class: 'view-row'}, [activeButton, archiveButton]), tally]),
     h('div', {class: 'view-row'}, [problem.line, retry]),
     addForm, listed.line, list, empty, editor,
-    h('section', {class: 'card', 'aria-labelledby': 'project-admin-title'}, [h('h3', {id: 'project-admin-title', text: 'Projects'}), projectForm, projectList, projectStatus.line]),
+    h('section', {class: 'card', 'aria-labelledby': 'project-admin-title'}, [projectHeading, projectForm, projectList, projectStatus.line]),
   ]));
 
   const store = itemStore({bridge, host, signal, draw: value => draw(value)});
@@ -66,9 +68,11 @@ export async function mount({surface, signal, bridge, host}) {
     const tallied = counts(rows);
     tally.textContent = `${tallied.active} of ${LIMITS.active} active · ${tallied.total} of ${LIMITS.items} items`;
     const shown = collection(rows, filter);
-    redraw(list, () => list.replaceChildren(...shown.map(row)));
-    empty.hidden = shown.length > 0;
-    redraw(projectList, () => projectList.replaceChildren(...projects.map(projectRow)));
+    // A failed read is not an empty store: no counts, list or empty-state line until a read works.
+    tally.hidden = unread; list.hidden = unread;
+    empty.hidden = unread || shown.length > 0;
+    redraw(list, () => list.replaceChildren(...shown.map(row)), () => empty.hidden ? null : empty);
+    redraw(projectList, () => projectList.replaceChildren(...projects.map(projectRow)), () => projectHeading);
     if (selected) drawEditor();
   }
   function row(item) {
@@ -78,7 +82,7 @@ export async function mount({surface, signal, bridge, host}) {
       item.kind === 'task' ? h('input', {type: 'checkbox', checked: archived, 'aria-label': `Done: ${name}`, 'data-complete': item.id, 'data-focus-key': `done:${item.id}`}) : null,
       h('div', {class: 'item-main'}, [
         h('button', {type: 'button', class: 'item-open', 'data-open': item.id, 'data-focus-key': `open:${item.id}`, 'aria-current': item.id === selected ? 'true' : null, text: name}),
-        h('p', {class: 'muted', text: `${KINDS[item.kind] ?? item.kind} · ${nameOf(item.projectId) || 'Inbox'}${drafts.has(item.id) ? ' · Unsaved edit' : ''}`}),
+        h('p', {class: 'muted', text: `${KINDS[item.kind] ?? item.kind} · ${nameOf(item.projectId) || 'Inbox'}${drafts.get(item.id)?.edited.size ? ' · Unsaved edit' : ''}`}),
         detail && detail !== name ? h('p', {class: 'muted item-detail', text: detail}) : null,
       ]),
       h('div', {class: 'view-row'}, [
@@ -202,9 +206,12 @@ export async function mount({surface, signal, bridge, host}) {
   editor.addEventListener('submit', event => { event.preventDefault(); saveEdit(); });
   editor.addEventListener('click', event => {
     if (event.target.closest('[data-editor-close]')) {
-      // A changed draft is kept for this item; reopening it shows the draft again.
-      if (!drafts.get(selected)?.edited.size) drafts.delete(selected);
+      // A changed draft is kept for this item; reopening it shows the draft again. Focus goes
+      // back to the item's own button, not the hidden editor.
+      const id = selected;
+      if (!drafts.get(id)?.edited.size) drafts.delete(id);
       selected = null; editor.hidden = true; draw();
+      [...list.querySelectorAll('[data-open]')].find(node => node.dataset.open === id)?.focus();
     } else if (event.target.closest('[data-editor-discard]')) {
       const id = selected, item = rows.find(entry => entry.id === id);
       drafts.delete(id);
@@ -245,7 +252,7 @@ export async function mount({surface, signal, bridge, host}) {
     }
     if (target.dataset.delete) {
       const id = target.dataset.delete;
-      if (confirming !== `item:${id}`) { confirming = `item:${id}`; draw(); return; }
+      if (confirming !== `item:${id}`) { arm(`item:${id}`, title(rows.find(entry => entry.id === id) ?? {}), listed); return; }
       confirming = null;
       target.disabled = true;
       const result = await store.remove(id);
@@ -300,7 +307,7 @@ export async function mount({surface, signal, bridge, host}) {
     }
     if (target.dataset.removeProject) {
       const id = target.dataset.removeProject;
-      if (confirming !== `project:${id}`) { confirming = `project:${id}`; draw(); return; }
+      if (confirming !== `project:${id}`) { arm(`project:${id}`, nameOf(id), projectStatus); return; }
       confirming = null;
       const result = await store.removeProject(id);
       if (!alive()) return;
@@ -309,9 +316,63 @@ export async function mount({surface, signal, bridge, host}) {
     }
   });
 
+  // Delete asks once more before it deletes. The armed button says so, its sentence is said in
+  // the list's status line, and Escape, moving focus off it or showing the view again disarm it.
+  let armed = null; // {line, sentence}: the status line that says what is armed
+  let pressed = null; // the button under a pointer that is down, until it comes up
+  const release = () => { pressed = null; };
+  for (const name of ['pointerup', 'pointercancel']) {
+    document.addEventListener(name, release, true);
+    signal.addEventListener('abort', () => document.removeEventListener(name, release, true), {once: true});
+  }
+  function arm(key, name, line) {
+    disarm();
+    confirming = key;
+    armed = {line, sentence: `Press Confirm delete to delete ${name}.`};
+    line.say(armed.sentence);
+    draw();
+  }
+  const armedButton = () => {
+    if (!confirming) return undefined;
+    const at = confirming.indexOf(':'), scope = confirming.slice(0, at), id = confirming.slice(at + 1);
+    const [where, name] = scope === 'item' ? [list, 'delete'] : [projectList, 'removeProject'];
+    return [...where.querySelectorAll('button')].find(node => node.dataset[name] === id);
+  };
+  function disarm() {
+    if (!confirming) return;
+    const button = armedButton();
+    confirming = null;
+    // The label changes in place, so the list is not drawn again under the person's focus.
+    if (button) button.textContent = 'Delete';
+    if (armed && armed.line.line.textContent === armed.sentence) armed.line.say('');
+    armed = null;
+  }
+  for (const where of [list, projectList]) {
+    where.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !confirming) return;
+      // The Escape cancels the delete; it does not also close the panel.
+      event.preventDefault();
+      disarm();
+    });
+    // WebKit focuses no clicked button: a press on an armed Confirm delete takes focus from it to
+    // the page before the click arrives, and that is not leaving it.
+    where.addEventListener('pointerdown', event => { pressed = event.target.closest?.('button') ?? null; });
+    where.addEventListener('focusout', event => {
+      const left = event.target;
+      // Checked once the page has settled: drawing the list again puts focus back on the armed
+      // button, which leaves it armed.
+      queueMicrotask(() => {
+        const button = alive() && confirming ? armedButton() : undefined;
+        if (button && left.dataset.focusKey === button.dataset.focusKey && document.activeElement !== button && pressed !== button) disarm();
+      });
+    });
+  }
+
   async function refresh() {
     const read = await store.load();
     if (!alive()) return;
+    disarm();
+    unread = !read.ok;
     problem.say(read.ok ? '' : read.error, !read.ok);
     retry.hidden = read.ok;
     draw();

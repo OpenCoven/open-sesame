@@ -40,12 +40,43 @@ export function whenShown(document, signal, refresh) {
   }
 }
 
-// Draws a list again and gives keyboard focus back to the same row's control.
-export function redraw(list, draw) {
-  const active = list.ownerDocument.activeElement;
-  const key = active && list.contains(active) ? active.dataset.focusKey : undefined;
+// Draws a list again and gives keyboard focus back to the same row's control. When that row has
+// left the list (completed, archived or deleted), focus goes to the same control on the next row,
+// else on the previous row; where no other row has that control (a task's checkbox in a list of
+// notes), to the first control of the next row, else of the previous row; else to what `fallback`
+// returns (the list's heading or empty-state line, focusable with tabindex -1), so it never falls
+// to the document.
+const lastFocused = new WeakMap(); // list → the control in it that last had keyboard focus
+export function redraw(list, draw, fallback = () => null) {
+  if (!lastFocused.has(list)) list.addEventListener('focusin', event => lastFocused.set(list, event.target));
+  const document = list.ownerDocument, active = document.activeElement;
+  let source = active && list.contains(active) ? active : null;
+  // A control disabled while its write is out can lose focus to the document before the answer
+  // comes; it still counts as focused then. Focus the person moved elsewhere is left alone.
+  const last = lastFocused.get(list);
+  if (!source && (!active || active === document.body) && last?.disabled && list.contains(last)) source = last;
+  lastFocused.set(list, source);
+  const key = source?.dataset.focusKey;
+  const keyed = () => [...list.querySelectorAll('[data-focus-key]')];
+  let after = [], before = [], rowAfter = [], rowBefore = [];
+  if (key) {
+    // The rows are the list's children; each one's first control stands for it.
+    let row = source;
+    while (row && row.parentElement !== list) row = row.parentElement;
+    const rows = [...list.children], place = rows.indexOf(row);
+    const first = some => some.map(other => other.querySelector('[data-focus-key]')?.dataset.focusKey).filter(Boolean);
+    if (place >= 0) { rowAfter = first(rows.slice(place + 1)); rowBefore = first(rows.slice(0, place).reverse()); }
+    // The same control on other rows: keys share the part before the first colon.
+    const kind = key.slice(0, key.indexOf(':') + 1);
+    const same = keyed().map(node => node.dataset.focusKey).filter(other => other === key || (kind && other.startsWith(kind)));
+    const at = same.indexOf(key);
+    after = same.slice(at + 1); before = same.slice(0, Math.max(at, 0)).reverse();
+  }
   draw();
-  if (key) [...list.querySelectorAll('[data-focus-key]')].find(node => node.dataset.focusKey === key)?.focus();
+  if (!key) return;
+  const now = new Map(keyed().map(node => [node.dataset.focusKey, node]));
+  const target = [key, ...after, ...before, ...rowAfter, ...rowBefore].map(other => now.get(other)).find(Boolean) ?? fallback();
+  target?.focus();
 }
 
 // A status line: a sentence, marked as a warning when something was not done.
