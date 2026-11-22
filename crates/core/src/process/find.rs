@@ -85,8 +85,9 @@ impl Search {
             .find(|candidate| is_program(candidate))
     }
 
-    /// The environment to start `program` with, a path [`Search::find`] returned for `env`; pass
-    /// it as [`Run::env`](super::Run::env) with [`Run::clear_env`](super::Run::clear_env).
+    /// The environment to start `program` with, a path [`Search::find`] returned for `env` when
+    /// it was given `explicit`; pass it as [`Run::env`](super::Run::env) with
+    /// [`Run::clear_env`](super::Run::clear_env).
     ///
     /// When the login shell's `PATH` could not be had and the program was found in one of the
     /// known install locations, what it needs to start may not be on the short `PATH` a desktop
@@ -95,17 +96,25 @@ impl Search {
     /// decided on 18 November 2026 (issue #145) that such a program starts with its own folder
     /// first on its `PATH`, then the `PATH` as it was, then the other known locations, and that a
     /// program that still cannot start is reported with [`could_not_start`]. Only `PATH`
-    /// changes. A program found on the `PATH`, one the person chose the path of, and any program
-    /// when the login shell's environment was captured start with the environment as it is.
-    pub fn start_env(&self, env: &ShellEnv, program: &Path) -> Vec<(String, String)> {
+    /// changes. A path the person set (`explicit`), a program found on the `PATH` (also when its
+    /// folder is one of the known locations too, as `/usr/bin` or `~/.cargo/bin` can be), and any
+    /// program when the login shell's environment was captured start with the environment as it
+    /// is. On Windows there is no login shell to ask, so the environment is always the inherited
+    /// one and the change applies to every program found only in a known location.
+    pub fn start_env(
+        &self,
+        env: &ShellEnv,
+        program: &Path,
+        explicit: Option<&Path>,
+    ) -> Vec<(String, String)> {
         let mut vars = env.to_run_env();
-        if *env.source() == EnvSource::LoginShell {
+        if explicit.is_some() || *env.source() == EnvSource::LoginShell {
             return vars;
         }
-        let Some(folder) = program
-            .parent()
-            .filter(|folder| self.known_dirs.iter().any(|dir| dir == folder))
-        else {
+        let Some(folder) = program.parent().filter(|folder| {
+            self.known_dirs.iter().any(|dir| same_dir(dir, folder))
+                && !self.path.iter().any(|dir| same_dir(dir, folder))
+        }) else {
             return vars;
         };
         // Folders that cannot be written into a `PATH`, such as one with the separator in its
@@ -126,7 +135,9 @@ impl Search {
             .known_dirs
             .iter()
             .map(PathBuf::as_path)
-            .filter(|dir| *dir != folder && !on_path.iter().any(|other| other == dir))
+            .filter(|dir| {
+                !same_dir(dir, folder) && !on_path.iter().any(|other| same_dir(other, dir))
+            })
             .collect();
         // The `PATH` as it was is kept as written, empty entries and all.
         let value = [joined(vec![folder]), current.to_string(), joined(after)]
@@ -505,6 +516,12 @@ pub fn resolve(name: &str, explicit: Option<&Path>) -> Option<PathBuf> {
     Search::from_env(&ShellEnv::inherited()).find(name, explicit)
 }
 
+/// Whether two folders are the same as a `PATH` names them: exactly, or ignoring ASCII case on
+/// Windows, whose file names are not case-sensitive.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b || (cfg!(windows) && a.as_os_str().eq_ignore_ascii_case(b.as_os_str()))
+}
+
 /// The message for a tool that is not installed. A missing tool is an ordinary error.
 pub fn not_installed(name: &str) -> BridgeError {
     BridgeError(format!("{name} is not installed, or Open Sesame could not find it. Install it, or set its path in Settings."))
@@ -516,12 +533,16 @@ pub fn could_not_start(name: &str) -> BridgeError {
     BridgeError(format!("{name} was found but could not start, because a program it needs to run was not found. Set its path in Settings."))
 }
 
-/// Whether a run of a found program failed to start because something it needs was missing: the
-/// system could not find what the program's `#!` line names, or the program's first command was
-/// not found, which `env` and the shells report with status 127 and `cmd.exe` on Windows with
-/// 9009. A program that ran and failed for another reason is not counted. A program that itself
-/// exits with one of those statuses is taken for one that could not start; the message for it
-/// still names the program and Settings.
+/// Whether a run of a program found in a known location (one [`Search::start_env`] changed the
+/// `PATH` for) failed to start because something it needs was missing: the system could not find
+/// what the program's `#!` line names (`RunError::NotFound`), or a command it ran was not found,
+/// which `env` and the shells report with status 127 and `cmd.exe` on Windows with 9009.
+/// The statuses cannot be told apart from a program that ran and then exited with one of them
+/// itself, or ran its work and then failed to find a later command, so those are counted too.
+/// `RunError::NotFound` is also what a program removed between `find` and the run gives; a
+/// caller that sees the program itself gone reports [`not_installed`] instead. Use it, and
+/// [`could_not_start`], only for a program found in a known location: for a path the person set
+/// or a program found on the `PATH`, the advice to set its path in Settings would not help.
 pub fn start_failed(result: &Result<Output, RunError>) -> bool {
     let not_found = if cfg!(windows) { 9009 } else { 127 };
     match result {

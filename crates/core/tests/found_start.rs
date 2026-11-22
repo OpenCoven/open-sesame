@@ -53,7 +53,7 @@ fn start(
 ) -> Result<open_sesame_core::process::Output, RunError> {
     let mut request = Run::new(program);
     request.clear_env = true;
-    request.env = search.start_env(env, program);
+    request.env = search.start_env(env, program, None);
     request.timeout = Duration::from_secs(20);
     run(request, None)
 }
@@ -155,7 +155,7 @@ fn the_found_folder_comes_first_and_the_known_locations_last() {
         .unwrap()
         .into_string()
         .unwrap();
-    let vars = search.start_env(&env, &program);
+    let vars = search.start_env(&env, &program, None);
     assert_eq!(path_of(&vars), Some(expected));
     // Only `PATH` changes, and it is there once.
     let others: Vec<_> = vars
@@ -194,11 +194,18 @@ fn a_program_not_found_in_a_known_location_keeps_the_environment() {
     let env = launched_with(home.path(), &path);
     let search = search(std::slice::from_ref(&on_path), &[&known]);
     assert_eq!(
-        search.start_env(&env, &on_path.join("tool")),
+        search.start_env(&env, &on_path.join("tool"), None),
         env.to_run_env()
     );
+    let chosen = chosen.join("tool");
     assert_eq!(
-        search.start_env(&env, &chosen.join("tool")),
+        search.start_env(&env, &chosen, Some(&chosen)),
+        env.to_run_env()
+    );
+    // A path the person set is left alone even when it is in a known location.
+    let set_in_known = known.join("tool");
+    assert_eq!(
+        search.start_env(&env, &set_in_known, Some(&set_in_known)),
         env.to_run_env()
     );
 }
@@ -220,7 +227,7 @@ fn without_a_path_the_found_folder_and_the_known_locations_are_used() {
         .into_string()
         .unwrap();
     assert_eq!(
-        path_of(&search.start_env(&env, &second.join("tool"))),
+        path_of(&search.start_env(&env, &second.join("tool"), None)),
         Some(expected)
     );
 }
@@ -307,7 +314,108 @@ fn with_the_login_shell_environment_the_path_is_left_as_it_is() {
     );
     let search = search(&short_dirs(), &[&known]);
     assert_eq!(
-        search.start_env(&env, &known.join("tool")),
+        search.start_env(&env, &known.join("tool"), None),
         env.to_run_env()
     );
+}
+
+/// A known location that is also on the `PATH`, as `/usr/bin` or `~/.cargo/bin` can be, is where
+/// `find` found the program on the `PATH`, so the environment is left as it is.
+#[test]
+fn a_known_location_that_is_on_the_path_keeps_the_environment() {
+    let home = tempfile::tempdir().unwrap();
+    let (shared, other) = (home.path().join("shared"), home.path().join("other"));
+    let path = std::env::join_paths([&shared])
+        .unwrap()
+        .into_string()
+        .unwrap();
+    let env = launched_with(home.path(), &path);
+    let search = search(std::slice::from_ref(&shared), &[&shared, &other]);
+    assert_eq!(
+        search.start_env(&env, &shared.join("tool"), None),
+        env.to_run_env()
+    );
+}
+
+/// A known location already on the `PATH` is not added again at the end.
+#[test]
+fn a_known_location_already_on_the_path_is_not_added_twice() {
+    let home = tempfile::tempdir().unwrap();
+    let (found, listed, other) = (
+        home.path().join("found"),
+        home.path().join("listed"),
+        home.path().join("other"),
+    );
+    let path = std::env::join_paths([&listed])
+        .unwrap()
+        .into_string()
+        .unwrap();
+    let env = launched_with(home.path(), &path);
+    let search = search(std::slice::from_ref(&listed), &[&found, &listed, &other]);
+    let expected = std::env::join_paths([&found, &listed, &other])
+        .unwrap()
+        .into_string()
+        .unwrap();
+    assert_eq!(
+        path_of(&search.start_env(&env, &found.join("tool"), None)),
+        Some(expected)
+    );
+}
+
+/// A known location that cannot be written into a `PATH` (its name has the separator in it) is
+/// left out, and the others are still added.
+#[cfg(unix)]
+#[test]
+fn a_known_location_that_cannot_go_in_a_path_is_left_out() {
+    let home = tempfile::tempdir().unwrap();
+    let (found, odd) = (home.path().join("found"), home.path().join("odd:name"));
+    let env = launched_with(home.path(), SHORT_PATH);
+    let search = search(&short_dirs(), &[&found, &odd]);
+    let expected = format!("{}:{SHORT_PATH}", found.display());
+    assert_eq!(
+        path_of(&search.start_env(&env, &found.join("tool"), None)),
+        Some(expected)
+    );
+}
+
+/// On Windows the variable is usually stored as `Path`; that entry is the one changed, and a
+/// command script that names a program that is nowhere is a start failure (status 9009).
+#[cfg(windows)]
+#[test]
+fn on_windows_the_path_entry_is_replaced_and_a_missing_command_is_a_start_failure() {
+    let home = tempfile::tempdir().unwrap();
+    let known = home.path().join("npm");
+    std::fs::create_dir_all(&known).unwrap();
+    std::fs::write(known.join("tool.cmd"), "@no-such-command-for-145\r\n").unwrap();
+    let system = PathBuf::from(std::env::var("SystemRoot").unwrap()).join("System32");
+    let mut vars = BTreeMap::new();
+    vars.insert(
+        "USERPROFILE".to_string(),
+        home.path().to_str().unwrap().to_string(),
+    );
+    vars.insert("Path".to_string(), system.to_str().unwrap().to_string());
+    for name in ["SystemRoot", "ComSpec", "PATHEXT"] {
+        if let Ok(value) = std::env::var(name) {
+            vars.insert(name.to_string(), value);
+        }
+    }
+    let env = ShellEnv::from_vars(vars);
+    let search = search(&[system], &[&known]);
+    let found = search
+        .find("tool", None)
+        .expect("found in the known location");
+    let started = search.start_env(&env, &found, None);
+    let paths: Vec<_> = started
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("PATH"))
+        .collect();
+    assert_eq!(paths.len(), 1, "{started:?}");
+    assert_eq!(paths[0].0, "Path");
+    assert!(
+        paths[0].1.starts_with(known.to_str().unwrap()),
+        "{started:?}"
+    );
+    let result = start(&search, &env, &found);
+    assert!(start_failed(&result), "{result:?}");
+    assert!(could_not_start("tool").0.contains("Settings"));
 }
