@@ -323,6 +323,24 @@ try {
         await page.setViewportSize({width:1090,height:700});
         await page.screenshot({path:path.join(output,`${name}-desktop.png`),fullPage:true});
       });
+      // An engine without `inert` (older WebKitGTK) keeps the palette's own Tab wrap (issue #174).
+      await step('without inert, Tab stays inside the open palette',async()=>{
+        const old=await context.newPage();
+        try {
+          await old.addInitScript(()=>{delete HTMLElement.prototype.inert;});
+          await old.goto(origin+'/ui/index.html');
+          await old.locator('[data-ready="true"]').waitFor();
+          assert.equal(await old.evaluate(()=>'inert' in HTMLElement.prototype),false);
+          await old.getByRole('button',{name:'Commands',exact:true}).click();
+          const query=old.locator('[data-command-query]'),close=old.getByRole('button',{name:'Close commands',exact:true});
+          await query.focus();
+          await old.keyboard.press('Shift+Tab');
+          assert.equal(await close.evaluate(node=>node===document.activeElement),true,'Shift+Tab from the search wraps to Close commands');
+          await old.keyboard.press('Tab');
+          assert.equal(await query.evaluate(node=>node===document.activeElement),true,'Tab from Close commands wraps to the search');
+          await old.keyboard.press('Escape');
+        }finally{await old.close();}
+      });
       await step('turning each widget on and off adds no global',async()=>{
         // Baseline: the same browser and the same injected fixture host, on a document with no
         // script of the app. The only key a widget may add is the vendored terminal bundle's

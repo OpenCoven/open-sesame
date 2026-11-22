@@ -23,12 +23,15 @@ const settings = shell.querySelector('#widget-settings');
 const hostSettings = shell.querySelector('[data-settings]');
 const query = shell.querySelector('[data-command-query]');
 const results = shell.querySelector('[data-command-results]');
+const resultsStatus = shell.querySelector('[data-command-status]');
 const paletteToggle = shell.querySelector('[data-palette-toggle]');
 const widgetToggle = shell.querySelector('[data-widgets-toggle]');
 const viewTitle = shell.querySelector('[data-view-title]');
 const wideToggle = shell.querySelector('[data-wide-toggle]');
 const attentionStatus = shell.querySelector('[data-attention-status]');
 const railToggle = shell.querySelector('[data-rail-toggle]');
+const empty = shell.querySelector('[data-empty]');
+const inertSupported = 'inert' in HTMLElement.prototype;
 // How the window is drawn (src-tauri/src/rail.rs): 'material' where the system's material shows
 // through the page, 'page' where the window is see-through and the page draws its own rounded
 // corners, 'solid' otherwise.
@@ -112,9 +115,13 @@ function showSettings(open) {
   widgetToggle.setAttribute('aria-expanded',String(open));
   drawTitle();
 }
-// The bar names what the panel shows: a sheet while one is open, otherwise the view.
+// The bar names what the panel shows: a sheet while one is open, otherwise the view. The view
+// under a sheet stays mounted but is inert, so Tab and a pointer never reach it (issue #174).
 function drawTitle() {
   viewTitle.textContent = !palette.hidden ? 'Commands' : !settings.hidden ? 'Settings' : names.get(state?.lastView) ?? 'Open Sesame';
+  const covered = !palette.hidden || !settings.hidden;
+  views.inert = covered;
+  empty.inert = covered;
 }
 attention.subscribe(marks => {
   for (const [id,button] of navButtons) {
@@ -127,13 +134,34 @@ attention.subscribe(marks => {
   attentionStatus.textContent = all.label;
 });
 
-function closePalette() {
+// Focus goes back to Commands only when the person closed the palette itself, with Escape,
+// Close commands or the Commands button (issue #175); a command or a click elsewhere leaves it
+// to what was chosen.
+function closePalette({restore = false} = {}) {
   if (palette.hidden) return;
   if (kept && !query.value.trim()) drop();
   palette.hidden = true;
   paletteToggle.setAttribute('aria-expanded','false');
   drawTitle();
-  paletteToggle.focus();
+  if (restore) paletteToggle.focus();
+}
+// The keyboard is on nothing a person can see: the page, or the closed palette, which WebKit
+// leaves focused for a moment after it is hidden.
+const nowhere = () => !document.activeElement || document.activeElement === document.body || (palette.hidden && palette.contains(document.activeElement));
+// After a command, the keyboard goes to the view it opened: its first control, or the view
+// itself. A view that took focus for itself, such as Today's capture field, keeps it, and so
+// does anything the person focused meanwhile.
+function focusView(id) {
+  // A palette opened again meanwhile keeps the keyboard.
+  if (!palette.hidden) return;
+  const surface = views.querySelector(`[data-widget-view="${id}"]`);
+  if (!surface || surface.hidden || state?.lastView !== id) return;
+  const active = document.activeElement;
+  if (active && active !== document.body && !palette.contains(active)) return;
+  const control = [...surface.querySelectorAll('input,textarea,select,button,[tabindex]')]
+    .find(node => node.tabIndex >= 0 && !node.disabled && node.getClientRects().length);
+  if (control) control.focus();
+  else {surface.tabIndex = -1;surface.focus();}
 }
 function openPalette() {
   showSettings(false);
@@ -157,10 +185,15 @@ function renderAnswer(found) {
   button.type = 'button';
   button.dataset.commandAnswer = found.kind;
   button.append(element('strong',found.result),element('span',` ${found.expression} · Copy`));
+  // The copy goes through the host's clipboard, as the context menu's does (issue #177). A
+  // refusal says the host's reason; choosing the answer again tries again.
   button.addEventListener('click',() => {
-    const copied = navigator.clipboard?.writeText(found.result) ?? Promise.reject(Error('unavailable'));
-    copied.then(() => {button.lastChild.textContent = ` ${found.expression} · Copied`;},
-      () => {button.lastChild.textContent = ` ${found.expression} · Could not copy. Select the result to copy it.`;});
+    bridge.request('terminal.clipboard.write',{text: found.result}).then(
+      () => {button.lastChild.textContent = ` ${found.expression} · Copied`;resultsStatus.textContent = `Copied ${found.result}.`;},
+      error => {
+        const said = `Could not copy: ${message(error)} Choose it to try again.`;
+        button.lastChild.textContent = ` ${found.expression} · ${said}`;resultsStatus.textContent = said;
+      });
   });
   return button;
 }
@@ -181,10 +214,16 @@ function renderCommands() {
       const typed = query.value, draft = command.capture ? kept?.draft ?? `palette-${++drafts}` : null;
       closePalette();
       run(manager.show(command.widget,command.capture ? draftAction(command.action,draft) : command.action).then(result => {
+        focusView(command.widget);
+        // The view did not come or did not take the keyboard (it failed, or another view
+        // overtook it): the keyboard goes back to Commands rather than to the page.
+        if (palette.hidden && nowhere()) paletteToggle.focus();
         if (!command.capture) return;
         if (result?.saved === true) {if (kept?.draft === draft) drop();}
         else keep(typed,draft,OVERTAKEN);
       },error => {
+        // The view never came: the keyboard goes back to Commands rather than to the page.
+        if (palette.hidden && nowhere()) paletteToggle.focus();
         if (!command.capture) throw error;
         keep(typed,draft,message(error));
         openPalette();
@@ -193,6 +232,12 @@ function renderCommands() {
     results.append(button);
   }
   if (!results.childElementCount) results.append(element('p','No commands found.'));
+  // What the results hold is said aloud as the person types (issue #176).
+  const count = view.commands.length, said = [];
+  if (view.answer) said.push(view.answer.error ?? `Answer: ${view.answer.result}`);
+  if (count) said.push(`${count} ${count === 1 ? 'command' : 'commands'}`);
+  else if (!view.answer) said.push('No commands found.');
+  resultsStatus.textContent = said.join(' ');
 }
 function changed(next) {
   const before = state?.lastView;
@@ -262,8 +307,8 @@ for (const widget of widgets) {
   label.append(input,element('span',widget.name));options.append(label);switches.set(widget.id,input);
 }
 
-paletteToggle.addEventListener('click',() => palette.hidden || !rail.status().expanded ? openPalette() : closePalette());
-shell.querySelector('[data-palette-close]').addEventListener('click',closePalette);
+paletteToggle.addEventListener('click',() => palette.hidden || !rail.status().expanded ? openPalette() : closePalette({restore:true}));
+shell.querySelector('[data-palette-close]').addEventListener('click',() => closePalette({restore:true}));
 widgetToggle.addEventListener('click',() => {
   const open = settings.hidden || !rail.status().expanded;
   if (open) {closePalette();run(rail.open());}
@@ -288,11 +333,12 @@ results.addEventListener('keydown',event => {
 });
 document.addEventListener('keydown',event => {
   if ((event.metaKey||event.ctrlKey)&&!event.altKey&&event.key.toLowerCase()==='k') {event.preventDefault();openPalette();}
-  if (event.key==='Escape'&&!palette.hidden) {event.preventDefault();event.stopPropagation();closePalette();}
+  if (event.key==='Escape'&&!palette.hidden) {event.preventDefault();event.stopPropagation();closePalette({restore:true});}
   else if (event.key==='Escape'&&!settings.hidden) {showSettings(false);widgetToggle.focus();}
   // Escape closes the panel when nothing else took it. A terminal needs the key for itself.
   else if (event.key==='Escape'&&!event.defaultPrevented&&!event.target?.closest?.('.xterm')) run(rail.collapse());
-  if (event.key==='Tab'&&!palette.hidden) {
+  // An engine without `inert` (older WebKitGTK) keeps the palette's own Tab wrap instead.
+  if (event.key==='Tab'&&!palette.hidden&&!inertSupported) {
     const controls=[...palette.querySelectorAll('input,button')].filter(node=>!node.disabled);
     const first=controls[0],last=controls.at(-1);
     if (event.shiftKey&&document.activeElement===first) {event.preventDefault();last.focus();}
