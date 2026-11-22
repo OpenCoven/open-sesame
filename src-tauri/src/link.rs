@@ -88,12 +88,26 @@ pub fn opened<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
 }
 
 /// In a development build on Windows and Linux nothing has installed the scheme, so it is
-/// registered here, for the current user, and stays registered after the run ends. A failure
-/// only means callbacks will not arrive.
+/// registered here, for the current user, and removed at a clean exit by [`unregister`]. A
+/// failure only means callbacks will not arrive.
 #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
 pub fn register<R: Runtime>(app: &AppHandle<R>) {
     use tauri_plugin_deep_link::DeepLinkExt;
     let _ = app.deep_link().register_all();
+}
+
+/// Removes, at a clean exit of a development build, the registration [`register`] made (issue
+/// #132, decided on 16 November 2026), so an installed build's callbacks do not go to this
+/// binary after it has gone. A build that was killed leaves it, and the checklist in
+/// `src-tauri/AGENTS.md` says how to remove it by hand.
+#[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+pub fn unregister<R: Runtime>(_app: &AppHandle<R>) {}
+
+/// Deletes the current user's key for `scheme` when its command names `exe`. Returns whether it
+/// did.
+#[cfg(all(debug_assertions, windows))]
+fn remove_own_key(_scheme: &str, _exe: &std::path::Path) -> windows_registry::Result<bool> {
+    Ok(false)
 }
 
 /// Gives a link to sign-in, and brings the window forward when the browser comes back, since on
@@ -373,5 +387,114 @@ mod tests {
             config["plugins"]["deep-link"]["desktop"]["schemes"],
             json!([SCHEME])
         );
+    }
+
+    /// The scheme a test registers, so it never touches the real one.
+    #[cfg(any(windows, target_os = "linux"))]
+    fn test_scheme(what: &str) -> String {
+        format!("opensesame-test-{}-{what}", std::process::id())
+    }
+
+    /// On Windows only the current user's key is removed, and only when its command names this
+    /// executable, written as the deep-link plugin writes it; a key that names another program,
+    /// such as an installed build's, is left, and a missing key is no error.
+    #[cfg(windows)]
+    #[test]
+    fn a_clean_exit_removes_only_this_programs_key_on_windows() {
+        use windows_registry::CURRENT_USER;
+        let exe = std::path::Path::new(r"C:\dev\open-sesame\target\debug\open-sesame.exe");
+        let write = |scheme: &str, program: &str| {
+            let base = format!("Software\\Classes\\{scheme}");
+            CURRENT_USER
+                .create(&base)
+                .unwrap()
+                .set_string("URL Protocol", "")
+                .unwrap();
+            CURRENT_USER
+                .create(format!("{base}\\shell\\open\\command"))
+                .unwrap()
+                .set_string("", format!("\"{program}\" \"%1\""))
+                .unwrap();
+            base
+        };
+        let ours = test_scheme("ours");
+        let base = write(&ours, r"C:\dev\open-sesame\target\debug\open-sesame.exe");
+        assert!(remove_own_key(&ours, exe).unwrap());
+        assert!(
+            CURRENT_USER.open(&base).is_err(),
+            "this program's key is gone"
+        );
+        let theirs = test_scheme("theirs");
+        let base = write(&theirs, r"C:\Program Files\Open Sesame\open-sesame.exe");
+        assert!(!remove_own_key(&theirs, exe).unwrap());
+        assert!(
+            CURRENT_USER.open(&base).is_ok(),
+            "another program's key is left"
+        );
+        CURRENT_USER.remove_tree(&base).unwrap();
+        assert!(!remove_own_key(&test_scheme("none"), exe).unwrap());
+    }
+
+    /// On Linux the deep-link plugin's own `unregister` takes this program's handler out of
+    /// `mimeapps.list` and out of its handler file, and leaves every other line. It runs in a
+    /// child test process so the folders it uses can be set for it alone.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_clean_exit_removes_this_programs_handler_on_linux() {
+        let home = tempfile::tempdir().unwrap();
+        let (data, config) = (home.path().join("data"), home.path().join("config"));
+        let exe = std::env::current_exe().unwrap();
+        let handler = format!(
+            "{}-handler.desktop",
+            exe.file_name().unwrap().to_string_lossy()
+        );
+        std::fs::create_dir_all(data.join("applications")).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let desktop = data.join("applications").join(&handler);
+        std::fs::write(
+            &desktop,
+            format!("[Desktop Entry]\nType=Application\nName=Open Sesame\nExec=\"{}\" %u\nMimeType=x-scheme-handler/opensesame;text/plain;\n", exe.display()),
+        )
+        .unwrap();
+        let mimeapps = config.join("mimeapps.list");
+        std::fs::write(
+            &mimeapps,
+            format!("[Default Applications]\nx-scheme-handler/opensesame={handler}\nx-scheme-handler/https=firefox.desktop\n"),
+        )
+        .unwrap();
+        let status = std::process::Command::new(&exe)
+            .args([
+                "--exact",
+                "link::tests::unregister_in_this_process",
+                "--ignored",
+                "--test-threads=1",
+            ])
+            .env("HOME", home.path())
+            .env("XDG_DATA_HOME", &data)
+            .env("XDG_CONFIG_HOME", &config)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let left = std::fs::read_to_string(&mimeapps).unwrap();
+        assert!(!left.contains("x-scheme-handler/opensesame"), "{left}");
+        assert!(
+            left.contains("x-scheme-handler/https=firefox.desktop"),
+            "{left}"
+        );
+        let file = std::fs::read_to_string(&desktop).unwrap();
+        assert!(!file.contains("x-scheme-handler/opensesame"), "{file}");
+        assert!(file.contains("text/plain"), "{file}");
+    }
+
+    /// Run only by the test above, in its own process.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "run by a_clean_exit_removes_this_programs_handler_on_linux in its own process"]
+    fn unregister_in_this_process() {
+        let app = mock_builder()
+            .plugin(tauri_plugin_deep_link::init())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        unregister(app.handle());
     }
 }

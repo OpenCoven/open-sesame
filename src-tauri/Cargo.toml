@@ -46,3 +46,9 @@ gtk = "0.18"
 libc = "0.2"
 # The same store, with the same feature, that `keyring` uses on Linux.
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
+
+[target.'cfg(windows)'.dependencies]
+# A development build removes its own `opensesame` key at a clean exit (link.rs, #132), in the
+# versions the deep-link plugin uses to write it.
+dunce = "1"
+windows-registry = "0.6"
