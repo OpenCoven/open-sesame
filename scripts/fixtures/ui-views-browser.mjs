@@ -351,7 +351,9 @@ try {
         assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0], 'no browser storage is used');
       });
       await step('stored markup is shown as text, never as HTML', async () => {
-        // Another writer (an agent, once #81 writes items) can store any text.
+        // Another writer (an agent, once #81 writes items) can store any text. The capped-capture
+        // step left 30 active items, which the core would refuse another of, so one goes first.
+        host.core.items.delete(rows(host, item => item.text.startsWith('Seeded '))[0].id);
         const markup = '<img src=x onerror="document.body.dataset.injected=1">Plan <b>bold</b>';
         host.core.seed({kind: 'note', text: markup, title: markup, body: '<script>document.body.dataset.injected=2</script>Body <i>text</i>', id: '00000000-0000-4000-8000-0000000000aa'});
         await page.locator('[data-view="projects"]').click();

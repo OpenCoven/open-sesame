@@ -269,9 +269,29 @@ impl Storage {
                     return Err(invalid("That project no longer exists."));
                 }
             }
-            let was_archived: Option<bool> = tx
-                .query_row(&format!("SELECT {ARCHIVED} FROM items WHERE id = ?1"), [&item.id], |row| row.get(0))
+            let stored: Option<(bool, String, String, bool)> = tx
+                .query_row(
+                    &format!("SELECT {ARCHIVED}, kind, stage, done FROM items WHERE id = ?1"),
+                    [&item.id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
                 .optional()?;
+            // A task stored before `done` followed the stage, with `done` set and another stage,
+            // is archived as the UI shows it. An edit that leaves both as they were keeps it
+            // archived, and it is stored with stage done from then on.
+            if let Some((_, kind, stage, true)) = &stored {
+                if kind == Kind::Task.as_str()
+                    && stage != Stage::Done.as_str()
+                    && item.kind == Kind::Task
+                    && draft.done
+                    && item.stage.as_str() == stage
+                {
+                    item.previous_stage = Some(item.stage);
+                    item.stage = Stage::Done;
+                    item.done = true;
+                }
+            }
+            let was_archived = stored.map(|(archived, ..)| archived);
             let archived = item.stage == Stage::Done;
             let (all, active): (i64, i64) = tx.query_row(
                 &format!("SELECT COUNT(*), COALESCE(SUM(CASE WHEN {ARCHIVED} THEN 0 ELSE 1 END), 0) FROM items"),

@@ -69,6 +69,11 @@ export function createStorageCore({start = Date.UTC(2026, 10, 16, 9, 0, 0), stat
     Object.assign(item, {id: place.id, createdAt: place.createdAt, updatedAt: place.updatedAt});
     if (item.projectId && !projects.has(item.projectId)) refuse('That project no longer exists.');
     const before = items.get(item.id), active = [...items.values()].filter(row => !archived(row)).length;
+    // A task stored done in another stage before done followed the stage stays archived when an
+    // edit leaves both as they were, and is stored with stage done from then on.
+    if (before?.kind === 'task' && before.done === true && before.stage !== 'done' && item.kind === 'task' && draft.done === true && item.stage === before.stage) {
+      Object.assign(item, {previousStage: item.stage, stage: 'done', done: true});
+    }
     if (!before && !archived(item) && active >= 30) refuse('You have 30 active items. Archive one to make room.');
     if (!before && items.size >= 300) refuse('Your archive is full. Remove an archived item to make room.');
     if (before && archived(before) && !archived(item) && active >= 30) refuse(`Complete or archive an item before restoring this ${item.kind}.`);

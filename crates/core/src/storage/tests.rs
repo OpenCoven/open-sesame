@@ -1914,6 +1914,18 @@ fn task(text: &str, stage: &str, done: bool) -> ItemDraft {
     draft(json!({ "kind": "task", "text": text, "stage": stage, "done": done }))
 }
 
+/// An edit of `item` as the UI sends it: every field, with `changes` applied, naming the
+/// `updatedAt` it started from.
+fn edit_of(item: &Item, changes: Value) -> ItemDraft {
+    let mut value = serde_json::to_value(item).unwrap();
+    let fields = value.as_object_mut().unwrap();
+    fields.remove("createdAt");
+    fields.remove("updatedAt");
+    fields.extend(changes.as_object().unwrap().clone());
+    fields.insert("expectedUpdatedAt".into(), json!(item.updated_at));
+    draft(value)
+}
+
 fn refusal(result: Result<impl std::fmt::Debug, StorageError>) -> String {
     match result {
         Err(StorageError::Invalid(message)) => message,
@@ -1962,15 +1974,7 @@ fn restoring_an_item_while_30_are_not_archived_is_refused() {
     for n in 0..30 {
         rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
     }
-    let edit = |item: &Item, changes: Value| {
-        let mut value = serde_json::to_value(item).unwrap();
-        let fields = value.as_object_mut().unwrap();
-        fields.remove("createdAt");
-        fields.remove("updatedAt");
-        fields.extend(changes.as_object().unwrap().clone());
-        fields.insert("expectedUpdatedAt".into(), json!(item.updated_at));
-        draft(value)
-    };
+    let edit = edit_of;
     assert_eq!(
         refusal(
             rig.db
@@ -2049,4 +2053,109 @@ fn done_follows_the_stage() {
         json!({ "kind": "bookmark", "text": "b", "url": "https://example.com/", "done": true }),
     );
     assert!(!rig.db.save_item(bookmark).unwrap().done);
+}
+
+/// A task stored before `done` followed the stage, with `done` set and another stage, which
+/// the UI shows as archived.
+fn task_stored_done_in_another_stage(rig: &Rig) -> Item {
+    let item = rig.db.save_item(task("Old", "inbox", false)).unwrap();
+    let raw = rusqlite::Connection::open(rig.dir.path().join(DATABASE_FILE)).unwrap();
+    raw.execute("UPDATE items SET done = 1 WHERE id = ?1", [&item.id])
+        .unwrap();
+    drop(raw);
+    rig.db.get_item(&item.id).unwrap().unwrap()
+}
+
+/// Such a task counts as archived, and an edit that leaves its `done` and stage as they were
+/// keeps it archived, uncapped, now stored with stage done.
+#[test]
+fn a_task_stored_done_in_another_stage_stays_archived_when_edited() {
+    let rig = rig();
+    let old = task_stored_done_in_another_stage(&rig);
+    assert!(old.done && old.stage == Stage::Inbox);
+    for n in 0..30 {
+        rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
+    }
+    rig.tick();
+    let renamed = rig
+        .db
+        .save_item(edit_of(&old, json!({ "text": "Old, renamed" })))
+        .unwrap();
+    assert_eq!(
+        (
+            renamed.stage,
+            renamed.previous_stage,
+            renamed.done,
+            renamed.text.as_str()
+        ),
+        (Stage::Done, Some(Stage::Inbox), true, "Old, renamed")
+    );
+}
+
+/// Clearing such a task's `done` brings it back, so it is a restore: refused while 30 are not
+/// archived, allowed at 29.
+#[test]
+fn clearing_done_on_a_task_stored_done_in_another_stage_is_a_restore() {
+    let rig = rig();
+    let old = task_stored_done_in_another_stage(&rig);
+    let notes: Vec<Item> = (0..30)
+        .map(|n| rig.db.save_item(note(&format!("Note {n}"), "")).unwrap())
+        .collect();
+    assert_eq!(
+        refusal(rig.db.save_item(edit_of(&old, json!({ "done": false })))),
+        "Complete or archive an item before restoring this task."
+    );
+    rig.db.delete_item(&notes[0].id).unwrap();
+    rig.tick();
+    let restored = rig
+        .db
+        .save_item(edit_of(&old, json!({ "done": false })))
+        .unwrap();
+    assert_eq!((restored.stage, restored.done), (Stage::Inbox, false));
+}
+
+/// The conflict decision comes first: a restore sent from a copy another save has replaced is a
+/// conflict, not a cap.
+#[test]
+fn a_restore_from_an_out_of_date_copy_is_a_conflict() {
+    let rig = rig();
+    let archived = rig.db.save_item(task("Archived", "done", true)).unwrap();
+    for n in 0..30 {
+        rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
+    }
+    rig.tick();
+    rig.db
+        .save_item(edit_of(&archived, json!({ "text": "Renamed elsewhere" })))
+        .unwrap();
+    assert!(matches!(
+        rig.db.save_item(edit_of(
+            &archived,
+            json!({ "stage": "inbox", "done": false })
+        )),
+        Err(StorageError::Conflict(_))
+    ));
+}
+
+/// 299 to 300 is allowed for an item that is not archived, and with both caps reached a create
+/// that is not archived is told about the active items, as the UI tells it.
+#[test]
+fn with_both_item_caps_reached_the_active_sentence_comes_first() {
+    let rig = rig();
+    for n in 0..270 {
+        rig.db
+            .save_item(task(&format!("Done {n}"), "done", true))
+            .unwrap();
+    }
+    for n in 0..29 {
+        rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
+    }
+    rig.db.save_item(note("The 300th", "")).unwrap();
+    assert_eq!(
+        refusal(rig.db.save_item(note("One more", ""))),
+        "You have 30 active items. Archive one to make room."
+    );
+    assert_eq!(
+        refusal(rig.db.save_item(task("One more", "done", true))),
+        "Your archive is full. Remove an archived item to make room."
+    );
 }
