@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = file => readFileSync(path.join(root, file), 'utf8');
-const { describe, mountSummon, holdDuringDrag, EXAMPLE } = await import(pathToFileURL(path.join(root, 'ui/summon.js')));
+const { describe, mountSummon, holdDuringDrag, EXAMPLE, CHANGED_EVENT } = await import(pathToFileURL(path.join(root, 'ui/summon.js')));
 
 const element = () => {
   const listeners = new Map();
@@ -28,6 +28,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 // method has an entry there (a function of the params that returns a status or throws).
 function fakeBridge(status, answers = {}) {
   const calls = [];
+  const subscribers = new Set();
   const state = { status: { defaultShortcut: 'Control+Alt+Shift+Space', toggleCommand: 'open-sesame --toggle', message: '', hideOnBlur: false, ...status } };
   const request = async (method, params = {}) => {
     calls.push({ method, params });
@@ -35,7 +36,9 @@ function fakeBridge(status, answers = {}) {
     if (method === 'summon.status') return state.status;
     throw new Error(`Unexpected ${method}`);
   };
-  return { request, calls, state };
+  const subscribe = run => { subscribers.add(run); return () => subscribers.delete(run); };
+  const emit = message => { for (const run of [...subscribers]) run(message); };
+  return { request, subscribe, emit, calls, state };
 }
 
 // 1. What a person is told for each state.
@@ -65,6 +68,14 @@ function fakeBridge(status, answers = {}) {
   assert.equal(describe({ ...base, session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true, notice: '' }).warn, false);
   assert.equal(describe({ ...base, session: 'macos', shortcut: 'Control+Alt+Shift+Space', registered: true, notice: 7 }).warn, false);
   assert.equal(describe({ ...base, session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: false, notice }).message, '');
+  // Wayland with the GlobalShortcuts portal (issue #108): the desktop's own keys, and still no
+  // field, since the desktop owns the binding. Asking, unavailable or unused: as without it.
+  const portal = (state, trigger = '') => describe({ ...base, session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: state === 'bound', portal: { state, trigger } });
+  assert.deepEqual(portal('bound', 'Ctrl+Alt+Shift+Space'),
+    { editable: false, warn: false, hint: "Your desktop runs Open Sesame's shortcut: Ctrl+Alt+Shift+Space.", message: '' });
+  assert.equal(portal('bound').hint, "Your desktop runs Open Sesame's shortcut.");
+  for (const state of ['asking', 'unavailable', 'unused']) assert.deepEqual(portal(state), wayland, state);
+  assert.deepEqual(portal('declined'), { ...wayland, message: 'Your desktop did not bind a shortcut for Open Sesame.' });
 }
 
 // 2. The section appears with what the host reports, and stays hidden when the host has no summon.
@@ -89,6 +100,21 @@ function fakeBridge(status, answers = {}) {
   assert.equal(wayland.section.hidden, false);
   assert.equal(wayland.form.hidden, true, 'Wayland offers no shortcut field');
   assert.ok(wayland.hint.textContent.endsWith('open-sesame --toggle'));
+
+  // The portal answers after the page has asked (issue #108): the host sends the new status,
+  // and the section shows it. Other host messages change nothing.
+  const asking = fakeBridge({ session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: false, portal: { state: 'asking', trigger: '' } });
+  const later = parts();
+  await mountSummon(asking, later);
+  assert.ok(later.hint.textContent.endsWith('open-sesame --toggle'));
+  asking.emit({ event: 'auth.changed', status: { session: 'wayland', portal: { state: 'bound', trigger: 'Super+O' } } });
+  assert.ok(later.hint.textContent.endsWith('open-sesame --toggle'), 'Only summon.changed is read');
+  assert.equal(CHANGED_EVENT, 'summon.changed');
+  asking.emit({ event: CHANGED_EVENT, status: { ...asking.state.status, registered: true, portal: { state: 'bound', trigger: 'Super+O' } } });
+  assert.equal(later.hint.textContent, "Your desktop runs Open Sesame's shortcut: Super+O.");
+  assert.equal(later.form.hidden, true);
+  asking.emit({ event: CHANGED_EVENT });
+  assert.equal(later.hint.textContent, "Your desktop runs Open Sesame's shortcut: Super+O.", 'A message without a status changes nothing');
 }
 
 // 3. Saving sends the trimmed text once and shows the host's answer; nothing is reloaded.
@@ -203,6 +229,7 @@ function fakeBridge(status, answers = {}) {
   // to their own function, and each of the three functions in window.rs decides by its own
   // rule and then acts on the window.
   const tray = read('src-tauri/src/tray.rs');
+  assert.match(host, /pub const CHANGED_EVENT: &str = "summon\.changed";/, 'The host and the page name the same message');
   assert.match(host, /if event\.state == ShortcutState::Pressed \{\n                pressed\(app\);\n            \}/);
   assert.match(host, /Launch::Toggle => \{\n            window::toggle\(app\);\n        \}/);
   assert.match(tray, /\) = \(cfg!\(windows\), event\)\s*\{\s*summon::tray_clicked\(tray\.app_handle\(\), rect\);/);

@@ -3,21 +3,30 @@
 //
 // The host owns all of it (src-tauri/src/summon.rs). The page asks `summon.status`, and sends
 // `summon.setShortcut`, `summon.setHideOnBlur` and `summon.hold`. A change takes effect at once;
-// nothing here needs a restart. Everything the section touches is passed in, so
+// nothing here needs a restart. On Wayland the host may also send `summon.changed` with a new
+// status, when the desktop's GlobalShortcuts portal answers after the page asked (issue #108). Everything the section touches is passed in, so
 // scripts/check-tauri-summon.mjs can run it in Node against stand-ins.
 
 const text = error => (error && typeof error.message === 'string' && error.message) || String(error);
+
+export const CHANGED_EVENT = 'summon.changed';
 
 export const EXAMPLE = 'Write the keys joined by +, for example Control+Alt+Shift+Space. On a Mac, Alt is the Option key and Super is the Command key.';
 
 // What the section says for a status from the host: {hint, message, warn, editable}.
 export function describe(status) {
   if (status.session === 'wayland') {
+    // The desktop owns a binding made through the portal, so there is no field either way.
+    const portal = status.portal && typeof status.portal === 'object' ? status.portal : {};
+    if (portal.state === 'bound') {
+      const keys = typeof portal.trigger === 'string' && portal.trigger ? `: ${portal.trigger}` : '';
+      return { editable: false, warn: false, hint: `Your desktop runs Open Sesame's shortcut${keys}.`, message: '' };
+    }
     return {
       editable: false,
       warn: false,
       hint: `This Wayland session does not let an application register a global shortcut. In your desktop's keyboard settings, bind a shortcut to this command: ${status.toggleCommand}`,
-      message: '',
+      message: portal.state === 'declined' ? 'Your desktop did not bind a shortcut for Open Sesame.' : '',
     };
   }
   // The host says so when a saved shortcut it no longer takes was replaced by the default.
@@ -55,6 +64,13 @@ export function mountSummon(bridge, parts) {
   };
 
   const refresh = options => bridge.request('summon.status').then(status => show(status, options));
+
+  // A status the host sends unasked. The field keeps what is typed in it.
+  bridge.subscribe?.(message => {
+    if (message?.event === CHANGED_EVENT && message.status && typeof message.status === 'object') {
+      show(message.status, { keepField: true });
+    }
+  });
 
   const change = async (method, params, options) => {
     if (busy) return;

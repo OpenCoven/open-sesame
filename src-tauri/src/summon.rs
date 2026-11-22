@@ -68,6 +68,9 @@ const MAX_REASON_LENGTH: usize = 32;
 pub const NOT_SAVED: &str = "Open Sesame could not save the shortcut setting.";
 pub const WAYLAND: &str =
     "Global shortcuts are not available to applications in this Wayland session. Bind a desktop shortcut to the command: open-sesame --toggle";
+/// The host message that carries a new status the page did not ask for: the GlobalShortcuts
+/// portal answered (issue #108). `ui/summon.js` names the same string.
+pub const CHANGED_EVENT: &str = "summon.changed";
 
 #[cfg_attr(not(any(debug_assertions, test)), allow(dead_code))]
 const SETTINGS_FILE: &str = "summon.json";
@@ -509,6 +512,8 @@ pub struct Summon {
     /// Opening the tray's menu can take the keyboard, and the menu may then stay open for any
     /// length of time, so the menu item cannot ask the window when it is chosen.
     front_at_tray: Mutex<Option<(Instant, bool)>>,
+    /// Where the GlobalShortcuts portal stands, on Wayland (issue #108, `portal.rs`).
+    portal: Mutex<crate::portal::State>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -556,6 +561,7 @@ impl Summon {
             notice: Mutex::new(notice),
             lost_focus: Mutex::new(None),
             front_at_tray: Mutex::new(None),
+            portal: Mutex::default(),
         }
     }
 
@@ -641,7 +647,33 @@ impl Summon {
             "notice": *lock(&self.notice),
             "toggleCommand": TOGGLE_COMMAND,
             "hideOnBlur": settings.hide_on_blur,
+            "portal": lock(&self.portal).status(),
         })
+    }
+
+    /// What a Wayland session registers: nothing of its own. A shortcut the desktop bound
+    /// through the portal counts as registered; otherwise the person is told the command.
+    fn wayland_registration(&self) -> Registration {
+        if matches!(*lock(&self.portal), crate::portal::State::Bound { .. }) {
+            Registration {
+                registered: true,
+                message: String::new(),
+            }
+        } else {
+            Registration {
+                registered: false,
+                message: WAYLAND.to_string(),
+            }
+        }
+    }
+
+    /// Records the portal's answer and returns the new status.
+    fn portal_answered(&self, state: crate::portal::State) -> Value {
+        *lock(&self.portal) = state;
+        if self.session == Session::Wayland {
+            *lock(&self.registration) = self.wayland_registration();
+        }
+        self.status()
     }
 
     fn save(&self, settings: &Settings) -> Result<(), BridgeError> {
@@ -663,10 +695,7 @@ impl Summon {
         let outcome = if text.is_empty() {
             Ok(Registration::default())
         } else if !self.session.has_global_shortcuts() {
-            Ok(Registration {
-                registered: false,
-                message: WAYLAND.to_string(),
-            })
+            Ok(self.wayland_registration())
         } else {
             let shortcut = parse_shortcut(text)?;
             if register(shortcut) {
@@ -724,10 +753,41 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
     if let Err(error) = summon.register_with(&shortcut, |shortcut| register(app, shortcut)) {
         eprintln!("open-sesame: {}", error.0);
     }
+    // On Wayland the desktop may bind the shortcut for the application (issue #108). Until
+    // the portal answers, the status is the one Wayland has always had.
+    let ask_the_portal = summon.session == Session::Wayland && !shortcut.is_empty();
+    if ask_the_portal {
+        *lock(&summon.portal) = crate::portal::State::Asking;
+    }
     // Development evidence of what the system answered; the page shows the same to a person.
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: summon {}", summon.status());
     app.manage(summon);
+    #[cfg(target_os = "linux")]
+    if ask_the_portal {
+        let preferred = parse_shortcut(&shortcut)
+            .ok()
+            .and_then(|shortcut| crate::portal::preferred_trigger(&shortcut));
+        crate::portal::start(app, preferred);
+    }
+}
+
+/// The GlobalShortcuts portal answered (issue #108): the status records it and the page is
+/// sent the new status as [`CHANGED_EVENT`].
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+pub fn portal_changed<R: Runtime>(
+    app: &AppHandle<R>,
+    state: crate::portal::State,
+    emit: &open_sesame_core::protocol::Emit,
+) {
+    let Some(summon) = app.try_state::<Summon>() else {
+        return;
+    };
+    let status = summon.portal_answered(state);
+    // Development evidence of what the portal answered.
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: summon {status}");
+    emit(json!({"event": CHANGED_EVENT, "status": status}));
 }
 
 /// Whether the shortcut plugin is running. It is absent only under test.
@@ -1641,6 +1701,51 @@ mod tests {
         assert_eq!(status["message"], json!(WAYLAND));
         assert!(WAYLAND.ends_with(TOGGLE_COMMAND));
         assert_eq!(status["toggleCommand"], json!("open-sesame --toggle"));
+        // The portal is not asked here; it is asked only by `start` (issue #108).
+        assert_eq!(status["portal"], json!({"state": "unused", "trigger": ""}));
+    }
+
+    /// The GlobalShortcuts portal's answer (issue #108) is in `summon.status`: bound, with the
+    /// keys the desktop chose, counts as registered; anything else keeps the command to bind.
+    /// The page is sent the new status as `summon.changed`.
+    #[test]
+    fn the_portals_answer_is_in_the_status_and_sent_to_the_page() {
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let summon = Summon::new(Session::Wayland, None);
+        summon.register_with(DEFAULT_SHORTCUT, |_| true).unwrap();
+        app.manage(summon);
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let emit: open_sesame_core::protocol::Emit = {
+            let sent = Arc::clone(&sent);
+            Arc::new(move |message| lock(&sent).push(message))
+        };
+        let bound = crate::portal::State::Bound {
+            trigger: "Ctrl+Alt+Shift+Space".to_string(),
+        };
+        portal_changed(app.handle(), bound, &emit);
+        let status = app.state::<Summon>().status();
+        assert_eq!(status["registered"], json!(true));
+        assert_eq!(status["message"], json!(""));
+        assert_eq!(
+            status["portal"],
+            json!({"state": "bound", "trigger": "Ctrl+Alt+Shift+Space"})
+        );
+        assert_eq!(
+            *lock(&sent),
+            vec![json!({"event": CHANGED_EVENT, "status": status})]
+        );
+        // A page that sends the shortcut again does not undo what the desktop bound.
+        app.state::<Summon>()
+            .register_with(DEFAULT_SHORTCUT, |_| true)
+            .unwrap();
+        assert_eq!(app.state::<Summon>().status()["registered"], json!(true));
+        // Removed in the desktop's settings: the command to bind is back.
+        portal_changed(app.handle(), crate::portal::State::Declined, &emit);
+        let status = app.state::<Summon>().status();
+        assert_eq!(status["registered"], json!(false));
+        assert_eq!(status["message"], json!(WAYLAND));
+        assert_eq!(status["portal"]["state"], json!("declined"));
+        assert_eq!(lock(&sent).len(), 2);
     }
 
     #[test]
