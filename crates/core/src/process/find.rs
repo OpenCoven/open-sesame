@@ -535,19 +535,21 @@ pub fn could_not_start(name: &str) -> BridgeError {
 
 /// Whether a run of a program found in a known location (one [`Search::start_env`] changed the
 /// `PATH` for) failed to start because something it needs was missing: the system could not find
-/// what the program's `#!` line names (`RunError::NotFound`), or a command it ran was not found,
-/// which `env` and the shells report with status 127 and `cmd.exe` on Windows with 9009. A command script on Windows that cannot find what it runs, as an npm `.cmd` without `node`, ends with status 1, which any failure can give, so it is not counted (issue #217).
-/// The statuses cannot be told apart from a program that ran and then exited with one of them
-/// itself, or ran its work and then failed to find a later command, so those are counted too.
+/// what the program's `#!` line names (`RunError::NotFound`), or, on macOS and Linux, a command it
+/// ran was not found, which `env` and the shells report with status 127. On Windows no status is
+/// counted: `cmd.exe` ends with status 1 both for a command script that cannot find what it runs,
+/// as an npm `.cmd` without `node`, and for `cmd /c` with a missing command (the hosted
+/// windows-2025 runner, 22 November 2026), and any failure can give 1 (issue #217).
+/// Status 127 cannot be told apart from a program that ran and then exited with it itself, or ran
+/// its work and then failed to find a later command, so those are counted too.
 /// `RunError::NotFound` is also what a program removed between `find` and the run gives; a
 /// caller that sees the program itself gone reports [`not_installed`] instead. Use it, and
 /// [`could_not_start`], only for a program found in a known location: for a path the person set
 /// or a program found on the `PATH`, the advice to set its path in Settings would not help.
 pub fn start_failed(result: &Result<Output, RunError>) -> bool {
-    let not_found = if cfg!(windows) { 9009 } else { 127 };
     match result {
         Err(RunError::NotFound) => true,
-        Ok(output) => output.status == Some(not_found),
+        Ok(output) => !cfg!(windows) && output.status == Some(127),
         Err(_) => false,
     }
 }
