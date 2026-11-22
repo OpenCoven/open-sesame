@@ -35,7 +35,7 @@ mod platform;
 mod platform;
 
 pub use env::{EnvSource, Fallback, ShellEnv, StartupEnv, CAPTURE_TIMEOUT};
-pub use find::{not_installed, resolve, Search};
+pub use find::{could_not_start, not_installed, resolve, start_failed, Search};
 
 use crate::protocol::BridgeError;
 use std::fmt;
