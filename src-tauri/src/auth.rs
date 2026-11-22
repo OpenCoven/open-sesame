@@ -2694,4 +2694,55 @@ mod tests {
         assert_eq!(store.load(), Ok(None));
         store.delete().unwrap();
     }
+
+    /// The Windows credential is saved with `Local` persistence (issue #131, decided on 16
+    /// November 2026): it stays on this computer and is not carried by a roaming profile, where
+    /// a refresh token used on a second computer would sign the first one out. A credential an
+    /// earlier build saved with the store's default, `Enterprise`, keeps it until the next save
+    /// replaces it, which is the next refresh. Run on the hosted Windows runner with the test
+    /// above; Credential Manager after a real sign-in is a hand check under #78.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "uses the operating system's credential store"]
+    fn the_real_credential_store_saves_with_local_persistence_on_windows() {
+        let service = format!(
+            "open-sesame-test-{}-local.tauri.workos.test",
+            std::process::id()
+        );
+        let persistence = |store: &KeychainStore| {
+            store
+                .ask(|entry| entry.get_attributes())
+                .unwrap()
+                .get("persistence")
+                .cloned()
+        };
+        // What an earlier build saved: the store's default.
+        let earlier = keyring::Entry::new(&service, CLIENT_ID).unwrap();
+        earlier.set_password("not-a-token-0").unwrap();
+        assert_eq!(
+            earlier
+                .inner
+                .get_attributes()
+                .unwrap()
+                .get("persistence")
+                .map(String::as_str),
+            Some("Enterprise")
+        );
+        let store = KeychainStore::new(service);
+        assert_eq!(store.load(), Ok(Some("not-a-token-0".to_string())));
+        store.save("not-a-token-1").unwrap();
+        assert_eq!(persistence(&store).as_deref(), Some("Local"));
+        store.save("not-a-token-2").unwrap();
+        assert_eq!(persistence(&store).as_deref(), Some("Local"));
+        assert_eq!(store.load(), Ok(Some("not-a-token-2".to_string())));
+        store.delete().unwrap();
+        store.save("not-a-token-3").unwrap();
+        assert_eq!(
+            persistence(&store).as_deref(),
+            Some("Local"),
+            "a new credential too"
+        );
+        store.delete().unwrap();
+        assert_eq!(store.load(), Ok(None));
+    }
 }
