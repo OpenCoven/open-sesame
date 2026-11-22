@@ -33,17 +33,17 @@
 <main class="shell" data-state="connecting" data-presentation="window" data-rail="expanded" data-edge="right" aria-busy="true">
   <nav class="rail" aria-label="Views">
     <div class="rail-inner">
-      <button type="button" class="rail-button rail-mark" data-rail-toggle aria-controls="panel" aria-expanded="true" title="Open Sesame">
+      <button type="button" class="rail-button rail-mark" tabindex="0" data-rail-toggle aria-controls="panel" aria-expanded="true" title="Open Sesame">
         <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-mark"></use></svg>
         <span class="label-hidden" data-rail-toggle-label>Open Sesame</span>
       </button>
       <div class="rail-views" data-navigation></div>
       <div class="rail-tools">
-        <button type="button" class="rail-button" data-palette-toggle aria-expanded="false" aria-controls="command-palette" title="Commands">
+        <button type="button" class="rail-button" tabindex="0" data-palette-toggle aria-expanded="false" aria-controls="command-palette" title="Commands">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-commands"></use></svg>
           <span class="label-hidden">Commands</span>
         </button>
-        <button type="button" class="rail-button" data-widgets-toggle aria-expanded="false" aria-controls="widget-settings" title="Settings">
+        <button type="button" class="rail-button" tabindex="0" data-widgets-toggle aria-expanded="false" aria-controls="widget-settings" title="Settings">
           <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-settings"></use></svg>
           <span class="label-hidden">Settings</span>
         </button>
@@ -57,13 +57,13 @@
         <h1 data-view-title>Open Sesame</h1>
         <p class="status" role="status" data-status>Connecting to this machine.</p>
       </div>
-      <button type="button" class="bar-button" data-wide-toggle aria-pressed="false" title="Wide panel" hidden>
+      <button type="button" class="bar-button" tabindex="0" data-wide-toggle aria-pressed="false" title="Wide panel" hidden>
         <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-wide"></use></svg>
         <span class="label-hidden">Wide panel</span>
       </button>
-      <button type="button" class="bar-button" data-collapse title="Close the panel" hidden>
+      <button type="button" class="bar-button" tabindex="0" data-collapse title="Close panel" hidden>
         <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-collapse"></use></svg>
-        <span class="label-hidden">Close the panel</span>
+        <span class="label-hidden">Close panel</span>
       </button>
     </header>
     <p role="status" class="notice" data-shell-notice hidden></p>
@@ -71,6 +71,7 @@
       <section id="command-palette" class="palette" aria-label="Commands" hidden>
         <label>Find a command <input type="search" data-command-query autocomplete="off" spellcheck="false" placeholder="Type a command, a note or a sum"></label>
         <div class="command-results" data-command-results></div>
+        <p class="label-hidden" role="status" data-command-status></p>
         <button type="button" data-palette-close>Close commands</button>
       </section>
       <section id="widget-settings" class="sheet" aria-label="Settings" hidden>

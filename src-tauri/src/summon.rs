@@ -893,6 +893,13 @@ pub fn blurred<R: Runtime>(app: &AppHandle<R>) {
     // Development evidence of when the system says the keyboard went elsewhere.
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: window lost the keyboard");
+    // A rail that is already the strip has nothing to hide. Closing the panel takes the window
+    // off the screen for a moment to give the keyboard back, which the system reports as the
+    // window losing it; noting a hide for that would make the next press within `BLUR_GRACE`
+    // do nothing.
+    if crate::rail::closed(app) {
+        return;
+    }
     // A peek that someone clicked in closes when they turn to something else, whatever the
     // setting says: it was opened by resting the pointer, not to stay (`rail.rs`).
     if summon.should_hide_on_blur() || (summon.free() && crate::rail::peeking(app)) {
