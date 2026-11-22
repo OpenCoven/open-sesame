@@ -1812,4 +1812,51 @@ mod login_shell {
         assert_eq!(env.source(), &EnvSource::Inherited(Fallback::ShellFailed));
         assert_eq!(env.vars(), &inherited);
     }
+
+    /// Acceptance line 2 of #97, decided on 16 November 2026: a startup file that replaces the
+    /// shell, as one that ends in `exec` does, never lets the capture's command run, and the
+    /// capture falls back to the inherited environment; that is accepted. A tool on the `PATH`
+    /// the file set before the `exec` is then not found, and a tool in a known location still
+    /// is. Run with each kind of shell installed here, and with each kind's own `exec`.
+    #[test]
+    fn a_startup_file_that_replaces_the_shell_falls_back_to_the_known_locations() {
+        let mut ran = 0;
+        for kind in &KINDS {
+            let Some(shell) = installed(kind.paths) else {
+                continue;
+            };
+            let tools = tempfile::tempdir().unwrap();
+            let bin = tools.path().join("login only bin");
+            install(&bin, "only-on-login-path");
+            let path = format!("{}:/usr/bin:/bin", bin.display());
+            let startup = format!(
+                "{}{}exec /bin/sh\n",
+                (kind.export)("PATH", &format!("\"{path}\"")),
+                (kind.export)("FROM_PROFILE", "set"),
+            );
+            let (home, inherited) = home(&[(kind.startup_file, startup)]);
+            let known = install(&home.path().join(".local/bin"), "in-a-known-location");
+            let started = Instant::now();
+            let env = ShellEnv::capture(Some(&shell), inherited.clone(), LIMIT);
+            assert!(
+                started.elapsed() < LIMIT,
+                "{shell:?}: the capture waited for its limit"
+            );
+            assert_eq!(
+                env.source(),
+                &EnvSource::Inherited(Fallback::ShellFailed),
+                "{shell:?}"
+            );
+            assert_eq!(env.vars(), &inherited, "{shell:?}");
+            let finder = Search::from_env(&env);
+            assert_eq!(finder.find("only-on-login-path", None), None, "{shell:?}");
+            assert_eq!(
+                finder.find("in-a-known-location", None),
+                Some(known),
+                "{shell:?}"
+            );
+            ran += 1;
+        }
+        assert!(ran > 0, "no shell of the four kinds is installed here");
+    }
 }
