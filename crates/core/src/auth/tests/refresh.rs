@@ -1052,3 +1052,60 @@ fn a_cancel_then_a_panic_as_a_save_only_retry_starts_keeps_the_next_save_only_re
     the_earlier_credential_is_saved_and_nothing_else(&rig);
     assert_eq!(rig.message(), "Sign-in cancelled.");
 }
+
+/// From the review of #148's fix: the end of a refresh reads the clock to set the save-only
+/// retry. When that happens while a panic of the change callback unwinds, a clock that panics
+/// too must not end the process, and admission must still be released.
+#[test]
+fn a_clock_that_panics_while_a_refresh_unwinds_does_not_end_the_process() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let api = Arc::new(FakeApi::default());
+    let store = Arc::new(FakeStore::default());
+    let clock = Arc::new(Mutex::new(now()));
+    let armed = Arc::new(AtomicBool::new(false));
+    let broken = Arc::new(AtomicBool::new(false));
+    let slot: Arc<Mutex<std::sync::Weak<AuthController>>> = Arc::default();
+    let (time, from, when, stop) = (clock.clone(), slot.clone(), armed.clone(), broken.clone());
+    let fault = broken.clone();
+    let auth = Arc::new(AuthController::new(AuthParts {
+        api: api.clone(),
+        store: store.clone(),
+        marker: store.clone(),
+        clock: Arc::new(move || {
+            assert!(!fault.load(Ordering::SeqCst), "the clock panicked");
+            *time.lock().unwrap()
+        }),
+        on_change: Arc::new(move || {
+            if when.swap(false, Ordering::SeqCst) {
+                if let Some(auth) = from.lock().unwrap().upgrade() {
+                    auth.cancel();
+                }
+                stop.store(true, Ordering::SeqCst);
+                panic!("the host's change callback panicked");
+            }
+        }),
+    }));
+    *slot.lock().unwrap() = Arc::downgrade(&auth);
+    let rig = Rig {
+        api,
+        store,
+        clock,
+        changes: Arc::new(AtomicUsize::new(0)),
+        auth,
+    };
+    *rig.store.token.lock().unwrap() = Some("refresh-one".into());
+    reply(&rig, "refresh-two");
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    let auth = rig.auth.clone();
+    *rig.api.during_call.lock().unwrap() = Some(Box::new(move || auth.cancel()));
+    rig.auth.restore();
+    rig.store.fail_save.store(false, Ordering::SeqCst);
+    rig.advance(20);
+    armed.store(true, Ordering::SeqCst);
+    let auth = rig.auth.clone();
+    assert!(catch_unwind(AssertUnwindSafe(move || auth.refresh())).is_err());
+    broken.store(false, Ordering::SeqCst);
+    // Admission was released: Sign out goes through and nothing is left waiting.
+    rig.auth.sign_out();
+    assert!(!rig.auth.authenticated());
+}

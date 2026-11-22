@@ -298,18 +298,24 @@ pub struct AuthController {
 ///
 /// A credential still unsaved when a refresh ends gets its save-only retry here if nothing
 /// scheduled one. A Cancel made while a refresh is out leaves the save to that refresh
-/// ([`AuthController::cancel`]), and every way the refresh's save fails schedules the retry
-/// itself; this covers a refresh that ended before it got to the save, as one does when the
-/// change callback panics as it starts.
+/// ([`AuthController::cancel`]). A refresh whose save fails schedules the retry itself, except
+/// while a new sign-in is pending: then the retry is set here, and however that sign-in ends
+/// replaces it. This also covers a refresh that ended before it got to the save, as one does
+/// when the change callback panics as it starts, and a Cancel made after a failed save and
+/// before the refresh lets go, which clears the retry the failure scheduled. The clock is read
+/// here inside `catch_unwind`, so that a clock that panics while a panic unwinds cannot end the
+/// process, and admission is released and waiters are woken whatever it does; without a
+/// time, no retry is set.
 struct RefreshFlight<'a>(&'a AuthController);
 
 impl Drop for RefreshFlight<'_> {
     fn drop(&mut self) {
+        let now = catch_unwind(AssertUnwindSafe(|| self.0.now())).ok();
         {
             let mut state = self.0.lock();
             state.refreshing = false;
             if state.unsaved && state.retry_at.is_none() && !state.closed {
-                state.retry_at = Some(self.0.now() + RETRY_AFTER);
+                state.retry_at = now.map(|now| now + RETRY_AFTER);
             }
         }
         self.0.drained.notify_all();
