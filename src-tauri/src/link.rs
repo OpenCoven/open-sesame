@@ -122,7 +122,7 @@ fn remove_registration<R: Runtime>(app: &AppHandle<R>) {
     {
         let _ = app;
         if let Ok(exe) = tauri::utils::platform::current_exe() {
-            let _ = remove_own_key(SCHEME, &dunce::simplified(&exe));
+            let _ = remove_own_key(SCHEME, dunce::simplified(&exe));
         }
     }
     // On Linux it takes only this program's handler out of `mimeapps.list` and out of its own
