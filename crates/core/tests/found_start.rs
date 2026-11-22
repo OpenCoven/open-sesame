@@ -378,11 +378,13 @@ fn a_known_location_that_cannot_go_in_a_path_is_left_out() {
     );
 }
 
-/// On Windows the variable is usually stored as `Path`; that entry is the one changed, and a
-/// command script that names a program that is nowhere is a start failure (status 9009).
+/// On Windows the variable is usually stored as `Path`; that entry is the one changed. A command
+/// script that names a program that is nowhere ends with status 1 there, not 9009 (the hosted
+/// windows-2025 runner, 22 November 2026), which any failure can give, so it is not told apart
+/// as a start failure; a program `cmd.exe` cannot find when started directly gives 9009.
 #[cfg(windows)]
 #[test]
-fn on_windows_the_path_entry_is_replaced_and_a_missing_command_is_a_start_failure() {
+fn on_windows_the_path_entry_is_replaced_and_a_missing_command_is_not_told_apart() {
     let home = tempfile::tempdir().unwrap();
     let known = home.path().join("npm");
     std::fs::create_dir_all(&known).unwrap();
@@ -416,6 +418,15 @@ fn on_windows_the_path_entry_is_replaced_and_a_missing_command_is_a_start_failur
         "{started:?}"
     );
     let result = start(&search, &env, &found);
-    assert!(start_failed(&result), "{result:?}");
+    assert!(
+        matches!(&result, Ok(output) if output.status == Some(1)),
+        "{result:?}"
+    );
+    assert!(!start_failed(&result));
+    let mut direct = Run::new(std::env::var("ComSpec").unwrap());
+    direct.args = vec!["/c".into(), "no-such-command-for-145".into()];
+    direct.timeout = Duration::from_secs(20);
+    let direct = run(direct, None);
+    assert!(start_failed(&direct), "{direct:?}");
     assert!(could_not_start("tool").0.contains("Settings"));
 }

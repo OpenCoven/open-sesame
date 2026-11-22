@@ -536,7 +536,7 @@ pub fn could_not_start(name: &str) -> BridgeError {
 /// Whether a run of a program found in a known location (one [`Search::start_env`] changed the
 /// `PATH` for) failed to start because something it needs was missing: the system could not find
 /// what the program's `#!` line names (`RunError::NotFound`), or a command it ran was not found,
-/// which `env` and the shells report with status 127 and `cmd.exe` on Windows with 9009.
+/// which `env` and the shells report with status 127 and `cmd.exe` on Windows with 9009. A command script on Windows that cannot find what it runs, as an npm `.cmd` without `node`, ends with status 1, which any failure can give, so it is not counted (issue #217).
 /// The statuses cannot be told apart from a program that ran and then exited with one of them
 /// itself, or ran its work and then failed to find a later command, so those are counted too.
 /// `RunError::NotFound` is also what a program removed between `find` and the run gives; a
