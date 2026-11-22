@@ -1,0 +1,14 @@
+{
+  "productName": "Open Sesame Preview",
+  "identifier": "org.opencoven.open-sesame.preview",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": []
+      }
+    }
+  },
+  "bundle": {
+    "targets": ["app"]
+  }
+}
