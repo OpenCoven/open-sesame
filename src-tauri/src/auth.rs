@@ -2752,6 +2752,13 @@ mod tests {
         );
         let store = KeychainStore::new(service);
         assert_eq!(store.load(), Ok(Some("not-a-token-0".to_string())));
+        // A sign-out before the first refresh removes the earlier credential too.
+        store.delete().unwrap();
+        assert!(matches!(
+            earlier.get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
+        earlier.set_password("not-a-token-0").unwrap();
         store.save("not-a-token-1").unwrap();
         assert_eq!(persistence(&store).as_deref(), Some("Local"));
         store.save("not-a-token-2").unwrap();
