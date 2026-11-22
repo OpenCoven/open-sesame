@@ -359,11 +359,12 @@ impl Report {
         }
     }
 
-    /// Says how a removal owed ended, and announces it (#153 item 1). After a Sign out whose
-    /// removal is made after all the status reads that the person is signed out, if it has
-    /// said nothing since but that the credential could not be removed. A removal that fails
-    /// leaves that sentence, which is then true. After a session the server ended, the
-    /// sentence for that is right either way.
+    /// Says how a removal owed ended, and announces it (#153 item 1); also how a removal that
+    /// was itself given up ended, when it returns. After a Sign out whose removal is made
+    /// after all the status reads that the person is signed out, if it has said nothing since
+    /// but that the credential could not be removed. A removal that fails leaves that
+    /// sentence, which is then true. After a session the server ended, the sentence for that
+    /// is right either way.
     fn ended(&self, why: Owed, removed: bool) {
         {
             let mut state = unpoisoned(&self.state);
@@ -616,8 +617,13 @@ impl AuthController {
                 let mut standing = unpoisoned(&theirs);
                 if *standing == Call::GivenUp {
                     drop(standing);
-                    let landed = kind == Kind::Save && matches!(answer, Ok(Ok(_)));
-                    returned(&out, &store, landed, &report);
+                    let done = matches!(answer, Ok(Ok(_)));
+                    // A removal that was itself given up, as Sign out's own can be at a prompt
+                    // left open past the limit, says how it ended as a removal owed does.
+                    if let Kind::Remove(why) = kind {
+                        report.ended(why, done);
+                    }
+                    returned(&out, &store, kind == Kind::Save && done, &report);
                 } else {
                     // Also for a call that panicked: it has ended, and the waiting side must
                     // not give it up after this and count it as out.

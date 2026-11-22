@@ -67,9 +67,9 @@ pub const KEYCHAIN_WAITING: &str = "Open Sesame is waiting for your system keych
 /// keyring and suggests restarting it or the application. Written for this change; the
 /// sentences wait for the owner's reading.
 #[cfg(target_os = "linux")]
-pub const KEYCHAIN_GIVEN_UP: &str = "Open Sesame has had no answer from your system keyring for two minutes. If it is not asking for your password, restart the keyring (GNOME Keyring, KWallet or another Secret Service) or Open Sesame, then try again.";
+pub const KEYCHAIN_GIVEN_UP: &str = "Open Sesame has had no answer from your system keyring for more than two minutes. If it is not asking for your password, restart the keyring (GNOME Keyring, KWallet or another Secret Service) or Open Sesame, then try again.";
 #[cfg(not(target_os = "linux"))]
-pub const KEYCHAIN_GIVEN_UP: &str = "Open Sesame has had no answer from your system keychain for two minutes. If it is not asking for your password, quit and reopen Open Sesame, then try again.";
+pub const KEYCHAIN_GIVEN_UP: &str = "Open Sesame has had no answer from your system keychain for more than two minutes. If it is not asking for your password, quit and reopen Open Sesame, then try again.";
 
 /// The event the page receives whenever the sign-in status may have changed.
 pub const CHANGED_EVENT: &str = "auth.changed";

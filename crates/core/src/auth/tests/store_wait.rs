@@ -827,3 +827,87 @@ fn a_sign_out_after_an_ended_sessions_removal_was_owed_removes_what_lands() {
     assert_eq!(rig.store.saved(), None);
     assert_eq!(rig.message(), SIGNED_OUT);
 }
+
+/// From the review of #206: Sign out's own removal can be the call that is given up, at a
+/// keyring prompt left open past the limit. When it then returns having removed the
+/// credential, the status says so and the change is announced, as for a removal owed.
+#[test]
+fn a_sign_outs_own_removal_given_up_and_then_made_says_so_and_is_announced() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    assert!(rig.auth.store_given_up(), "the removal was not given up");
+    assert_eq!(rig.message(), NOT_REMOVED);
+    let before = rig.changes.load(Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
+    assert!(
+        rig.changes.load(Ordering::SeqCst) > before,
+        "the end of the removal was not announced"
+    );
+}
+
+/// And when it returns having failed, the sentence stays, which is then true, and the change
+/// is announced all the same.
+#[test]
+fn a_sign_outs_own_removal_given_up_and_then_failed_says_so_and_is_announced() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    assert!(rig.auth.store_given_up(), "the removal was not given up");
+    rig.store.fail_delete.store(true, Ordering::SeqCst);
+    let before = rig.changes.load(Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    assert_eq!(rig.message(), NOT_REMOVED);
+    assert!(
+        rig.changes.load(Ordering::SeqCst) > before,
+        "the end of the removal was not announced"
+    );
+}
+
+/// From the review of #206: item 2 keeps only a save that landed. When the removal was owed
+/// for a session the server ended and the later sign-in's save fails after all, the dead
+/// session's credential is still removed.
+#[test]
+fn an_ended_sessions_removal_is_made_when_the_later_save_does_not_land() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_removal_owed_because_the_server_ended_an_earlier_session(&rig);
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+}
+
+/// From the review of #206: an owed removal that itself waits past the limit stops saying the
+/// keychain is waited for and says the credential could not be removed, until it returns.
+#[test]
+fn an_owed_removal_that_waits_past_the_limit_stops_saying_it_waits() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let (second, hook) = waiter();
+    second.open_when_too_long();
+    let held = a_removal_owed_by_a_sign_out(&rig, move || hook());
+    held.open();
+    second.entered();
+    until("the status says the keychain is waited for", || {
+        rig.message() == WAITING
+    });
+    until("the status stops saying it at the limit", || {
+        rig.message() == NOT_REMOVED
+    });
+    assert!(
+        rig.auth.store_given_up(),
+        "the owed removal let other calls through"
+    );
+    second.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
+}
