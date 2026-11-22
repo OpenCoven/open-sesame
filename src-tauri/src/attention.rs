@@ -205,7 +205,11 @@ fn received<R: Runtime>(app: &AppHandle<R>, event: Value, emit: &Emit) {
         return;
     }
     crate::tray::show_waiting(app, waiting);
-    emit(json!({"event": CHANGED_EVENT, "status": attention.status()}));
+    let status = attention.status();
+    // Development evidence of what the board holds; the page and the tray show the same.
+    #[cfg(debug_assertions)]
+    eprintln!("open-sesame: attention {status}");
+    emit(json!({"event": CHANGED_EVENT, "status": status}));
     if change == Change::StartedWaiting && lock(&attention.config).notify {
         if let Some(agent) = agent {
             notify(app, &agent.reason, &agent.folder);
