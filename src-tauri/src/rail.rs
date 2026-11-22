@@ -280,6 +280,8 @@ pub struct Glance {
     pub frame: Option<Rect>,
     /// The work area of the display the rail is on.
     pub area: Option<Rect>,
+    /// That display's scale when the rail was placed on it.
+    pub unit: f64,
 }
 
 /// What the pointer's position asks for.
@@ -288,6 +290,10 @@ pub enum Act {
     Stay,
     /// Move the collapsed rail to the display at this index.
     Follow(usize),
+    /// The display the rail is on, at this index, has a new scale: place the rail again there,
+    /// open or closed. A scale change can leave a display's work area in pixels as it was, so
+    /// without this the rail would keep the size it had at the old scale.
+    Rescale(usize),
     /// Open the panel until the pointer leaves.
     Peek,
     /// Close a peek.
@@ -297,6 +303,17 @@ pub enum Act {
 /// One tick of the pointer thread. Only a collapsed rail follows the pointer to another display,
 /// only a peek nobody is using closes by itself, and a pointer between displays changes nothing.
 pub fn decide(glance: &Glance, dwell: &mut Dwell, pointer: (f64, f64), screens: &[Screen]) -> Act {
+    // Only a display the rail's work area names alone: two that share it (mirrored) would
+    // otherwise take turns, a new placement every tick.
+    let mut same = screens
+        .iter()
+        .enumerate()
+        .filter(|(_, screen)| Some(screen.area) == glance.area);
+    if let (Some((index, screen)), None) = (same.next(), same.next()) {
+        if screen.unit != glance.unit {
+            return Act::Rescale(index);
+        }
+    }
     let Some(index) = screens
         .iter()
         .position(|screen| screen.bounds.contains(pointer))
@@ -634,6 +651,14 @@ pub fn active<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.try_state::<Rail>().is_some_and(|rail| rail.is_rail())
 }
 
+/// Whether the window is the rail and its panel is not open: the strip, or nothing on screen.
+pub fn closed<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<Rail>().is_some_and(|rail| {
+        let state = lock(&rail.state);
+        rail.is_rail() && !(state.shown && state.expanded)
+    })
+}
+
 /// Whether the panel is open only until the pointer leaves or the window loses the keyboard.
 pub fn peeking<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.try_state::<Rail>().is_some_and(|rail| {
@@ -777,12 +802,13 @@ fn tick<R: Runtime>(app: &AppHandle<R>) {
             hover,
             frame: state.frame,
             area: state.area,
+            unit: state.unit,
         };
         let mut dwell = state.dwell;
         let act = decide(&glance, &mut dwell, pointer, &state.screens);
         state.dwell = dwell;
         match act {
-            Act::Follow(index) => {
+            Act::Follow(index) | Act::Rescale(index) => {
                 let screen = state.screens[index];
                 state.area = Some(screen.area);
                 state.unit = screen.unit;
@@ -950,22 +976,80 @@ fn place<R: Runtime>(window: &WebviewWindow<R>, frame: Rect, screens: &[Screen])
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = screens;
-        let _ = window.set_size(tauri::PhysicalSize::new(
-            frame.width as u32,
-            frame.height as u32,
-        ));
-        let (x, y) = (frame.x as i32, frame.y as i32);
-        // On Windows a window with a shadow and no frame keeps the unseen border a frame has for
-        // resizing, 8 pixels at 100% on the left, right and bottom. A position is that border's
-        // corner, so the border is taken off for what a person sees to be where `frame` says.
-        #[cfg(windows)]
-        let (x, y) = match (window.inner_position(), window.outer_position()) {
-            (Ok(inner), Ok(outer)) => (x - (inner.x - outer.x), y - (inner.y - outer.y)),
-            _ => (x, y),
+        // On Windows a window that reaches a display with another scale is resized by the
+        // toolkit to keep its size in points, which would undo the size set here. So the order
+        // is the one whose window in between stays on the frame's display: sized first when it
+        // shrinks where it is (a panel closing to the strip), moved first when it grows or goes
+        // to another display. Then moved again on Windows, because the unseen border below is
+        // measured in the new display's pixels.
+        let current = match (window.inner_position(), window.inner_size()) {
+            (Ok(at), Ok(size)) => Some(Rect {
+                x: f64::from(at.x),
+                y: f64::from(at.y),
+                width: f64::from(size.width),
+                height: f64::from(size.height),
+            }),
+            _ => None,
         };
-        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+        let size = || {
+            let _ = window.set_size(tauri::PhysicalSize::new(
+                frame.width as u32,
+                frame.height as u32,
+            ));
+        };
+        if current.is_some_and(|current| size_before_move(current, frame, screens)) {
+            size();
+            move_to(window, frame);
+        } else {
+            move_to(window, frame);
+            size();
+        }
+        #[cfg(windows)]
+        move_to(window, frame);
     }
+}
+
+/// Whether a window at `current` that is to be at `frame` should be sized before it is moved:
+/// only when that keeps the window in between on the frame's display and moving first would not.
+#[cfg(any(not(target_os = "macos"), test))]
+pub fn size_before_move(current: Rect, frame: Rect, screens: &[Screen]) -> bool {
+    let centre = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
+    let Some(display) = screens.iter().find(|screen| screen.bounds.contains(centre)) else {
+        return false;
+    };
+    let on = |rect: Rect| {
+        let bounds = display.bounds;
+        rect.x >= bounds.x
+            && rect.y >= bounds.y
+            && rect.x + rect.width <= bounds.x + bounds.width
+            && rect.y + rect.height <= bounds.y + bounds.height
+    };
+    let moved_first = Rect {
+        width: current.width,
+        height: current.height,
+        ..frame
+    };
+    let sized_first = Rect {
+        width: frame.width,
+        height: frame.height,
+        ..current
+    };
+    !on(moved_first) && on(sized_first)
+}
+
+/// Puts what a person sees of the window at `frame`'s corner, in physical pixels.
+#[cfg(not(target_os = "macos"))]
+fn move_to<R: Runtime>(window: &WebviewWindow<R>, frame: Rect) {
+    let (x, y) = (frame.x as i32, frame.y as i32);
+    // On Windows a window with a shadow and no frame keeps the unseen border a frame has for
+    // resizing, 8 pixels at 100% on the left, right and bottom. A position is that border's
+    // corner, so the border is taken off for what a person sees to be where `frame` says.
+    #[cfg(windows)]
+    let (x, y) = match (window.inner_position(), window.outer_position()) {
+        (Ok(inner), Ok(outer)) => (x - (inner.x - outer.x), y - (inner.y - outer.y)),
+        _ => (x, y),
+    };
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
 /// Puts the placed window on screen and settles the keyboard. `expanded` is whether the panel is
@@ -1096,7 +1180,8 @@ pub fn collapse<R: Runtime>(app: &AppHandle<R>) {
 /// The shortcut and `open-sesame --toggle`: a panel that is open to stay closes, and anything
 /// else, a peek and a hidden rail included, opens to stay. Answers which it was, in the terms of
 /// a press on the ordinary window (`summon::Press`): `Hide` for closing to the strip, `Show`
-/// for opening. The rail is above other windows, so it is never `Forward`.
+/// for opening. The rail is above other windows, so it is never `Forward`. The answer is worked
+/// out from the state before the change, which `collapse` and `open` queue on the main thread.
 pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
     let open_to_stay = app.try_state::<Rail>().is_some_and(|rail| {
         let state = lock(&rail.state);
@@ -1112,7 +1197,7 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
 }
 
 /// The tray's menu item: takes the rail off the screen (`Hide`), or puts the strip back
-/// (`Show`).
+/// (`Show`). The answer is worked out from the state before the change is made.
 pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
     let was_shown = app
         .try_state::<Rail>()
@@ -1129,11 +1214,13 @@ pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
             state.dwell = Dwell::default();
             state.shown
         };
-        #[cfg(debug_assertions)]
-        eprintln!(
-            "open-sesame: rail {}",
-            if shown { "shown" } else { "hidden" }
-        );
+        // `cfg!` and not `#[cfg]`: a release build reads `shown` too, so it has no unused variable.
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "open-sesame: rail {}",
+                if shown { "shown" } else { "hidden" }
+            );
+        }
         settle(app, Focus::Leave);
     });
     if was_shown {
@@ -1293,6 +1380,31 @@ mod tests {
     }
 
     #[test]
+    fn the_window_in_between_stays_on_the_frames_display() {
+        // A laptop at 150% with a monitor at 100% to its right, the rail on the right edge.
+        let screens = [screen(0.0, 2560.0, 1.5), screen(2560.0, 1920.0, 1.0)];
+        let rect = |x: f64, width: f64| Rect {
+            x,
+            y: 100.0,
+            width,
+            height: 600.0,
+        };
+        let panel = rect(2560.0 - 600.0, 600.0);
+        let strip = rect(2560.0 - 96.0, 96.0);
+        // Closing: moved first, the wide window would sit mostly on the monitor.
+        assert!(size_before_move(panel, strip, &screens));
+        // Opening: sized first, it would.
+        assert!(!size_before_move(strip, panel, &screens));
+        // To the other display, and a frame on no display: moved first.
+        let there = rect(2560.0 + 1920.0 - 96.0, 96.0);
+        assert!(!size_before_move(panel, there, &screens));
+        assert!(!size_before_move(panel, rect(9000.0, 96.0), &screens));
+        // On the left edge either order stays put; moved first, as before.
+        let left = [screen(0.0, 2560.0, 1.5)];
+        assert!(!size_before_move(rect(0.0, 600.0), rect(0.0, 96.0), &left));
+    }
+
+    #[test]
     fn the_strip_is_centred_against_the_edge_and_the_panel_fills_the_height() {
         let strip = frame(AREA, 1.0, Edge::Right, Shape::Collapsed);
         assert_eq!(
@@ -1365,6 +1477,44 @@ mod tests {
             hover: true,
             frame,
             area,
+            unit: 1.0,
+        }
+    }
+
+    #[test]
+    fn a_display_that_changes_its_scale_has_the_rail_placed_again_there() {
+        let before = screen(0.0, 1920.0, 1.0);
+        let after = screen(0.0, 1920.0, 1.5);
+        let other = screen(1920.0, 2560.0, 2.0);
+        let mut dwell = Dwell::default();
+        let mut placed = glance(false, Some(before.area), None);
+        placed.unit = 1.0;
+        // The same work area at a new scale: placed again at once, on that display.
+        assert_eq!(
+            decide(&placed, &mut dwell, (100.0, 100.0), &[after, other]),
+            Act::Rescale(0)
+        );
+        // Open or closed, and with the pointer on another display.
+        placed.expanded = true;
+        placed.held = true;
+        assert_eq!(
+            decide(&placed, &mut dwell, (2000.0, 100.0), &[other, after]),
+            Act::Rescale(1)
+        );
+        // Nothing changed: no new placement.
+        let mut unchanged = glance(false, Some(before.area), None);
+        unchanged.unit = 1.0;
+        assert_ne!(
+            decide(&unchanged, &mut dwell, (100.0, 100.0), &[before, other]),
+            Act::Rescale(0)
+        );
+        // Two displays with that work area (mirrored) at different scales: neither, or the rail
+        // would be placed on each in turn.
+        for screens in [[after, before], [before, after]] {
+            assert!(!matches!(
+                decide(&unchanged, &mut dwell, (100.0, 100.0), &screens),
+                Act::Rescale(_)
+            ));
         }
     }
 
@@ -1382,7 +1532,9 @@ mod tests {
             ),
             Act::Follow(1)
         );
-        let on_second = glance(false, Some(screens[1].area), None);
+        // Placed on the second display, which records its scale.
+        let mut on_second = glance(false, Some(screens[1].area), None);
+        on_second.unit = screens[1].unit;
         assert_eq!(
             decide(&on_second, &mut dwell, (2100.0, 500.0), &screens),
             Act::Stay
