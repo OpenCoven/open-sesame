@@ -40,8 +40,9 @@ pub(crate) fn manage_item<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuI
 }
 
 /// Sets the item's label to what choosing it would do now (`window::tray_item_next`). Called
-/// wherever that can change: the window gains or loses the keyboard, the icon is pressed, the
-/// item or the Windows click acts, and the rail goes on or off the screen.
+/// wherever that can change: the window gains or loses the keyboard, the icon is pressed, a
+/// press acts on the window or it is shown or hidden, the rail starts, and the rail goes on or
+/// off the screen.
 pub fn refresh<R: Runtime>(app: &AppHandle<R>) {
     let (Some(item), Some(press)) = (app.try_state::<Item<R>>(), window::tray_item_next(app))
     else {
@@ -53,12 +54,15 @@ pub fn refresh<R: Runtime>(app: &AppHandle<R>) {
 /// Refreshes the label once `delay` has passed. What the item does also changes with time
 /// alone, when an allowance runs out (`summon::TRAY_MENU_GRACE` after the window lost the
 /// keyboard, `summon::TRAY_MENU_OPEN` after a press on the icon), and nothing else reports it.
+/// The refresh itself runs on the main thread, where every other refresh runs, so an answer
+/// worked out here cannot land on top of a newer one.
 pub fn refresh_after<R: Runtime>(app: &AppHandle<R>, delay: Duration) {
     let app = app.clone();
     std::thread::spawn(move || {
         // A little after, because each allowance counts a moment equal to it as outside.
         std::thread::sleep(delay + Duration::from_millis(100));
-        refresh(&app);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || refresh(&handle));
     });
 }
 
@@ -86,7 +90,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 if summon::opens_the_tray_menu(cfg!(windows), *button == MouseButton::Right) {
                     summon::tray_pressed(tray.app_handle());
                     refresh(tray.app_handle());
-                    refresh_after(tray.app_handle(), summon::TRAY_MENU_OPEN);
+                    // The rail's label does not change with time.
+                    if !crate::rail::active(tray.app_handle()) {
+                        refresh_after(tray.app_handle(), summon::TRAY_MENU_OPEN);
+                    }
                 }
             }
             if let (

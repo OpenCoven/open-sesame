@@ -596,6 +596,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, presentation: Presentation) {
     #[cfg(target_os = "linux")]
     let edge = lock(&rail.settings).edge;
     app.manage(rail);
+    // The tray's item was labelled before the rail existed, by the ordinary window's rule.
+    crate::tray::refresh(app);
     if presentation != Presentation::Rail {
         return;
     }
@@ -1363,6 +1365,22 @@ impl Change {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tray's item is labelled by the rail's own state once the rail exists (issue #115):
+    /// the strip on screen reads Hide, a rail taken off the screen reads Show.
+    #[test]
+    fn the_tray_label_follows_whether_the_rail_is_on_screen() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let handle = app.handle();
+        let item = crate::tray::manage_item(handle).unwrap();
+        app.manage(Rail::new(Presentation::Rail, None));
+        crate::tray::refresh(handle);
+        assert_eq!(item.text().unwrap(), "Hide Open Sesame");
+        lock(&app.state::<Rail>().state).shown = false;
+        crate::tray::refresh(handle);
+        assert_eq!(item.text().unwrap(), "Show Open Sesame");
+    }
 
     const AREA: Rect = Rect {
         x: 0.0,

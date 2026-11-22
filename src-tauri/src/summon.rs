@@ -1140,7 +1140,10 @@ mod tests {
             "Hide Open Sesame"
         );
         assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Hide));
-        // Long after it lost the keyboard, the item brings it forward, and the label says Show.
+        // The windowless runtime still reports the window as shown after that hide, so what
+        // follows is a window that is open: long after it lost the keyboard, the item would
+        // bring it forward, and the label says Show. A hidden window is `tray_item`'s first
+        // case, tested above without a window.
         lost_the_keyboard(&app, Some(TRAY_MENU_GRACE + Duration::from_secs(5)));
         assert_eq!(tray_item_next(handle, &window), Press::Forward);
         assert_eq!(
