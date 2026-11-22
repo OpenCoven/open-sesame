@@ -4,7 +4,8 @@
 // sends `attention.changed` when an agent's state or the hook's changes.
 //
 // Nothing is written until the person has seen the change: the add button appears only after
-// `attention.preview` has been shown, and adds exactly that text. Everything the section touches
+// `attention.preview` has been shown, and it sends that text with `attention.install`, which
+// the host refuses if the file would now be written differently. Everything the section touches
 // is passed in, so scripts/check-tauri-attention.mjs runs it in Node against stand-ins.
 
 export const CHANGED_EVENT = 'attention.changed';
@@ -101,7 +102,8 @@ export function mountAttention(bridge, parts) {
       busy = false;
     }
   });
-  install.addEventListener('click', () => act('attention.install'));
+  // The text shown goes with the request, and the host refuses it if the file has changed since.
+  install.addEventListener('click', () => act('attention.install', { expected: shown }));
   remove.addEventListener('click', () => act('attention.remove'));
   notify.addEventListener('change', () => act('attention.setNotify', { enabled: notify.checked === true }));
   bridge.subscribe?.(note => {

@@ -1,25 +1,34 @@
 //! The loopback listener that Claude Code's HTTP hooks post to.
 //!
 //! It binds `127.0.0.1` only, so no other machine can reach it, and serves one path,
-//! `/hook/<token>`, where the token is a random 256-bit value made when the hook is installed.
+//! `/hook/<token>`, where the token is a random 256-bit value made for each install (at the
+//! first preview after the last removal).
 //! A request without that path, with any method but `POST`, with an `Origin` header (what a
 //! browser page sends) or with a body that is not one JSON object is refused and is not an
 //! event. Every accepted request is answered `204 No Content`: an empty answer tells Claude
 //! Code nothing, so it never allows or denies anything on the person's behalf.
+//!
+//! The body is read as it arrives, and only the fields the board reads are kept: the prompt, a
+//! tool's input and output and the transcript's path are skipped without being stored. The
+//! event is handed on before the reply, so Claude Code's next event cannot overtake it, and
+//! each connection has a deadline, so connections that trickle bytes cannot hold every slot.
 
-use serde_json::Value;
+use serde::de::IgnoredAny;
+use serde::Deserialize;
+use serde_json::{Map, Value};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// The largest body taken. Hook events are a few kilobytes; a tool's input can be larger.
-const MOST_BODY: usize = 1024 * 1024;
+/// The largest body taken. A tool's output in `PostToolUse` can be megabytes; it is read and
+/// skipped, never kept.
+const MOST_BODY: usize = 64 * 1024 * 1024;
 const MOST_HEADER: usize = 16 * 1024;
-/// How long one connection may take to send its request.
-const READ_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long one connection may take to send its request, from its first byte to its last.
+const DEADLINE: Duration = Duration::from_secs(3);
 /// Connections served at once; more are closed unanswered.
 const MOST_CONNECTIONS: usize = 16;
 
@@ -87,16 +96,17 @@ pub fn start(
                     open.fetch_sub(1, Ordering::SeqCst);
                     continue;
                 }
-                let (path, sink, open) = (path.clone(), Arc::clone(&sink), Arc::clone(&open));
+                let (path, sink, done) = (path.clone(), Arc::clone(&sink), Arc::clone(&open));
                 let served = std::thread::Builder::new()
                     .name("attention-request".into())
                     .spawn(move || {
                         serve(stream, &path, &*sink);
-                        open.fetch_sub(1, Ordering::SeqCst);
+                        done.fetch_sub(1, Ordering::SeqCst);
                     });
                 if served.is_err() {
-                    // The thread could not start; its stream was dropped with the closure.
-                    continue;
+                    // The thread could not start: its stream went with the closure, and its
+                    // slot is given back here.
+                    open.fetch_sub(1, Ordering::SeqCst);
                 }
             }
         })?;
@@ -108,12 +118,18 @@ pub fn start(
 }
 
 fn serve(stream: TcpStream, path: &str, sink: &(dyn Fn(Value) + Send + Sync)) {
-    let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(READ_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(DEADLINE));
     let Ok(reader) = stream.try_clone() else {
         return;
     };
+    let reader = Deadline {
+        stream: reader,
+        until: Instant::now() + DEADLINE,
+    };
     let (status, event) = answer(BufReader::new(reader), path);
+    if let Some(event) = event {
+        sink(event);
+    }
     let reason = match status {
         204 => "No Content",
         400 => "Bad Request",
@@ -128,9 +144,85 @@ fn serve(stream: TcpStream, path: &str, sink: &(dyn Fn(Value) + Send + Sync)) {
         "HTTP/1.1 {status} {reason}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
     let _ = stream.flush();
-    drop(stream);
-    if let Some(event) = event {
-        sink(event);
+}
+
+/// A stream that gives up at a fixed moment, however the bytes trickle in.
+struct Deadline {
+    stream: TcpStream,
+    until: Instant,
+}
+
+impl Read for Deadline {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let left = self.until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        self.stream.set_read_timeout(Some(left))?;
+        self.stream.read(buffer)
+    }
+}
+
+/// The fields of an event the board reads. Every other field is skipped as it is read.
+#[derive(Deserialize)]
+struct Event {
+    hook_event_name: Option<String>,
+    session_id: Option<String>,
+    cwd: Option<String>,
+    tool_name: Option<String>,
+    notification_type: Option<String>,
+    message: Option<String>,
+    /// Only whether it is there: a subagent's event.
+    agent_id: Option<IgnoredAny>,
+}
+
+impl Event {
+    fn value(self) -> Value {
+        let mut kept = Map::new();
+        for (name, text) in [
+            ("hook_event_name", self.hook_event_name),
+            ("session_id", self.session_id),
+            ("cwd", self.cwd),
+            ("tool_name", self.tool_name),
+            ("notification_type", self.notification_type),
+            ("message", self.message),
+        ] {
+            if let Some(text) = text {
+                kept.insert(name.into(), Value::String(text));
+            }
+        }
+        if self.agent_id.is_some() {
+            kept.insert("agent_id".into(), Value::Bool(true));
+        }
+        Value::Object(kept)
+    }
+}
+
+/// Reads one JSON object from the body, keeping only [`Event`]'s fields. Anything else, an
+/// array or a string, is not an event.
+fn object_of(body: &mut impl Read) -> Option<Value> {
+    let mut deserializer = serde_json::Deserializer::from_reader(body);
+    let event = Object::deserialize(&mut deserializer).ok()?.0;
+    deserializer.end().ok()?;
+    Some(event.value())
+}
+
+/// An [`Event`] read only from a JSON object.
+struct Object(Event);
+
+impl<'de> Deserialize<'de> for Object {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Fields;
+        impl<'de> serde::de::Visitor<'de> for Fields {
+            type Value = Object;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Object, A::Error> {
+                Event::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(Object)
+            }
+        }
+        deserializer.deserialize_map(Fields)
     }
 }
 
@@ -186,12 +278,11 @@ fn answer(mut reader: impl BufRead, path: &str) -> (u16, Option<Value>) {
     if length > MOST_BODY {
         return (413, None);
     }
-    let mut body = vec![0; length];
-    if reader.read_exact(&mut body).is_err() {
-        return (400, None);
-    }
-    match serde_json::from_slice::<Value>(&body) {
-        Ok(event @ Value::Object(_)) => (204, Some(event)),
+    let mut body = reader.take(length as u64);
+    let event = object_of(&mut body);
+    // A body shorter than it said, or with more after the object, is not an event.
+    match event {
+        Some(event) if body.limit() == 0 => (204, Some(event)),
         _ => (400, None),
     }
 }

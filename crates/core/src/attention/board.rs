@@ -38,6 +38,9 @@ pub struct Agent {
     pub reason: String,
     /// Orders the agents by their last change; larger is later.
     changed: u64,
+    /// The tools whose permission requests are open. Tools run in parallel, so another tool
+    /// finishing does not end the wait; the requested one finishing does.
+    waiting_for: Vec<String>,
 }
 
 /// What an event did to the board.
@@ -84,9 +87,22 @@ impl Board {
         ) else {
             return Change::Unchanged;
         };
-        if event.get("agent_id").is_some() {
+        // A subagent's events carry the parent's session. Its permission requests and the
+        // tools that ran after them are what the person sees there; the rest is the parent's.
+        if event.get("agent_id").is_some()
+            && !matches!(
+                name,
+                "PermissionRequest" | "PostToolUse" | "PostToolUseFailure"
+            )
+        {
             return Change::Unchanged;
         }
+        let tool = field(event, "tool_name", LONGEST_ID);
+        let mut waiting_for = self
+            .agents
+            .get(session)
+            .map(|agent| agent.waiting_for.clone())
+            .unwrap_or_default();
         let before = self.agents.get(session).map(|agent| agent.state);
         let notice = field(event, "message", LONGEST_TEXT).unwrap_or("");
         let next = match name {
@@ -98,11 +114,31 @@ impl Board {
                 };
             }
             "SessionStart" if before.is_none() => (State::Finished, "Ready for a prompt".into()),
+            "PostToolUse" | "PostToolUseFailure" if before == Some(State::Waiting) => {
+                // The wait ends when a tool it was for has run; one asked about only by a
+                // notice ends with any tool.
+                let position = tool.and_then(|tool| waiting_for.iter().position(|t| t == tool));
+                match position {
+                    Some(index) => {
+                        waiting_for.remove(index);
+                    }
+                    None if waiting_for.is_empty() => {}
+                    None => return Change::Unchanged,
+                }
+                match self.agents.get(session) {
+                    Some(agent) if !waiting_for.is_empty() => {
+                        (State::Waiting, agent.reason.clone())
+                    }
+                    _ => (State::Working, "Working".into()),
+                }
+            }
             "UserPromptSubmit" | "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
+                waiting_for.clear();
                 (State::Working, "Working".into())
             }
             "PermissionRequest" => {
-                let tool = field(event, "tool_name", LONGEST_ID).unwrap_or("a tool");
+                let tool = tool.unwrap_or("a tool");
+                waiting_for.push(tool.to_string());
                 (State::Waiting, format!("Asks to use {tool}"))
             }
             "Notification" => {
@@ -117,14 +153,23 @@ impl Board {
                         }
                         _ => (State::Waiting, notice_or(notice, "Needs your answer")),
                     }
-                } else if kind == "idle_prompt" && before != Some(State::Waiting) {
+                } else if kind == "idle_prompt" {
+                    // Sent only once Claude Code has finished responding, so a prompt the
+                    // person dismissed (no Stop follows an interrupt) is over too.
+                    waiting_for.clear();
                     (State::Finished, "Waiting for a prompt".into())
                 } else {
                     return Change::Unchanged;
                 }
             }
-            "Stop" => (State::Finished, "Finished".into()),
-            "StopFailure" => (State::Finished, "Stopped with an error".into()),
+            "Stop" => {
+                waiting_for.clear();
+                (State::Finished, "Finished".into())
+            }
+            "StopFailure" => {
+                waiting_for.clear();
+                (State::Finished, "Stopped with an error".into())
+            }
             _ => return Change::Unchanged,
         };
         let folder = field(event, "cwd", LONGEST_TEXT).map(str::to_string);
@@ -139,7 +184,9 @@ impl Board {
                 state: next.0,
                 reason: String::new(),
                 changed,
+                waiting_for: Vec::new(),
             });
+        entry.waiting_for = waiting_for;
         let unchanged = before.is_some()
             && entry.state == next.0
             && entry.reason == next.1

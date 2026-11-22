@@ -40,6 +40,11 @@ const UNREADABLE: &str =
 const NOT_AN_OBJECT: &str =
     "Claude Code's settings file does not hold one JSON object, so it was left alone.";
 const UNKNOWN_HOOKS: &str = "Claude Code's settings file has hooks in a form Open Sesame does not know, so it was left alone.";
+const REPEATED: &str =
+    "Claude Code's settings file names the same setting more than once, so it was left alone.";
+const READ_ONLY: &str = "Claude Code's settings file is read-only, so it was left alone.";
+/// The error the reader of an object gives for a name it has already seen.
+const REPEATED_MARK: &str = "a member name repeated";
 const BACKUP_DAMAGED: &str = "The copy Open Sesame kept of Claude Code's settings file cannot be read, so the file was left alone.";
 
 /// A random 256-bit token, as URL-safe base64 without padding.
@@ -69,8 +74,11 @@ impl<'de> Deserialize<'de> for Ordered {
                 formatter.write_str("a JSON object")
             }
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Ordered, A::Error> {
-                let mut members = Vec::new();
+                let mut members: Vec<(String, Box<RawValue>)> = Vec::new();
                 while let Some(member) = map.next_entry::<String, Box<RawValue>>()? {
+                    if members.iter().any(|(name, _)| *name == member.0) {
+                        return Err(serde::de::Error::custom(REPEATED_MARK));
+                    }
                     members.push(member);
                 }
                 Ok(Ordered(members))
@@ -90,7 +98,17 @@ fn top(current: Option<&[u8]>) -> Result<Ordered, &'static str> {
     if !value.is_object() {
         return Err(NOT_AN_OBJECT);
     }
-    serde_json::from_slice(text).map_err(|_| UNREADABLE)
+    serde_json::from_slice(text).map_err(|error| repeated_or(&error, UNREADABLE))
+}
+
+/// [`REPEATED`] when the reader found a repeated name (Claude Code would read the last one,
+/// so merging into the first would drop the settings in effect), otherwise `otherwise`.
+fn repeated_or(error: &serde_json::Error, otherwise: &'static str) -> &'static str {
+    if error.to_string().contains(REPEATED_MARK) {
+        REPEATED
+    } else {
+        otherwise
+    }
 }
 
 fn indent(depth: usize) -> String {
@@ -148,7 +166,8 @@ fn hook_members(raw: Option<&RawValue>) -> Result<Events, &'static str> {
     let Some(raw) = raw else {
         return Ok(Vec::new());
     };
-    let members: Ordered = serde_json::from_str(raw.get()).map_err(|_| UNKNOWN_HOOKS)?;
+    let members: Ordered =
+        serde_json::from_str(raw.get()).map_err(|error| repeated_or(&error, UNKNOWN_HOOKS))?;
     members
         .0
         .into_iter()
@@ -265,8 +284,57 @@ fn unplan(current: &[u8], url: &str) -> Result<Vec<u8>, String> {
 
 /// Where the settings file's bytes really are: a link, as a dotfiles folder makes, is followed
 /// so that the link itself stays.
+/// A link whose file does not exist yet is followed too, so the file is made where it points.
 fn target(settings: &Path) -> PathBuf {
-    std::fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf())
+    let mut path = settings.to_path_buf();
+    for _ in 0..16 {
+        let Ok(link) = std::fs::read_link(&path) else {
+            break;
+        };
+        path = if link.is_absolute() {
+            link
+        } else {
+            path.parent().unwrap_or(Path::new(".")).join(link)
+        };
+    }
+    path
+}
+
+/// Refuses a file the person made read-only.
+fn writable(path: &Path) -> Result<(), String> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.permissions().readonly() => Err(READ_ONLY.into()),
+        _ => Ok(()),
+    }
+}
+
+/// Whether the file holds a handler with this address.
+fn holds_ours(current: &[u8], url: &str) -> bool {
+    let Ok(value) = serde_json::from_slice::<Value>(current) else {
+        return false;
+    };
+    value["hooks"].as_object().is_some_and(|events| {
+        events.values().any(|groups| {
+            groups
+                .as_array()
+                .is_some_and(|groups| groups.iter().any(|group| holds(group, url)))
+        })
+    })
+}
+
+/// Writes a file only the person can read: the backup can hold anything the settings file
+/// holds, keys included.
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
@@ -283,6 +351,7 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
 fn replace(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let failed =
         |error: std::io::Error| format!("Claude Code's settings file cannot be written: {error}");
+    writable(path)?;
     let folder = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(folder).map_err(failed)?;
     let mut temporary = tempfile_in(folder).map_err(failed)?;
@@ -327,6 +396,7 @@ pub fn install(settings: &Path, backup: &Path, url: &str) -> Result<(), String> 
     let path = target(settings);
     let current = read(&path)?;
     let after = plan(current.as_deref(), url)?;
+    writable(&path)?;
     if !backup.exists() {
         let kept = match &current {
             Some(bytes) => [HAD_FILE, bytes].concat(),
@@ -335,7 +405,7 @@ pub fn install(settings: &Path, backup: &Path, url: &str) -> Result<(), String> 
         if let Some(folder) = backup.parent() {
             std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
         }
-        std::fs::write(backup, &kept).map_err(|error| {
+        write_private(backup, &kept).map_err(|error| {
             format!("Open Sesame could not keep a copy of Claude Code's settings file: {error}")
         })?;
     }
@@ -372,9 +442,13 @@ pub fn remove(settings: &Path, backup: &Path, url: &str) -> Result<(), String> {
             }
         }
         (_, Some(current)) => {
-            let after = unplan(&current, url)?;
-            if after != current {
-                replace(&path, &after)?;
+            // A file that does not parse is not written, and the backup is kept.
+            top(Some(&current))?;
+            if holds_ours(&current, url) {
+                let after = unplan(&current, url)?;
+                if after != current {
+                    replace(&path, &after)?;
+                }
             }
         }
         (_, None) => {}

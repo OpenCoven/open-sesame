@@ -82,6 +82,7 @@ assert.equal(summarize({ ...off, waiting: 3, finished: 1, hook: { installed: tru
   assert.equal(view.install.hidden, false, 'a message from the host does not take away a change being shown');
   await view.install.fire('click');
   await settle();
+  assert.deepEqual(bridge.calls.at(-1), { method: 'attention.install', params: { expected: after } }, 'the text shown is the text asked for');
   assert.equal(view.remove.hidden, false);
   assert.equal(view.install.hidden, true);
   assert.equal(view.preview.hidden, true, 'an installed hook has nothing to show before adding');

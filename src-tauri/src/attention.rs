@@ -32,6 +32,9 @@ pub const CHANGED_EVENT: &str = "attention.changed";
 const CONFIG_FILE: &str = "attention.json";
 const BACKUP_FILE: &str = "claude-settings.backup";
 const INVALID_REQUEST: &str = "Open Sesame could not read that request.";
+pub(crate) const CHANGED_SINCE: &str = "Claude Code's settings file changed after the change was shown. Show the change again before adding the hook.";
+pub(crate) const PORT_TAKEN: &str = "The port the hook was going to use is taken now, so Open Sesame chose another. Show the change again before adding the hook.";
+pub(crate) const CONFIG_UNREADABLE: &str = "Open Sesame's record of the hook (attention.json) cannot be read. If the hook is still in Claude Code's settings file, take out the entries that post to 127.0.0.1.";
 const NO_FOLDER: &str =
     "Open Sesame has no folder to keep the hook's settings in, so the hook cannot be installed.";
 
@@ -55,6 +58,10 @@ struct Config {
     port: u16,
     installed: bool,
     notify: bool,
+    /// Moves on at each removal, so that an event a stopped listener was still reading is
+    /// dropped instead of filling the board again. Not saved.
+    #[serde(skip)]
+    generation: u64,
 }
 
 pub struct Attention {
@@ -68,17 +75,24 @@ pub struct Attention {
 
 impl Attention {
     pub fn new(paths: Option<Paths>) -> Self {
-        let config = paths
+        let saved = paths
             .as_ref()
-            .and_then(|paths| std::fs::read(paths.folder.join(CONFIG_FILE)).ok())
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+            .and_then(|paths| std::fs::read(paths.folder.join(CONFIG_FILE)).ok());
+        let config = saved
+            .as_deref()
+            .map(serde_json::from_slice::<Config>)
+            .transpose();
+        let problem = if config.is_err() {
+            CONFIG_UNREADABLE.to_string()
+        } else {
+            String::new()
+        };
         Attention {
             paths,
-            config: Mutex::new(config),
+            config: Mutex::new(config.ok().flatten().unwrap_or_default()),
             board: Mutex::new(Board::default()),
             listener: Mutex::new(None),
-            problem: Mutex::new(String::new()),
+            problem: Mutex::new(problem),
         }
     }
 
@@ -191,10 +205,16 @@ pub fn settings_file(home: Option<&Path>) -> Option<PathBuf> {
 
 /// Applies one hook event and tells the page, the tray and, when it is on and an agent has just
 /// started waiting, the system's notifications.
-fn received<R: Runtime>(app: &AppHandle<R>, event: Value, emit: &Emit) {
+fn received<R: Runtime>(app: &AppHandle<R>, event: Value, generation: u64, emit: &Emit) {
     let Some(attention) = app.try_state::<Attention>() else {
         return;
     };
+    {
+        let config = lock(&attention.config);
+        if !config.installed || config.generation != generation {
+            return;
+        }
+    }
     let (change, waiting, agent) = {
         let mut board = lock(&attention.board);
         let change = board.apply(&event);
@@ -244,16 +264,28 @@ fn notify<R: Runtime>(app: &AppHandle<R>, reason: &str, folder: &str) {
 }
 
 /// Starts the listener when the hook is installed. A port that is taken is reported, not fatal.
+/// A listener for the hook in `config`, whose events go to the board while that install lasts.
+fn bind<R: Runtime>(
+    app: &AppHandle<R>,
+    config: &Config,
+    emit: Emit,
+) -> std::io::Result<listener::Listener> {
+    let handle = app.clone();
+    let generation = config.generation;
+    listener::start(config.port, &config.token, move |event| {
+        received(&handle, event, generation, &emit)
+    })
+}
+
+/// Starts the listener at launch when the hook is installed. A port that is taken is
+/// reported, not fatal.
 fn listen<R: Runtime>(app: &AppHandle<R>, attention: &Attention, emit: Emit) {
     let config = lock(&attention.config).clone();
     let mut running = lock(&attention.listener);
     if !config.installed || running.is_some() || config.token.is_empty() {
         return;
     }
-    let handle = app.clone();
-    match listener::start(config.port, &config.token, move |event| {
-        received(&handle, event, &emit)
-    }) {
+    match bind(app, &config, emit) {
         Ok(listener) => {
             *running = Some(listener);
             lock(&attention.problem).clear();
@@ -305,16 +337,39 @@ fn handle_with<R: Runtime>(
         "attention.status" => Ok(attention.status()),
         "attention.preview" => attention.preview(),
         "attention.install" => {
+            let Some(Value::String(expected)) = params.get("expected") else {
+                return Err(BridgeError::from(INVALID_REQUEST));
+            };
             let paths = attention.paths()?.clone();
-            let config = attention.prepared()?;
-            hook::install(
-                &paths.settings,
-                &attention.backup()?,
-                &hook::url(config.port, &config.token),
-            )
-            .map_err(BridgeError::from)?;
+            let mut config = attention.prepared()?;
+            // The port is the listener's before the hook names it.
+            let mut running = lock(&attention.listener);
+            let listener = match running.take() {
+                Some(listener) => listener,
+                None => match bind(app, &config, emit) {
+                    Ok(listener) => listener,
+                    Err(_) => {
+                        config.port = free_port()?;
+                        attention.save(&config)?;
+                        *lock(&attention.config) = config;
+                        return Err(BridgeError::from(PORT_TAKEN));
+                    }
+                },
+            };
+            let url = hook::url(config.port, &config.token);
+            let current = std::fs::read(&paths.settings).ok();
+            if hook::plan(current.as_deref(), &url).ok().as_deref() != Some(expected.as_bytes()) {
+                listener.stop();
+                return Err(BridgeError::from(CHANGED_SINCE));
+            }
+            if let Err(error) = hook::install(&paths.settings, &attention.backup()?, &url) {
+                listener.stop();
+                return Err(BridgeError::from(error));
+            }
             attention.set_installed(true)?;
-            listen(app, &attention, emit);
+            *running = Some(listener);
+            drop(running);
+            lock(&attention.problem).clear();
             Ok(attention.status())
         }
         "attention.remove" => {
@@ -326,7 +381,14 @@ fn handle_with<R: Runtime>(
                 &hook::url(config.port, &config.token),
             )
             .map_err(BridgeError::from)?;
-            attention.set_installed(false)?;
+            // The next install starts afresh: a new token, and a port bound when it is made.
+            let forgotten = Config {
+                notify: config.notify,
+                generation: config.generation + 1,
+                ..Config::default()
+            };
+            attention.save(&forgotten)?;
+            *lock(&attention.config) = forgotten;
             if let Some(listener) = lock(&attention.listener).take() {
                 listener.stop();
             }
@@ -421,7 +483,7 @@ mod tests {
             original,
             "a preview writes nothing"
         );
-        let status = call("attention.install", json!({})).unwrap();
+        let status = call("attention.install", json!({"expected": preview["after"]})).unwrap();
         assert_eq!(status["hook"]["installed"], json!(true));
         assert_eq!(status["hook"]["listening"], json!(true));
         assert_eq!(
@@ -475,7 +537,8 @@ mod tests {
             call("attention.setNotify", json!({"enabled": true})).unwrap()["notify"],
             json!(true)
         );
-        call("attention.install", json!({})).unwrap();
+        let shown = call("attention.preview", json!({})).unwrap()["after"].clone();
+        call("attention.install", json!({"expected": shown})).unwrap();
         stop(app.handle());
         let (again, _) = app_with(root.path());
         let attention = again.state::<Attention>();
@@ -488,6 +551,101 @@ mod tests {
             !paths.settings.exists(),
             "there was no file before the install"
         );
+    }
+
+    /// The install writes only the text the person was shown: a file changed since, or a
+    /// request without the text, is refused, and nothing is written.
+    #[test]
+    fn the_install_writes_only_the_text_that_was_shown() {
+        let root = tempfile::tempdir().unwrap();
+        let (app, paths) = app_with(root.path());
+        let (emit, _) = sent();
+        let call = |method: &str, params: Value| {
+            handle_with(
+                app.handle(),
+                method,
+                params.as_object().unwrap(),
+                Arc::clone(&emit),
+            )
+        };
+        std::fs::create_dir_all(paths.settings.parent().unwrap()).unwrap();
+        std::fs::write(&paths.settings, b"{}").unwrap();
+        let shown = call("attention.preview", json!({})).unwrap()["after"].clone();
+        assert_eq!(
+            call("attention.install", json!({})).unwrap_err(),
+            BridgeError::from(INVALID_REQUEST)
+        );
+        std::fs::write(&paths.settings, b"{\"model\": \"sonnet\"}").unwrap();
+        assert_eq!(
+            call("attention.install", json!({"expected": shown})).unwrap_err(),
+            BridgeError::from(CHANGED_SINCE)
+        );
+        assert_eq!(
+            std::fs::read(&paths.settings).unwrap(),
+            b"{\"model\": \"sonnet\"}"
+        );
+        assert_eq!(
+            app.state::<Attention>().status()["hook"]["installed"],
+            json!(false)
+        );
+    }
+
+    /// The port is the listener's before the hook names it. One taken since the change was
+    /// shown is replaced, and the person is asked to look at the change again; a removal
+    /// forgets the port and the token, so the next install starts afresh.
+    #[test]
+    fn a_taken_port_is_replaced_before_the_hook_names_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (app, paths) = app_with(root.path());
+        let (emit, messages) = sent();
+        let call = |method: &str, params: Value| {
+            handle_with(
+                app.handle(),
+                method,
+                params.as_object().unwrap(),
+                Arc::clone(&emit),
+            )
+        };
+        let shown = call("attention.preview", json!({})).unwrap()["after"].clone();
+        let taken = lock(&app.state::<Attention>().config).port;
+        let squatter = std::net::TcpListener::bind(("127.0.0.1", taken)).unwrap();
+        let refused = call("attention.install", json!({"expected": shown})).unwrap_err();
+        assert_eq!(refused, BridgeError::from(PORT_TAKEN));
+        assert!(!paths.settings.exists(), "nothing was written");
+        let config = lock(&app.state::<Attention>().config).clone();
+        assert_ne!(config.port, taken);
+        let shown = call("attention.preview", json!({})).unwrap()["after"].clone();
+        assert!(shown
+            .as_str()
+            .unwrap()
+            .contains(&format!(":{}/hook/", config.port)));
+        call("attention.install", json!({"expected": shown})).unwrap();
+        drop(squatter);
+        call("attention.remove", json!({})).unwrap();
+        let forgotten = lock(&app.state::<Attention>().config).clone();
+        assert!(forgotten.token.is_empty() && forgotten.port == 0);
+        // An event that was already on its way when the hook was removed changes nothing.
+        let before = lock(&messages).len();
+        received(
+            app.handle(),
+            json!({"hook_event_name": "PermissionRequest", "session_id": "late", "tool_name": "Bash"}),
+            config.generation,
+            &emit,
+        );
+        assert_eq!(lock(&messages).len(), before);
+        assert_eq!(app.state::<Attention>().status()["waiting"], json!(0));
+    }
+
+    /// A settings file of Open Sesame's own that cannot be read is said, not taken as "off".
+    #[test]
+    fn an_unreadable_settings_file_of_its_own_is_reported() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("open-sesame");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(CONFIG_FILE), b"{ broken").unwrap();
+        let (app, _) = app_with(root.path());
+        let status = app.state::<Attention>().status();
+        assert_eq!(status["hook"]["problem"], json!(CONFIG_UNREADABLE));
     }
 
     #[test]

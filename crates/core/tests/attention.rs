@@ -102,10 +102,10 @@ fn other_waiting_notices_and_idle_and_ignored_events() {
     let mut board = Board::default();
     for (kind, change) in [
         ("elicitation_dialog", Change::StartedWaiting),
-        // Idle while a question is open: still waiting for that answer.
-        ("idle_prompt", Change::Unchanged),
-        // The same sentence again: nothing new to show.
-        ("agent_needs_input", Change::Unchanged),
+        // Claude Code says it is idle only once it has finished responding, so a prompt the
+        // person dismissed with Escape (no Stop follows an interrupt) is no longer waiting.
+        ("idle_prompt", Change::Changed),
+        ("agent_needs_input", Change::StartedWaiting),
         ("auth_success", Change::Unchanged),
     ] {
         assert_eq!(
@@ -127,16 +127,16 @@ fn other_waiting_notices_and_idle_and_ignored_events() {
         json!({"notification_type": "idle_prompt", "message": "Claude is waiting for your input"}),
     ));
     assert_eq!(board.agents()[0].state, State::Finished);
-    // Events without a session, or from a subagent, change nothing.
+    // Events without a session, or a subagent's other events, change nothing.
     assert_eq!(
         board.apply(&json!({"hook_event_name": "Stop"})),
         Change::Unchanged
     );
     assert_eq!(
         board.apply(&event(
-            "PermissionRequest",
+            "UserPromptSubmit",
             "s3",
-            json!({"agent_id": "sub-1", "tool_name": "Bash"})
+            json!({"agent_id": "sub-1"})
         )),
         Change::Unchanged
     );
@@ -144,6 +144,60 @@ fn other_waiting_notices_and_idle_and_ignored_events() {
         board.apply(&json!({"hook_event_name": "Stop", "session_id": "x".repeat(300)})),
         Change::Unchanged
     );
+}
+
+/// Tools run in parallel: a tool that finishes while another one waits for permission does
+/// not end the wait, and the notice for that prompt does not start a second one. The approved
+/// tool finishing does end it, and so does a subagent's, whose events count for its session.
+#[test]
+fn a_wait_ends_when_the_tool_it_was_for_has_run() {
+    let mut board = Board::default();
+    board.apply(&event("UserPromptSubmit", "s1", json!({})));
+    assert_eq!(
+        board.apply(&event(
+            "PermissionRequest",
+            "s1",
+            json!({"tool_name": "Bash"})
+        )),
+        Change::StartedWaiting
+    );
+    assert_eq!(
+        board.apply(&event("PostToolUse", "s1", json!({"tool_name": "Read"}))),
+        Change::Unchanged,
+        "another tool finishing does not end the wait"
+    );
+    assert_eq!(board.agents()[0].state, State::Waiting);
+    assert_eq!(
+        board.apply(&event(
+            "Notification",
+            "s1",
+            json!({"notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"})
+        )),
+        Change::Unchanged
+    );
+    assert_eq!(
+        board.apply(&event("PostToolUse", "s1", json!({"tool_name": "Bash"}))),
+        Change::Changed
+    );
+    assert_eq!(board.agents()[0].state, State::Working);
+    // A subagent asks and is answered: its session waits, then works.
+    assert_eq!(
+        board.apply(&event(
+            "PermissionRequest",
+            "s1",
+            json!({"agent_id": "sub-1", "tool_name": "Edit"})
+        )),
+        Change::StartedWaiting
+    );
+    assert_eq!(
+        board.apply(&event(
+            "PostToolUseFailure",
+            "s1",
+            json!({"agent_id": "sub-1", "tool_name": "Edit"})
+        )),
+        Change::Changed
+    );
+    assert_eq!(board.agents()[0].state, State::Working);
 }
 
 /// The board does not grow without bound: past its limit, the agent changed longest ago goes.
@@ -400,4 +454,149 @@ fn the_hook_url_names_the_loopback_address_port_and_token() {
     assert!(hook::new_token()
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'));
+}
+
+/// Claude Code reads the last of two members with the same name. A file with a repeated key
+/// is refused, so the hooks in effect are never dropped and ours never lands in the copy that
+/// is not read.
+#[test]
+fn a_settings_file_with_a_repeated_key_is_left_alone() {
+    for repeated in [
+        &br#"{"hooks": {"Stop": []}, "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "say second"}]}]}}"#[..],
+        br#"{"hooks": {"Stop": [], "Stop": [{"hooks": []}]}}"#,
+    ] {
+        let error = hook::plan(Some(repeated), URL).unwrap_err();
+        assert!(error.contains("more than once"), "{error}");
+    }
+}
+
+/// A removal that finds none of Open Sesame's hooks leaves the file's bytes alone.
+#[test]
+fn a_removal_with_nothing_to_take_out_writes_nothing() {
+    let root = folder();
+    let settings = root.path().join("settings.json");
+    let backup = root.path().join("backup");
+    let text = b"{\n    \"model\":   \"opus\",\n    \"hooks\": {\"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"say\"}]}]}\n}\n";
+    std::fs::write(&settings, text).unwrap();
+    hook::remove(&settings, &backup, URL).unwrap();
+    assert_eq!(std::fs::read(&settings).unwrap(), text);
+}
+
+/// A link whose file does not exist yet stays a link: the file is made where it points, and a
+/// removal takes away only that file.
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_missing_file_stays_a_link() {
+    let root = folder();
+    std::fs::create_dir_all(root.path().join("dotfiles")).unwrap();
+    let settings = root.path().join("settings.json");
+    let backup = root.path().join("backup");
+    std::os::unix::fs::symlink("dotfiles/claude.json", &settings).unwrap();
+    hook::install(&settings, &backup, URL).unwrap();
+    assert!(std::fs::symlink_metadata(&settings)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(root.path().join("dotfiles/claude.json").exists());
+    hook::remove(&settings, &backup, URL).unwrap();
+    assert!(std::fs::symlink_metadata(&settings)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(!root.path().join("dotfiles/claude.json").exists());
+}
+
+/// The backup can hold whatever the settings file holds, keys included, so only the person
+/// can read it; and a file the person made read-only is not written.
+#[cfg(unix)]
+#[test]
+fn the_backup_is_private_and_a_read_only_file_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = folder();
+    let settings = root.path().join("settings.json");
+    let backup = root.path().join("backup");
+    std::fs::write(&settings, br#"{"env": {"KEY": "secret"}}"#).unwrap();
+    hook::install(&settings, &backup, URL).unwrap();
+    assert_eq!(
+        std::fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    hook::remove(&settings, &backup, URL).unwrap();
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o400)).unwrap();
+    let error = hook::install(&settings, &backup, URL).unwrap_err();
+    assert!(error.contains("read-only"), "{error}");
+    assert_eq!(
+        std::fs::read(&settings).unwrap(),
+        br#"{"env": {"KEY": "secret"}}"#
+    );
+    assert!(!backup.exists());
+}
+
+/// What the listener hands on is the event without its prompt, its tool's input or output and
+/// its transcript, even when the body is many megabytes; and it is handed on before the reply,
+/// so the next event Claude Code sends cannot overtake it.
+#[test]
+fn the_listener_hands_on_only_what_the_board_reads_and_before_it_replies() {
+    let token = hook::new_token();
+    let (sent, received) = mpsc::channel();
+    let running = listener::start(0, &token, move |event| {
+        let _ = sent.send(event);
+    })
+    .unwrap();
+    let body = json!({
+        "hook_event_name": "PostToolUse", "session_id": "s1", "cwd": "/work/app", "tool_name": "Read",
+        "prompt": "secret plan", "tool_input": {"file_path": "a"}, "tool_response": "x".repeat(3 * 1024 * 1024),
+        "transcript_path": "/work/t.jsonl",
+    })
+    .to_string();
+    let reply = send(running.port(), &post(&format!("/hook/{token}"), &body, ""));
+    assert!(
+        reply.starts_with("HTTP/1.1 204 "),
+        "{}",
+        &reply[..reply.len().min(80)]
+    );
+    let got = received
+        .try_recv()
+        .expect("the event was handed on before the reply");
+    assert_eq!(got["tool_name"], json!("Read"));
+    for kept_out in ["prompt", "tool_input", "tool_response", "transcript_path"] {
+        assert!(got.get(kept_out).is_none(), "{kept_out}");
+    }
+    running.stop();
+}
+
+/// Connections that trickle bytes are cut off at a deadline, so they cannot hold every slot.
+#[test]
+fn connections_that_send_slowly_do_not_hold_the_listener() {
+    let token = hook::new_token();
+    let (sent, received) = mpsc::channel();
+    let running = listener::start(0, &token, move |event| {
+        let _ = sent.send(event);
+    })
+    .unwrap();
+    let port = running.port();
+    let trickling: Vec<std::thread::JoinHandle<()>> = (0..20)
+        .map(|_| {
+            std::thread::spawn(move || {
+                let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+                    return;
+                };
+                for _ in 0..8 {
+                    if stream.write_all(b"P").is_err() {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(900));
+                }
+            })
+        })
+        .collect();
+    std::thread::sleep(Duration::from_millis(3500));
+    let body = event("Stop", "s1", json!({})).to_string();
+    let reply = send(port, &post(&format!("/hook/{token}"), &body, ""));
+    assert!(reply.starts_with("HTTP/1.1 204 "), "{reply}");
+    assert!(received.recv_timeout(Duration::from_secs(2)).is_ok());
+    for thread in trickling {
+        let _ = thread.join();
+    }
+    running.stop();
 }
