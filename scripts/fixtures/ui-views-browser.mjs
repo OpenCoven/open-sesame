@@ -583,7 +583,10 @@ try {
       const clockApp = await install(browser, timing, name);
       installs.push(clockApp);
       page = await clockApp.open(START);
-      const clock = () => view(page, 'focus').locator('[data-focus-clock]').textContent();
+      // A clock is empty until its view has drawn it, and a loaded machine can be asked before
+      // then: wait for some text, so a wrong time still fails and only "not drawn yet" is waited out.
+      const drawn = async locator => { await locator.filter({hasText: /\S/}).waitFor(); return locator.textContent(); };
+      const clock = () => drawn(view(page, 'focus').locator('[data-focus-clock]'));
       const state = () => view(page, 'focus').locator('[data-focus-state]').textContent();
       await step('a failed focus write changes nothing', async () => {
         await page.locator('[data-view="focus"]').click();
@@ -629,7 +632,7 @@ try {
         assert(await view(page, 'focus').isVisible(), 'Focus opens again');
         assert.deepEqual([await clock(), await state()], ['10:00', 'Running']);
         await page.locator('[data-view="today"]').click();
-        assert.equal(await view(page, 'today').locator('[data-today-clock]').textContent(), '10:00', 'Today shows the same session');
+        assert.equal(await drawn(view(page, 'today').locator('[data-today-clock]')), '10:00', 'Today shows the same session');
         // Asleep past the deadline: the session has finished when the window comes back.
         await page.locator('[data-view="focus"]').click();
         await shown(page, 'hidden');
