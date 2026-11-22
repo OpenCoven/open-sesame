@@ -37,6 +37,7 @@ function node(extra = {}) {
   const listeners = {};
   return {dataset: {}, attributes: {}, hidden: false, textContent: '', value: '', checked: false, disabled: false, title: '', inert: false,
     setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
     addEventListener(name, listener) { (listeners[name] ??= []).push(listener); },
     fire(name) { for (const listener of listeners[name] ?? []) listener({}); }, ...extra};
 }
@@ -46,14 +47,16 @@ function rig(answer) {
     request: async (method, params) => { calls.push([method, params]); return answer(method, params); },
     subscribe: subscriber => { subscribers.push(subscriber); return () => {}; },
   };
-  const parts = {shell: node(), panel: node(), toggle: node(), toggleLabel: node(), collapse: node(), section: node(), edge: node(), hover: node(), message: node(), blurLabel: node()};
+  // Where the keyboard is: `inside` marks an element in the panel.
+  const doc = {activeElement: null};
+  const parts = {shell: node(), panel: node({ownerDocument: doc, contains: element => element?.inside === true}), toggle: node({focus() { doc.activeElement = this; }}), toggleLabel: node(), collapse: node(), section: node(), edge: node(), hover: node(), message: node(), blurLabel: node()};
   const changes = [];
   const rail = mountRail(bridge, parts, (status, previous) => changes.push([layout(previous), layout(status)]));
-  return {rail, parts, calls, changes, emit: note => { for (const subscriber of subscribers) subscriber(note); }};
+  return {rail, parts, calls, changes, doc, emit: note => { for (const subscriber of subscribers) subscriber(note); }};
 }
 {
   let host = {...RAIL};
-  const {rail, parts, calls, changes, emit} = rig((method, params) => {
+  const {rail, parts, calls, changes, doc, emit} = rig((method, params) => {
     if (method === 'rail.set') host = {...host, ...params, held: params.expanded ?? host.held};
     return host;
   });
@@ -64,6 +67,8 @@ function rig(answer) {
   assert.deepEqual([parts.shell.dataset.presentation, parts.shell.dataset.rail, parts.shell.dataset.edge], ['rail', 'collapsed', 'right']);
   assert.equal(parts.panel.inert, true, 'The closed panel is out of the tab order');
   assert.equal(parts.toggle.attributes['aria-expanded'], 'false');
+  assert.equal(parts.toggle.attributes['aria-controls'], 'panel', 'On a rail the mark is the control that opens the panel');
+  assert.equal(parts.toggle.attributes['aria-hidden'], undefined);
   assert.equal(parts.toggleLabel.textContent, 'Open the panel');
   assert.equal(parts.collapse.hidden, false);
   assert.equal(parts.section.hidden, false);
@@ -73,7 +78,8 @@ function rig(answer) {
   emit({event: CHANGED_EVENT, status: {...host, expanded: true}});
   assert.equal(parts.shell.dataset.rail, 'expanded');
   assert.equal(parts.panel.inert, false);
-  assert.equal(parts.toggleLabel.textContent, 'Open the panel', 'A peek still offers to open the panel to stay');
+  assert.equal(parts.toggle.attributes['aria-expanded'], 'true');
+  assert.equal(parts.toggleLabel.textContent, 'Keep the panel open', 'A peek offers to keep the panel open, not to open an open panel');
   // Clicking the mark during a peek asks the host to hold it open.
   parts.toggle.fire('click');
   await tick(); await tick();
@@ -83,10 +89,13 @@ function rig(answer) {
   const before = calls.length;
   await rail.open();
   assert.equal(calls.length, before, 'An open panel is not opened again');
+  // The keyboard was in the panel when it closed: it goes to the mark, not to nowhere.
+  doc.activeElement = {inside: true};
   parts.collapse.fire('click');
   await tick(); await tick();
   assert.deepEqual(calls.at(-1), ['rail.set', {expanded: false}]);
   assert.equal(parts.shell.dataset.rail, 'collapsed');
+  assert.equal(doc.activeElement, parts.toggle, 'Closing the panel from inside puts the keyboard on the mark');
   await rail.collapse();
   assert.deepEqual(calls.at(-1), ['rail.set', {expanded: false}], 'A closed panel is not closed again');
   // Width, edge and hover go to the host one field at a time and are drawn from its answer.
@@ -103,6 +112,16 @@ function rig(answer) {
   await tick(); await tick();
   assert.deepEqual(calls.at(-1), ['rail.set', {hover: false}]);
   assert(changes.some(([from, to]) => from === 'collapsed' && to === 'expanded') && changes.some(([from, to]) => from === 'expanded' && to === 'collapsed'));
+  // The host closes the panel while the keyboard is in it, and while it is elsewhere.
+  doc.activeElement = {inside: true};
+  emit({event: CHANGED_EVENT, status: {...host, expanded: false}});
+  assert.equal(doc.activeElement, parts.toggle, 'A close from the host also puts the keyboard on the mark');
+  emit({event: CHANGED_EVENT, status: {...host, expanded: true}});
+  const elsewhere = {inside: false};
+  doc.activeElement = elsewhere;
+  emit({event: CHANGED_EVENT, status: {...host, expanded: false}});
+  assert.equal(doc.activeElement, elsewhere, 'The keyboard outside the panel is left where it is');
+  emit({event: CHANGED_EVENT, status: {...host}});
   // A message that is not a status changes nothing.
   emit({event: CHANGED_EVENT, status: 'open'}); emit({event: 'auth.changed', status: {expanded: false}});
   assert.equal(parts.shell.dataset.rail, 'wide');
@@ -125,6 +144,10 @@ for (const answer of [() => ({presentation: 'window', shown: true, expanded: tru
   assert.deepEqual([parts.shell.dataset.presentation, parts.shell.dataset.rail], ['window', 'expanded']);
   assert.equal(parts.panel.inert, false);
   assert.equal(parts.toggle.disabled, true);
+  // With no rail the mark is the brand, not a disabled control that says it opened something.
+  assert.equal(parts.toggle.attributes['aria-hidden'], 'true');
+  assert.equal(parts.toggle.attributes['aria-expanded'], undefined);
+  assert.equal(parts.toggle.attributes['aria-controls'], undefined);
   assert.equal(parts.collapse.hidden, true);
   assert.equal(parts.section.hidden, true);
   assert.equal(parts.blurLabel.textContent, 'Hide the window when it loses focus');
@@ -224,5 +247,70 @@ assert.match(tokens, /@media \(prefers-color-scheme: light\)/, 'Dark first, with
 // Every view has an icon in the sprite, and the wide views are views.
 for (const widget of widgets) assert(page.includes(`<symbol id="icon-${widget.id}"`), `${widget.id} has an icon`);
 for (const id of wideViews) assert(widgets.some(widget => widget.id === id));
+// Safari leaves a button out of Tab unless it asks to be in it (#183), and the bar's control
+// is not named like the mark that also closes the panel (#186).
+for (const [tag] of page.matchAll(/<button [^>]*class="(?:rail|bar)-button[^>]*>/g)) assert(tag.includes('tabindex="0"'), `${tag} is in the Tab order in WebKit`);
+assert.match(main, /button\.className = 'rail-button';[^\n]*button\.tabIndex = 0;/, 'The view buttons on the strip are in the Tab order in WebKit');
+assert.match(page, /<button [^>]*data-collapse title="Close panel"[^>]*>[\s\S]*?<span class="label-hidden">Close panel<\/span>/);
+// The keyboard the panel had is left on the mark when the panel closes, and every close gives
+// the keyboard to another application, so the closed strip draws no ring while it is away.
+assert.match(main, /addEventListener\('blur', \(\) => windowFocus\(false\)\);/);
+assert.match(main, /addEventListener\('focus', \(\) => windowFocus\(true\)\);/);
+assert.match(read('ui/shell.css'), /\.shell\[data-window-focus="false"\] \.rail-mark:focus-visible \{ outline: none; \}/);
 assert.deepEqual([...wideViews], ['shells']);
 console.log('Rail source rules: sizes, corner, event, methods, presentation flags, tokens-only colours, reduced motion and icons pass.');
+
+// 5. Contrast in both themes, from the token values (WCAG 2.x relative luminance). A translucent
+// token is laid over what it sits on first. The notice is the shell's only error channel (#184),
+// a field's edge is its boundary as a control (#185, 1.4.11) and a placeholder says what an empty
+// field does (#168).
+const themes = (() => {
+  const values = block => Object.fromEntries([...block.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]));
+  const dark = values(tokens.match(/^:root \{([\s\S]*?)\n\}/m)[1]);
+  const light = {...dark, ...values(tokens.match(/@media \(prefers-color-scheme: light\) \{\s*:root \{([\s\S]*?)\}\s*\}/)[1])};
+  return {dark, light};
+})();
+const colour = (theme, value) => {
+  const reference = value.match(/^var\((--[a-z0-9-]+)\)$/);
+  if (reference) return colour(theme, theme[reference[1]]);
+  if (/^--/.test(value)) return colour(theme, theme[value]);
+  const hex = value.match(/^#([0-9a-f]{6})$/i);
+  if (hex) return [0, 2, 4].map(at => parseInt(hex[1].slice(at, at + 2), 16)).concat(1);
+  const rgb = value.match(/^rgb\((\d+) (\d+) (\d+)(?: \/ ([0-9.]+))?\)$/);
+  assert(rgb, `${value} is a colour the contrast check can read`);
+  return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), rgb[4] === undefined ? 1 : Number(rgb[4])];
+};
+const over = ([r, g, b, a], [R, G, B]) => [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a), 1];
+const luminance = rgb => {
+  const [r, g, b] = rgb.slice(0, 3).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const ratio = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+const fieldRule = tokens.match(/^input, select, textarea \{([\s\S]*?)\n\}/m)[1];
+const fieldBorder = fieldRule.match(/border: 1px solid (var\(--[a-z0-9-]+\));/)[1];
+const fieldBackground = fieldRule.match(/background: (var\(--[a-z0-9-]+\));/)[1];
+const placeholder = tokens.match(/input::placeholder, textarea::placeholder \{ color: (var\(--[a-z0-9-]+\)); \}/)[1];
+const contrast = {}, shortfalls = [];
+// Every shortfall is listed before the check fails, so one run names them all.
+const note = (pass, message) => { if (!pass) shortfalls.push(message); };
+for (const [name, theme] of Object.entries(themes)) {
+  const surface = colour(theme, '--surface');
+  const wash = over(colour(theme, '--warn-wash'), surface);
+  contrast[name] = {
+    notice: ratio(over(colour(theme, '--warn'), wash), wash),
+    // The rail's material surface (--surface-tint) lets the desktop show through, so it is measured over a black, a mid-grey and a white backdrop.
+    fieldEdge: Math.min(...[...['--surface', '--raised'].map(back => colour(theme, back)), ...[[0, 0, 0, 1], [128, 128, 128, 1], [255, 255, 255, 1]].map(backdrop => over(colour(theme, '--surface-tint'), backdrop))].map(back => ratio(over(colour(theme, fieldBorder), back), back))),
+    placeholder: ratio(over(colour(theme, placeholder), colour(theme, fieldBackground)), colour(theme, fieldBackground)),
+  };
+  note(contrast[name].notice >= 4.5, `${name}: the notice's text reaches 4.5:1 on its wash (${contrast[name].notice.toFixed(2)})`);
+  note(contrast[name].fieldEdge >= 3, `${name}: a field's border reaches 3:1 against the panel and the material surface (${contrast[name].fieldEdge.toFixed(2)})`);
+  note(contrast[name].placeholder >= 4.5, `${name}: placeholder text reaches 4.5:1 in its field (${contrast[name].placeholder.toFixed(2)})`);
+}
+// Pointing at a field makes its edge stronger, never weaker.
+const hoverBorder = tokens.match(/input:hover, select:hover, textarea:hover \{ border-color: (var\(--[a-z0-9-]+\)); \}/)[1];
+for (const [name, theme] of Object.entries(themes)) {
+  const surface = colour(theme, '--surface');
+  note(ratio(over(colour(theme, hoverBorder), surface), surface) > ratio(over(colour(theme, fieldBorder), surface), surface), `${name}: a hovered field's edge is stronger than at rest`);
+}
+assert.deepEqual(shortfalls, [], 'Every measured pair reaches its contrast');
+console.log(`Contrast: notice, field edge and placeholder pass in both themes (${Object.entries(contrast).map(([name, value]) => `${name} ${Object.entries(value).map(([part, n]) => `${part} ${n.toFixed(2)}`).join(', ')}`).join('; ')}).`);

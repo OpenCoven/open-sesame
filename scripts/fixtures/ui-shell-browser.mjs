@@ -29,6 +29,19 @@ const origin=`http://127.0.0.1:${server.address().port}`;
 const browsers=process.env.UI_SHELL_ENGINES?.split(',')||['chromium','webkit'];
 const report={kind:'browser with synthetic host; no native/device/provider acceptance',platform:process.platform,results:[]};
 const definition=JSON.parse(await readFile(path.join(root,'dist/tools/meeting-notes/tool.json'),'utf8'));
+// A host that reports the rail, as src-tauri/src/rail.rs does, and resizes nothing: the
+// viewport stands in for the window the host would resize.
+const railHost=()=>{
+  const host={presentation:'rail',shown:true,expanded:false,held:false,wide:false,edge:'right',hover:true};
+  const invoke=window.__TAURI__.core.invoke;
+  window.__TAURI__.core.invoke=async(command,payload)=>{
+    const {requestId,method,params}=payload.message;
+    if(method==='rail.status')return {requestId,result:{...host}};
+    if(method==='rail.set'){Object.assign(host,params);if('expanded' in params)host.held=params.expanded;window.__fixture__.calls.push({method,params});return {requestId,result:{...host}};}
+    return invoke(command,payload);
+  };
+  window.__rail__={host,peek:()=>{host.expanded=true;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});},close:()=>{host.expanded=false;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});}};
+};
 // The first view at startup is Today (#77); holding or failing its module holds or fails the first view.
 const FIRST_VIEW='**/ui/widgets/today.js';
 try {
@@ -152,6 +165,100 @@ try {
         await page.waitForFunction(()=>window.__fixture__.calls.filter(c=>c.method==='terminal.open').length===window.__fixture__.calls.filter(c=>c.method==='terminal.close').length);
         assert.equal(await page.locator('.xterm,link[data-widget-style*="shells"]').count(),0);
       });
+      await step('Shells fits the narrow column, fills its height and works from the keyboard',async()=>{
+        // A 56 px strip and the 400 px panel (docs/companion-rail.md): Shells must fit the
+        // narrow column as well as the wide one (issues #190 to #196).
+        await page.setViewportSize({width:456,height:900});
+        await settingsOpen();
+        await page.locator('[data-widget="shells"]').check();
+        await page.locator('[data-launch]').waitFor();
+        await settingsClosed();
+        const view=page.locator('[data-widget-view="shells"]');
+        const newShell=view.getByRole('button',{name:'New shell',exact:true});
+        for(let n=1;n<=3;n++){await newShell.click();await page.waitForFunction(n=>document.querySelectorAll('.pane .xterm').length===n,n);}
+        const shown=view.locator('.pane:not([hidden]) .xterm');
+        await shown.click();
+        await view.locator('.pane:not([hidden]) .xterm.focus').waitFor();
+        // Shift+Tab goes to the shell and the keyboard stays in it, as Tab does (review of #211).
+        const inputs=()=>page.evaluate(()=>window.__fixture__.calls.filter(c=>c.method==='terminal.input').map(c=>c.params.data));
+        const before=(await inputs()).length;
+        for(const key of ['Shift+Tab','Tab']){
+          await page.keyboard.press(key);
+          assert(await page.evaluate(()=>Boolean(document.activeElement?.closest('.pane:not([hidden]) .xterm'))),`${key} keeps the keyboard in the terminal`);
+        }
+        await page.waitForFunction(before=>window.__fixture__.calls.filter(c=>c.method==='terminal.input').length>=before+2,before);
+        assert.deepEqual((await inputs()).slice(before),['\u001b[Z','\t'],'and both reach the shell');
+        await page.screenshot({path:path.join(output,`${name}-shells-narrow.png`)});
+        // #190: the emulator marks itself `focus`; the Focus view's rule must not reach it.
+        assert.deepEqual(await shown.evaluate(node=>{const style=getComputedStyle(node);return [style.textAlign==='center',style.paddingTop];}),[false,'0px'],'a focused terminal is not centred or pushed down');
+        // #191: nothing in the column scrolls sideways, and the launch fields and the terminal are inside it.
+        const fit=await view.evaluate(node=>{
+          const right=node.getBoundingClientRect().right,wide=[];
+          for(let at=node.querySelector('.panes');at;at=at.parentElement)if(at.scrollWidth>at.clientWidth)wide.push(`${at.className||at.tagName} ${at.scrollWidth}>${at.clientWidth}`);
+          const past=['[name="cwd"]','[name="host"]','[name="user"]','.panes','.pane:not([hidden]) .xterm-screen'].filter(selector=>node.querySelector(selector).getBoundingClientRect().right>right+0.5);
+          return {wide,past};
+        });
+        assert.deepEqual(fit,{wide:[],past:[]},'Shells fits the 400 px panel');
+        // #192: the panes take the last row whether or not the notice is shown.
+        const rows=()=>view.evaluate(node=>{const all=node.querySelector('.terminals').getBoundingClientRect(),panes=node.querySelector('.panes').getBoundingClientRect();return {gap:Math.round(all.bottom-panes.bottom),height:panes.height};});
+        const quiet=await rows();
+        assert.equal(quiet.gap,0,'the panes reach the bottom of the view');
+        await view.evaluate(node=>{const notice=node.querySelector('[data-notice]');notice.textContent='Fixture notice';notice.hidden=false;});
+        const noted=await rows();
+        assert.equal(noted.gap,0,'and still do with a notice above them');
+        assert(noted.height<quiet.height,'the notice takes its room from the panes');
+        await view.evaluate(node=>{const notice=node.querySelector('[data-notice]');notice.textContent='';notice.hidden=true;});
+        // #196: the emulator keeps an accessibility tree and a live region for screen readers.
+        assert.equal(await shown.locator('.xterm-accessibility-tree').count(),1,'the terminal has its accessibility tree');
+        assert.equal(await shown.locator('[aria-live]').count(),1,'and a live region');
+        assert.equal(await shown.locator('.xterm-helper-textarea').getAttribute('writingsuggestions'),'false','and its input field offers no writing suggestions, which resend typed text in WKWebView');
+        // #193: the tabs are one stop in the tab order and the arrows, Home and End move along them.
+        const tab=n=>view.getByRole('tab',{name:`Shell ${n}`,exact:true});
+        const selected=()=>view.evaluate(node=>{const active=document.activeElement;return {selected:node.querySelector('[role="tab"][aria-selected="true"]')?.textContent,focused:active?.getAttribute('role')==='tab'?active.textContent:active?.tagName};});
+        await tab(3).focus();
+        for(const [key,expected] of [['ArrowLeft','Shell 2'],['Home','Shell 1'],['End','Shell 3'],['ArrowRight','Shell 1']]) {
+          await page.keyboard.press(key);
+          assert.deepEqual(await selected(),{selected:expected,focused:expected},`${key} selects and focuses ${expected}`);
+        }
+        assert.deepEqual(await view.evaluate(node=>[...node.querySelectorAll('[role="tab"]')].map(tab=>{const panel=document.getElementById(tab.getAttribute('aria-controls'));return [panel?.getAttribute('role'),panel?.getAttribute('aria-labelledby')===tab.id];})),[['tabpanel',true],['tabpanel',true],['tabpanel',true]],'each tab names its panel and each panel is labelled by its tab');
+        assert.deepEqual(await view.evaluate(node=>[...node.querySelectorAll('[role="tablist"] :is(button,a,input,[tabindex]):not([role="tab"])')].filter(other=>other.tabIndex>=0||other.getAttribute('aria-hidden')!=='true').length),0,'nothing but tabs is in the tablist for the keyboard or a screen reader');
+        await newShell.focus();
+        await page.keyboard.press('Tab');
+        assert.deepEqual(await selected(),{selected:'Shell 1',focused:'Shell 1'},'Tab from New shell reaches the shown tab');
+        // #194: the focus ring of a tab is drawn in full, not clipped by the tab around it.
+        await page.screenshot({path:path.join(output,`${name}-shells-tab-focus.png`),clip:{x:0,y:0,width:456,height:260}});
+        const ring=await page.evaluate(()=>{
+          const focused=document.activeElement,style=getComputedStyle(focused),width=parseFloat(style.outlineWidth),offset=parseFloat(style.outlineOffset),box=focused.getBoundingClientRect(),out=width+offset;
+          const clipped=[];
+          for(let at=focused.parentElement;at;at=at.parentElement){const cut=getComputedStyle(at);if(cut.overflowX==='visible'&&cut.overflowY==='visible')continue;const edge=at.getBoundingClientRect();if(box.left-out<edge.left||box.top-out<edge.top||box.right+out>edge.right||box.bottom+out>edge.bottom)clipped.push(at.className||at.tagName);}
+          return {visible:focused.matches(':focus-visible')&&style.outlineStyle!=='none'&&width>=2,clipped};
+        });
+        assert.deepEqual(ring,{visible:true,clipped:[]},'the focused tab shows its whole ring');
+        // #195: Delete closes the focused tab and gives the keyboard to its neighbour; the close
+        // button gives it to the neighbour's terminal; closing the last gives it to New shell.
+        await page.keyboard.press('ArrowRight');
+        await page.keyboard.press('Delete');
+        assert.deepEqual(await selected(),{selected:'Shell 3',focused:'Shell 3'},'Delete on a tab focuses the next tab');
+        assert.equal(await view.getByRole('tab').count(),2);
+        // A held key closes one shell, not each one it reaches.
+        await page.evaluate(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',repeat:true,bubbles:true,cancelable:true})));
+        assert.equal(await view.getByRole('tab').count(),2,'a repeated Delete closes nothing more');
+        await newShell.click();
+        await page.waitForFunction(()=>document.querySelectorAll('[role="tab"]').length===3);
+        await tab(3).focus();
+        await page.keyboard.press('Backspace');
+        assert.equal(await view.getByRole('tab').count(),2,'Backspace on a tab closes it, for the key a Mac laptop marks delete');
+        await view.locator('.tab .close').nth(1).click();
+        assert.equal(await view.getByRole('tab').count(),1);
+        assert(await page.evaluate(()=>Boolean(document.activeElement?.closest('.pane:not([hidden])'))),'closing the shown shell focuses the next terminal');
+        await view.locator('.tab .close').click();
+        assert.equal(await view.getByRole('tab').count(),0);
+        assert(await newShell.evaluate(node=>node===document.activeElement),'closing the last shell focuses New shell, not the page');
+        await settingsOpen();
+        await page.locator('[data-widget="shells"]').uncheck();
+        await view.waitFor({state:'detached'});
+        await page.setViewportSize({width:1090,height:700});
+      });
       await step('JSON preview is isolated and install is explicit',async()=>{
         await settingsOpen();
         await page.locator('[data-widget="declarative"]').check();
@@ -229,6 +336,24 @@ try {
         await page.setViewportSize({width:1090,height:700});
         await page.screenshot({path:path.join(output,`${name}-desktop.png`),fullPage:true});
       });
+      // An engine without `inert` (older WebKitGTK) keeps the palette's own Tab wrap (issue #174).
+      await step('without inert, Tab stays inside the open palette',async()=>{
+        const old=await context.newPage();
+        try {
+          await old.addInitScript(()=>{delete HTMLElement.prototype.inert;});
+          await old.goto(origin+'/ui/index.html');
+          await old.locator('[data-ready="true"]').waitFor();
+          assert.equal(await old.evaluate(()=>'inert' in HTMLElement.prototype),false);
+          await old.getByRole('button',{name:'Commands',exact:true}).click();
+          const query=old.locator('[data-command-query]'),close=old.getByRole('button',{name:'Close commands',exact:true});
+          await query.focus();
+          await old.keyboard.press('Shift+Tab');
+          assert.equal(await close.evaluate(node=>node===document.activeElement),true,'Shift+Tab from the search wraps to Close commands');
+          await old.keyboard.press('Tab');
+          assert.equal(await query.evaluate(node=>node===document.activeElement),true,'Tab from Close commands wraps to the search');
+          await old.keyboard.press('Escape');
+        }finally{await old.close();}
+      });
       await step('turning each widget on and off adds no global',async()=>{
         // Baseline: the same browser and the same injected fixture host, on a document with no
         // script of the app. The only key a widget may add is the vendored terminal bundle's
@@ -298,17 +423,7 @@ try {
         // viewport stands in for the window the host would resize.
         const railed=await context.newPage();
         try {
-          await railed.addInitScript(()=>{
-            const host={presentation:'rail',shown:true,expanded:false,held:false,wide:false,edge:'right',hover:true};
-            const invoke=window.__TAURI__.core.invoke;
-            window.__TAURI__.core.invoke=async(command,payload)=>{
-              const {requestId,method,params}=payload.message;
-              if(method==='rail.status')return {requestId,result:{...host}};
-              if(method==='rail.set'){Object.assign(host,params);if('expanded' in params)host.held=params.expanded;window.__fixture__.calls.push({method,params});return {requestId,result:{...host}};}
-              return invoke(command,payload);
-            };
-            window.__rail__={host,peek:()=>{host.expanded=true;host.held=false;window.__fixture__.emit({event:'rail.changed',status:{...host}});}};
-          });
+          await railed.addInitScript(railHost);
           await railed.setViewportSize({width:56,height:376});
           await railed.goto(origin+'/ui/index.html');
           await railed.locator('[data-ready="true"]').waitFor();
@@ -374,6 +489,113 @@ try {
           assert.equal(await railed.locator('[data-view="focus"]').getAttribute('title'),'Focus: Session complete');
           assert.equal(await railed.locator('[data-rail-toggle]').getAttribute('data-mark'),'attention');
           await railed.screenshot({path:path.join(output,`${name}-rail-attention.png`)});
+        }finally{await railed.close();}
+      });
+      // Rendered contrast in each scheme (#184, #185, #168): the notice's text on its wash, a field's
+      // edge against the panel at rest, and placeholder text in its field. Computed colours are
+      // read from the page; a translucent one is laid over what it sits on (WCAG 2.x luminance).
+      await step('notice text, field edge and placeholder reach their contrast in both schemes',async()=>{
+        const parse=value=>{const n=value.match(/[0-9.]+/g).map(Number);return [n[0],n[1],n[2],n[3]??1];};
+        const over=([r,g,b,a],[R,G,B])=>[r*a+R*(1-a),g*a+G*(1-a),b*a+B*(1-a),1];
+        const lum=c=>{const [r,g,b]=c.slice(0,3).map(v=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
+        const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((m,n)=>n-m);return (x+0.05)/(y+0.05);};
+        const measured={},shortfalls=[];
+        for(const colorScheme of ['dark','light']) {
+          const themed=await context.newPage();
+          try {
+            // Reduced motion, so a colour is read at rest and not part-way through a transition.
+            await themed.emulateMedia({colorScheme,reducedMotion:'reduce'});
+            await themed.setViewportSize({width:400,height:700});
+            // A first view that cannot load leaves the shell's notice up.
+            await themed.route(FIRST_VIEW,route=>route.abort());
+            await themed.goto(origin+'/ui/index.html');
+            await themed.locator('[data-shell-notice]:not([hidden])').waitFor();
+            const notice=await themed.locator('[data-shell-notice]').evaluate(e=>({color:getComputedStyle(e).color,wash:getComputedStyle(e).backgroundColor,surface:getComputedStyle(document.body).backgroundColor}));
+            await themed.getByRole('button',{name:'Commands',exact:true}).click();
+            const query=themed.locator('[data-command-query]');
+            await query.waitFor();
+            // At rest: the keyboard elsewhere, so the edge is the field's own and not the focus ring.
+            await query.evaluate(e=>e.blur());
+            const field=await query.evaluate(e=>({edge:getComputedStyle(e).borderTopColor,fill:getComputedStyle(e).backgroundColor,placeholder:getComputedStyle(e,'::placeholder').color,panel:getComputedStyle(e.closest('.palette')).backgroundColor,text:e.placeholder}));
+            assert(field.text,'The command field shows a placeholder');
+            const surface=parse(notice.surface),wash=over(parse(notice.wash),surface),panel=over(parse(field.panel),surface),fill=over(parse(field.fill),panel);
+            const result=measured[colorScheme]={notice:ratio(over(parse(notice.color),wash),wash),fieldEdge:ratio(over(parse(field.edge),panel),panel),placeholder:ratio(over(parse(field.placeholder),fill),fill)};
+            await themed.screenshot({path:path.join(output,`${name}-${colorScheme}-contrast.png`)});
+            if(!(result.notice>=4.5))shortfalls.push(`${colorScheme} notice ${result.notice.toFixed(2)}`);
+            if(!(result.fieldEdge>=3))shortfalls.push(`${colorScheme} field edge ${result.fieldEdge.toFixed(2)} (${field.edge} on ${field.panel})`);
+            if(!(result.placeholder>=4.5))shortfalls.push(`${colorScheme} placeholder ${result.placeholder.toFixed(2)}`);
+          }finally{await themed.close();}
+        }
+        report.results.push({engine:name,label:'measured contrast',contrast:Object.fromEntries(Object.entries(measured).map(([scheme,values])=>[scheme,Object.fromEntries(Object.entries(values).map(([part,n])=>[part,Number(n.toFixed(2))]))]))});
+        assert.deepEqual(shortfalls,[],'Every measured pair reaches its contrast in both schemes');
+      });
+      await step('the rail: every strip and bar button in Tab, names that say what they do, the keyboard kept when the panel closes',async()=>{
+        // With no rail the mark is the brand, not a disabled control (#187).
+        const brand=page.locator('[data-rail-toggle]');
+        assert.equal(await brand.getAttribute('aria-hidden'),'true');
+        assert.equal(await brand.getAttribute('aria-expanded'),null);
+        assert.equal(await brand.getAttribute('aria-controls'),null);
+        assert.equal(await page.getByRole('button',{name:'Open Sesame',exact:true}).count(),0);
+        const railed=await context.newPage();
+        try {
+          await railed.addInitScript(railHost);
+          await railed.setViewportSize({width:56,height:376});
+          await railed.goto(origin+'/ui/index.html');
+          await railed.locator('[data-ready="true"]').waitFor();
+          const mark=railed.locator('[data-rail-toggle]');
+          const where=()=>railed.evaluate(()=>{const e=document.activeElement;if(!e||e===document.body)return 'BODY';return e.matches('[data-rail-toggle]')?'mark':e.matches('[data-collapse]')?'collapse':e.dataset.view||e.querySelector('.label-hidden')?.textContent||e.tagName;});
+          const tabs=async count=>{await railed.evaluate(()=>document.activeElement?.blur());const seen=[];for(let i=0;i<count;i++){await railed.keyboard.press('Tab');seen.push(await where());}return seen;};
+          // Every button on the strip is reached with Tab, in WebKit too (#183).
+          const strip=await tabs(9);
+          for(const id of ['mark','today','projects','focus','shells','agents','Commands','Settings'])assert(strip.includes(id),`Tab reaches ${id} on the strip; reached ${strip.join(' ')}`);
+          // A peek: the mark keeps the open panel open; it does not offer to open it (#186).
+          await railed.setViewportSize({width:400,height:900});
+          await railed.evaluate(()=>window.__rail__.peek());
+          await railed.locator('[data-panel]').waitFor({state:'visible'});
+          assert.equal(await mark.getAttribute('aria-expanded'),'true');
+          assert.equal(await railed.getByRole('button',{name:'Keep the panel open',exact:true}).count(),1);
+          // Open to stay: the mark and the bar's control have a name each (#186).
+          await railed.locator('[data-view="today"]').click();
+          await railed.waitForFunction(()=>window.__rail__.host.held===true);
+          assert.equal(await railed.getByRole('button',{name:'Close the panel',exact:true}).count(),1);
+          assert.equal(await railed.getByRole('button',{name:'Close panel',exact:true}).count(),1);
+          // The bar's control is reached with Tab, and closing the panel with it leaves the
+          // keyboard on the mark, not on the page (#183, #182).
+          const held=await tabs(14);
+          assert(held.includes('collapse'),`Tab reaches the bar's close control; reached ${held.join(' ')}`);
+          await railed.locator('[data-collapse]').focus();
+          await railed.keyboard.press('Enter');
+          await railed.waitForFunction(()=>window.__rail__.host.expanded===false);
+          assert.equal(await where(),'mark','closing from the bar puts the keyboard on the mark');
+          // Escape from a control in a view.
+          await railed.locator('[data-view="projects"]').click();
+          await railed.locator('[data-widget-view="projects"]').waitFor({state:'visible'});
+          await railed.locator('[data-widget-view="projects"]').locator('button,input,textarea,select').first().focus();
+          await railed.keyboard.press('Escape');
+          await railed.waitForFunction(()=>window.__rail__.host.expanded===false);
+          assert.equal(await where(),'mark','Escape from a view puts the keyboard on the mark');
+          // The host closes the panel while the keyboard is on a setting.
+          await railed.getByRole('button',{name:'Settings',exact:true}).click();
+          await railed.locator('[data-rail-edge]').focus();
+          await railed.evaluate(()=>window.__rail__.close());
+          await railed.waitForFunction(()=>document.querySelector('.shell').dataset.rail==='collapsed');
+          assert.equal(await where(),'mark','a close from the host puts the keyboard on the mark');
+          // A keyboard user's close: the mark has the keyboard and its ring, until the window
+          // loses the keyboard to another application, which every close in the app does. The
+          // closed strip then shows no ring, and the ring is back when the window has the keyboard.
+          await railed.locator('[data-view="today"]').click();
+          await railed.waitForFunction(()=>window.__rail__.host.held===true);
+          await railed.locator('[data-view="today"]').focus();
+          for(let i=0;i<20&&!(await railed.evaluate(()=>document.querySelector('[data-panel]').contains(document.activeElement)));i++)await railed.keyboard.press('Tab');
+          assert(await railed.evaluate(()=>document.querySelector('[data-panel]').contains(document.activeElement)),'Tab reaches the panel');
+          await railed.evaluate(()=>window.__rail__.close());
+          await railed.waitForFunction(()=>document.querySelector('.shell').dataset.rail==='collapsed');
+          const ring=()=>mark.evaluate(e=>({focused:document.activeElement===e,visible:e.matches(':focus-visible'),outline:getComputedStyle(e).outlineStyle}));
+          assert.deepEqual(await ring(),{focused:true,visible:true,outline:'solid'},'a keyboard close leaves the keyboard and its ring on the mark while the window has the keyboard');
+          await railed.evaluate(()=>window.dispatchEvent(new Event('blur')));
+          assert.deepEqual(await ring(),{focused:true,visible:true,outline:'none'},'the closed strip shows no ring once the window has lost the keyboard');
+          await railed.evaluate(()=>window.dispatchEvent(new Event('focus')));
+          assert.deepEqual(await ring(),{focused:true,visible:true,outline:'solid'},'the ring is back when the window has the keyboard again');
         }finally{await railed.close();}
       });
       await step('initial widget failure does not strand shell restoration',async()=>{
