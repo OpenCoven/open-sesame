@@ -172,6 +172,10 @@ pub enum Signal {
         session: String,
         shortcuts: Vec<(String, String)>,
     },
+    /// The portal closed a session.
+    Closed { session: String },
+    /// The portal left the bus: it crashed, or was restarted, and its sessions with it.
+    PortalGone,
 }
 
 /// What the D-Bus side does next.
@@ -280,6 +284,8 @@ impl Client {
             (Signal::Activated { session, id }, _) if id == SHORTCUT_ID && self.ours(&session) => {
                 vec![Action::Toggle]
             }
+            (Signal::Closed { session }, _) if self.ours(&session) => self.end(State::Unavailable),
+            (Signal::PortalGone, phase) if *phase != Phase::Ended => self.end(State::Unavailable),
             (Signal::ShortcutsChanged { session, shortcuts }, Phase::Bound { .. })
                 if self.ours(&session) =>
             {
@@ -332,12 +338,16 @@ mod linux {
     const PATH: &str = "/org/freedesktop/portal/desktop";
     const INTERFACE: &str = "org.freedesktop.portal.GlobalShortcuts";
     const REQUEST: &str = "org.freedesktop.portal.Request";
+    const SESSION: &str = "org.freedesktop.portal.Session";
+    const BUS: &str = "org.freedesktop.DBus";
     /// A shortcut as the portal lists it, `(sa{sv})`.
     type Listed = (String, HashMap<String, OwnedValue>);
 
-    /// How long one call to the portal may take. The answers to requests come later, as
-    /// signals, and are waited for as long as the person takes in the desktop's dialog.
-    const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+    /// How long one call to the portal may take. The first may start the portal, which at
+    /// login can take a while; nothing waits for this thread, so the limit is generous. The
+    /// answers to requests come later, as signals, and are waited for as long as the person
+    /// takes in the desktop's dialog.
+    const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
     /// Asks the portal on its own thread, so nothing here delays the window. `preferred` is
     /// the saved keys as a trigger, or `None` to let the desktop ask the person.
@@ -365,12 +375,25 @@ mod linux {
         let connection = zbus::blocking::connection::Builder::session()?
             .method_timeout(CALL_TIMEOUT)
             .build()?;
-        // Every signal the portal sends this connection, from before the first request.
-        let rule = MatchRule::builder()
-            .msg_type(Type::Signal)
-            .sender(DESTINATION)?
-            .build();
-        let signals = MessageIterator::for_match_rule(rule, &connection, Some(64))?;
+        // Everything this connection receives, from before the first request: the portal's
+        // signals, and the bus's word when the portal's name changes owner.
+        let incoming = MessageIterator::from(&connection);
+        let bus = zbus::blocking::fdo::DBusProxy::new(&connection)?;
+        bus.add_match_rule(
+            MatchRule::builder()
+                .msg_type(Type::Signal)
+                .sender(DESTINATION)?
+                .build(),
+        )?;
+        bus.add_match_rule(
+            MatchRule::builder()
+                .msg_type(Type::Signal)
+                .sender(BUS)?
+                .interface(BUS)?
+                .member("NameOwnerChanged")?
+                .arg(0, DESTINATION)?
+                .build(),
+        )?;
         let portal = zbus::blocking::proxy::Builder::<Proxy>::new(&connection)
             .destination(DESTINATION)?
             .path(PATH)?
@@ -383,6 +406,11 @@ mod linux {
         eprintln!("open-sesame: GlobalShortcuts portal version {version}");
         #[cfg(not(debug_assertions))]
         let _ = version;
+        // Only the portal's own signals are read: any program on the bus can send a signal
+        // that names the portal's path, but not one from the portal's connection.
+        let owner = bus
+            .get_name_owner(zbus::names::BusName::try_from(DESTINATION)?)?
+            .to_string();
         let unique = connection
             .unique_name()
             .map(|name| name.to_string())
@@ -396,9 +424,9 @@ mod linux {
             ),
         ]);
         let _: OwnedObjectPath = portal.call("CreateSession", &(options,))?;
-        for message in signals {
+        for message in incoming {
             let message = message?;
-            let Some(signal) = signal_of(&message) else {
+            let Some(signal) = signal_of(&message, &owner) else {
                 continue;
             };
             for action in client.on_signal(signal) {
@@ -439,14 +467,28 @@ mod linux {
         Ok(())
     }
 
-    /// The portal's signal in plain types, or `None` for one this client does not read.
-    fn signal_of(message: &zbus::Message) -> Option<Signal> {
+    /// The portal's signal in plain types, or `None` for one this client does not read:
+    /// anything that is not a signal, and any signal not sent by `owner`, the portal's
+    /// connection, except the bus's own word that the portal's name changed owner.
+    fn signal_of(message: &zbus::Message, owner: &str) -> Option<Signal> {
         let header = message.header();
+        if header.message_type() != Type::Signal {
+            return None;
+        }
+        let sender = header.sender()?.to_string();
         let interface = header.interface()?.as_str().to_string();
         let member = header.member()?.as_str().to_string();
         let path = header.path()?.to_string();
         let body = message.body();
+        if sender == BUS && interface == BUS && member == "NameOwnerChanged" {
+            let (name, _, _): (String, String, String) = body.deserialize().ok()?;
+            return (name == DESTINATION).then_some(Signal::PortalGone);
+        }
+        if sender != owner {
+            return None;
+        }
         match (interface.as_str(), member.as_str()) {
+            (SESSION, "Closed") => Some(Signal::Closed { session: path }),
             (REQUEST, "Response") => {
                 let (code, results): (u32, HashMap<String, OwnedValue>) =
                     body.deserialize().ok()?;
@@ -761,6 +803,46 @@ mod tests {
             vec![Action::Report(State::Bound {
                 trigger: "Super+R".to_string()
             })]
+        );
+    }
+
+    /// The session can end from the portal's side: the session is closed, or the portal
+    /// leaves the bus (it crashed or was restarted). Presses stop either way, so the status
+    /// says the portal is not there and the client ends.
+    #[test]
+    fn a_closed_session_or_a_portal_that_leaves_ends_the_client() {
+        let bound_client = || {
+            let (mut client, create) = Client::new(":1.42");
+            let created = request_path(":1.42", &create.handle_token);
+            client.on_signal(response(&created, 0, Some(SESSION), &[]));
+            let bound = request_path(":1.42", "open_sesame_2");
+            client.on_signal(response(&bound, 0, None, &[(SHORTCUT_ID, "Super+O")]));
+            client
+        };
+        let mut client = bound_client();
+        let elsewhere = Signal::Closed {
+            session: "/org/freedesktop/portal/desktop/session/1_7/x".to_string(),
+        };
+        assert_eq!(client.on_signal(elsewhere), vec![]);
+        assert_eq!(
+            client.on_signal(Signal::Closed {
+                session: SESSION.to_string()
+            }),
+            vec![Action::Report(State::Unavailable)]
+        );
+        assert!(client.ended());
+        let mut client = bound_client();
+        assert_eq!(
+            client.on_signal(Signal::PortalGone),
+            vec![Action::Report(State::Unavailable)]
+        );
+        assert!(client.ended());
+        assert_eq!(client.on_signal(Signal::PortalGone), vec![]);
+        // Gone while the session was still being made.
+        let (mut client, _) = Client::new(":1.42");
+        assert_eq!(
+            client.on_signal(Signal::PortalGone),
+            vec![Action::Report(State::Unavailable)]
         );
     }
 

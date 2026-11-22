@@ -18,15 +18,19 @@ export function describe(status) {
   if (status.session === 'wayland') {
     // The desktop owns a binding made through the portal, so there is no field either way.
     const portal = status.portal && typeof status.portal === 'object' ? status.portal : {};
-    if (portal.state === 'bound') {
-      const keys = typeof portal.trigger === 'string' && portal.trigger ? `: ${portal.trigger}` : '';
-      return { editable: false, warn: false, hint: `Your desktop runs Open Sesame's shortcut${keys}.`, message: '' };
+    const keys = typeof portal.trigger === 'string' ? portal.trigger : '';
+    if (portal.state === 'bound' && keys) {
+      return { editable: false, warn: false, hint: `Your desktop runs Open Sesame's shortcut: ${keys}.`, message: '' };
     }
+    const messages = {
+      declined: 'Your desktop did not bind a shortcut for Open Sesame.',
+      bound: 'Your desktop lists the shortcut for Open Sesame without keys. Until it has some, bind the command.',
+    };
     return {
       editable: false,
       warn: false,
       hint: `This Wayland session does not let an application register a global shortcut. In your desktop's keyboard settings, bind a shortcut to this command: ${status.toggleCommand}`,
-      message: portal.state === 'declined' ? 'Your desktop did not bind a shortcut for Open Sesame.' : '',
+      message: messages[portal.state] || '',
     };
   }
   // The host says so when a saved shortcut it no longer takes was replaced by the default.
@@ -52,8 +56,16 @@ export function mountSummon(bridge, parts) {
     message.dataset.warn = warn ? 'true' : 'false';
   };
 
+  // The newest revision shown. A status the host sent unasked can overtake the reply to a
+  // request built before it, and the older one is then not shown over it.
+  let revision = -Infinity;
+
   // Shows what the host reports. The field is overwritten only when the host's value is the news.
   const show = (status, { keepField = false } = {}) => {
+    if (typeof status.revision === 'number') {
+      if (status.revision < revision) return;
+      revision = status.revision;
+    }
     const view = describe(status);
     hint.textContent = view.hint;
     form.hidden = !view.editable;

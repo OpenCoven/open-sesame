@@ -20,7 +20,7 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
@@ -514,6 +514,9 @@ pub struct Summon {
     front_at_tray: Mutex<Option<(Instant, bool)>>,
     /// Where the GlobalShortcuts portal stands, on Wayland (issue #108, `portal.rs`).
     portal: Mutex<crate::portal::State>,
+    /// Moves on with each answer from the portal, which reaches the page unasked, so that the
+    /// page can tell a reply built earlier from that newer status (`ui/summon.js`).
+    revision: AtomicU64,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -562,6 +565,7 @@ impl Summon {
             lost_focus: Mutex::new(None),
             front_at_tray: Mutex::new(None),
             portal: Mutex::default(),
+            revision: AtomicU64::new(0),
         }
     }
 
@@ -637,7 +641,12 @@ impl Summon {
 
     fn status(&self) -> Value {
         let settings = lock(&self.settings).clone();
-        let registration = lock(&self.registration).clone();
+        // On Wayland the portal alone decides, read now, so no request can leave the two apart.
+        let registration = if self.session == Session::Wayland {
+            self.wayland_registration()
+        } else {
+            lock(&self.registration).clone()
+        };
         json!({
             "session": self.session.name(),
             "shortcut": settings.shortcut,
@@ -648,13 +657,16 @@ impl Summon {
             "toggleCommand": TOGGLE_COMMAND,
             "hideOnBlur": settings.hide_on_blur,
             "portal": lock(&self.portal).status(),
+            "revision": self.revision.load(Ordering::SeqCst),
         })
     }
 
     /// What a Wayland session registers: nothing of its own. A shortcut the desktop bound
-    /// through the portal counts as registered; otherwise the person is told the command.
+    /// through the portal, with keys, counts as registered; otherwise the person is told the
+    /// command.
     fn wayland_registration(&self) -> Registration {
-        if matches!(*lock(&self.portal), crate::portal::State::Bound { .. }) {
+        if matches!(&*lock(&self.portal), crate::portal::State::Bound { trigger } if !trigger.is_empty())
+        {
             Registration {
                 registered: true,
                 message: String::new(),
@@ -670,9 +682,7 @@ impl Summon {
     /// Records the portal's answer and returns the new status.
     fn portal_answered(&self, state: crate::portal::State) -> Value {
         *lock(&self.portal) = state;
-        if self.session == Session::Wayland {
-            *lock(&self.registration) = self.wayland_registration();
-        }
+        self.revision.fetch_add(1, Ordering::SeqCst);
         self.status()
     }
 
@@ -692,10 +702,10 @@ impl Summon {
         text: &str,
         register: impl FnOnce(Shortcut) -> bool,
     ) -> Result<(), BridgeError> {
-        let outcome = if text.is_empty() {
-            Ok(Registration::default())
-        } else if !self.session.has_global_shortcuts() {
+        let outcome = if !self.session.has_global_shortcuts() {
             Ok(self.wayland_registration())
+        } else if text.is_empty() {
+            Ok(Registration::default())
         } else {
             let shortcut = parse_shortcut(text)?;
             if register(shortcut) {
@@ -1746,6 +1756,31 @@ mod tests {
         assert_eq!(status["message"], json!(WAYLAND));
         assert_eq!(status["portal"]["state"], json!("declined"));
         assert_eq!(lock(&sent).len(), 2);
+        // Each answer moves the status's revision on, so the page can tell an older reply
+        // from a newer message.
+        let first = lock(&sent)[0]["status"]["revision"].as_u64().unwrap();
+        let second = lock(&sent)[1]["status"]["revision"].as_u64().unwrap();
+        assert!(second > first, "{first} then {second}");
+    }
+
+    /// On Wayland what counts as registered is the portal's answer alone, whatever the page
+    /// sends: an empty shortcut does not hide a binding the desktop still runs, and a bound
+    /// shortcut without keys is not one the person can press.
+    #[test]
+    fn on_wayland_only_the_portal_decides_what_is_registered() {
+        let summon = Summon::new(Session::Wayland, None);
+        summon.portal_answered(crate::portal::State::Bound {
+            trigger: "Super+O".to_string(),
+        });
+        summon.register_with("", |_| true).unwrap();
+        assert_eq!(summon.status()["registered"], json!(true));
+        summon.register_with("Control+Shift+K", |_| true).unwrap();
+        assert_eq!(summon.status()["registered"], json!(true));
+        let status = summon.portal_answered(crate::portal::State::Bound {
+            trigger: String::new(),
+        });
+        assert_eq!(status["registered"], json!(false));
+        assert_eq!(status["message"], json!(WAYLAND));
     }
 
     #[test]

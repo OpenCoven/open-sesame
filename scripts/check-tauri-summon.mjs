@@ -73,7 +73,8 @@ function fakeBridge(status, answers = {}) {
   const portal = (state, trigger = '') => describe({ ...base, session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: state === 'bound', portal: { state, trigger } });
   assert.deepEqual(portal('bound', 'Ctrl+Alt+Shift+Space'),
     { editable: false, warn: false, hint: "Your desktop runs Open Sesame's shortcut: Ctrl+Alt+Shift+Space.", message: '' });
-  assert.equal(portal('bound').hint, "Your desktop runs Open Sesame's shortcut.");
+  // Listed by the desktop with no keys: nothing to press yet, so the command stays.
+  assert.deepEqual(portal('bound'), { ...wayland, message: 'Your desktop lists the shortcut for Open Sesame without keys. Until it has some, bind the command.' });
   for (const state of ['asking', 'unavailable', 'unused']) assert.deepEqual(portal(state), wayland, state);
   assert.deepEqual(portal('declined'), { ...wayland, message: 'Your desktop did not bind a shortcut for Open Sesame.' });
 }
@@ -115,6 +116,18 @@ function fakeBridge(status, answers = {}) {
   assert.equal(later.form.hidden, true);
   asking.emit({ event: CHANGED_EVENT });
   assert.equal(later.hint.textContent, "Your desktop runs Open Sesame's shortcut: Super+O.", 'A message without a status changes nothing');
+
+  // A reply built before that message, arriving after it, does not take the section back.
+  const racing = fakeBridge({ session: 'wayland', shortcut: 'Control+Alt+Shift+Space', registered: false, revision: 1, portal: { state: 'asking', trigger: '' } }, {
+    'summon.setHideOnBlur': (params, status) => ({ ...status, hideOnBlur: params.enabled }),
+  });
+  const raced = parts();
+  await mountSummon(racing, raced);
+  racing.emit({ event: CHANGED_EVENT, status: { ...racing.state.status, revision: 2, registered: true, portal: { state: 'bound', trigger: 'Super+O' } } });
+  raced.blur.checked = true;
+  raced.blur.fire('change');
+  await settle();
+  assert.equal(raced.hint.textContent, "Your desktop runs Open Sesame's shortcut: Super+O.", 'An older status is not shown over a newer one');
 }
 
 // 3. Saving sends the trimmed text once and shows the host's answer; nothing is reloaded.
