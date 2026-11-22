@@ -1907,3 +1907,146 @@ fn commands_and_the_gate_list_the_same_methods() {
         assert!(commands::METHODS.contains(method), "{method} has a handler");
     }
 }
+
+// ---- The caps and done, enforced by the core (issue #128, decided on 16 November 2026) ----
+
+fn task(text: &str, stage: &str, done: bool) -> ItemDraft {
+    draft(json!({ "kind": "task", "text": text, "stage": stage, "done": done }))
+}
+
+fn refusal(result: Result<impl std::fmt::Debug, StorageError>) -> String {
+    match result {
+        Err(StorageError::Invalid(message)) => message,
+        other => panic!("not refused as invalid: {other:?}"),
+    }
+}
+
+/// 30 items that are not archived are the most; a 31st is refused with the UI's sentence, and
+/// an archived one can still be added.
+#[test]
+fn a_31st_item_that_is_not_archived_is_refused() {
+    let rig = rig();
+    for n in 0..30 {
+        rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
+    }
+    assert_eq!(
+        refusal(rig.db.save_item(task("One more", "inbox", false))),
+        "You have 30 active items. Archive one to make room."
+    );
+    rig.db.save_item(task("Archived", "done", true)).unwrap();
+    assert_eq!(find(&rig.db, json!({})).len(), 31);
+}
+
+/// 300 items in all are the most, archived ones included.
+#[test]
+fn a_301st_item_is_refused() {
+    let rig = rig();
+    for n in 0..300 {
+        rig.db
+            .save_item(task(&format!("Done {n}"), "done", true))
+            .unwrap();
+    }
+    assert_eq!(
+        refusal(rig.db.save_item(task("One more", "done", true))),
+        "Your archive is full. Remove an archived item to make room."
+    );
+    assert_eq!(find(&rig.db, json!({})).len(), 300);
+}
+
+/// Bringing an archived item back while 30 are not archived is refused; editing it while it
+/// stays archived, and editing an item that is not archived, are not.
+#[test]
+fn restoring_an_item_while_30_are_not_archived_is_refused() {
+    let rig = rig();
+    let archived = rig.db.save_item(task("Archived", "done", true)).unwrap();
+    for n in 0..30 {
+        rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
+    }
+    let edit = |item: &Item, changes: Value| {
+        let mut value = serde_json::to_value(item).unwrap();
+        let fields = value.as_object_mut().unwrap();
+        fields.remove("createdAt");
+        fields.remove("updatedAt");
+        fields.extend(changes.as_object().unwrap().clone());
+        fields.insert("expectedUpdatedAt".into(), json!(item.updated_at));
+        draft(value)
+    };
+    assert_eq!(
+        refusal(
+            rig.db
+                .save_item(edit(&archived, json!({ "stage": "inbox", "done": false })))
+        ),
+        "Complete or archive an item before restoring this task."
+    );
+    rig.tick();
+    let renamed = rig
+        .db
+        .save_item(edit(&archived, json!({ "text": "Still archived" })))
+        .unwrap();
+    assert_eq!(renamed.stage, Stage::Done);
+    let active = find(&rig.db, json!({ "kind": "note" })).remove(0);
+    rig.tick();
+    rig.db
+        .save_item(edit(&active, json!({ "text": "Edited" })))
+        .unwrap();
+}
+
+/// A save sent again after its reply was lost is still answered with the stored row when the
+/// cap is reached by that very row.
+#[test]
+fn the_30th_item_sent_again_is_not_refused() {
+    let rig = rig();
+    for n in 0..29 {
+        rig.db.save_item(note(&format!("Note {n}"), "")).unwrap();
+    }
+    let id = "8f14e45f-ceea-4e7a-9c7e-3b2a1c0d4e5f";
+    let mut thirtieth = task("Thirtieth", "inbox", false);
+    thirtieth.id = Some(id.into());
+    let saved = rig.db.save_item(thirtieth.clone()).unwrap();
+    assert_eq!(rig.db.save_item(thirtieth).unwrap(), saved);
+}
+
+/// 30 projects are the most.
+#[test]
+fn a_31st_project_is_refused() {
+    let rig = rig();
+    let project =
+        |name: String| -> ProjectDraft { serde_json::from_value(json!({ "name": name })).unwrap() };
+    for n in 0..30 {
+        rig.db
+            .save_project(project(format!("Project {n}")))
+            .unwrap();
+    }
+    assert_eq!(
+        refusal(rig.db.save_project(project("One more".into()))),
+        "You have 30 projects."
+    );
+    // Renaming one of the 30 is not a 31st.
+    let first = rig.db.list_projects(None).unwrap().remove(0);
+    rig.tick();
+    let renamed: ProjectDraft = serde_json::from_value(json!({
+        "id": first.id, "name": "Renamed", "expectedUpdatedAt": first.updated_at
+    }))
+    .unwrap();
+    rig.db.save_project(renamed).unwrap();
+}
+
+/// `stage` is the source of truth for `done`: a task is done exactly when its stage is done,
+/// and a note or a bookmark is never done, whatever the writer sent.
+#[test]
+fn done_follows_the_stage() {
+    let rig = rig();
+    assert!(
+        rig.db
+            .save_item(task("Archived", "done", false))
+            .unwrap()
+            .done
+    );
+    assert!(!rig.db.save_item(task("Open", "inbox", true)).unwrap().done);
+    let note = draft(json!({ "kind": "note", "text": "n", "stage": "done", "done": true }));
+    assert!(!rig.db.save_item(note).unwrap().done);
+    let bookmark = draft(
+        json!({ "kind": "bookmark", "text": "b", "url": "https://example.com/", "done": true }),
+    );
+    assert!(!rig.db.save_item(bookmark).unwrap().done);
+}

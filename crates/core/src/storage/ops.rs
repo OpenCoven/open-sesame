@@ -204,12 +204,30 @@ fn unchanged<T: PartialEq>(sent: T, stored: T, rows: &Rows) -> Result<T, Storage
     }
 }
 
+/// The caps the UI has always applied, enforced here too so that a writer that skips the UI,
+/// such as the MCP server of #81, cannot pass them (issue #128, decided on 16 November 2026):
+/// 300 items in all, 30 that are not archived, and 30 projects, refused with the UI's own
+/// sentences (`ui/items.js`). An item is archived when its stage is done, or, for a row stored
+/// before `done` followed the stage, when it is a task marked done.
+pub const MAX_ITEMS: i64 = 300;
+pub const MAX_ACTIVE_ITEMS: i64 = 30;
+pub const MAX_PROJECTS: i64 = 30;
+const ACTIVE_FULL: &str = "You have 30 active items. Archive one to make room.";
+const ITEMS_FULL: &str = "Your archive is full. Remove an archived item to make room.";
+const PROJECTS_FULL: &str = "You have 30 projects.";
+/// The archived rule of `ui/items.js` in SQL, for rows of any age.
+const ARCHIVED: &str = "(stage = 'done' OR (kind = 'task' AND done = 1))";
+
 impl Storage {
     // ---- Notes, tasks and bookmarks ----
 
     /// Creates an item, or replaces every field of an existing one. Which row is written, and
     /// when a save is refused because the row changed after the UI read it, is decided by
-    /// [`target`].
+    /// [`target`]. `stage` is the source of truth for `done`: a task is stored as done exactly
+    /// when its stage is done, and a note or a bookmark never is, whatever was sent. A create
+    /// is refused past [`MAX_ITEMS`] items, or past [`MAX_ACTIVE_ITEMS`] that are not archived
+    /// when it is not archived itself; an edit that brings an archived item back is refused
+    /// while [`MAX_ACTIVE_ITEMS`] are not archived.
     pub fn save_item(&self, draft: ItemDraft) -> Result<Item, StorageError> {
         draft.validate()?;
         self.write(|tx, now| {
@@ -224,7 +242,7 @@ impl Storage {
                 project_id: draft.project_id,
                 stage: draft.stage,
                 previous_stage: draft.previous_stage,
-                done: draft.done,
+                done: draft.kind == Kind::Task && draft.stage == Stage::Done,
                 priority: draft.priority,
                 due_date: draft.due_date,
                 read: draft.read,
@@ -250,6 +268,26 @@ impl Storage {
                 if exists.is_none() {
                     return Err(invalid("That project no longer exists."));
                 }
+            }
+            let was_archived: Option<bool> = tx
+                .query_row(&format!("SELECT {ARCHIVED} FROM items WHERE id = ?1"), [&item.id], |row| row.get(0))
+                .optional()?;
+            let archived = item.stage == Stage::Done;
+            let (all, active): (i64, i64) = tx.query_row(
+                &format!("SELECT COUNT(*), COALESCE(SUM(CASE WHEN {ARCHIVED} THEN 0 ELSE 1 END), 0) FROM items"),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            match was_archived {
+                None if !archived && active >= MAX_ACTIVE_ITEMS => return Err(invalid(ACTIVE_FULL)),
+                None if all >= MAX_ITEMS => return Err(invalid(ITEMS_FULL)),
+                Some(true) if !archived && active >= MAX_ACTIVE_ITEMS => {
+                    return Err(StorageError::Invalid(format!(
+                        "Complete or archive an item before restoring this {}.",
+                        item.kind.as_str()
+                    )));
+                }
+                _ => {}
             }
             tx.execute(
                 "INSERT INTO items (id, kind, title, body, url, project_id, stage, previous_stage, done, priority, due_date, read, reading_later, created_at, updated_at, text)
@@ -321,7 +359,7 @@ impl Storage {
     // ---- Projects ----
 
     /// Creates a project, or replaces the name and folder of an existing one. Names are unique
-    /// ignoring case.
+    /// ignoring case. A create is refused past [`MAX_PROJECTS`] (issue #128).
     pub fn save_project(&self, draft: ProjectDraft) -> Result<Project, StorageError> {
         let name = draft.validate()?.to_string();
         let key = name.to_lowercase();
@@ -347,6 +385,14 @@ impl Storage {
                 .optional()?;
             if taken.is_some() {
                 return Err(StorageError::Conflict("A project with that name already exists.".into()));
+            }
+            let exists: Option<i64> =
+                tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [&id], |row| row.get(0)).optional()?;
+            if exists.is_none() {
+                let count: i64 = tx.query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))?;
+                if count >= MAX_PROJECTS {
+                    return Err(invalid(PROJECTS_FULL));
+                }
             }
             let project = Project { id, name, root_path: draft.root_path, created_at, updated_at };
             tx.execute(

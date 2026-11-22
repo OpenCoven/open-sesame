@@ -3,7 +3,9 @@
 // crates/core/src/storage/ops.rs and model.rs: the core sets every timestamp; a create may name
 // a client UUID v4 and the same create sent again finds it and writes nothing; an edit names
 // the updatedAt it started from and is refused with the core's conflict sentence otherwise;
-// deleting a project moves its items to the inbox and moves their updatedAt forward. It is a
+// deleting a project moves its items to the inbox and moves their updatedAt forward; `done` is
+// stored from the stage, and the caps (300 items, 30 not archived, 30 projects) are refused with
+// the UI's sentences inside the save, as the core does since issue #128. It is a
 // synthetic host: passing against it is not evidence about the Rust core, which cargo tests.
 //
 // Faults are queued per method: 'fail' throws before anything is written, 'lose' writes and
@@ -21,6 +23,8 @@ const uuid = version => new RegExp(`^[0-9a-f]{8}-[0-9a-f]{4}-${version}[0-9a-f]{
 const V4 = uuid(4), V7 = uuid(7);
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// The core's archived rule, which also reads rows stored before `done` followed the stage.
+const archived = item => item.stage === 'done' || (item.kind === 'task' && item.done === true);
 
 export function createStorageCore({start = Date.UTC(2026, 10, 16, 9, 0, 0), state = null} = {}) {
   let clock = state?.clock ?? start, sequence = state?.sequence ?? 0;
@@ -49,7 +53,7 @@ export function createStorageCore({start = Date.UTC(2026, 10, 16, 9, 0, 0), stat
     if (!draft || typeof draft !== 'object' || Object.keys(draft).some(key => !ITEM_FIELDS.includes(key))) refuse(BAD_REQUEST);
     if (!['note', 'task', 'bookmark'].includes(draft.kind)) refuse(BAD_REQUEST);
     const item = {id: '', kind: draft.kind, text: draft.text ?? '', title: draft.title ?? '', body: draft.body ?? '', url: draft.url ?? '', projectId: draft.projectId ?? '',
-      stage: draft.stage ?? 'inbox', previousStage: draft.previousStage ?? null, done: draft.done ?? false, priority: draft.priority ?? null, dueDate: draft.dueDate ?? '',
+      stage: draft.stage ?? 'inbox', previousStage: draft.previousStage ?? null, done: draft.kind === 'task' && draft.stage === 'done', priority: draft.priority ?? null, dueDate: draft.dueDate ?? '',
       read: draft.read ?? false, readingLater: draft.readingLater ?? false, createdAt: 0, updatedAt: 0};
     if (!item.text && !item.title) refuse('An item needs some text.');
     if ([...item.text].length > 20_000) refuse('That text is too long to save.');
@@ -64,6 +68,10 @@ export function createStorageCore({start = Date.UTC(2026, 10, 16, 9, 0, 0), stat
     }
     Object.assign(item, {id: place.id, createdAt: place.createdAt, updatedAt: place.updatedAt});
     if (item.projectId && !projects.has(item.projectId)) refuse('That project no longer exists.');
+    const before = items.get(item.id), active = [...items.values()].filter(row => !archived(row)).length;
+    if (!before && !archived(item) && active >= 30) refuse('You have 30 active items. Archive one to make room.');
+    if (!before && items.size >= 300) refuse('Your archive is full. Remove an archived item to make room.');
+    if (before && archived(before) && !archived(item) && active >= 30) refuse(`Complete or archive an item before restoring this ${item.kind}.`);
     items.set(item.id, item);
     return clone(item);
   }
@@ -82,6 +90,7 @@ export function createStorageCore({start = Date.UTC(2026, 10, 16, 9, 0, 0), stat
     }
     Object.assign(project, {id: place.id, createdAt: place.createdAt, updatedAt: place.updatedAt});
     for (const other of projects.values()) if (other.id !== project.id && other.name.toLowerCase() === name.toLowerCase()) refuse('A project with that name already exists.');
+    if (!projects.has(project.id) && projects.size >= 30) refuse('You have 30 projects.');
     projects.set(project.id, project);
     return clone(project);
   }

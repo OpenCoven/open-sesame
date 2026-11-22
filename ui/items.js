@@ -5,9 +5,11 @@
 //
 // - Archived means stage 'done', or a task with done set, as in dist/item-workflow.js. The UI
 //   writes both fields together: archiving sets stage 'done' and, for a task, done; restoring
-//   clears both. Rows another writer stored with only one of them set are read by the same rule.
+//   clears both. The core stores done from the stage (issue #128); rows stored before that with
+//   only one of them set are read by the same rule.
 // - The caps are the prototype's: 300 items in all, 30 that are not archived, 30 projects, with
-//   its sentences. The core does not enforce them, so a capped save never reaches it.
+//   its sentences. They are checked here so a capped save never reaches the core, which refuses
+//   the same saves with the same sentences (issue #128) when this list was out of date.
 // - A create names a client UUID v4 kept per draft. After a failure or a lost reply, the same
 //   draft is sent again under the same ID, so the core keeps one row; if the draft changed in
 //   between, the stored row is looked up first and edited rather than duplicated.
