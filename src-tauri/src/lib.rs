@@ -136,6 +136,9 @@ pub fn run() {
             if let Some(auth) = app.try_state::<Arc<auth::Auth>>() {
                 auth.shutdown();
             }
+            // A development build removes the scheme registration it made at start (#132).
+            #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+            link::unregister(app);
             rail::stop(app);
             if let Some(state) = app.try_state::<AppState>() {
                 state.startup.shutdown();

@@ -272,6 +272,10 @@ function fakeBridge(status, answers = {}) {
     assert.equal(entryCode.split(once).length - 1, 1, why);
   }
   assert.ok(!/\.exit\(|process::exit|std::process::abort/.test(entryCode), 'The entry file ends the application nowhere itself');
+  // A development build removes the scheme registration it made at a clean exit (#132), from the
+  // exit handler, and on Windows never the all-users key an installer writes.
+  assert.match(entryCode, /RunEvent::Exit => \{[^}]*\}\n\s*#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\n\s*link::unregister\(app\);/, 'The exit handler removes the registration');
+  assert.ok(!read('src-tauri/src/link.rs').includes('LOCAL_MACHINE'), 'link.rs never touches the all-users key');
   // Only sign-in's two links end a launch or are taken from a second one. Any other address
   // on the scheme, the login page's "Open Open Sesame" among them, is an ordinary launch.
   const taken = read('src-tauri/src/link.rs').split('#[cfg(test)]')[0];
@@ -432,7 +436,8 @@ function fakeBridge(status, answers = {}) {
   assert.equal(service, '.tauri.workos.production');
 
   // The scheme is registered at run time only in a development build on Windows and Linux.
-  assert.match(links, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\npub fn register<R: Runtime>\(app: &AppHandle<R>\) \{\n    use tauri_plugin_deep_link::DeepLinkExt;\n    let _ = app\.deep_link\(\)\.register_all\(\);\n\}/);
+  // It records that it did, so only a run that registered removes the registration (#132).
+  assert.match(links, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\npub fn register<R: Runtime>\(app: &AppHandle<R>\) \{\n    use tauri_plugin_deep_link::DeepLinkExt;\n(?:    \/\/[^\n]*\n)*    REGISTERED\.store\(true, std::sync::atomic::Ordering::SeqCst\);\n    let _ = app\.deep_link\(\)\.register_all\(\);\n\}/);
   assert.match(entry, /#\[cfg\(all\(debug_assertions, any\(windows, target_os = "linux"\)\)\)\]\n\s+link::register\(app\.handle\(\)\);/);
   assert.equal(code.split('register_all').length + links.split('register_all').length - 2, 1);
 

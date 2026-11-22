@@ -87,27 +87,75 @@ pub fn opened<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
     }
 }
 
+/// Whether this run registered the scheme, so that only a run that did removes it.
+#[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+static REGISTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// In a development build on Windows and Linux nothing has installed the scheme, so it is
 /// registered here, for the current user, and removed at a clean exit by [`unregister`]. A
 /// failure only means callbacks will not arrive.
 #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
 pub fn register<R: Runtime>(app: &AppHandle<R>) {
     use tauri_plugin_deep_link::DeepLinkExt;
+    // Set before, since a registration that fails partway may still have written something.
+    REGISTERED.store(true, std::sync::atomic::Ordering::SeqCst);
     let _ = app.deep_link().register_all();
 }
 
-/// Removes, at a clean exit of a development build, the registration [`register`] made (issue
-/// #132, decided on 16 November 2026), so an installed build's callbacks do not go to this
-/// binary after it has gone. A build that was killed leaves it, and the checklist in
-/// `src-tauri/AGENTS.md` says how to remove it by hand.
+/// Removes, at a clean exit of a development build, the registration [`register`] made in this
+/// run (issue #132, decided on 16 November 2026), so an installed build's callbacks do not go
+/// to this binary after it has gone. A launch that only carried a link and ended before it
+/// registered removes nothing, so a build that is still running keeps its registration. A
+/// build that was killed leaves it, and `src-tauri/AGENTS.md` says how to remove it by hand.
 #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
-pub fn unregister<R: Runtime>(_app: &AppHandle<R>) {}
+pub fn unregister<R: Runtime>(app: &AppHandle<R>) {
+    if REGISTERED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        remove_registration(app);
+    }
+}
 
-/// Deletes the current user's key for `scheme` when its command names `exe`. Returns whether it
-/// did.
+#[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+fn remove_registration<R: Runtime>(app: &AppHandle<R>) {
+    // On Windows the plugin's own `unregister` also tries the all-users key an installer
+    // writes, and stops with an error when it cannot remove it, so it is not used there.
+    #[cfg(windows)]
+    {
+        let _ = app;
+        if let Ok(exe) = tauri::utils::platform::current_exe() {
+            let _ = remove_own_key(SCHEME, &dunce::simplified(&exe));
+        }
+    }
+    // On Linux it takes only this program's handler out of `mimeapps.list` and out of its own
+    // handler file, and refreshes the desktop database when it changed something.
+    #[cfg(target_os = "linux")]
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        let _ = app.deep_link().unregister(SCHEME);
+    }
+}
+
+/// Deletes the current user's key for `scheme` when its command names `exe` as the deep-link
+/// plugin writes it (`"<exe>" "%1"`), and never the all-users key. A key another program
+/// wrote, such as one an installed build or another checkout's development build wrote after
+/// this one, is left. Returns whether it deleted the key.
 #[cfg(all(debug_assertions, windows))]
-fn remove_own_key(_scheme: &str, _exe: &std::path::Path) -> windows_registry::Result<bool> {
-    Ok(false)
+fn remove_own_key(scheme: &str, exe: &std::path::Path) -> windows_registry::Result<bool> {
+    use windows_registry::CURRENT_USER;
+    let base = format!("Software\\Classes\\{scheme}");
+    let Ok(command) = CURRENT_USER.open(format!("{base}\\shell\\open\\command")) else {
+        return Ok(false);
+    };
+    let ours = format!("\"{}\" \"%1\"", exe.display());
+    // Windows file names are not case-sensitive.
+    if !command
+        .get_string("")
+        .is_ok_and(|named| named.eq_ignore_ascii_case(&ours))
+    {
+        return Ok(false);
+    }
+    drop(command);
+    CURRENT_USER.remove_tree(&base)?;
+    Ok(true)
 }
 
 /// Gives a link to sign-in, and brings the window forward when the browser comes back, since on
@@ -390,7 +438,7 @@ mod tests {
     }
 
     /// The scheme a test registers, so it never touches the real one.
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(windows)]
     fn test_scheme(what: &str) -> String {
         format!("opensesame-test-{}-{what}", std::process::id())
     }
@@ -495,6 +543,14 @@ mod tests {
             .plugin(tauri_plugin_deep_link::init())
             .build(mock_context(noop_assets()))
             .unwrap();
+        // A run that did not register removes nothing.
+        unregister(app.handle());
+        assert!(std::fs::read_to_string(
+            std::env::var("XDG_CONFIG_HOME").unwrap() + "/mimeapps.list"
+        )
+        .unwrap()
+        .contains("x-scheme-handler/opensesame"));
+        REGISTERED.store(true, std::sync::atomic::Ordering::SeqCst);
         unregister(app.handle());
     }
 }
