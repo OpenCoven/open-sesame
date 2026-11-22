@@ -279,13 +279,35 @@ impl KeychainStore {
         }
     }
 
-    /// Asks this application's entry in the system's store one thing.
-    #[cfg(not(target_os = "linux"))]
+    /// Asks this application's entry in Keychain one thing.
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     fn ask<T>(
         &self,
         ask: impl Fn(&keyring_core::Entry) -> keyring::Result<T>,
     ) -> keyring::Result<T> {
         ask(&keyring::Entry::new(&self.service, CLIENT_ID)?.inner)
+    }
+
+    /// Asks this application's entry in Windows Credential Manager one thing. The entry is the
+    /// one `keyring` builds, with `Local` persistence (issue #131, decided on 16 November 2026):
+    /// the store's default, `Enterprise`, is carried by a roaming profile, and a refresh token
+    /// used on a second computer would be replaced there and sign this one out. The persistence
+    /// is applied when the secret is written, so a credential an earlier build saved keeps the
+    /// default until the next save replaces it.
+    #[cfg(target_os = "windows")]
+    fn ask<T>(
+        &self,
+        ask: impl Fn(&keyring_core::Entry) -> keyring::Result<T>,
+    ) -> keyring::Result<T> {
+        // Making an entry through `keyring` sets up its store the first time, and fails as it
+        // does when there is none; the entry asked is then built with the modifier.
+        keyring::Entry::new(&self.service, CLIENT_ID)?;
+        let modifiers = std::collections::HashMap::from([("persistence", "Local")]);
+        ask(&keyring_core::Entry::new_with_modifiers(
+            &self.service,
+            CLIENT_ID,
+            &modifiers,
+        )?)
     }
 
     /// Asks this application's entry in the Secret Service one thing. The entry is the one
