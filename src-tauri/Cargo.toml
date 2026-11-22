@@ -46,6 +46,8 @@ gtk = "0.18"
 libc = "0.2"
 # The same store, with the same feature, that `keyring` uses on Linux.
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
-# One question of the Secret Service the store does not ask: whether it has a default
-# collection (auth.rs, issue #130). The version the store already uses, blocking calls only.
+# Whether the Secret Service has a default collection, asked before the browser opens
+# (auth.rs, issue #130): the same `ReadAlias("default")` the store makes when it saves, asked
+# earlier. The version the store already uses, blocking calls only; this builds only because
+# the store and the single-instance plugin already turn on zbus's async-io.
 zbus = { version = "5", default-features = false, features = ["blocking-api"] }

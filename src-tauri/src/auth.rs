@@ -52,7 +52,7 @@ pub const NO_SECRET_SERVICE: &str = "Open Sesame keeps your sign-in in the syste
 /// sign-in is saved: a keyring just installed and never set up has none, and every save is then
 /// refused, after the browser (issue #130, decided on 18 November 2026). Written for that
 /// change; it waits for the owner's reading.
-pub const NO_DEFAULT_COLLECTION: &str = "Open Sesame keeps your sign-in in the system keyring, and it has no default keyring to keep it in. Open your desktop's passwords settings (Passwords and Keys on GNOME, KWalletManager on KDE), create a keyring and make it the default, then try again. Everything on this computer works without signing in.";
+pub const NO_DEFAULT_COLLECTION: &str = "Open Sesame keeps your sign-in in the system keyring, and it has no default keyring to keep it in. Open your desktop's passwords settings (Passwords and Keys on GNOME, KDE Wallet in System Settings on KDE), create a keyring (a wallet on KDE) and make it the default, then try again. Everything on this computer works without signing in.";
 /// Shown when the system has a credential store that would not answer: a keyring that is
 /// locked, or whose prompt was dismissed.
 pub const NO_KEYCHAIN: &str = "Open Sesame could not reach the system's credential store to keep your sign-in. Unlock it and try again. Everything on this computer works without signing in.";
@@ -323,7 +323,7 @@ impl KeychainStore {
     pub fn has_default_collection(&self) -> bool {
         #[cfg(target_os = "linux")]
         {
-            default_alias().unwrap_or(true)
+            default_alias().unwrap_or_else(|| names_a_collection(None))
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -385,7 +385,15 @@ fn default_alias() -> Option<bool> {
         )
         .ok()?;
     let path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize().ok()?;
-    Some(path.as_str() != "/")
+    Some(names_a_collection(Some(path.as_str())))
+}
+
+/// Whether the Secret Service's answer for its `default` alias names a collection: it answers
+/// `/` when the alias is not set. `None` is a question that failed, and counts as yes, so that
+/// nothing is refused on a guess.
+#[cfg(any(target_os = "linux", test))]
+fn names_a_collection(alias: Option<&str>) -> bool {
+    alias.is_none_or(|path| path != "/")
 }
 
 /// The name of the saved credential for an application with this bundle identifier.
@@ -935,6 +943,17 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, emit: Emit) {
 
 #[cfg(test)]
 mod tests {
+
+    /// The `/` the Secret Service answers for an alias that is not set is no collection; any
+    /// other path is one, and a question that failed counts as one (#207 review).
+    #[test]
+    fn the_answer_for_no_default_alias_is_told_from_a_collection() {
+        assert!(!names_a_collection(Some("/")));
+        assert!(names_a_collection(Some(
+            "/org/freedesktop/secrets/collection/login"
+        )));
+        assert!(names_a_collection(None));
+    }
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
