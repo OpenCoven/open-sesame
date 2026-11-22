@@ -23,6 +23,7 @@ const THEME = {
 };
 const OPTIONS = {
   cursorBlink: false, cursorStyle: 'block', cursorInactiveStyle: 'outline', scrollback: 5000, allowTransparency: false,
+  screenReaderMode: true,
   fontFamily: '"SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace', fontSize: 12, lineHeight: 1.25, theme: THEME,
 };
 
@@ -50,6 +51,9 @@ export function createPane(deps, element, launch, hooks = {}) {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(element);
+  // Screen-reader mode leaves what was typed in the input field, where macOS's inline word
+  // suggestions (WKWebView) can complete a word and send the field's text to the shell again.
+  term.textarea?.setAttribute('writingsuggestions', 'false');
   const refit = () => { try { fit.fit(); } catch { /* not laid out yet */ } };
   refit();
 
@@ -132,6 +136,10 @@ export function createPane(deps, element, launch, hooks = {}) {
   const paste = () => bridge.request('terminal.clipboard.read', {}).then(clip => { if (clip && !ended && !closed) term.paste(clip); }, error => hooks.onError?.(text(error)));
   term.attachCustomKeyEventHandler(event => {
     if (event.type !== 'keydown') return true;
+    // Tab and Shift+Tab belong to the shell. In screen-reader mode the emulator sends them but
+    // leaves the browser free to move focus on Shift+Tab, which would take the keyboard out of a
+    // running program (zsh completion, vim and agent prompts use it).
+    if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) event.preventDefault?.();
     const modifier = mac ? event.metaKey && !event.ctrlKey && !event.altKey : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
     const key = String(event.key || '').toLowerCase();
     if (modifier && key === 'c') {

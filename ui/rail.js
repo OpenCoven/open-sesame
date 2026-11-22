@@ -55,12 +55,26 @@ export function mountRail(bridge, parts, onChange = () => {}) {
     shell.dataset.presentation = current.presentation;
     shell.dataset.rail = layout(current);
     shell.dataset.edge = current.edge;
+    toggle.disabled = !rail;
+    // A panel that closes with the keyboard in it gives the keyboard to the mark, which opens
+    // it again, rather than leaving it on a part of the page that has gone.
+    const active = panel.ownerDocument?.activeElement;
+    if (!current.expanded && active && panel.contains(active)) toggle.focus();
     // The closed panel is out of the tab order and out of reach of assistive technology.
     panel.inert = !current.expanded;
-    const label = !rail ? 'Open Sesame' : current.expanded && current.held ? 'Close the panel' : 'Open the panel';
-    toggle.disabled = !rail;
+    // A peek is already open: the mark keeps it open.
+    const label = !rail ? 'Open Sesame' : !current.expanded ? 'Open the panel' : current.held ? 'Close the panel' : 'Keep the panel open';
     toggle.title = label;
-    toggle.setAttribute('aria-expanded', String(current.expanded));
+    // With no rail the mark is the brand: it opens nothing, so it is not offered as a control.
+    if (rail) {
+      toggle.setAttribute('aria-controls', panel.id || 'panel');
+      toggle.setAttribute('aria-expanded', String(current.expanded));
+      toggle.removeAttribute('aria-hidden');
+    } else {
+      toggle.removeAttribute('aria-controls');
+      toggle.removeAttribute('aria-expanded');
+      toggle.setAttribute('aria-hidden', 'true');
+    }
     toggleLabel.textContent = label;
     collapse.hidden = !rail;
     section.hidden = !rail;
