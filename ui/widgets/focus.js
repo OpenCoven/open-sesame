@@ -7,6 +7,8 @@ import { maker, statusLine, whenShown } from './view-kit.js';
 
 const STATES = {idle: 'Ready to start', running: 'Running', paused: 'Paused', finished: 'Session complete'};
 const BUTTONS = {idle: ['start'], running: ['pause', 'reset'], paused: ['resume', 'reset'], finished: ['reset']};
+// The control that takes keyboard focus when the focused one is hidden by the change it made.
+const NEXT = {start: 'pause', pause: 'resume', resume: 'pause', reset: 'start'};
 
 export async function mount({surface, signal, bridge}) {
   const document = surface.ownerDocument;
@@ -27,9 +29,11 @@ export async function mount({surface, signal, bridge}) {
   ]));
 
   const store = createFocusStore({bridge, now: () => Date.now()});
-  let timer = null, busy = false, lengthDraft = false;
+  let timer = null, busy = false, lengthDraft = false, last = null;
 
-  function draw() {
+  // `had` names the control that had keyboard focus when a press started, since a control that
+  // is disabled while its write is out may lose focus in the meantime.
+  function draw(had = Object.keys(controls).find(action => controls[action] === document.activeElement)) {
     const shown = store.view();
     clock.textContent = shown.clock;
     state.textContent = store.problem || STATES[shown.status];
@@ -37,6 +41,18 @@ export async function mount({surface, signal, bridge}) {
       control.hidden = !BUTTONS[shown.status].includes(action);
       control.disabled = busy || Boolean(store.problem);
     }
+    // Keep keyboard focus on the timer's controls: a hidden control hands it to the one that
+    // replaced it. Focus the person moved elsewhere in the meantime is left alone.
+    const active = document.activeElement;
+    if (had && !busy && (!active || active === document.body || active === controls[had])) {
+      const visible = action => !controls[action].hidden && !controls[action].disabled;
+      const target = [had, NEXT[had], ...BUTTONS[shown.status]].find(action => action && visible(action));
+      if (target && controls[target] !== active) controls[target].focus();
+    }
+    // The end of a session is said in the status line, a polite live region, in place of the
+    // message from when it started; the timer role itself does not announce.
+    if (last === 'running' && shown.status === 'finished' && !store.problem) status.say('Session complete.');
+    last = shown.status;
     recover.hidden = !store.recoverable;
     if (!lengthDraft) minutes.value = String(Math.round(shown.durationMs / 60_000));
     if (shown.status === 'running' && timer === null) timer = setInterval(() => { if (alive()) draw(); }, 1000);
@@ -49,12 +65,13 @@ export async function mount({surface, signal, bridge}) {
     draw();
   }
   async function act(write, done) {
-    busy = true; draw();
+    const had = Object.keys(controls).find(action => controls[action] === document.activeElement);
+    busy = true; draw(had);
     const result = await write();
     if (!alive()) return result;
     busy = false;
     if (result.saved) { status.say(done); lengthDraft = false; } else status.say(result.error, true);
-    draw();
+    draw(had);
     return result;
   }
 

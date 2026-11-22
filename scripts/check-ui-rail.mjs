@@ -259,3 +259,58 @@ assert.match(main, /addEventListener\('focus', \(\) => windowFocus\(true\)\);/);
 assert.match(read('ui/shell.css'), /\.shell\[data-window-focus="false"\] \.rail-mark:focus-visible \{ outline: none; \}/);
 assert.deepEqual([...wideViews], ['shells']);
 console.log('Rail source rules: sizes, corner, event, methods, presentation flags, tokens-only colours, reduced motion and icons pass.');
+
+// 5. Contrast in both themes, from the token values (WCAG 2.x relative luminance). A translucent
+// token is laid over what it sits on first. The notice is the shell's only error channel (#184),
+// a field's edge is its boundary as a control (#185, 1.4.11) and a placeholder says what an empty
+// field does (#168).
+const themes = (() => {
+  const values = block => Object.fromEntries([...block.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]));
+  const dark = values(tokens.match(/^:root \{([\s\S]*?)\n\}/m)[1]);
+  const light = {...dark, ...values(tokens.match(/@media \(prefers-color-scheme: light\) \{\s*:root \{([\s\S]*?)\}\s*\}/)[1])};
+  return {dark, light};
+})();
+const colour = (theme, value) => {
+  const reference = value.match(/^var\((--[a-z0-9-]+)\)$/);
+  if (reference) return colour(theme, theme[reference[1]]);
+  if (/^--/.test(value)) return colour(theme, theme[value]);
+  const hex = value.match(/^#([0-9a-f]{6})$/i);
+  if (hex) return [0, 2, 4].map(at => parseInt(hex[1].slice(at, at + 2), 16)).concat(1);
+  const rgb = value.match(/^rgb\((\d+) (\d+) (\d+)(?: \/ ([0-9.]+))?\)$/);
+  assert(rgb, `${value} is a colour the contrast check can read`);
+  return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3]), rgb[4] === undefined ? 1 : Number(rgb[4])];
+};
+const over = ([r, g, b, a], [R, G, B]) => [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a), 1];
+const luminance = rgb => {
+  const [r, g, b] = rgb.slice(0, 3).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const ratio = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+const fieldRule = tokens.match(/^input, select, textarea \{([\s\S]*?)\n\}/m)[1];
+const fieldBorder = fieldRule.match(/border: 1px solid (var\(--[a-z0-9-]+\));/)[1];
+const fieldBackground = fieldRule.match(/background: (var\(--[a-z0-9-]+\));/)[1];
+const placeholder = tokens.match(/input::placeholder, textarea::placeholder \{ color: (var\(--[a-z0-9-]+\)); \}/)[1];
+const contrast = {}, shortfalls = [];
+// Every shortfall is listed before the check fails, so one run names them all.
+const note = (pass, message) => { if (!pass) shortfalls.push(message); };
+for (const [name, theme] of Object.entries(themes)) {
+  const surface = colour(theme, '--surface');
+  const wash = over(colour(theme, '--warn-wash'), surface);
+  contrast[name] = {
+    notice: ratio(over(colour(theme, '--warn'), wash), wash),
+    // The rail's material surface (--surface-tint) lets the desktop show through, so it is measured over a black, a mid-grey and a white backdrop.
+    fieldEdge: Math.min(...[...['--surface', '--raised'].map(back => colour(theme, back)), ...[[0, 0, 0, 1], [128, 128, 128, 1], [255, 255, 255, 1]].map(backdrop => over(colour(theme, '--surface-tint'), backdrop))].map(back => ratio(over(colour(theme, fieldBorder), back), back))),
+    placeholder: ratio(over(colour(theme, placeholder), colour(theme, fieldBackground)), colour(theme, fieldBackground)),
+  };
+  note(contrast[name].notice >= 4.5, `${name}: the notice's text reaches 4.5:1 on its wash (${contrast[name].notice.toFixed(2)})`);
+  note(contrast[name].fieldEdge >= 3, `${name}: a field's border reaches 3:1 against the panel and the material surface (${contrast[name].fieldEdge.toFixed(2)})`);
+  note(contrast[name].placeholder >= 4.5, `${name}: placeholder text reaches 4.5:1 in its field (${contrast[name].placeholder.toFixed(2)})`);
+}
+// Pointing at a field makes its edge stronger, never weaker.
+const hoverBorder = tokens.match(/input:hover, select:hover, textarea:hover \{ border-color: (var\(--[a-z0-9-]+\)); \}/)[1];
+for (const [name, theme] of Object.entries(themes)) {
+  const surface = colour(theme, '--surface');
+  note(ratio(over(colour(theme, hoverBorder), surface), surface) > ratio(over(colour(theme, fieldBorder), surface), surface), `${name}: a hovered field's edge is stronger than at rest`);
+}
+assert.deepEqual(shortfalls, [], 'Every measured pair reaches its contrast');
+console.log(`Contrast: notice, field edge and placeholder pass in both themes (${Object.entries(contrast).map(([name, value]) => `${name} ${Object.entries(value).map(([part, n]) => `${part} ${n.toFixed(2)}`).join(', ')}`).join('; ')}).`);
