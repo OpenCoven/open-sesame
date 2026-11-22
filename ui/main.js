@@ -89,6 +89,13 @@ function sawView() {
   attention.seen(view);
   if (view === 'focus') focusWatch.refresh();
 }
+// Whether the window has the keyboard. Every close of the panel gives the keyboard back to the
+// application that had it, and the keyboard that was in the panel is left on the strip's mark
+// (rail.js); the closed strip shows no focus ring on it while the keyboard is elsewhere.
+const windowFocus = focused => { shell.dataset.windowFocus = String(focused); };
+addEventListener('focus', () => windowFocus(true));
+addEventListener('blur', () => windowFocus(false));
+windowFocus(document.hasFocus());
 const section = shell.querySelector('[data-rail-settings]');
 const rail = mountRail(bridge, {
   shell, panel: shell.querySelector('[data-panel]'), toggle: railToggle,
@@ -277,7 +284,8 @@ function loadStyle(href, signal) {
 
 for (const widget of widgets) {
   const button = element('button');
-  button.type = 'button';button.className = 'rail-button';button.dataset.view = widget.id;button.disabled = true;
+  // tabIndex: WebKit leaves a button out of Tab unless it asks to be in it.
+  button.type = 'button';button.className = 'rail-button';button.tabIndex = 0;button.dataset.view = widget.id;button.disabled = true;
   button.title = widget.name;
   button.append(icon(widget.id),hiddenLabel(widget.name));
   // A click on the strip opens the panel to stay on that view, with no sheet over it.
