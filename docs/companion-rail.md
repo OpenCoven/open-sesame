@@ -6,7 +6,7 @@ The restart's window is a companion rail: a strip of icons that rests against a 
 
 | State | Window | How it starts | How it ends |
 | --- | --- | --- | --- |
-| Strip | 56 by 376, centred on the display's height, 8 from the edge, above other windows, on every workspace, never with the keyboard | Launch; closing the panel; the tray's Show or Hide when the rail was off the screen | The tray's Show or Hide takes it off the screen |
+| Strip | 56 by 376, centred on the display's height, 8 from the edge, above other windows, on every workspace, never with the keyboard | Launch; closing the panel; the tray's Show Open Sesame when the rail was off the screen | The tray's Hide Open Sesame takes it off the screen |
 | Peek | 400 wide and the display's work area high, less 8 on each side, without the keyboard | The pointer rests on the strip for about a tenth of a second | The pointer leaves the panel for about a third of a second; a click inside turns it into a panel in use |
 | Panel, open to stay | The same frame, with the keyboard | The shortcut, `open-sesame --toggle`, a second launch, the Dock icon, a click on a view or tool on the strip, the mark at the top of the strip | The same shortcut or command again, Escape, the control in the panel's bar, the mark; losing the keyboard when "Close the panel when it loses focus" is on |
 | Wide panel | 860 wide | A view listed in `wideViews` (Shells) is shown; the control in the bar switches between wide and narrow | Another view is shown |
@@ -92,7 +92,7 @@ No person has run the rail on Windows. Build the development binary and start it
 3. Rest the pointer on the strip. The panel opens beside it without taking the keyboard, and the icons under the pointer do not move. Move the pointer away. The panel closes.
 4. Press Control+Alt+Shift+Space. The panel opens and typing goes into it. Press it again. The panel closes and typing goes into the window you were in before; say so if it does not: the hosted run showed this for `open-sesame --toggle`, not for a key.
 5. Click a view on the strip without waiting for the panel. The panel opens on that view, to stay.
-6. Left click the tray icon. The panel opens; click it again and it closes. Right click it and choose Show or Hide. The strip leaves the screen; choose it again and it comes back.
+6. Left click the tray icon. The panel opens; click it again and it closes. Right click it: the item reads Hide Open Sesame. Choose it. The strip leaves the screen; the item now reads Show Open Sesame, and choosing it brings the strip back.
 7. Open Shells. The panel widens. Press the control with the two arrows in the bar. It narrows, and the shell still fits its column.
 8. In Settings, change the edge to Left. The strip and the panel move to the left edge and mirror.
 9. Look at the panel's background on Windows 11. It should be Mica: the desktop's colours tinted through it while the panel has the keyboard. If it is black, see-through or flickers, start the application with `OPEN_SESAME_MATERIAL=off` and say what you saw.

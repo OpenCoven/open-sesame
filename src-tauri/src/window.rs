@@ -90,6 +90,12 @@ pub fn create_main(app: &AppHandle, presentation: Presentation) -> tauri::Result
             if !focused && changed {
                 summon::blurred(handle.app_handle());
             }
+            // What the tray's item does next turns on whether the window has the keyboard, and
+            // on Linux on how long ago it lost it.
+            crate::tray::refresh(handle.app_handle());
+            if !focused {
+                crate::tray::refresh_after(handle.app_handle(), summon::TRAY_MENU_GRACE);
+            }
         }
         _ => {}
     });
@@ -244,6 +250,20 @@ pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) -> Option<summon::P
     let press = summon::tray_item_on(app, &window);
     let _ = act(&window, press);
     Some(press)
+}
+
+/// What choosing the tray's menu item would do now, for its label (`tray::refresh`): the
+/// rule of [`toggle_from_tray_menu`], without acting and without using up the noted press.
+pub fn tray_item_next<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    if rail::active(app) {
+        return Some(if rail::shown(app) {
+            summon::Press::Hide
+        } else {
+            summon::Press::Show
+        });
+    }
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    Some(summon::tray_item_next(app, &window))
 }
 
 /// Whether a press ends with the window out of sight. Only `Hide` does: a window that is open

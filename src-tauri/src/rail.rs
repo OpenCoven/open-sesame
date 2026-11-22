@@ -421,7 +421,8 @@ impl Settings {
 
 #[derive(Debug, Clone, Default)]
 struct State {
-    /// Whether the rail is on screen at all; the tray's Show or Hide changes it.
+    /// Whether the rail is on screen at all; the tray's Show Open Sesame or Hide Open Sesame
+    /// changes it.
     shown: bool,
     expanded: bool,
     held: bool,
@@ -649,6 +650,12 @@ pub fn stop<R: Runtime>(app: &AppHandle<R>) {
 /// Whether the window is the rail.
 pub fn active<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.try_state::<Rail>().is_some_and(|rail| rail.is_rail())
+}
+
+/// Whether the window is the rail and it is on screen, as the strip or with its panel open.
+pub fn shown<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<Rail>()
+        .is_some_and(|rail| rail.is_rail() && lock(&rail.state).shown)
 }
 
 /// Whether the window is the rail and its panel is not open: the strip, or nothing on screen.
@@ -1149,6 +1156,8 @@ fn open_as<R: Runtime>(app: &AppHandle<R>, summoned: bool) {
                 Focus::Take
             },
         );
+        // The strip may have been off the screen, so the tray's item now hides it.
+        crate::tray::refresh(app);
     });
 }
 
@@ -1222,6 +1231,7 @@ pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
             );
         }
         settle(app, Focus::Leave);
+        crate::tray::refresh(app);
     });
     if was_shown {
         summon::Press::Hide

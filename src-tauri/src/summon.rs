@@ -803,7 +803,7 @@ pub fn opens_the_tray_menu(windows: bool, right_button: bool) -> bool {
 /// when a menu was dismissed without a choice, so a press whose menu was dismissed still
 /// decides for a menu opened within this minute by some way that reports no press, such as
 /// the keyboard; the item then goes by what the window was doing at the earlier press.
-const TRAY_MENU_OPEN: Duration = Duration::from_secs(60);
+pub(crate) const TRAY_MENU_OPEN: Duration = Duration::from_secs(60);
 
 /// Where no press on the tray icon was reported, or the one reported is older than
 /// `TRAY_MENU_OPEN`: how long ago the window may have lost the keyboard and still count as in
@@ -815,7 +815,7 @@ const TRAY_MENU_OPEN: Duration = Duration::from_secs(60);
 /// the item to bring it back hides it, and chooses again; one who keeps the menu open longer
 /// brings a window forward that was in front, and chooses again to hide it. No panel's menu
 /// has been seen doing this; that is for #78.
-const TRAY_MENU_GRACE: Duration = Duration::from_secs(10);
+pub(crate) const TRAY_MENU_GRACE: Duration = Duration::from_secs(10);
 
 fn since_lost_focus<R: Runtime>(app: &AppHandle<R>) -> Option<Duration> {
     app.try_state::<Summon>()
@@ -847,9 +847,26 @@ pub fn tray_pressed<R: Runtime>(app: &AppHandle<R>) {
 
 /// What choosing the tray's menu item does to `window`. See [`tray_item`].
 pub(crate) fn tray_item_on<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) -> Press {
+    tray_item_by(app, window, true)
+}
+
+/// What choosing the tray's menu item would do to `window` now, for its label. Unlike
+/// [`tray_item_on`] it leaves what the press on the icon noted for the item.
+pub(crate) fn tray_item_next<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) -> Press {
+    tray_item_by(app, window, false)
+}
+
+fn tray_item_by<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, use_up: bool) -> Press {
     let seen = app
         .try_state::<Summon>()
-        .and_then(|summon| lock(&summon.front_at_tray).take())
+        .and_then(|summon| {
+            let mut noted = lock(&summon.front_at_tray);
+            if use_up {
+                noted.take()
+            } else {
+                *noted
+            }
+        })
         .map(|(at, front)| (at.elapsed(), front));
     tray_item(
         window::is_shown(window),
@@ -1105,6 +1122,57 @@ mod tests {
         lost_the_keyboard(&app, Some(TRAY_MENU_GRACE + Duration::from_secs(5)));
         assert_eq!(tray_item_on(handle, &window), Press::Hide);
         assert_eq!(tray_item_on(handle, &window), Press::Forward);
+    }
+
+    /// The tray item's label (issue #115, the answer of 18 November) is worked out by the
+    /// item's own rule, and asking for it leaves what the press noted for the item.
+    #[test]
+    fn the_tray_label_says_what_the_item_will_do_and_leaves_the_press_for_it() {
+        let (app, window) = windowless(false);
+        let handle = app.handle();
+        // No press was reported, as on Linux, and the window lost the keyboard two seconds ago:
+        // the item would hide it, so the label says so, as often as it is asked.
+        lost_the_keyboard(&app, Some(Duration::from_secs(2)));
+        assert_eq!(tray_item_next(handle, &window), Press::Hide);
+        assert_eq!(tray_item_next(handle, &window), Press::Hide);
+        assert_eq!(
+            crate::tray::label(tray_item_next(handle, &window)),
+            "Hide Open Sesame"
+        );
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Hide));
+        // Long after it lost the keyboard, the item brings it forward, and the label says Show.
+        lost_the_keyboard(&app, Some(TRAY_MENU_GRACE + Duration::from_secs(5)));
+        assert_eq!(tray_item_next(handle, &window), Press::Forward);
+        assert_eq!(
+            crate::tray::label(tray_item_next(handle, &window)),
+            "Show Open Sesame"
+        );
+        // The icon was pressed while the window was behind, and the menu then took the keyboard.
+        // The label follows the press, and the press is still there for the item afterwards.
+        lost_the_keyboard(&app, None);
+        tray_pressed(handle);
+        lost_the_keyboard(&app, Some(Duration::ZERO));
+        assert_eq!(tray_item_next(handle, &window), Press::Forward);
+        assert_eq!(tray_item_next(handle, &window), Press::Forward);
+        assert_eq!(window::toggle_from_tray_menu(handle), Some(Press::Forward));
+        // Once the item has used it, the label goes back to the rule without a press.
+        assert_eq!(tray_item_next(handle, &window), Press::Hide);
+        // The whole application agrees: no rail here, so the window decides.
+        assert_eq!(window::tray_item_next(handle), Some(Press::Hide));
+    }
+
+    /// The label on the menu item itself follows a change of state when it is refreshed.
+    #[test]
+    fn refreshing_the_tray_item_sets_its_label() {
+        let (app, _window) = windowless(false);
+        let handle = app.handle();
+        let item = crate::tray::manage_item(handle).unwrap();
+        lost_the_keyboard(&app, Some(Duration::ZERO));
+        crate::tray::refresh(handle);
+        assert_eq!(item.text().unwrap(), "Hide Open Sesame");
+        lost_the_keyboard(&app, None);
+        crate::tray::refresh(handle);
+        assert_eq!(item.text().unwrap(), "Show Open Sesame");
     }
 
     /// The sentence for Shift alone names what to add, and not Alt: on a Mac, Alt and Shift
