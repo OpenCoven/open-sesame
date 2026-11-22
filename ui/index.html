@@ -99,6 +99,20 @@
             <p class="message" role="status" data-summon-message></p>
             <label class="check"><input type="checkbox" data-summon-blur> <span data-summon-blur-label>Hide the window when it loses focus</span></label>
           </section>
+          <section class="attention-settings" data-attention hidden aria-labelledby="attention-title">
+            <h2 id="attention-title">Agents</h2>
+            <p class="hint">Open Sesame can tell you when Claude Code is waiting for you. That needs a hook in Claude Code's settings file, which reports to Open Sesame on this computer only when a session starts, works, asks for permission and finishes. You see the change before it is made, and removing it puts the file back as it was.</p>
+            <p class="hint" role="status" data-attention-summary></p>
+            <div class="row">
+              <button type="button" data-attention-preview>Show the change</button>
+              <button type="button" data-attention-install hidden>Add the hook</button>
+              <button type="button" data-attention-remove hidden>Remove the hook</button>
+            </div>
+            <p class="hint" data-attention-path hidden></p>
+            <pre class="change" data-attention-change hidden></pre>
+            <label class="check"><input type="checkbox" data-attention-notify> Notify me when an agent starts waiting</label>
+            <p class="message" role="status" data-attention-message></p>
+          </section>
           <section class="rail-settings" data-rail-settings hidden aria-labelledby="rail-title">
             <h2 id="rail-title">Rail</h2>
             <label class="field" for="rail-edge">Edge of the screen

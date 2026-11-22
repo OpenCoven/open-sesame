@@ -5,6 +5,7 @@
 //! boundary: any script in the main document has the whole bridge, so the main window loads only
 //! bundled pages and no third-party script may ever be loaded there.
 
+mod attention;
 mod auth;
 mod data;
 mod events;
@@ -68,6 +69,7 @@ pub fn run() {
         // Used from Rust only. The capability grants the page none of these plugins' commands.
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init());
     // Only to register the scheme in a development build (link.rs). It is not registered on
     // macOS, where it would announce every link the system opens as an event the page hears.
@@ -104,6 +106,14 @@ pub fn run() {
                     })
                 })
                 .map_err(|error| StorageError::Unreadable(error.to_string()));
+            // The hook's settings live in the data folder; Claude Code's file is the person's own.
+            let attention_paths = roots.as_ref().ok().and_then(|roots| {
+                let folder = data::directory(roots, override_dir.as_deref()).ok()?;
+                Some(attention::Paths {
+                    folder: folder.join("attention"),
+                    settings: attention::settings_file(Some(&roots.home))?,
+                })
+            });
             let core = Arc::new(Core::new());
             data::start_storage(Arc::clone(&core), move || {
                 roots
@@ -122,6 +132,8 @@ pub fn run() {
             let presentation = rail::presentation();
             window::create_main(app.handle(), presentation)?;
             tray::create(app.handle())?;
+            // After the tray, which shows how many agents are waiting.
+            attention::start(app.handle(), attention_paths);
             // After the window exists, so a press that arrives at once has something to show.
             summon::start(app.handle());
             // Last: its first look at the pointer places the rail and puts it on screen.
@@ -137,6 +149,7 @@ pub fn run() {
                 auth.shutdown();
             }
             rail::stop(app);
+            attention::stop(app);
             if let Some(state) = app.try_state::<AppState>() {
                 state.startup.shutdown();
                 state.core.shutdown();

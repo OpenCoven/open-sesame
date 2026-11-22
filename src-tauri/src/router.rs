@@ -1,7 +1,7 @@
 //! The one command the UI can call, and where each allowed request goes.
 
 use crate::auth::{self, Auth};
-use crate::{project, rail, summon, terminal, window, AppState};
+use crate::{attention, project, rail, summon, terminal, window, AppState};
 use open_sesame_core::gate::{self, Caller};
 use open_sesame_core::protocol::{BridgeError, BridgeResult, Reply, Request};
 use open_sesame_core::Core;
@@ -24,6 +24,8 @@ pub enum Route {
     Terminal,
     /// The folder dialog and the file manager (issue #74).
     Project,
+    /// Attention signals: Claude Code's hook and the waiting agents (issue #80).
+    Attention,
     /// Everything else: the headless core.
     Core,
 }
@@ -41,6 +43,8 @@ pub fn route(method: &str) -> Route {
         Route::Terminal
     } else if project::METHODS.contains(&method) {
         Route::Project
+    } else if attention::METHODS.contains(&method) {
+        Route::Attention
     } else {
         Route::Core
     }
@@ -99,6 +103,9 @@ fn answer<R: Runtime>(window: &WebviewWindow<R>, core: &Core, request: &Request)
         Route::Auth => auth(window.app_handle(), &request.method),
         Route::Host => window::handle(window, &request.method, &request.params),
         Route::Summon => summon::handle(window.app_handle(), &request.method, &request.params),
+        Route::Attention => {
+            attention::handle(window.app_handle(), &request.method, &request.params)
+        }
         Route::Rail => rail::handle(window.app_handle(), &request.method, &request.params),
         Route::Terminal => terminal::handle(window, core, &request.method, &request.params),
         Route::Project => project::handle(window, &request.method, &request.params),
@@ -250,6 +257,8 @@ mod tests {
         app.manage(summon::Summon::new(summon::Session::Wayland, None));
         // The same for the rail. As the ordinary window it moves nothing.
         app.manage(rail::Rail::new(rail::Presentation::Window, None));
+        // Attention with no folder: it refuses to install, and so touches no settings file.
+        app.manage(attention::Attention::new(None));
         let main = open(&app, MAIN_WINDOW, bundled());
         for (method, issue) in PENDING {
             assert!(
@@ -482,6 +491,20 @@ mod tests {
         // A method the gate allows must not fall through because the application forgot it.
         for method in PORTED.iter().filter(|method| method.starts_with("summon.")) {
             assert_eq!(route(method), Route::Summon, "{method}");
+        }
+    }
+
+    #[test]
+    fn attention_methods_go_to_attention() {
+        for method in attention::METHODS {
+            assert_eq!(route(method), Route::Attention, "{method}");
+            assert!(PORTED.contains(method), "{method} must be ported");
+        }
+        for method in PORTED
+            .iter()
+            .filter(|method| method.starts_with("attention."))
+        {
+            assert_eq!(route(method), Route::Attention, "{method}");
         }
     }
 

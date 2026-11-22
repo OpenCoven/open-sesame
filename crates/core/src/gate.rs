@@ -46,6 +46,12 @@ pub const PORTED: &[&str] = &[
     "summon.setShortcut",
     "summon.setHideOnBlur",
     "summon.hold",
+    // Attention signals: Claude Code's opt-in hook and the agents waiting (#80).
+    "attention.status",
+    "attention.preview",
+    "attention.install",
+    "attention.remove",
+    "attention.setNotify",
     // The companion rail: its status, and opening, widening and placing it.
     "rail.status",
     "rail.set",

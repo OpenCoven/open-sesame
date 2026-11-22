@@ -10,10 +10,26 @@
 use crate::{summon, window};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::AppHandle;
+use tauri::{AppHandle, Runtime};
 
 const TOGGLE: &str = "toggle";
 const QUIT: &str = "quit";
+
+/// Says on the tray icon how many agents are waiting for the person (issue #80): in its
+/// tooltip, and as a number beside the icon where the system shows a tray title (macOS and
+/// Linux). Nothing is shown when none is.
+pub fn show_waiting<R: Runtime>(app: &AppHandle<R>, waiting: usize) {
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+    let tooltip = match waiting {
+        0 => "Open Sesame".to_string(),
+        1 => "Open Sesame: an agent is waiting for you".to_string(),
+        n => format!("Open Sesame: {n} agents are waiting for you"),
+    };
+    let _ = tray.set_tooltip(Some(tooltip));
+    let _ = tray.set_title((waiting > 0).then(|| waiting.to_string()));
+}
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItemBuilder::with_id(TOGGLE, "Show or Hide Open Sesame").build(app)?;

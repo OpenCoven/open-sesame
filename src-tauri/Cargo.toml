@@ -15,6 +15,7 @@ keyring = "4"
 # Service store is opened here so that it can be opened again (issue #116).
 keyring-core = "1"
 open-sesame-core = { path = "../crates/core" }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # macos-private-api lets the web view be see-through, which the rail's window material needs
 # (rail.rs). It is the one private call; the application is not sandboxed and cannot be, because
@@ -24,6 +25,8 @@ tauri-plugin-clipboard-manager = "2.5.0"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-global-shortcut = "2"
+# The optional notice when an agent starts waiting (attention.rs). Used from Rust only.
+tauri-plugin-notification = "2.3.3"
 tauri-plugin-opener = "2.7.3"
 tauri-plugin-single-instance = "2"
 ureq = { version = "3", default-features = false, features = ["rustls"] }

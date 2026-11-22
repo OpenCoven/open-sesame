@@ -240,6 +240,7 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
 .sheet h2 { font-size: var(--text); font-weight: 600; }
 .sheet .hint, .sheet .message, .sheet label { color: var(--muted); }
 .sheet .hint { font-size: var(--text-small); }
+.sheet .change { max-height: 16rem; overflow: auto; margin: 0; padding: 0.5rem; font-family: var(--font-mono); font-size: var(--text-small); white-space: pre; border: 1px solid var(--line); border-radius: 6px; }
 .sheet .message:empty { display: none; }
 .sheet .message[data-warn="true"] { color: var(--warn); }
 .sheet .who { color: var(--ink); }

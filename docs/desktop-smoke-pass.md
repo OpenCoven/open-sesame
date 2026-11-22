@@ -136,7 +136,7 @@ These are [#116][116]'s hand checks for sign-in links, [added to this list on #7
 | F3 | Notes, tasks, bookmarks, projects and saved feed items survive quitting and relaunching | moved from [#75][75] | pending [#77][77] | pending [#77][77] | pending [#77][77] | pending [#77][77] |
 | F4 | Open a view whose widget is not ported yet, such as Agents: it says "This widget is not available in this version." | [#78][78]; [#76][76] | pass: [M7](#m7-close-and-reopen-and-the-agents-view) | | | |
 | F5 | A shortcut saved in the Shortcut section is still there after Quit and a relaunch (a development build keeps it in the folder named by `OPEN_SESAME_DEV_CONFIG_DIR`) | [#78][78] relaunch; [#71][71] | pass: [M8](#m8-a-saved-shortcut-after-quit-and-relaunch) | | | n/a: see C4 |
-
+| F6 | With Claude Code installed and signed in by the person, in Settings, Agents, choose "Show the change": the change shown names the real settings file and adds only HTTP hooks to `127.0.0.1`. Add the hook, start `claude` in a folder and ask for something that needs permission (for example, a shell command): within a few seconds the tray shows 1 and its tooltip says an agent is waiting; with "Notify me when an agent starts waiting" on, one system notification names the folder, and answering the prompt in Claude Code does not raise another. Remove the hook: the settings file is byte for byte the copy taken before the change (`cmp` against a copy made before adding), and with the hook off nothing in Claude Code's folder changes. Write down Claude Code's version | [#80][80] | | | | |
 At the tested commit the storage is wired into the application ([#105][105]), but no view saves a note, task or focus session until [#77][77], so F1 to F3 wait for #77 on every system. F4 and F5 run now.
 
 ### Quit
@@ -386,6 +386,7 @@ Commit `0d65d4341b97311f6c031016d2af57a8f4aebe5d` (`main` after [#113][113]), be
 [76]: https://github.com/OpenCoven/open-sesame/issues/76
 [77]: https://github.com/OpenCoven/open-sesame/issues/77
 [78]: https://github.com/OpenCoven/open-sesame/issues/78
+[80]: https://github.com/OpenCoven/open-sesame/issues/80
 [83]: https://github.com/OpenCoven/open-sesame/issues/83
 [84]: https://github.com/OpenCoven/open-sesame/issues/84
 [87]: https://github.com/OpenCoven/open-sesame/issues/87
