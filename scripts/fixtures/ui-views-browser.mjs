@@ -44,9 +44,12 @@ const KIND_CHANGED = kind => `That item was changed to a ${kind} after you opene
 // states as the core keeps them, and items and projects through the stand-in.
 function createHost({settings = {}} = {}) {
   const core = createStorageCore();
-  const state = {settings: structuredClone(settings), widgets: {}}, calls = [], faults = [];
+  const state = {settings: structuredClone(settings), widgets: {}}, calls = [], faults = [], refused = new Map();
   return {
     core, state, calls,
+    // A refusal fails every request for `method` until it is lifted.
+    refuse(method, value) { refused.set(method, value); },
+    lift(method) { refused.delete(method); },
     // A fault is taken by the first request for `method` whose params hold every entry of
     // `match`, so a step can refuse one write while the shell's own writes of the same method
     // go through.
@@ -54,6 +57,7 @@ function createHost({settings = {}} = {}) {
     writes: () => calls.filter(([method]) => /\.(set|save|delete)$/.test(method)),
     async request(method, params = {}) {
       calls.push([method, structuredClone(params)]);
+      if (refused.has(method)) return {ok: false, error: refused.get(method)};
       const index = faults.findIndex(fault => fault.method === method
         && Object.entries(fault.match).every(([name, expected]) => params[name] === expected));
       if (index >= 0) return {ok: false, error: faults.splice(index, 1)[0].value};
@@ -579,7 +583,10 @@ try {
       const clockApp = await install(browser, timing, name);
       installs.push(clockApp);
       page = await clockApp.open(START);
-      const clock = () => view(page, 'focus').locator('[data-focus-clock]').textContent();
+      // A clock is empty until its view has drawn it, and a loaded machine can be asked before
+      // then: wait for some text, so a wrong time still fails and only "not drawn yet" is waited out.
+      const drawn = async locator => { await locator.filter({hasText: /\S/}).waitFor(); return locator.textContent(); };
+      const clock = () => drawn(view(page, 'focus').locator('[data-focus-clock]'));
       const state = () => view(page, 'focus').locator('[data-focus-state]').textContent();
       await step('a failed focus write changes nothing', async () => {
         await page.locator('[data-view="focus"]').click();
@@ -625,7 +632,7 @@ try {
         assert(await view(page, 'focus').isVisible(), 'Focus opens again');
         assert.deepEqual([await clock(), await state()], ['10:00', 'Running']);
         await page.locator('[data-view="today"]').click();
-        assert.equal(await view(page, 'today').locator('[data-today-clock]').textContent(), '10:00', 'Today shows the same session');
+        assert.equal(await drawn(view(page, 'today').locator('[data-today-clock]')), '10:00', 'Today shows the same session');
         // Asleep past the deadline: the session has finished when the window comes back.
         await page.locator('[data-view="focus"]').click();
         await shown(page, 'hidden');
@@ -650,6 +657,223 @@ try {
         await focus.getByRole('button', {name: 'Start over', exact: true}).click();
         await focus.locator('[data-focus-state]').getByText('Ready to start').waitFor();
         assert.equal(unreadable.state.settings['focus.session'].startedAt, null);
+      });
+      await page.close();
+
+      // ---- Keyboard focus, announcements and failed reads ----
+      const keys = createHost();
+      const keyboard = await install(browser, keys, name);
+      installs.push(keyboard);
+      for (const text of ['Sweep the hall', 'Sort the post', 'Oil the hinge']) keys.core.seed({kind: 'task', text});
+      for (const text of ['First note', 'Second note', 'Third note']) keys.core.seed({kind: 'note', text, title: text});
+      for (const project of ['Garden', 'Garage']) keys.core.seedProject(project);
+      page = await keyboard.open(START);
+      const focused = () => page.evaluate(() => {
+        const node = document.activeElement;
+        return node === document.body || !node ? 'BODY' : node.dataset.focusKey || node.dataset.itemEmpty !== undefined && 'empty' || node.id || node.textContent;
+      });
+      await step('keyboard focus moves to a neighbouring row when a row leaves a list', async () => {
+        // Today: Space on a task's checkbox completes it and the row leaves.
+        const today = view(page, 'today'), boxes = today.locator('[data-today-tasks] [data-complete]');
+        await boxes.first().waitFor();
+        const order = await boxes.evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        assert.equal(order.length, 3);
+        await boxes.first().focus();
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => document.querySelector('[data-today-task-count]')?.textContent === '2 open · 1 done');
+        assert.equal(await focused(), order[1], 'Today: the next task’s checkbox');
+        await boxes.last().focus();
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => document.querySelector('[data-today-task-count]')?.textContent === '1 open · 2 done');
+        assert.equal(await focused(), order[1], 'Today: the previous task’s checkbox when the last one leaves');
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => document.querySelector('[data-today-task-count]')?.textContent === '0 open · 3 done');
+        assert.equal(await focused(), 'No open tasks.', 'Today: the empty-state line when no task is left');
+        // Projects: Enter on Archive, and Delete then Confirm delete.
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects'), list = projects.locator('[data-item-list]');
+        await list.getByText('Third note', {exact: true}).waitFor();
+        const archives = await list.locator('[data-archive]').evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        assert.equal(archives.length, 3);
+        await list.locator(`[data-focus-key="${archives[0]}"]`).focus();
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-item-list] li').length === 2);
+        assert.equal(await focused(), archives[1], 'Projects: the next row’s Archive after Archive');
+        const deletes = await list.locator('[data-delete]').evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        await list.locator(`[data-focus-key="${deletes[1]}"]`).focus();
+        await page.keyboard.press('Enter');
+        await list.getByRole('button', {name: 'Confirm delete', exact: true}).waitFor();
+        assert.equal(await focused(), deletes[1], 'Projects: arming Delete keeps focus on the button');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-item-list] li').length === 1);
+        assert.equal(await focused(), deletes[0], 'Projects: the previous row’s Delete after the last row is deleted');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-item-list] li').length === 0);
+        assert.equal(await focused(), 'empty', 'Projects: the empty-state line after the only row is deleted');
+        // Projects: deleting a project.
+        const removes = await projects.locator('[data-project-list] [data-remove-project]').evaluateAll(nodes => nodes.map(node => node.dataset.focusKey));
+        assert.equal(removes.length, 2);
+        await projects.locator(`[data-focus-key="${removes[0]}"]`).focus();
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-project-list] li').length === 1);
+        assert.equal(await focused(), removes[1], 'Projects: the next project’s Delete after a project is deleted');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => document.querySelectorAll('[data-project-list] li').length === 0);
+        assert.equal(await focused(), 'project-admin-title', 'Projects: the projects heading when no project is left');
+        // Close in the editor gives focus back to the item it showed.
+        const note = keys.core.seed({kind: 'note', text: 'Fourth note', title: 'Fourth note'});
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await list.getByRole('button', {name: 'Fourth note', exact: true}).click();
+        await projects.locator('[data-editor]').getByRole('button', {name: 'Close', exact: true}).focus();
+        await page.keyboard.press('Enter');
+        await projects.locator('[data-editor]').waitFor({state: 'hidden'});
+        assert.equal(await focused(), `open:${note.id}`, 'Projects: the item’s own button after Close');
+      });
+      await step('keyboard focus stays on the timer controls after Start, Pause, Resume and Reset', async () => {
+        await page.locator('[data-view="focus"]').click();
+        const focus = view(page, 'focus'), state = focus.locator('[data-focus-state]');
+        const control = () => page.evaluate(() => document.activeElement?.dataset.focusAction ?? document.activeElement?.tagName);
+        await focus.getByRole('button', {name: 'Start', exact: true}).focus();
+        await page.keyboard.press('Enter');
+        await state.getByText('Running', {exact: true}).waitFor();
+        assert.equal(await control(), 'pause', 'Start hands focus to Pause');
+        await page.keyboard.press('Enter');
+        await state.getByText('Paused', {exact: true}).waitFor();
+        assert.equal(await control(), 'resume', 'Pause hands focus to Resume');
+        await page.keyboard.press('Enter');
+        await state.getByText('Running', {exact: true}).waitFor();
+        assert.equal(await control(), 'pause', 'Resume hands focus to Pause');
+        await page.clock.runFor(26 * MINUTE);
+        await state.getByText('Session complete', {exact: true}).waitFor();
+        assert.equal(await control(), 'reset', 'a finished session hands focus from Pause to Reset');
+        await page.keyboard.press('Enter');
+        await state.getByText('Ready to start', {exact: true}).waitFor();
+        assert.equal(await control(), 'start', 'Reset hands focus to Start');
+      });
+      await step('a finished focus session is announced in the status line', async () => {
+        const focus = view(page, 'focus'), message = focus.locator('[data-focus-message]');
+        await focus.getByRole('button', {name: 'Start', exact: true}).click();
+        await message.getByText('Focus started.', {exact: true}).waitFor();
+        await page.clock.runFor(26 * MINUTE);
+        await focus.locator('[data-focus-state]').getByText('Session complete', {exact: true}).waitFor();
+        assert.equal(await message.getAttribute('role'), 'status', 'the line is a live region');
+        assert.equal(await message.textContent(), 'Session complete.', 'the end replaces the stale start message');
+        assert.equal(await message.getAttribute('data-tone'), null);
+        await focus.getByRole('button', {name: 'Reset', exact: true}).click();
+        await message.getByText('Timer reset.', {exact: true}).waitFor();
+      });
+      await step('a Projects row says Unsaved edit only after a field has changed', async () => {
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects'), editor = projects.locator('[data-editor]');
+        const row = projects.locator('[data-item-list] li', {hasText: 'Fourth note'});
+        await row.getByRole('button', {name: 'Fourth note', exact: true}).click();
+        await editor.waitFor({state: 'visible'});
+        assert.equal(await row.locator('.item-main > p.muted').first().textContent(), 'Note · Inbox', 'opening an item changes nothing');
+        await editor.locator('[data-edit-field="title"]').fill('Fourth note, edited');
+        await editor.getByRole('button', {name: 'Close', exact: true}).click();
+        assert.equal(await row.locator('.item-main > p.muted').first().textContent(), 'Note · Inbox · Unsaved edit', 'a changed field is kept as an unsaved edit');
+      });
+      await step('an armed Confirm delete is said, and disarmed by Escape, leaving it and leaving the view', async () => {
+        const projects = view(page, 'projects'), listed = projects.locator('[data-list-status]');
+        const remove = projects.locator('[data-item-list] li', {hasText: 'Fourth note'}).locator('[data-delete]');
+        const label = () => remove.textContent();
+        const arm = async () => {
+          await remove.focus();
+          await page.keyboard.press('Enter');
+          await remove.getByText('Confirm delete', {exact: true}).waitFor();
+          assert.equal(await listed.textContent(), 'Press Confirm delete to delete Fourth note.', 'arming is said in the list’s status line');
+        };
+        await arm();
+        await page.keyboard.press('Escape');
+        assert.equal(await label(), 'Delete', 'Escape disarms it');
+        assert.equal(await listed.textContent(), '', 'and clears the sentence');
+        assert(await projects.isVisible(), 'Escape is taken by the button, not by the panel');
+        await arm();
+        await projects.locator('[data-add-text]').focus();
+        assert.equal(await label(), 'Delete', 'moving focus away disarms it');
+        await arm();
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await projects.locator('[data-item-list]').getByText('Fourth note', {exact: true}).waitFor();
+        assert.equal(await label(), 'Delete', 'leaving the view and coming back disarms it');
+        assert(keys.core.items.size > 0 && rows(keys, item => item.title === 'Fourth note').length === 1, 'nothing was deleted');
+        // Armed from the keyboard and then clicked, it deletes: WebKit takes focus from a pressed
+        // button to the page, which is not leaving it (review of #210).
+        await arm();
+        await remove.click();
+        await page.waitForFunction(() => ![...document.querySelectorAll('[data-item-list] li')].some(node => node.textContent.includes('Fourth note')));
+        assert.equal(rows(keys, item => item.title === 'Fourth note').length, 0, 'a click on an armed Confirm delete deletes');
+        // A task completed in a list of notes gives the keyboard to a neighbouring row's first
+        // control, as no other row has a checkbox (review of #210).
+        keys.core.seed({kind: 'note', text: 'Fifth note', title: 'Fifth note'});
+        keys.core.seed({kind: 'task', text: 'Wind the clock'});
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        const done = projects.locator('[data-item-list] li', {hasText: 'Wind the clock'}).locator('[data-complete]');
+        await done.focus();
+        await projects.locator('[data-item-list]').getByText('Fifth note', {exact: true}).waitFor();
+        assert.equal(await projects.locator('[data-item-list] [data-complete]').count(), 1, 'the task is the only row with a checkbox');
+        await page.keyboard.press('Space');
+        await page.waitForFunction(() => ![...document.querySelectorAll('[data-item-list] li')].some(node => node.textContent.includes('Wind the clock')));
+        assert.match(await focused(), /^open:/, 'the neighbouring row’s first control has the keyboard');
+        // A project row the same way.
+        const shed = keys.core.seedProject('Shed');
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        const removeProject = projects.locator(`[data-remove-project="${shed.id}"]`);
+        await removeProject.focus();
+        await page.keyboard.press('Enter');
+        await removeProject.getByText('Confirm delete', {exact: true}).waitFor();
+        assert.equal(await projects.locator('[data-project-status]').textContent(), 'Press Confirm delete to delete Shed.');
+        await page.keyboard.press('Escape');
+        assert.equal(await removeProject.textContent(), 'Delete', 'Escape disarms a project’s Delete');
+        assert(keys.core.projects.has(shed.id), 'the project is kept');
+      });
+      await page.close();
+
+      // ---- A read that fails is not shown as an empty store ----
+      const failing = createHost();
+      const broken = await install(browser, failing, name);
+      installs.push(broken);
+      failing.core.seed({kind: 'note', text: 'Kept note', title: 'Kept note'});
+      failing.core.seed({kind: 'task', text: 'Kept task'});
+      failing.refuse('items.list', 'Could not read your saved data. Try again.');
+      page = await broken.open(START);
+      await step('a failed read hides counts, lists and empty states, with its error under the capture field', async () => {
+        const today = view(page, 'today'), problem = today.locator('[data-today-problem]');
+        await problem.getByText('Could not read your saved data. Try again.').waitFor();
+        await page.setViewportSize({width: 400, height: 760});
+        await page.screenshot({path: path.join(output, `${name}-today-read-failed.png`), fullPage: true});
+        await page.setViewportSize({width: 1090, height: 760});
+        assert(await today.locator('[data-today-retry]').isVisible(), 'Today offers Try again');
+        assert.equal(await today.locator('[data-today-note]').isVisible(), false, 'Today: no empty Latest note card');
+        assert.equal(await today.locator('[data-today-tasks]').isVisible(), false, 'Today: no Tasks card');
+        assert(await today.locator('[data-today-focus]').isVisible(), 'Today: the focus card, read separately, stays');
+        assert.equal(await today.locator('[data-capture] + .view-row [data-today-problem]').count(), 1, 'Today: the error sits just after the capture form, as in Projects');
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects');
+        await projects.locator('[data-projects-problem]').getByText('Could not read your saved data. Try again.').waitFor();
+        await page.setViewportSize({width: 400, height: 760});
+        await page.screenshot({path: path.join(output, `${name}-projects-read-failed.png`), fullPage: true});
+        await page.setViewportSize({width: 1090, height: 760});
+        assert(await projects.locator('[data-projects-retry]').isVisible(), 'Projects offers Try again');
+        assert.equal(await projects.locator('[data-projects-counts]').isVisible(), false, 'Projects: no counts');
+        assert.equal(await projects.locator('[data-item-empty]').isVisible(), false, 'Projects: no “Nothing here yet.”');
+        assert.equal(await projects.locator('[data-item-list]').isVisible(), false, 'Projects: no list');
+        // Try again after the read works shows them all.
+        failing.lift('items.list');
+        await projects.locator('[data-projects-retry]').click();
+        await projects.locator('[data-item-list]').getByText('Kept note', {exact: true}).waitFor();
+        assert.equal(await projects.locator('[data-projects-counts]').textContent(), '2 of 30 active · 2 of 300 items');
+        assert.equal(await projects.locator('[data-projects-retry]').isVisible(), false);
+        await page.locator('[data-view="today"]').click();
+        await today.locator('[data-today-note-title]').getByText('Kept note', {exact: true}).waitFor();
+        assert(await today.locator('[data-today-tasks]').getByText('Kept task', {exact: true}).isVisible());
+        assert.equal(await today.locator('[data-today-retry]').isVisible(), false);
       });
       await page.close();
       await step('no request left the loopback origin and no page error was raised', async () => {
