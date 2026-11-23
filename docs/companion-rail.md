@@ -6,7 +6,7 @@ The restart's window is a companion rail: a strip of icons that rests against a 
 
 | State | Window | How it starts | How it ends |
 | --- | --- | --- | --- |
-| Strip | 56 by 376, centred on the display's height, 8 from the edge, above other windows, on every workspace, never with the keyboard | Launch; closing the panel; the tray's Show Open Sesame when the rail was off the screen | The tray's Hide Open Sesame takes it off the screen |
+| Strip | 56 by 376, centred on the display's height, 8 from the edge, above other windows, on every workspace, never with the keyboard | Launch, which on macOS leaves the application that was in front there ([#212](https://github.com/OpenCoven/open-sesame/issues/212)); closing the panel; the tray's Show Open Sesame when the rail was off the screen | The tray's Hide Open Sesame takes it off the screen |
 | Peek | 400 wide and the display's work area high, less 8 on each side, without the keyboard | The pointer rests on the strip for about a tenth of a second | The pointer leaves the panel for about a third of a second; a click inside turns it into a panel in use |
 | Panel, open to stay | The same frame, with the keyboard | The shortcut, `open-sesame --toggle`, a second launch, the Dock icon, a click on a view or tool on the strip, the mark at the top of the strip | The same shortcut or command again, Escape, the control in the panel's bar, the mark; losing the keyboard when "Close the panel when it loses focus" is on |
 | Wide panel | 860 wide | A view listed in `wideViews` (Shells) is shown; the control in the bar switches between wide and narrow | Another view is shown |
