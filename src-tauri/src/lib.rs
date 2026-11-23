@@ -71,6 +71,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init());
+    // Not the front application at launch (#212). tao otherwise activates the application when
+    // it finishes launching, over whatever the person is using, which a rail started at login
+    // must not do. With `false` macOS activates it only if no other application is active. The
+    // rail and the ordinary window are non-activating panels that take the keyboard through
+    // panel.rs when a press asks for it, so neither needs the application active first.
+    #[cfg(target_os = "macos")]
+    let builder = builder.activate_ignoring_other_apps(false);
     // Only to register the scheme in a development build (link.rs). It is not registered on
     // macOS, where it would announce every link the system opens as an event the page hears.
     #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
