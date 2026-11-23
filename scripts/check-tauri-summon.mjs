@@ -203,6 +203,10 @@ function fakeBridge(status, answers = {}) {
   // to their own function, and each of the three functions in window.rs decides by its own
   // rule and then acts on the window.
   const tray = read('src-tauri/src/tray.rs');
+  // Issue #212: on macOS the application does not make itself the front application when it
+  // starts, so a rail started at login leaves the keyboard with what the person is doing. Its
+  // windows are non-activating panels that take the keyboard through panel.rs when asked.
+  assert.match(entry, /#\[cfg\(target_os = "macos"\)\]\n    let builder = builder\.activate_ignoring_other_apps\(false\);/);
   assert.match(host, /if event\.state == ShortcutState::Pressed \{\n                pressed\(app\);\n            \}/);
   assert.match(host, /Launch::Toggle => \{\n            window::toggle\(app\);\n        \}/);
   assert.match(tray, /\) = \(cfg!\(windows\), event\)\s*\{\s*summon::tray_clicked\(tray\.app_handle\(\), rect\);/);
