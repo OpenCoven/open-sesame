@@ -3000,6 +3000,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "ureq",
+ "zbus",
  "zbus-secret-service-keyring-store",
 ]
 

@@ -13,6 +13,7 @@ mod layer;
 mod link;
 #[cfg(target_os = "macos")]
 mod panel;
+mod portal;
 mod project;
 mod rail;
 mod router;
