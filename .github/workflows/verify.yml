@@ -94,7 +94,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils
       # Issue #97: the login-shell tests note a missing shell and pass without running. Naming the
       # shells here turns a missing one into a failure on the systems that are meant to have it.
       # zsh and fish are not on the Linux image; fish is not on the macOS image, so its case

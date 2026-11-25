@@ -87,13 +87,84 @@ pub fn opened<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
     }
 }
 
+/// Whether this run registered the scheme, so that only a run that did removes it.
+#[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+static REGISTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// In a development build on Windows and Linux nothing has installed the scheme, so it is
-/// registered here, for the current user, and stays registered after the run ends. A failure
-/// only means callbacks will not arrive.
+/// registered here, for the current user, and removed at a clean exit by [`unregister`]. A
+/// failure only means callbacks will not arrive.
 #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
 pub fn register<R: Runtime>(app: &AppHandle<R>) {
     use tauri_plugin_deep_link::DeepLinkExt;
+    // Set before, since a registration that fails partway may still have written something.
+    REGISTERED.store(true, std::sync::atomic::Ordering::SeqCst);
     let _ = app.deep_link().register_all();
+}
+
+/// Removes, at a clean exit of a development build, the registration [`register`] made in this
+/// run (issue #132, decided on 16 November 2026), so an installed build's callbacks do not go
+/// to this binary after it has gone. A launch that only carried a link and ended before it
+/// registered removes nothing, so a build that is still running keeps its registration. A
+/// build that was killed leaves it, and `src-tauri/AGENTS.md` says how to remove it by hand.
+#[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+pub fn unregister<R: Runtime>(app: &AppHandle<R>) {
+    if REGISTERED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        remove_registration(app);
+    }
+}
+
+#[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+fn remove_registration<R: Runtime>(app: &AppHandle<R>) {
+    // On Windows the plugin's own `unregister` also tries the all-users key an installer
+    // writes, and stops with an error when it cannot remove it, so it is not used there.
+    #[cfg(windows)]
+    {
+        let _ = app;
+        let _ = remove_this_programs_key(SCHEME);
+    }
+    // On Linux it takes only this program's handler out of `mimeapps.list` and out of its own
+    // handler file, and refreshes the desktop database when it changed something.
+    #[cfg(target_os = "linux")]
+    {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        let _ = app.deep_link().unregister(SCHEME);
+    }
+}
+
+/// [`remove_own_key`] for this executable, named as the deep-link plugin's `register` names it.
+#[cfg(all(debug_assertions, windows))]
+fn remove_this_programs_key(scheme: &str) -> windows_registry::Result<bool> {
+    let Ok(exe) = tauri::utils::platform::current_exe() else {
+        return Ok(false);
+    };
+    remove_own_key(scheme, dunce::simplified(&exe))
+}
+
+/// Deletes the current user's key for `scheme` when its command names `exe` as the deep-link
+/// plugin writes it (`"<exe>" "%1"`), and never the all-users key. A key another program
+/// wrote, such as one an installed build or another checkout's development build wrote after
+/// this one, is left. Tauri's NSIS installer in its default per-user mode writes this same key,
+/// which a development run's registration overwrites, so it goes too (issue #220). Returns
+/// whether it deleted the key.
+#[cfg(all(debug_assertions, windows))]
+fn remove_own_key(scheme: &str, exe: &std::path::Path) -> windows_registry::Result<bool> {
+    use windows_registry::CURRENT_USER;
+    let base = format!("Software\\Classes\\{scheme}");
+    let Ok(command) = CURRENT_USER.open(format!("{base}\\shell\\open\\command")) else {
+        return Ok(false);
+    };
+    let ours = format!("\"{}\" \"%1\"", exe.display());
+    // Windows file names are not case-sensitive.
+    if !command
+        .get_string("")
+        .is_ok_and(|named| named.eq_ignore_ascii_case(&ours))
+    {
+        return Ok(false);
+    }
+    drop(command);
+    CURRENT_USER.remove_tree(&base)?;
+    Ok(true)
 }
 
 /// Gives a link to sign-in, and brings the window forward when the browser comes back, since on
@@ -373,5 +444,141 @@ mod tests {
             config["plugins"]["deep-link"]["desktop"]["schemes"],
             json!([SCHEME])
         );
+    }
+
+    /// The scheme a test registers, so it never touches the real one.
+    #[cfg(windows)]
+    fn test_scheme(what: &str) -> String {
+        format!("opensesame-test-{}-{what}", std::process::id())
+    }
+
+    /// Removes the test keys it names when it goes, so a failed assertion leaves none behind.
+    #[cfg(windows)]
+    struct TestKeys(Vec<String>);
+    #[cfg(windows)]
+    impl Drop for TestKeys {
+        fn drop(&mut self) {
+            for scheme in &self.0 {
+                let _ = windows_registry::CURRENT_USER
+                    .remove_tree(format!("Software\\Classes\\{scheme}"));
+            }
+        }
+    }
+
+    /// On Windows only the current user's key is removed, and only when its command names this
+    /// executable: a key the deep-link plugin's own `register` wrote for this test program goes,
+    /// a key that names another program, such as an installed build's, is left, and a missing key
+    /// is no error.
+    #[cfg(windows)]
+    #[test]
+    fn a_clean_exit_removes_only_this_programs_key_on_windows() {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        use windows_registry::CURRENT_USER;
+        let (ours, theirs) = (test_scheme("ours"), test_scheme("theirs"));
+        let _keys = TestKeys(vec![ours.clone(), theirs.clone()]);
+        let app = mock_builder()
+            .plugin(tauri_plugin_deep_link::init())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        app.deep_link().register(&ours).unwrap();
+        let base = format!("Software\\Classes\\{ours}");
+        assert!(CURRENT_USER.open(&base).is_ok(), "the plugin wrote the key");
+        assert!(remove_this_programs_key(&ours).unwrap());
+        assert!(
+            CURRENT_USER.open(&base).is_err(),
+            "this program's key is gone"
+        );
+        let base = format!("Software\\Classes\\{theirs}");
+        CURRENT_USER
+            .create(format!("{base}\\shell\\open\\command"))
+            .unwrap()
+            .set_string("", r#""C:\Program Files\Open Sesame\open-sesame.exe" "%1""#)
+            .unwrap();
+        assert!(!remove_this_programs_key(&theirs).unwrap());
+        assert!(
+            CURRENT_USER.open(&base).is_ok(),
+            "another program's key is left"
+        );
+        assert!(!remove_this_programs_key(&test_scheme("none")).unwrap());
+    }
+
+    /// On Linux the deep-link plugin's own `unregister` takes the handler its `register` wrote
+    /// out of `mimeapps.list` and out of the handler file, and leaves every other line. It runs
+    /// in a child test process with a cleared environment, so the folders it uses are set for it
+    /// alone and `xdg-mime` takes its generic path.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_clean_exit_removes_this_programs_handler_on_linux() {
+        let home = tempfile::tempdir().unwrap();
+        let (data, config) = (home.path().join("data"), home.path().join("config"));
+        let exe = std::env::current_exe().unwrap();
+        let handler = format!(
+            "{}-handler.desktop",
+            exe.file_name().unwrap().to_string_lossy()
+        );
+        std::fs::create_dir_all(data.join("applications")).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let desktop = data.join("applications").join(&handler);
+        std::fs::write(
+            &desktop,
+            format!("[Desktop Entry]\nType=Application\nName=Open Sesame\nExec=\"{}\" %u\nMimeType=text/plain;\n", exe.display()),
+        )
+        .unwrap();
+        let mimeapps = config.join("mimeapps.list");
+        std::fs::write(
+            &mimeapps,
+            "[Default Applications]\nx-scheme-handler/https=firefox.desktop\n",
+        )
+        .unwrap();
+        let status = std::process::Command::new(&exe)
+            .args([
+                "--exact",
+                "link::tests::unregister_in_this_process",
+                "--ignored",
+                "--test-threads=1",
+            ])
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", home.path())
+            .env("XDG_DATA_HOME", &data)
+            .env("XDG_CONFIG_HOME", &config)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let left = std::fs::read_to_string(&mimeapps).unwrap();
+        assert!(!left.contains("x-scheme-handler/opensesame"), "{left}");
+        assert!(
+            left.contains("x-scheme-handler/https=firefox.desktop"),
+            "{left}"
+        );
+        let file = std::fs::read_to_string(&desktop).unwrap();
+        assert!(!file.contains("x-scheme-handler/opensesame"), "{file}");
+        assert!(file.contains("text/plain"), "{file}");
+    }
+
+    /// Run only by the test above, in its own process.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "run by a_clean_exit_removes_this_programs_handler_on_linux in its own process"]
+    fn unregister_in_this_process() {
+        use tauri_plugin_deep_link::DeepLinkExt;
+        let app = mock_builder()
+            .plugin(tauri_plugin_deep_link::init())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let mimeapps = std::env::var("XDG_CONFIG_HOME").unwrap() + "/mimeapps.list";
+        let registered = || {
+            std::fs::read_to_string(&mimeapps)
+                .unwrap()
+                .contains("x-scheme-handler/opensesame=")
+        };
+        // What a development build's start does, through the plugin itself.
+        app.deep_link().register(SCHEME).unwrap();
+        assert!(registered(), "the plugin registered the handler");
+        // A run that did not register removes nothing.
+        unregister(app.handle());
+        assert!(registered(), "a run that did not register removed it");
+        REGISTERED.store(true, std::sync::atomic::Ordering::SeqCst);
+        unregister(app.handle());
     }
 }

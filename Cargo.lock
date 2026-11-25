@@ -2983,6 +2983,7 @@ dependencies = [
 name = "open-sesame"
 version = "0.1.0"
 dependencies = [
+ "dunce",
  "gtk",
  "keyring",
  "keyring-core",
@@ -3000,6 +3001,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "ureq",
+ "windows-registry",
  "zbus-secret-service-keyring-store",
 ]
 
