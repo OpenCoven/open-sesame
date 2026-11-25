@@ -216,10 +216,37 @@ function fakeBridge(status, answers = {}) {
   assert.match(window, /pub fn toggle_at<R: Runtime>\(app: &AppHandle<R>, icon: tauri::Rect\) -> Option<summon::Press> \{\n    \/\/ The rail has its own place; a click on the icon opens or closes its panel\.\n    if rail::active\(app\) \{\n        return Some\(rail::toggle\(app\)\);\n    \}\n    let window = app\.get_webview_window\(MAIN_WINDOW\)\?;\n    let press = summon::press_on\(app, &window\);\n    let kept_in_place =\n        window\.is_fullscreen\(\)\.unwrap_or\(false\) \|\| window\.is_maximized\(\)\.unwrap_or\(false\);\n    if places\(press, kept_in_place\) \{\n        let _ = place_against\(&window, icon\);\n    \}\n    let _ = act\(&window, press\);\n    Some\(press\)\n\}/);
   assert.match(tray, /button_state: MouseButtonState::Down,\n[^}]*\}\s*= &event\s*\{\s*if summon::opens_the_tray_menu\(cfg!\(windows\), \*button == MouseButton::Right\) \{\s*summon::tray_pressed\(tray\.app_handle\(\)\);/);
   assert.match(tray, /TOGGLE => \{\s*window::toggle_from_tray_menu\(app\);/);
+  // The item's label (issue #115, 18 November): the Rust tests set it on a mock item, and these
+  // are the places it is refreshed that a windowless test cannot reach.
+  assert.match(tray, /summon::tray_pressed\(tray\.app_handle\(\)\);\s*refresh\(tray\.app_handle\(\)\);\s*(?:\/\/[^\n]*\n\s*)*if !crate::rail::active\(tray\.app_handle\(\)\) \{\s*refresh_after\(tray\.app_handle\(\), summon::TRAY_MENU_OPEN\);/);
+  assert.match(tray, /window::toggle_from_tray_menu\(app\);\s*refresh\(app\);/);
+  assert.match(tray, /summon::tray_clicked\(tray\.app_handle\(\), rect\);\s*refresh\(tray\.app_handle\(\)\);/);
+  assert.match(tray, /let toggle = manage_item\(app\)\?;/);
+  assert.equal(tray.split('Show or Hide').length - 1, 0, 'The tray item names one outcome');
+  assert.match(window, /WindowEvent::Focused\(focused\) => \{[^}]*\}\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*crate::tray::refresh\(handle\.app_handle\(\)\);\s*(?:\/\/[^\n]*\n\s*)*if !focused && !rail::active\(handle\.app_handle\(\)\) \{\s*crate::tray::refresh_after\(handle\.app_handle\(\), summon::TRAY_MENU_GRACE\);/);
+  // Every press on the ordinary window ends in `act`, and showing and hiding it refresh too: a
+  // focus event does not follow every press (on X11 the key grab took the keyboard first).
+  assert.match(window, /    let acted = if conceals\(press\) \{\n        conceal\(window\)\n    \} else \{\n        focus\(window\)\n    \};\n(?:\s*\/\/[^\n]*\n)*\s*crate::tray::refresh\(window\.app_handle\(\)\);\n    acted\n\}/);
+  assert.match(window, /let _ = focus\(&window\);\n    \}\n    crate::tray::refresh\(app\);\n\}/);
+  assert.match(window, /let _ = conceal\(&window\);\n    \}\n    crate::tray::refresh\(app\);\n\}/);
+  const rail = read('src-tauri/src/rail.rs');
+  // The rail is on screen from the moment it exists (`Rail::new`), and the item was labelled
+  // before that, so the label is refreshed as soon as the rail is kept.
+  assert.match(rail, /    app\.manage\(rail\);\n(?:\s*\/\/[^\n]*\n)*\s*crate::tray::refresh\(app\);\n    if presentation != Presentation::Rail \{/);
+  // After that, a request moves it on or off the screen in two places, and each refreshes the
+  // label once the rail's lock is released: `rail::shown` takes the same lock.
+  const shownWrites = [...rail.matchAll(/state\.shown = /g)].map((match) => match.index);
+  assert.equal(shownWrites.length, 2, 'A request moves the rail on or off the screen in two places');
+  for (const at of shownWrites) {
+    const released = rail.indexOf('\n        };\n', at);
+    const end = rail.indexOf('\n    });\n', at);
+    const refreshed = rail.indexOf('crate::tray::refresh(app);', at);
+    assert.ok(released > at && refreshed > released && refreshed < end, 'Each change of the rail on screen refreshes the tray label after the lock is released');
+  }
   assert.match(host, /fn pressed<R: Runtime>\(app: &AppHandle<R>\) -> Option<Press> \{\n    if blur_just_hid\(app\) \{\n        return None;\n    \}\n    window::toggle\(app\)\n\}/);
   assert.match(host, /pub fn tray_clicked<R: Runtime>\(app: &AppHandle<R>, icon: tauri::Rect\) -> Option<Press> \{\n    if blur_just_hid\(app\) \{\n        return None;\n    \}\n    window::toggle_at\(app, icon\)\n\}/);
   assert.match(host, /pub fn blurred<R: Runtime>\(app: &AppHandle<R>\) \{\n    let Some\(summon\) = app\.try_state::<Summon>\(\) else \{\n        return;\n    \};\n    \*lock\(&summon\.lost_focus\) = Some\(Instant::now\(\)\);/);
-  assert.match(window, /    if conceals\(press\) \{\n        conceal\(window\)\n    \} else \{\n        focus\(window\)\n    \}/);
+  assert.match(window, /    let acted = if conceals\(press\) \{\n        conceal\(window\)\n    \} else \{\n        focus\(window\)\n    \};/);
   assert.match(window, /    if places\(press, kept_in_place\) \{\n        let _ = place_against\(&window, icon\);\n    \}/);
   assert.equal(window.split('place_against(&window').length - 1, 1, 'The window is moved against the tray icon in one place');
   // The folder dialog (issue #74) takes the focus on purpose, so it holds the window first.
@@ -251,7 +278,7 @@ function fakeBridge(status, answers = {}) {
   assert.match(layerSource, /if surface\.is_realized\(\) \{\n        return false;\n    \}/, 'A window that already has a surface is not docked');
   assert.match(layerSource, /"OPEN_SESAME_LAYER_SHELL"\)\.as_deref\(\) == Ok\("off"\)/, 'The ordinary window can be asked for');
   assert.equal(/gtk_layer_/.test(railSource), false, 'Every gtk-layer-shell call is in layer.rs');
-  assert.match(railSource, /app\.manage\(rail\);\n    if presentation != Presentation::Rail \{\n        return;\n    \}/, 'The ordinary window starts no pointer thread');
+  assert.match(railSource, /app\.manage\(rail\);\n(?:    \/\/[^\n]*\n)*    crate::tray::refresh\(app\);\n    if presentation != Presentation::Rail \{\n        return;\n    \}/, 'The ordinary window starts no pointer thread');
   assert.match(railSource, /"rail\.set" => \{\n            \/\/ The ordinary window has nothing to set\.\n            if !rail\.is_rail\(\) \{\n                return Err\(BridgeError::from\(NOT_ON_OS\)\);/, 'rail.set is refused for the ordinary window');
   // A page that loads takes none of the old page's holds with it (issue #115). The rule is for
   // every build. This reads text and cannot show that the call runs, and nothing else in the

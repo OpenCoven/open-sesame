@@ -421,7 +421,8 @@ impl Settings {
 
 #[derive(Debug, Clone, Default)]
 struct State {
-    /// Whether the rail is on screen at all; the tray's Show or Hide changes it.
+    /// Whether the rail is on screen at all; the tray's Show Open Sesame or Hide Open Sesame
+    /// changes it.
     shown: bool,
     expanded: bool,
     held: bool,
@@ -595,6 +596,8 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, presentation: Presentation) {
     #[cfg(target_os = "linux")]
     let edge = lock(&rail.settings).edge;
     app.manage(rail);
+    // The tray's item was labelled before the rail existed, by the ordinary window's rule.
+    crate::tray::refresh(app);
     if presentation != Presentation::Rail {
         return;
     }
@@ -649,6 +652,12 @@ pub fn stop<R: Runtime>(app: &AppHandle<R>) {
 /// Whether the window is the rail.
 pub fn active<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.try_state::<Rail>().is_some_and(|rail| rail.is_rail())
+}
+
+/// Whether the window is the rail and it is on screen, as the strip or with its panel open.
+pub fn shown<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<Rail>()
+        .is_some_and(|rail| rail.is_rail() && lock(&rail.state).shown)
 }
 
 /// Whether the window is the rail and its panel is not open: the strip, or nothing on screen.
@@ -1149,6 +1158,8 @@ fn open_as<R: Runtime>(app: &AppHandle<R>, summoned: bool) {
                 Focus::Take
             },
         );
+        // The strip may have been off the screen, so the tray's item now hides it.
+        crate::tray::refresh(app);
     });
 }
 
@@ -1222,6 +1233,7 @@ pub fn toggle_shown<R: Runtime>(app: &AppHandle<R>) -> summon::Press {
             );
         }
         settle(app, Focus::Leave);
+        crate::tray::refresh(app);
     });
     if was_shown {
         summon::Press::Hide
@@ -1353,6 +1365,22 @@ impl Change {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tray's item is labelled by the rail's own state once the rail exists (issue #115):
+    /// the strip on screen reads Hide, a rail taken off the screen reads Show.
+    #[test]
+    fn the_tray_label_follows_whether_the_rail_is_on_screen() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let handle = app.handle();
+        let item = crate::tray::manage_item(handle).unwrap();
+        app.manage(Rail::new(Presentation::Rail, None));
+        crate::tray::refresh(handle);
+        assert_eq!(item.text().unwrap(), "Hide Open Sesame");
+        lock(&app.state::<Rail>().state).shown = false;
+        crate::tray::refresh(handle);
+        assert_eq!(item.text().unwrap(), "Show Open Sesame");
+    }
 
     const AREA: Rect = Rect {
         x: 0.0,

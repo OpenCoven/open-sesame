@@ -90,6 +90,13 @@ pub fn create_main(app: &AppHandle, presentation: Presentation) -> tauri::Result
             if !focused && changed {
                 summon::blurred(handle.app_handle());
             }
+            // What the tray's item does next turns on whether the window has the keyboard, and
+            // on Linux on how long ago it lost it.
+            crate::tray::refresh(handle.app_handle());
+            // The rail's label does not change with time.
+            if !focused && !rail::active(handle.app_handle()) {
+                crate::tray::refresh_after(handle.app_handle(), summon::TRAY_MENU_GRACE);
+            }
         }
         _ => {}
     });
@@ -192,6 +199,7 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = focus(&window);
     }
+    crate::tray::refresh(app);
 }
 
 /// Hides the window. The rail closes its panel to the strip, which stays.
@@ -202,6 +210,7 @@ pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = conceal(&window);
     }
+    crate::tray::refresh(app);
 }
 
 fn conceal<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
@@ -246,6 +255,20 @@ pub fn toggle_from_tray_menu<R: Runtime>(app: &AppHandle<R>) -> Option<summon::P
     Some(press)
 }
 
+/// What choosing the tray's menu item would do now, for its label (`tray::refresh`): the
+/// rule of [`toggle_from_tray_menu`], without acting and without using up the noted press.
+pub fn tray_item_next<R: Runtime>(app: &AppHandle<R>) -> Option<summon::Press> {
+    if rail::active(app) {
+        return Some(if rail::shown(app) {
+            summon::Press::Hide
+        } else {
+            summon::Press::Show
+        });
+    }
+    let window = app.get_webview_window(MAIN_WINDOW)?;
+    Some(summon::tray_item_next(app, &window))
+}
+
 /// Whether a press ends with the window out of sight. Only `Hide` does: a window that is open
 /// but behind is brought to the front, never hidden (issue #115).
 fn conceals(press: summon::Press) -> bool {
@@ -266,11 +289,16 @@ fn act<R: Runtime>(window: &WebviewWindow<R>, press: summon::Press) -> tauri::Re
     // Development evidence of which of the three a press was.
     #[cfg(debug_assertions)]
     eprintln!("open-sesame: press {press:?}");
-    if conceals(press) {
+    let acted = if conceals(press) {
         conceal(window)
     } else {
         focus(window)
-    }
+    };
+    // Every press on the ordinary window ends here: the shortcut, `--toggle`, the tray's item
+    // and the Windows click. A focus event may not follow, as on X11, where the key grab has
+    // already taken the keyboard before the press arrives.
+    crate::tray::refresh(window.app_handle());
+    acted
 }
 
 /// The tray popover: hides the window if it is in front and brings it to the front where it is
