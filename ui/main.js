@@ -8,6 +8,7 @@ import { createLifecycle } from './lifecycle.js';
 import { createPreferences } from './preferences.js';
 import { mountRail } from './rail.js';
 import { holdDuringDrag, mountSummon } from './summon.js';
+import { mountAttention } from './attention-settings.js';
 import { PANEL_SHOWN } from './widgets/view-kit.js';
 import { mountContextMenu } from './context-menu.js';
 
@@ -382,6 +383,18 @@ function mountHostSettings() {
     input: section.querySelector('#summon-shortcut'),
     message: section.querySelector('[data-summon-message]'),
     blur: section.querySelector('[data-summon-blur]'),
+  });
+  const agents = hostSettings.querySelector('[data-attention]');
+  mountAttention(bridge, {
+    section: agents,
+    summary: agents.querySelector('[data-attention-summary]'),
+    preview: agents.querySelector('[data-attention-preview]'),
+    install: agents.querySelector('[data-attention-install]'),
+    remove: agents.querySelector('[data-attention-remove]'),
+    path: agents.querySelector('[data-attention-path]'),
+    change: agents.querySelector('[data-attention-change]'),
+    notify: agents.querySelector('[data-attention-notify]'),
+    message: agents.querySelector('[data-attention-message]'),
   });
   holdDuringDrag(bridge, document);
   // The bar names the account state too, so it follows the host's changes as the account does.
