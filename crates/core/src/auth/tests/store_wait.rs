@@ -52,6 +52,10 @@ fn waiter() -> (Held, Arc<dyn Fn() + Send + Sync>) {
     (Held { entered, gate }, hook)
 }
 
+#[cfg(target_os = "linux")]
+const WAITING: &str =
+    "Waiting for your system keyring. If it is asking for your password, answer it and this will finish.";
+#[cfg(not(target_os = "linux"))]
 const WAITING: &str =
     "Waiting for your system keychain. If it is asking for your password, answer it and this will finish.";
 /// A store call is said to be waited for after this long, in the tests that look at that.
@@ -254,7 +258,7 @@ fn a_save_that_never_returns_is_given_up_at_the_limit() {
         "the sign-in returned after {took:?}"
     );
     assert!(!rig.auth.authenticated());
-    assert!(rig.message().contains("system keychain"));
+    assert!(rig.message().contains(STORE));
     assert_ne!(rig.message(), WAITING);
     assert_eq!(rig.status()["busy"], json!(false));
     assert_eq!(rig.store.saves.load(Ordering::SeqCst), 1);
@@ -262,7 +266,7 @@ fn a_save_that_never_returns_is_given_up_at_the_limit() {
     // While that call is out no sign-in is begun, so the store is not asked again.
     assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
     assert!(!rig.auth.authenticated());
-    assert!(rig.message().contains("system keychain"));
+    assert!(rig.message().contains(STORE));
     assert_eq!(
         rig.store.saves.load(Ordering::SeqCst),
         1,
@@ -690,14 +694,94 @@ fn a_removal_owed_that_panics_does_not_leave_a_call_out() {
     until_the_store_is_asked_again(&rig);
 }
 
-/// The removal of a session the server ended is owed in the same way as a sign-out's. What
-/// is removed is whatever is saved when the call given up returns: here the second sign-in,
-/// whose save the person was told had failed.
-#[test]
-fn an_ended_sessions_removal_is_owed_while_a_call_given_up_is_out() {
-    let rig = rig_with(Some((SOON, SHORT)));
+const SIGNED_OUT: &str = "Signed out on this computer.";
+const NOT_REMOVED: &str =
+    "Signed out. The saved credential could not be removed; sign in again to replace it.";
+
+/// A refresh's replacement whose save is given up at the limit, and a Sign out while it is
+/// still out, so that the removal is owed. `later` runs at each write after the first, which is
+/// where the owed removal comes. Returns the store's gate and how many changes had been
+/// announced when it was opened.
+fn a_removal_owed_by_a_sign_out(rig: &Rig, later: impl Fn() + Send + Sync + 'static) -> Held {
     rig.sign_in();
-    let held = hold_writes(&rig);
+    rig.advance(240);
+    reply(rig, "refresh-two");
+    let held = hold_first_write(rig, later);
+    held.open_when_too_long();
+    rig.auth.refresh();
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    assert_eq!(rig.message(), NOT_REMOVED);
+    held
+}
+
+/// Until the call that was given up has returned and what it owed has been done.
+fn until_nothing_is_out(rig: &Rig) {
+    until("the call that was given up returns", || {
+        !rig.auth.store_given_up()
+    });
+}
+
+/// #153 item 1: when the removal owed is made after all, the status says so, and the change is
+/// announced. It used to go on saying the credential could not be removed, with no change
+/// announced to the page.
+#[test]
+fn an_owed_removal_that_is_made_says_so_and_is_announced() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_removal_owed_by_a_sign_out(&rig, || ());
+    let before = rig.changes.load(Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
+    assert!(
+        rig.changes.load(Ordering::SeqCst) > before,
+        "the end of the removal was not announced"
+    );
+}
+
+/// And when it fails the status goes on saying the credential could not be removed, which is
+/// now true, and the change is announced all the same.
+#[test]
+fn an_owed_removal_that_fails_says_so_and_is_announced() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_removal_owed_by_a_sign_out(&rig, || ());
+    rig.store.fail_delete.store(true, Ordering::SeqCst);
+    let before = rig.changes.load(Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-two"));
+    assert_eq!(rig.message(), NOT_REMOVED);
+    assert!(
+        rig.changes.load(Ordering::SeqCst) > before,
+        "the end of the removal was not announced"
+    );
+}
+
+/// While the owed removal itself waits, as it does at a locked keyring's prompt, the status
+/// says the keychain is being waited for, as it does for any other store call.
+#[test]
+fn the_status_says_the_keychain_is_waited_for_while_an_owed_removal_waits() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let (second, hook) = waiter();
+    second.open_when_too_long();
+    let held = a_removal_owed_by_a_sign_out(&rig, move || hook());
+    held.open();
+    second.entered();
+    until("the status says the keychain is waited for", || {
+        rig.message() == WAITING
+    });
+    second.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
+}
+
+/// A person signed in as A signs in again as B, and B's save is given up; then the server ends
+/// A, so a removal is owed for a session the server ended. Returns the store's gate, with B's
+/// save still out.
+fn a_removal_owed_because_the_server_ended_an_earlier_session(rig: &Rig) -> Held {
+    rig.sign_in();
+    let held = hold_writes(rig);
     held.open_when_too_long();
     rig.api
         .exchanges
@@ -706,7 +790,7 @@ fn an_ended_sessions_removal_is_owed_while_a_call_given_up_is_out() {
         .push(Ok(tokens(jwt(&claims()), "refresh-b")));
     let callback = rig.begin();
     rig.auth.complete_sign_in(&callback);
-    assert_eq!(rig.auth.begin_sign_in(), Err(AuthError::StoreBusy));
+    assert!(rig.auth.store_given_up(), "B's save was not given up");
     rig.advance(240);
     rig.api
         .refreshes
@@ -714,13 +798,116 @@ fn an_ended_sessions_removal_is_owed_while_a_call_given_up_is_out() {
         .unwrap()
         .push(Err(AuthError::Ended));
     rig.auth.refresh();
+    assert_eq!(*rig.api.refresh_calls.lock().unwrap(), ["refresh-one"]);
+    assert!(!rig.auth.authenticated());
     assert!(rig.message().contains("ended"), "{}", rig.message());
-    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    held
+}
+
+/// #153 item 2, decided on 18 November 2026: the person's last action wins. The removal was
+/// owed because the server ended an earlier session, and the save that lands is the later
+/// sign-in the person made: it is kept, and restored at the next launch, as it was before #151.
+#[test]
+fn a_later_sign_in_that_lands_after_an_ended_sessions_removal_was_owed_is_kept() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_removal_owed_because_the_server_ended_an_earlier_session(&rig);
     held.open();
-    until_the_store_is_asked_again(&rig);
-    assert_eq!(
-        rig.store.saved(),
-        None,
-        "the removal for the ended session was not owed"
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-b"));
+}
+
+/// A Sign out after that is the person's last action: what lands is removed.
+#[test]
+fn a_sign_out_after_an_ended_sessions_removal_was_owed_removes_what_lands() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_removal_owed_because_the_server_ended_an_earlier_session(&rig);
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
+}
+
+/// From the review of #206: Sign out's own removal can be the call that is given up, at a
+/// keyring prompt left open past the limit. When it then returns having removed the
+/// credential, the status says so and the change is announced, as for a removal owed.
+#[test]
+fn a_sign_outs_own_removal_given_up_and_then_made_says_so_and_is_announced() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    assert!(rig.auth.store_given_up(), "the removal was not given up");
+    assert_eq!(rig.message(), NOT_REMOVED);
+    let before = rig.changes.load(Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
+    assert!(
+        rig.changes.load(Ordering::SeqCst) > before,
+        "the end of the removal was not announced"
     );
+}
+
+/// And when it returns having failed, the sentence stays, which is then true, and the change
+/// is announced all the same.
+#[test]
+fn a_sign_outs_own_removal_given_up_and_then_failed_says_so_and_is_announced() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    rig.sign_in();
+    let held = hold_writes(&rig);
+    held.open_when_too_long();
+    assert_eq!(rig.auth.sign_out_now(|_| ()), Ok(()));
+    assert!(rig.auth.store_given_up(), "the removal was not given up");
+    rig.store.fail_delete.store(true, Ordering::SeqCst);
+    let before = rig.changes.load(Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
+    assert_eq!(rig.message(), NOT_REMOVED);
+    assert!(
+        rig.changes.load(Ordering::SeqCst) > before,
+        "the end of the removal was not announced"
+    );
+}
+
+/// From the review of #206: item 2 keeps only a save that landed. When the removal was owed
+/// for a session the server ended and the later sign-in's save fails after all, the dead
+/// session's credential is still removed.
+#[test]
+fn an_ended_sessions_removal_is_made_when_the_later_save_does_not_land() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let held = a_removal_owed_because_the_server_ended_an_earlier_session(&rig);
+    rig.store.fail_save.store(true, Ordering::SeqCst);
+    held.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+}
+
+/// From the review of #206: an owed removal that itself waits past the limit stops saying the
+/// keychain is waited for and says the credential could not be removed, until it returns.
+#[test]
+fn an_owed_removal_that_waits_past_the_limit_stops_saying_it_waits() {
+    let rig = rig_with(Some((SOON, SHORT)));
+    let (second, hook) = waiter();
+    second.open_when_too_long();
+    let held = a_removal_owed_by_a_sign_out(&rig, move || hook());
+    held.open();
+    second.entered();
+    until("the status says the keychain is waited for", || {
+        rig.message() == WAITING
+    });
+    until("the status stops saying it at the limit", || {
+        rig.message() == NOT_REMOVED
+    });
+    assert!(
+        rig.auth.store_given_up(),
+        "the owed removal let other calls through"
+    );
+    second.open();
+    until_nothing_is_out(&rig);
+    assert_eq!(rig.store.saved(), None);
+    assert_eq!(rig.message(), SIGNED_OUT);
 }

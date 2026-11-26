@@ -45,7 +45,7 @@ fn refresh_retries_saving_the_replacement_before_another_exchange() {
     rig.auth.refresh();
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
-    assert!(rig.message().contains("system keychain"));
+    assert!(rig.message().contains(STORE));
     for _ in 0..3 {
         rig.auth.refresh();
     }
@@ -236,7 +236,7 @@ fn new_sign_in_fails_over_an_unsaved_restore() -> Rig {
     let callback = callback.lock().unwrap().clone();
     rig.auth.complete_sign_in(&callback);
     assert!(!rig.auth.authenticated());
-    assert!(rig.message().contains("system keychain"));
+    assert!(rig.message().contains(STORE));
     assert_eq!(rig.store.saved().as_deref(), Some("refresh-one"));
     assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
     rig
@@ -368,7 +368,7 @@ fn a_session_that_runs_out_before_the_save_says_expired_and_is_renewed() {
     for _ in 0..2 {
         rig.advance(20);
         rig.auth.refresh();
-        assert!(rig.message().contains("system keychain"));
+        assert!(rig.message().contains(STORE));
     }
     rig.advance(20); // 300 seconds after the sign-in: the session's deadline.
     rig.store.fail_save.store(false, Ordering::SeqCst);
@@ -419,7 +419,7 @@ fn failed_refresh_save_remains_visible_after_the_last_verified_session_expires()
     rig.auth.refresh();
     rig.advance(301);
     assert!(!rig.auth.authenticated());
-    assert!(rig.message().contains("system keychain"));
+    assert!(rig.message().contains(STORE));
 }
 
 #[test]
@@ -877,7 +877,7 @@ fn a_save_refused_once_more_changes_neither_sentence() {
     for (rig, sentence) in [(cancelled, "Sign-in cancelled."), (failed, EARLIER_SAVED)] {
         rig.advance(20);
         rig.auth.refresh();
-        assert!(rig.message().contains("system keychain"), "{sentence}");
+        assert!(rig.message().contains(STORE), "{sentence}");
         assert_eq!(rig.auth.next_refresh_in(), Some(Duration::from_secs(20)));
         the_earlier_credential_is_saved_and_nothing_else(&rig);
         assert_eq!(rig.message(), sentence);
