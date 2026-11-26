@@ -40,12 +40,24 @@ export function mountAccount(bridge, parts) {
   const { section, title, detail, signIn, cancel, signOut } = parts;
   let busy = false;
 
+  // The sentence is read out when it changes (issue #198): a refusal as an alert, anything else
+  // politely. The role is set before the words so the new sentence is announced in its own role.
   const say = (sentence, warn) => {
+    detail.setAttribute('role', warn ? 'alert' : 'status');
     detail.textContent = sentence;
     detail.dataset.warn = warn ? 'true' : 'false';
   };
 
+  const buttons = [signIn, cancel, signOut];
+  const focused = () => {
+    const active = section.ownerDocument?.activeElement;
+    return Boolean(active && section.contains?.(active));
+  };
+
+  // When a status hides the button the person pressed, the keyboard moves to the button that
+  // took its place, not to the page (issue #197). Focus elsewhere in the window is left alone.
   const show = status => {
+    const held = focused();
     const view = describe(status);
     section.dataset.state = view.state;
     title.textContent = view.title;
@@ -54,16 +66,21 @@ export function mountAccount(bridge, parts) {
     cancel.hidden = !view.cancel;
     signOut.hidden = !view.signOut;
     section.hidden = false;
+    if (!held) return;
+    const active = section.ownerDocument.activeElement;
+    if (active && section.contains(active) && !active.hidden) return;
+    buttons.find(button => !button.hidden)?.focus();
   };
 
   const refresh = () => bridge.request('auth.status').then(show);
 
   // One request at a time. Whatever the host answers, the control then shows the host's status,
-  // with the host's own sentence on top when it refused.
+  // with the host's own sentence on top when it refused. A pending request marks the buttons
+  // aria-disabled rather than disabled, so the pressed button keeps the keyboard (issue #197).
   const act = async method => {
     if (busy) return;
     busy = true;
-    for (const button of [signIn, cancel, signOut]) button.disabled = true;
+    for (const button of buttons) button.setAttribute('aria-disabled', 'true');
     let refusal = '';
     try {
       await bridge.request(method);
@@ -72,7 +89,7 @@ export function mountAccount(bridge, parts) {
     }
     await refresh().catch(() => {});
     if (refusal) say(refusal, true);
-    for (const button of [signIn, cancel, signOut]) button.disabled = false;
+    for (const button of buttons) button.removeAttribute('aria-disabled');
     busy = false;
   };
 

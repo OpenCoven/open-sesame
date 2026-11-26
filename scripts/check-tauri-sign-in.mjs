@@ -15,15 +15,27 @@ const read = file => readFileSync(path.join(root, file), 'utf8');
 const strip = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const { describe, mountAccount, CHANGED_EVENT, LOCAL } = await import(pathToFileURL(path.join(root, 'ui/account.js')));
 
-const element = () => {
+// The stand-in elements share one stand-in document, so the control can see and move focus.
+const element = doc => {
   const listeners = new Map();
-  return {
-    hidden: true, disabled: false, textContent: '', dataset: {},
+  const attributes = new Map();
+  const self = {
+    hidden: true, disabled: false, textContent: '', dataset: {}, ownerDocument: doc,
+    setAttribute: (name, value) => { attributes.set(name, String(value)); },
+    removeAttribute: name => { attributes.delete(name); },
+    getAttribute: name => (attributes.has(name) ? attributes.get(name) : null),
+    focus: () => { doc.activeElement = self; },
     addEventListener: (name, run) => { listeners.set(name, [...(listeners.get(name) || []), run]); },
     fire: (name, event = {}) => { for (const run of listeners.get(name) || []) run(event); },
   };
+  return self;
 };
-const parts = () => ({ section: element(), title: element(), detail: element(), signIn: element(), cancel: element(), signOut: element() });
+const parts = () => {
+  const doc = { activeElement: null };
+  const ui = { doc, section: element(doc), title: element(doc), detail: element(doc), signIn: element(doc), cancel: element(doc), signOut: element(doc) };
+  ui.section.contains = node => node === ui.section || [ui.title, ui.detail, ui.signIn, ui.cancel, ui.signOut].includes(node);
+  return ui;
+};
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const SIGNED_OUT = { authenticated: false, busy: false, message: '', name: '', email: '' };
 
@@ -91,10 +103,17 @@ function fakeBridge(status, answers = {}) {
   });
   const ui = parts();
   await mountAccount(bridge, ui);
+  ui.signIn.focus();
   ui.signIn.fire('click');
+  // While the request is pending the buttons say so without being disabled, so the pressed
+  // button keeps the keyboard (issue #197).
+  assert.equal(ui.signIn.getAttribute('aria-disabled'), 'true', 'Pending, Sign in is marked unavailable');
+  assert.equal(ui.signIn.disabled, false, 'Pending, Sign in is not disabled, so it keeps focus');
   ui.signIn.fire('click');
   await settle();
   assert.equal(bridge.calls.filter(call => call.method === 'auth.signIn').length, 1, 'A second press while the first is in flight sends nothing');
+  assert.equal(ui.signIn.getAttribute('aria-disabled'), null, 'Answered, nothing is marked unavailable');
+  assert.equal(ui.doc.activeElement, ui.cancel, 'Sign in was hidden under the keyboard, so Cancel sign-in has it');
   assert.equal(ui.section.dataset.state, 'signing-in');
   assert.equal(ui.detail.textContent, 'Finish signing in in your browser.');
   assert.equal(ui.signIn.hidden, true);
@@ -107,6 +126,7 @@ function fakeBridge(status, answers = {}) {
   assert.equal(ui.signOut.hidden, false);
   assert.equal(ui.cancel.hidden, true);
   assert.equal(bridge.calls.length, before, 'An event is shown as it arrives');
+  assert.equal(ui.doc.activeElement, ui.signOut, 'Signed in, the keyboard is on Sign out');
 
   // Other host messages, and an event with no status, change nothing.
   bridge.send({ event: 'terminal.exit', status: SIGNED_OUT });
@@ -115,9 +135,14 @@ function fakeBridge(status, answers = {}) {
   assert.equal(ui.section.dataset.state, 'signed-in');
 
   // The session lapsing, for example with the network away, is one more event.
+  // Focus outside the control stays where the person put it when the status changes.
+  const elsewhere = {};
+  ui.doc.activeElement = elsewhere;
   bridge.send({ event: CHANGED_EVENT, status: { ...SIGNED_OUT, message: 'Your session expired. Sign in again to use your account.' } });
   assert.equal(ui.section.dataset.state, 'signed-out');
   assert.equal(ui.signIn.hidden, false);
+  assert.equal(ui.doc.activeElement, elsewhere, 'A change from the host does not take the keyboard from elsewhere');
+  assert.equal(ui.detail.getAttribute('role'), 'status', 'An ordinary sentence is announced politely');
 }
 
 // 4. Cancel and sign out each ask the host once and show what it then reports.
@@ -150,11 +175,14 @@ function fakeBridge(status, answers = {}) {
   const bridge = fakeBridge({}, { 'auth.signIn': () => { throw new Error(sentence); } });
   const ui = parts();
   await mountAccount(bridge, ui);
+  ui.signIn.focus();
   ui.signIn.fire('click');
   await settle();
   assert.equal(ui.section.dataset.state, 'signed-out');
   assert.equal(ui.detail.textContent, sentence);
   assert.equal(ui.detail.dataset.warn, 'true');
+  assert.equal(ui.detail.getAttribute('role'), 'alert', 'A refusal is announced at once (issue #198)');
+  assert.equal(ui.doc.activeElement, ui.signIn, 'After a refusal the keyboard is still on Sign in');
   assert.equal(ui.signIn.hidden, false);
   assert.equal(ui.signIn.disabled, false, 'The button can be pressed again');
   ui.signIn.fire('click');
@@ -178,6 +206,8 @@ function fakeBridge(status, answers = {}) {
   // Sign-in is an account control in the workspace, not a page in front of it (issue #60).
   const markup = read('ui/index.html');
   assert.match(markup, /<section class="account" data-account hidden/);
+  // The sentence under the title is a live region from the start (issue #198).
+  assert.match(markup, /<p class="message" role="status" data-account-detail>/);
   assert.ok(markup.indexOf('data-account') > markup.indexOf('data-status'), 'The account control is part of the shell, after its status line');
   assert.match(gate, /pub const ACCOUNT_BACKED: &\[&str\] = &\[\];/, 'No method in this version needs a session');
   // The core's sentences describe the session; none tells a person to sign in to carry on.
