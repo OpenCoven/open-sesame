@@ -5,8 +5,8 @@
 // only over the row it was opened from. A row changed since is reported, the fields the person
 // did not edit show the newer row, and saving again writes only the fields the person edited.
 // A draft is never saved over an item another writer changed to another kind.
-import { LIMITS, collection, counts, draftItem, editChanges, excerpt, isArchived, title } from '../items.js';
-import { itemStore, maker, redraw, statusLine, whenShown } from './view-kit.js';
+import { LIMITS, NOT_A_WEB_ADDRESS, collection, counts, draftItem, editChanges, excerpt, isArchived, isWebAddress, title } from '../items.js';
+import { itemStore, maker, redraw, statusLine, statusRow, whenShown } from './view-kit.js';
 
 const KINDS = {note: 'Note', task: 'Task', bookmark: 'Bookmark'};
 const CHANGED = 'That item was changed after you opened it. Your changes were not saved. Save again to apply them to the newer version.';
@@ -35,7 +35,8 @@ export async function mount({surface, signal, bridge, host}) {
   const addUrl = h('input', {type: 'url', name: 'url', hidden: true, 'aria-label': 'Page address', placeholder: 'Page address', spellcheck: 'false', 'data-add-url': true});
   const addSave = h('button', {type: 'submit', text: 'Add'});
   const added = statusLine(h, {'data-add-status': true});
-  const addForm = h('form', {class: 'capture', autocomplete: 'off', 'aria-label': 'New item', 'data-add': true}, [addText, addUrl, h('div', {class: 'view-row'}, [addKind, addSave]), added.line]);
+  // The view says what is wrong with a field in its own status line, never in a browser bubble.
+  const addForm = h('form', {class: 'capture', autocomplete: 'off', novalidate: true, 'aria-label': 'New item', 'data-add': true}, [addText, addUrl, h('div', {class: 'view-row'}, [addKind, addSave]), added.line]);
   // List, editor and projects.
   const list = h('ul', {class: 'item-list', 'data-item-list': true});
   // The empty-state line and the projects heading take focus when the last row leaves a list.
@@ -52,7 +53,7 @@ export async function mount({surface, signal, bridge, host}) {
   surface.append(h('section', {class: 'view projects'}, [
     h('h2', {text: 'Projects'}),
     h('div', {class: 'view-row filters'}, [projectFilter, kindFilter, h('div', {role: 'group', 'aria-label': 'Show', class: 'view-row'}, [activeButton, archiveButton]), tally]),
-    h('div', {class: 'view-row'}, [problem.line, retry]),
+    statusRow(h, signal, [problem.line, retry]),
     addForm, listed.line, list, empty, editor,
     h('section', {class: 'card', 'aria-labelledby': 'project-admin-title'}, [projectHeading, projectForm, projectList, projectStatus.line]),
   ]));
@@ -71,6 +72,9 @@ export async function mount({surface, signal, bridge, host}) {
     // A failed read is not an empty store: no counts, list or empty-state line until a read works.
     tally.hidden = unread; list.hidden = unread;
     empty.hidden = unread || shown.length > 0;
+    // A new item is created active, so it would never appear in the archive being looked at.
+    empty.textContent = filter.archived ? 'Nothing archived.' : 'Nothing here yet.';
+    addForm.hidden = filter.archived;
     redraw(list, () => list.replaceChildren(...shown.map(row)), () => empty.hidden ? null : empty);
     redraw(projectList, () => projectList.replaceChildren(...projects.map(projectRow)), () => projectHeading);
     if (selected) drawEditor();
@@ -136,7 +140,7 @@ export async function mount({surface, signal, bridge, host}) {
       : [field('Task', input('text'))];
     editor.replaceChildren(
       h('h3', {id: 'editor-title', text: `Edit ${KINDS[kind]?.toLowerCase() ?? 'item'}`}),
-      h('form', {class: 'editor-form', autocomplete: 'off', 'data-editor-form': true}, [
+      h('form', {class: 'editor-form', autocomplete: 'off', novalidate: true, 'data-editor-form': true}, [
         ...fields,
         field('Project', h('select', {name: 'projectId', 'data-edit-field': 'projectId'}, options(projectChoices(), draft.fields.projectId))),
         h('div', {class: 'view-row'}, [h('button', {type: 'submit', text: 'Save'}), h('button', {type: 'button', 'data-editor-close': true, text: 'Close'}), h('button', {type: 'button', 'data-editor-discard': true, text: 'Discard changes'})]),
@@ -171,6 +175,11 @@ export async function mount({surface, signal, bridge, host}) {
     const changes = editChanges(current, draft.fields, draft.edited);
     if (current.kind === 'task' && draft.edited.has('text') && !changes.text) { editorStatus.say('Write the task first.', true); return; }
     if (current.kind === 'bookmark' && draft.edited.has('url') && !changes.url) { editorStatus.say('Add the page address.', true); return; }
+    if (current.kind === 'bookmark' && changes.url && !isWebAddress(changes.url)) {
+      editorStatus.say(NOT_A_WEB_ADDRESS, true);
+      editor.querySelector('[data-edit-field="url"]')?.focus();
+      return;
+    }
     editorStatus.say('Saving…');
     const result = await store.update(id, changes);
     if (!alive()) return;
@@ -227,6 +236,7 @@ export async function mount({surface, signal, bridge, host}) {
     const projectId = filter.projectId === 'all' || filter.projectId === 'inbox' ? '' : filter.projectId;
     const kind = addKind.value, fields = draftItem({kind, text: addText.value, url: addUrl.value, projectId});
     if (!fields) { added.say(kind === 'bookmark' ? 'Add the page address.' : 'Write something to add.', true); (kind === 'bookmark' ? addUrl : addText).focus(); return; }
+    if (kind === 'bookmark' && !isWebAddress(fields.url)) { added.say(NOT_A_WEB_ADDRESS, true); addUrl.focus(); return; }
     addSave.disabled = true; addText.readOnly = true; addUrl.readOnly = true;
     added.say('Saving…');
     const result = await store.create(fields, {draft: `add:${addNumber}`});

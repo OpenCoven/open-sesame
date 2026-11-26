@@ -835,6 +835,165 @@ try {
       });
       await page.close();
 
+      // ---- The views items of the UI audit of main 0852c37 (#169 to #173) ----
+      const audit = createHost();
+      const audited = await install(browser, audit, name);
+      installs.push(audited);
+      page = await audited.open(START);
+      const shot = label => page.screenshot({path: path.join(output, `${name}-${label}.png`), fullPage: true});
+      const saves = () => audit.calls.filter(([method]) => method === 'items.save').length;
+      const activeIs = locator => locator.evaluate(node => node === document.activeElement);
+      await step('an empty archive says so and offers no Add (#171)', async () => {
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects');
+        await projects.locator('[data-item-empty]').getByText('Nothing here yet.', {exact: true}).waitFor();
+        await projects.locator('[data-show-archived="true"]').click();
+        await page.setViewportSize({width: 400, height: 760});
+        await shot('projects-archive-empty');
+        assert.equal(await projects.locator('[data-item-empty]').textContent(), 'Nothing archived.', 'the empty archive has its own sentence');
+        assert.equal(await projects.locator('[data-add]').isVisible(), false, 'a new item is created active, so Archive has no Add');
+        await projects.locator('[data-show-archived="false"]').click();
+        assert.equal(await projects.locator('[data-item-empty]').textContent(), 'Nothing here yet.');
+        assert(await projects.locator('[data-add]').isVisible(), 'Active has Add again');
+        await page.setViewportSize({width: 1090, height: 760});
+      });
+      await step('a bookmark address that is not a web address is said by the view, not a browser bubble (#169)', async () => {
+        const projects = view(page, 'projects'), status = projects.locator('[data-add-status]');
+        const url = projects.locator('[data-add-url]');
+        await projects.locator('[data-add-kind]').selectOption('bookmark');
+        await projects.locator('[data-add-text]').fill('Reading list');
+        await projects.getByRole('button', {name: 'Add', exact: true}).click();
+        await status.getByText('Add the page address.', {exact: true}).waitFor();
+        const before = saves();
+        await url.fill('not a url');
+        await url.press('Enter');
+        await page.setViewportSize({width: 400, height: 760});
+        await shot('projects-bookmark-bad-address');
+        await page.setViewportSize({width: 1090, height: 760});
+        assert.equal(await status.textContent(), 'That address is not a web address. Start it with https://.', 'the status line says what is wrong, in place of the stale sentence');
+        assert.equal(await status.getAttribute('data-tone'), 'warn');
+        assert(await activeIs(url), 'the address field keeps the keyboard');
+        assert.equal(saves(), before, 'nothing is sent to the core');
+        // The core's own rule (check_web_url): http or https, a host, no space.
+        for (const bad of ['example.com/page', 'ftp://example.com', 'https://', 'https://exa mple.com']) {
+          await url.fill(bad);
+          await url.press('Enter');
+          assert.equal(await status.textContent(), 'That address is not a web address. Start it with https://.', bad);
+        }
+        assert.equal(saves(), before, 'none of them is sent');
+        await url.fill('https://example.com/reading');
+        await url.press('Enter');
+        await status.getByText('Bookmark added.', {exact: true}).waitFor();
+        // The editor's Address field is the same field and says the same sentence.
+        const row = projects.locator('[data-item-list] li', {hasText: 'Reading list'});
+        await row.locator('[data-open]').click();
+        const address = projects.locator('[data-edit-field="url"]');
+        await address.fill('not a url');
+        const edits = audit.calls.filter(([method]) => method === 'items.save').length;
+        await address.press('Enter');
+        assert.equal(await projects.locator('[data-editor-status]').textContent(), 'That address is not a web address. Start it with https://.');
+        assert(await activeIs(address), 'the editor’s address field keeps the keyboard');
+        assert.equal(audit.calls.filter(([method]) => method === 'items.save').length, edits, 'the edit is not sent');
+        await projects.locator('[data-editor-discard]').click();
+        await projects.locator('[data-editor-close]').click();
+      });
+      await step('a Focus length out of range is said by the view, with the range beside the field (#169)', async () => {
+        await page.locator('[data-view="focus"]').click();
+        const focus = view(page, 'focus'), minutes = focus.locator('[data-focus-minutes]');
+        const message = focus.locator('[data-focus-message]');
+        await focus.locator('[data-focus-clock]').filter({hasText: /\S/}).waitFor();
+        const writes = () => audit.calls.filter(([method, params]) => method === 'settings.set' && params.key === 'focus.session').length;
+        const before = writes();
+        for (const value of ['5', '1441', '20.5', '']) {
+          await minutes.fill(value);
+          await minutes.press('Enter');
+          if (value === '5') { await page.setViewportSize({width: 400, height: 760}); await shot('focus-length-out-of-range'); await page.setViewportSize({width: 1090, height: 760}); }
+          assert.equal(await message.textContent(), 'Choose a length from 15 to 1440 minutes.', JSON.stringify(value));
+          assert.equal(await message.getAttribute('data-tone'), 'warn');
+          assert(await activeIs(minutes), 'the field keeps the keyboard');
+        }
+        assert.equal(writes(), before, 'no length out of range is written');
+        const hint = focus.locator('[data-focus-range]');
+        assert.equal(await hint.count(), 1, 'the range is shown next to Minutes');
+        assert.equal(await hint.textContent(), '15–1440');
+        assert.equal(await minutes.getAttribute('aria-describedby'), await hint.getAttribute('id'), 'and is the field’s description');
+        await minutes.fill('30');
+        await minutes.press('Enter');
+        await message.getByText('Length set to 30 minutes.', {exact: true}).waitFor();
+      });
+      await step('a status row with nothing to say takes no room (#170)', async () => {
+        await page.setViewportSize({width: 400, height: 760});
+        for (const id of ['projects', 'today', 'focus']) {
+          await page.locator(`[data-view="${id}"]`).click();
+          await view(page, id).waitFor({state: 'visible'});
+          await page.waitForFunction(id => document.querySelector(`[data-widget-view="${id}"] [role="status"]`) !== null, id);
+          if (id === 'projects') await shot('projects-status-rows');
+          // Every part of the view that is laid out has some height: an empty row in the grid
+          // would add a second gap around nothing.
+          const bare = await view(page, id).evaluate(node => [...node.querySelector('.view').children]
+            .filter(child => { const style = getComputedStyle(child); return style.display !== 'none' && style.position !== 'absolute'; })
+            .filter(child => child.getBoundingClientRect().height === 0).map(child => child.outerHTML.slice(0, 120)));
+          assert.deepEqual(bare, [], `${id}: no laid-out row is empty`);
+        }
+        // A row with something to say is shown again.
+        await page.locator('[data-view="projects"]').click();
+        audit.refuse('items.list', 'Could not read your saved data. Try again.');
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        await view(page, 'projects').locator('[data-projects-retry]').waitFor();
+        assert(await view(page, 'projects').locator('[data-projects-problem]').isVisible(), 'the problem row is shown when it has a problem');
+        audit.lift('items.list');
+        await view(page, 'projects').locator('[data-projects-retry]').click();
+        await view(page, 'projects').locator('[data-projects-retry]').waitFor({state: 'hidden'});
+        await page.setViewportSize({width: 1090, height: 760});
+      });
+      await step('Focus sits in the middle of a wide window (#172)', async () => {
+        await page.locator('[data-view="focus"]').click();
+        for (const width of [1600, 1090]) {
+          await page.setViewportSize({width, height: 760});
+          if (width === 1600) await shot('focus-wide');
+          const [clock, surface] = await view(page, 'focus').evaluate(node => {
+            const style = getComputedStyle(node), box = node.getBoundingClientRect(), time = node.querySelector('[data-focus-clock]').getBoundingClientRect();
+            const left = box.left + parseFloat(style.paddingLeft), right = box.right - parseFloat(style.paddingRight);
+            return [(time.left + time.right) / 2, (left + right) / 2];
+          });
+          assert(Math.abs(clock - surface) <= 2, `at ${width} px the clock's centre ${clock} is the view's centre ${surface}`);
+        }
+        await page.setViewportSize({width: 1090, height: 760});
+      });
+      await step('row actions line up in a narrow column and stay beside the title in a wide one (#173)', async () => {
+        audit.core.seed({kind: 'task', text: 'Mend the gate'});
+        audit.core.seed({kind: 'note', text: 'Short', title: 'Short'});
+        audit.core.seed({kind: 'note', text: 'A note whose title is long enough to wrap in the panel', title: 'A note whose title is long enough to wrap in the panel'});
+        await page.locator('[data-view="today"]').click();
+        await page.locator('[data-view="projects"]').click();
+        const projects = view(page, 'projects');
+        await projects.locator('[data-show-archived="false"]').click();
+        await projects.locator('[data-item-list]').getByText('Mend the gate', {exact: true}).waitFor();
+        const layout = () => projects.locator('[data-item-list] li').evaluateAll(rows => rows.map(row => {
+          const main = row.querySelector('.item-main').getBoundingClientRect(), actions = row.querySelector(':scope > .view-row').getBoundingClientRect();
+          return {below: actions.top >= main.bottom - 1, left: Math.round(actions.left), text: row.querySelector('[data-open]').textContent};
+        }));
+        await page.setViewportSize({width: 400, height: 760});
+        await shot('projects-row-actions-narrow');
+        const narrow = await layout();
+        assert(narrow.length >= 3, 'the seeded rows are listed');
+        assert(narrow.every(entry => entry.below), `in the 400 px panel every row's actions are on their own line: ${JSON.stringify(narrow)}`);
+        assert.equal(new Set(narrow.map(entry => entry.left)).size, 1, `and they start at the same place: ${JSON.stringify(narrow)}`);
+        await page.setViewportSize({width: 1090, height: 760});
+        const wide = await layout();
+        assert(wide.every(entry => !entry.below), `in a wide window every row's actions stay beside its title: ${JSON.stringify(wide)}`);
+        // At every width in between the rows agree: all on their own line or all beside the title.
+        for (const width of [320, 360, 440, 480, 500, 512, 513, 530, 560, 640, 800]) {
+          await page.setViewportSize({width, height: 760});
+          const rows = await layout();
+          assert.equal(new Set(rows.map(entry => entry.below)).size, 1, `at ${width} px: ${JSON.stringify(rows)}`);
+          assert.equal(new Set(rows.map(entry => entry.left)).size, 1, `at ${width} px: ${JSON.stringify(rows)}`);
+        }
+        await page.setViewportSize({width: 1090, height: 760});
+      });
+      await page.close();
+
       // ---- A read that fails is not shown as an empty store ----
       const failing = createHost();
       const broken = await install(browser, failing, name);

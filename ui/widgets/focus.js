@@ -2,13 +2,14 @@
 // times (ui/focus-model.js). The time shown is worked out from those times and the clock every
 // time it is drawn, so hiding the window, a sleeping machine or a relaunch cannot make it drift.
 // The redraw each second while it runs only refreshes the display.
-import { DEFAULT_MINUTES, createFocusStore } from '../focus-model.js';
-import { maker, statusLine, whenShown } from './view-kit.js';
+import { DEFAULT_MINUTES, createFocusStore, validMinutes } from '../focus-model.js';
+import { maker, statusLine, statusRow, whenShown } from './view-kit.js';
 
 const STATES = {idle: 'Ready to start', running: 'Running', paused: 'Paused', finished: 'Session complete'};
 const BUTTONS = {idle: ['start'], running: ['pause', 'reset'], paused: ['resume', 'reset'], finished: ['reset']};
 // The control that takes keyboard focus when the focused one is hidden by the change it made.
 const NEXT = {start: 'pause', pause: 'resume', resume: 'pause', reset: 'start'};
+const RANGE = 'Choose a length from 15 to 1440 minutes.';
 
 export async function mount({surface, signal, bridge}) {
   const document = surface.ownerDocument;
@@ -18,14 +19,16 @@ export async function mount({surface, signal, bridge}) {
   const state = h('p', {class: 'muted', 'data-focus-state': true});
   const button = (action, label) => h('button', {type: 'button', 'data-focus-action': action, text: label});
   const controls = {start: button('start', 'Start'), pause: button('pause', 'Pause'), resume: button('resume', 'Resume'), reset: button('reset', 'Reset')};
-  const minutes = h('input', {type: 'number', name: 'minutes', min: 15, max: 1440, step: 1, value: DEFAULT_MINUTES, inputmode: 'numeric', 'data-focus-minutes': true});
-  const length = h('form', {class: 'view-row', 'data-focus-length': true, autocomplete: 'off'}, [
-    h('label', {}, ['Minutes ', minutes]), h('button', {type: 'submit', text: 'Set length'}),
+  const minutes = h('input', {type: 'number', name: 'minutes', min: 15, max: 1440, step: 1, value: DEFAULT_MINUTES, inputmode: 'numeric', 'aria-describedby': 'focus-range', 'data-focus-minutes': true});
+  // The range is shown beside the field, and a length outside it is said in the status line
+  // rather than in a browser bubble.
+  const length = h('form', {class: 'view-row', 'data-focus-length': true, autocomplete: 'off', novalidate: true}, [
+    h('label', {}, ['Minutes ', minutes]), h('span', {class: 'muted', id: 'focus-range', 'data-focus-range': true, text: '15–1440'}), h('button', {type: 'submit', text: 'Set length'}),
   ]);
   const recover = h('button', {type: 'button', hidden: true, 'data-focus-recover': true, text: 'Start over'});
   const status = statusLine(h, {'data-focus-message': true});
   surface.append(h('section', {class: 'view focus'}, [
-    h('h2', {text: 'Focus'}), clock, state, h('div', {class: 'view-row'}, Object.values(controls)), length, h('div', {class: 'view-row'}, [status.line, recover]),
+    h('h2', {text: 'Focus'}), clock, state, h('div', {class: 'view-row'}, Object.values(controls)), length, statusRow(h, signal, [status.line, recover]),
   ]));
 
   const store = createFocusStore({bridge, now: () => Date.now()});
@@ -81,6 +84,7 @@ export async function mount({surface, signal, bridge}) {
   length.addEventListener('submit', event => {
     event.preventDefault();
     const value = Number(minutes.value);
+    if (!minutes.value.trim() || !validMinutes(value)) { status.say(RANGE, true); minutes.focus(); return; }
     act(() => store.setDuration(value), `Length set to ${value} minutes.`);
   });
   recover.addEventListener('click', () => act(() => store.recover(), 'Started over with a new timer.'));

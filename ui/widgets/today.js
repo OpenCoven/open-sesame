@@ -6,7 +6,7 @@
 // capture that was saved answers `{saved: true}`.
 import { draftItem, title, today as summary } from '../items.js';
 import { createFocusStore } from '../focus-model.js';
-import { itemStore, maker, redraw, statusLine, whenShown } from './view-kit.js';
+import { itemStore, maker, redraw, statusLine, statusRow, whenShown } from './view-kit.js';
 
 const SAVED = {note: 'Note saved.', task: 'Task saved.'};
 const EMPTY = 'Write something to capture.';
@@ -36,7 +36,7 @@ export async function mount({surface, signal, bridge, host, navigate}) {
   const problem = statusLine(h, {'data-today-problem': true});
   const retry = h('button', {type: 'button', hidden: true, 'data-today-retry': true, text: 'Try again'});
   surface.append(h('section', {class: 'view today'}, [
-    h('header', {}, [date, h('h2', {text: 'Today'})]), form, h('div', {class: 'view-row'}, [problem.line, retry]), h('div', {class: 'today-cards'}, [note, focusCard]), tasks,
+    h('header', {}, [date, h('h2', {text: 'Today'})]), form, statusRow(h, signal, [problem.line, retry]), h('div', {class: 'today-cards'}, [note, focusCard]), tasks,
   ]));
 
   const items = itemStore({bridge, host, signal, draw: value => drawItems(value)});

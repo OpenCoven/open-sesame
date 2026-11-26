@@ -102,6 +102,18 @@ export function draftItem({kind, text = '', url = '', projectId = ''}) {
   return {kind, text: split ? first : value || address, title: first, body: split ? lines.slice(1).join('\n').trim() : '', url: kind === 'bookmark' ? address : '', projectId: String(projectId), done: false};
 }
 
+// A web address as the core's check_web_url accepts it for a bookmark: http or https, a host
+// with no user name or password, no space or control character, at most 2048 bytes. The views
+// say their own sentence for anything else instead of sending it to be refused.
+export function isWebAddress(url) {
+  const value = String(url), lower = value.toLowerCase();
+  const rest = lower.startsWith('https://') ? lower.slice(8) : lower.startsWith('http://') ? lower.slice(7) : null;
+  if (rest === null || new TextEncoder().encode(value).length > 2048 || /[\s\p{Cc}]/u.test(value)) return false;
+  const authority = rest.split(/[/?#]/)[0];
+  return authority !== '' && !authority.includes('@');
+}
+export const NOT_A_WEB_ADDRESS = 'That address is not a web address. Start it with https://.';
+
 const byChange = (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 const byName = (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
 // A stored row replaces the listed one unless the list already holds that row or a later one.
