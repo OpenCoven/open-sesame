@@ -51,6 +51,12 @@
 .item-open:hover { background: none; color: var(--accent-strong); }
 .item-open[aria-current="true"] { color: var(--accent-strong); }
 .item-detail { font-size: var(--text-small); }
+/* In a narrow column every row's Archive and Delete take a line of their own, so they line up
+   whether or not the row has a checkbox or a long title. The shell's engine baseline has no
+   container queries (docs/ui-shell.md), and a media query cannot read a custom property, so the
+   window width is written here: below it the column is too narrow for every row to keep its
+   actions beside its title. */
+@media (max-width: 32rem) { .item-list li > .view-row { flex-basis: 100%; } }
 .project-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .project-list input { flex: 1 1 8rem; min-width: 0; }
 .editor-form { display: grid; gap: var(--space-2); }
@@ -58,7 +64,7 @@
 .field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--text-small); }
 .field input, .field select, .field textarea { color: var(--ink); font-size: var(--text); }
 
-.view.focus { justify-items: center; text-align: center; padding-top: var(--space-5); }
+.view.focus { justify-items: center; text-align: center; padding-top: var(--space-5); margin-inline: auto; width: 100%; }
 .focus .view-row { justify-content: center; }
 .focus-clock { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
 .focus input[type="number"] { width: 5rem; }

@@ -376,6 +376,13 @@ const loaded = async (core, options = {}) => { const store = I.createItemStore({
   assert.equal(shown.latest.excerpt, 'first step');
 }
 
+// 3b. A bookmark's address is checked by the core's rule (check_web_url in
+// crates/core/src/storage/model.rs) before it is sent, so the view can say why (#169).
+for (const good of ['https://example.com', 'http://example.com/a?b#c', 'HTTPS://Example.com/', 'https://example.com:8443/path', 'https://xn--bcher-kva.example/']) assert.equal(I.isWebAddress(good), true, good);
+for (const bad of ['', 'not a url', 'example.com', 'ftp://example.com', 'https://', 'http:///path', 'https://user@example.com', 'https://user:pass@example.com/', 'https://exa mple.com', 'https://example.com/\tx', 'javascript:alert(1)', 'https://example.com/' + 'a'.repeat(2048)]) assert.equal(I.isWebAddress(bad), false, JSON.stringify(bad.slice(0, 40)));
+assert.equal(I.isWebAddress('https://example.com/' + 'a'.repeat(2048 - 20)), true, 'exactly 2048 bytes is accepted');
+assert.equal(I.NOT_A_WEB_ADDRESS, 'That address is not a web address. Start it with https://.');
+
 // 4. The module is pure: no global, storage, network or clock of its own. Timestamps come from
 // the core, IDs from the injected source.
 const source = read('ui/items.js');
@@ -383,4 +390,4 @@ assert(!/\bimport\b/.test(source), 'The store imports nothing');
 assert(!/\b(?:window|globalThis|self|document|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest)\b/.test(source), 'The store reaches no global, storage or network');
 assert(!/Date\.now|new Date\(|setTimeout|setInterval/.test(source), 'The store sets no time and schedules nothing');
 
-console.log('Items: archive rule, stage patch, excerpt and titles match the prototype, except that the excerpt replaces a tag with a space; an edit sends only the fields the person edited; Today shows the latest active note and open tasks; creates reuse their client UUID after a lost reply or failure, edits name expectedUpdatedAt, conflicts overwrite nothing, 300/30/30 caps hold at their edges with the prototype sentences, and a failed write saves nothing.');
+console.log('Items: archive rule, stage patch, excerpt and titles match the prototype, except that the excerpt replaces a tag with a space; an edit sends only the fields the person edited; Today shows the latest active note and open tasks; creates reuse their client UUID after a lost reply or failure, edits name expectedUpdatedAt, conflicts overwrite nothing, 300/30/30 caps hold at their edges with the prototype sentences, a failed write saves nothing, and a bookmark address is checked by the core’s web-address rule.');

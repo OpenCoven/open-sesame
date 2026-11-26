@@ -79,6 +79,22 @@ export function redraw(list, draw, fallback = () => null) {
   target?.focus();
 }
 
+// A row for a status line and what goes with it, such as Try again or Start over. While every
+// part is hidden or has nothing to say the row is hidden too, so the view's grid gives it no gap
+// (#170). The shell's engine baseline has no :has() to say this in the stylesheet
+// (docs/ui-shell.md), so the row watches its parts until the lifetime ends.
+export function statusRow(h, signal, children) {
+  const row = h('div', {class: 'view-row'}, children);
+  const quiet = node => node.hidden || (node.classList.contains('view-status') && node.textContent === '');
+  // Assigned only on a change: the row's own attribute is watched too, and every assignment is one.
+  const sync = () => { const hidden = [...row.children].every(quiet); if (row.hidden !== hidden) row.hidden = hidden; };
+  const observer = new MutationObserver(sync);
+  observer.observe(row, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden']});
+  signal.addEventListener('abort', () => observer.disconnect(), {once: true});
+  sync();
+  return row;
+}
+
 // A status line: a sentence, marked as a warning when something was not done.
 export function statusLine(h, attributes = {}) {
   const line = h('p', {class: 'view-status', role: 'status', ...attributes});
