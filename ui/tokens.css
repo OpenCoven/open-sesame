@@ -11,7 +11,6 @@
   --sunken: #090a0d;
   --surface: #101216;
   --raised: #181b21;
-  --overlay: #1f232b;
 
   /* The same surfaces as tints, for a window with the system's material behind it. */
   --sunken-tint: rgb(9 10 13 / 0.58);
@@ -35,9 +34,7 @@
   --on-accent: #0b0d12;
 
   /* Status. Attention is the colour of "this needs you". */
-  --ok: #56d394;
   --warn: #f3b562;
-  --danger: #ff7a7a;
   --attention: #ffb454;
   --warn-wash: rgb(243 181 98 / 0.12);
   --attention-ring: rgb(255 180 84 / 0.5);
@@ -61,12 +58,42 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 20px;
-  --space-6: 24px;
 
   /* The rail's column and the heights src-tauri/src/rail.rs gives the window. */
   --rail-width: 56px;
   --rail-height: 376px;
   --target: 40px;
+
+  /* The sizes of the shell's own parts, at the values they are drawn at (#188). Several sit off
+     the 4 px space scale; snapping them onto fewer steps changes how the shell looks and is the
+     owner's choice, made here in one place. A stylesheet under ui/ names no size above 3 px of
+     its own (check-ui-rail.mjs). */
+  --control-small: 28px;
+  --control: 30px;
+  --control-bar: 32px;
+  --control-row: 34px;
+  --control-large: 36px;
+  --bar-height: 52px;
+  --checkbox: 15px;
+  --icon-small: 18px;
+  --icon: 20px;
+  --icon-large: 24px;
+  --radius-button: 11px;
+  --radius-text: 4px;
+  /* The gap between the panel and the window's edge, and the strip. */
+  --panel-gap: 6px;
+  /* The bar beside the open view's strip button, and the attention dot. */
+  --current-inset: 11px;
+  --current-offset: 8px;
+  --current-width: 3px;
+  --dot: 8px;
+  --dot-inset: 7px;
+  --dot-ring: 2px;
+  --dot-pulse: 6px;
+  --menu-item-padding: 5px 11px;
+  --switch-min: 140px;
+  /* How far the panel travels as it opens. */
+  --enter-shift: 8px;
 
   --font: system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Noto Sans", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", "DejaVu Sans Mono", monospace;
@@ -74,6 +101,8 @@
   --text-small: 12px;
   --text-large: 15px;
   --text-title: 17px;
+  --text-clock: 28px;
+  --text-display: 64px;
 
   --quick: 120ms;
   --smooth: 220ms;
@@ -88,7 +117,6 @@
     --sunken: #eceef2;
     --surface: #f7f8fa;
     --raised: #ffffff;
-    --overlay: #ffffff;
     --sunken-tint: rgb(236 238 242 / 0.58);
     --surface-tint: rgb(247 248 250 / 0.82);
     --surface-sheet: rgb(247 248 250 / 0.96);
@@ -102,9 +130,7 @@
     --accent-strong: #3445c0;
     --accent-wash: rgb(70 88 216 / 0.12);
     --on-accent: #ffffff;
-    --ok: #1f8a56;
     --warn: #8f4f0a;
-    --danger: #c8322f;
     --attention: #b86200;
     --warn-wash: rgb(143 79 10 / 0.1);
     --attention-ring: rgb(184 98 0 / 0.45);
@@ -136,7 +162,7 @@ h3 { font-size: var(--text); font-weight: 600; }
    data-primary and takes the accent. */
 button, input, select, textarea { font: inherit; color: var(--ink); }
 button {
-  min-height: 30px;
+  min-height: var(--control);
   padding: 0 var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
@@ -152,7 +178,7 @@ button[data-primary]:hover { background: var(--accent-strong); }
 button[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-strong); }
 
 input, select, textarea {
-  min-height: 30px;
+  min-height: var(--control);
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line-control);
   border-radius: var(--radius-control);
@@ -162,7 +188,7 @@ input, select, textarea {
 input:hover, select:hover, textarea:hover { border-color: var(--muted); }
 input[type="text"], input[type="search"], input[type="url"], input[type="number"], textarea { -webkit-user-select: text; user-select: text; cursor: text; }
 input::placeholder, textarea::placeholder { color: var(--muted); }
-input[type="checkbox"] { min-height: 0; width: 15px; height: 15px; padding: 0; margin: 0; accent-color: var(--accent); }
+input[type="checkbox"] { min-height: 0; width: var(--checkbox); height: var(--checkbox); padding: 0; margin: 0; accent-color: var(--accent); }
 textarea { resize: vertical; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -171,7 +197,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: non
 /* Thin scrollbars that stay out of the way in a narrow column. */
 * { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 
-.icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.icon { width: var(--icon); height: var(--icon); flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Text for assistive technology that the layout has no room to show. */
 .label-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

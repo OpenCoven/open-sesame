@@ -69,7 +69,7 @@
 .terminals .tab button:last-child { border-top-right-radius: inherit; }
 
 .terminals .tab button {
-  min-height: 28px;
+  min-height: var(--control-small);
   border: 0;
   border-radius: 0;
   background: transparent;
