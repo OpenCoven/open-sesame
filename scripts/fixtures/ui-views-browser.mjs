@@ -289,6 +289,8 @@ try {
         assert.equal(await said.count(), 1, 'the palette has one status line');
         await palette(page, '2+2');
         const answer = page.locator('[data-command-answer]');
+        // What the answer shows and says, without the Enter mark that is not read aloud (#178).
+        const answerText = () => answer.evaluate(node => [...node.childNodes].filter(child => child.nodeType !== 1 || child.getAttribute('aria-hidden') !== 'true').map(child => child.textContent).join(''));
         await answer.getByText('4', {exact: true}).waitFor();
         assert.match(await answer.textContent(), /2 \+ 2/);
         assert.equal(await said.textContent(), 'Answer: 4');
@@ -297,7 +299,7 @@ try {
         const copyDone = () => page.waitForFunction(() => /Copied|Could not copy/.test(document.querySelector('[data-command-answer]')?.textContent || ''));
         await page.locator('[data-command-query]').press('Enter');
         await copyDone();
-        assert.equal(await answer.textContent(), '4 2 + 2 · Copied');
+        assert.equal(await answerText(), '4 2 + 2 · Copied');
         assert.deepEqual(host.calls.filter(([method]) => method === 'terminal.clipboard.write').at(-1), ['terminal.clipboard.write', {text: '4'}]);
         assert.equal(await said.textContent(), 'Copied 4.');
         // A clipboard that refuses says why and how to try again, and says it aloud.
@@ -305,7 +307,7 @@ try {
         await palette(page, '6*7');
         await page.locator('[data-command-query]').press('Enter');
         await copyDone();
-        assert.equal(await answer.textContent(), '42 6 × 7 · Could not copy: The clipboard is unavailable. Choose it to try again.');
+        assert.equal(await answerText(), '42 6 × 7 · Could not copy: The clipboard is unavailable. Choose it to try again.');
         assert.equal(await said.textContent(), 'Could not copy: The clipboard is unavailable. Choose it to try again.');
         await answer.click();
         await answer.getByText('6 × 7 · Copied', {exact: false}).waitFor();
@@ -329,6 +331,70 @@ try {
         assert(await page.locator('#command-palette').isVisible(), 'Enter chose no capture');
         await page.locator('[data-command-query]').press('Escape');
         assert.equal(host.writes().length, before, 'an answer writes nothing');
+      });
+      await step('the palette marks the row Enter runs, and says how to choose a capture it does not run (#178)', async () => {
+        const before = host.writes().length;
+        const said = page.locator('#command-palette [role="status"]');
+        // The rows as drawn: which one shows the Enter mark, its background against the accent
+        // wash, and the row Enter itself would choose.
+        const rowsNow = () => page.locator('[data-command-results]').evaluate(results => {
+          const wash = document.createElement('div');
+          wash.style.background = 'var(--accent-wash)';
+          results.append(wash);
+          const accent = getComputedStyle(wash).backgroundColor;
+          wash.remove();
+          return [...results.querySelectorAll('button')].map(button => {
+            const hint = [...button.children].find(child => child.textContent === '↵');
+            return {
+              id: button.dataset.command || `answer:${button.dataset.commandAnswer}`,
+              hint: Boolean(hint && hint.getAttribute('aria-hidden') === 'true' && hint.getClientRects().length),
+              wash: getComputedStyle(button).backgroundColor === accent,
+            };
+          });
+        });
+        const marked = rows => rows.filter(row => row.hint || row.wash).map(row => row.id);
+        for (const [query, expected] of [['Buy bread', 'today.capture-note.text'], ['open projects', null], ['2+2', 'answer:calculation']]) {
+          await palette(page, query);
+          await page.locator('[data-command-results] button').first().waitFor();
+          const rows = await rowsNow();
+          const target = expected ?? rows[0].id;
+          if (query === 'Buy bread') await page.screenshot({path: path.join(output, `${name}-palette-enter-mark.png`), animations: 'disabled'});
+          assert.deepEqual(marked(rows), [target], `${query}: only the row Enter runs is marked: ${JSON.stringify(rows)}`);
+          assert(rows.find(row => row.id === target).hint && rows.find(row => row.id === target).wash, `${query}: the mark is the accent wash and ↵`);
+        }
+        // A phone number: an answer that is only an error, captures Enter does not run, and a
+        // sentence that says how to choose one, shown and said.
+        await palette(page, '(555) 123-4567');
+        await page.locator('[data-command-answer="error"]').waitFor();
+        await page.screenshot({path: path.join(output, `${name}-palette-no-enter.png`), animations: 'disabled'});
+        assert.deepEqual(marked(await rowsNow()), [], 'no row is marked when Enter runs nothing');
+        const hint = page.locator('[data-command-results] [data-command-hint]');
+        assert.equal(await hint.textContent(), 'Choose a capture with the arrow keys.', 'the results say how to choose a capture');
+        assert.match(await said.textContent(), /Choose a capture with the arrow keys\./, 'and the status line says it');
+        await page.locator('[data-command-query]').press('Enter');
+        assert(await page.locator('#command-palette').isVisible(), 'Enter still chooses nothing');
+        assert.equal(host.writes().length, before, 'and saves nothing');
+        // Enter from the field runs the marked row.
+        await palette(page, 'open projects');
+        const first = await page.locator('[data-command-results] [data-enter-target]').getAttribute('data-command');
+        assert.equal(first, (await rowsNow())[0].id);
+        await page.locator('[data-command-query]').press('Escape');
+      });
+      await step('a calculator or clock answer is named as Copy, its result, then what it answers (#179)', async () => {
+        const named = text => page.getByRole('button', {name: text, exact: true});
+        await palette(page, '2+2*3');
+        await page.locator('[data-command-answer]').getByText('8', {exact: true}).waitFor();
+        assert.equal(await named('Copy 8, 2 + 2 × 3').count(), 1, `the name is not "${await page.locator('[data-command-answer]').evaluate(node => node.getAttribute('aria-label') ?? node.textContent)}"`);
+        await page.locator('[data-command-query]').press('Enter');
+        await named('Copied 8, 2 + 2 × 3').waitFor();
+        host.fault('terminal.clipboard.write', 'The clipboard is unavailable.');
+        await palette(page, '6*7');
+        await page.locator('[data-command-query]').press('Enter');
+        await named('Could not copy 42, 6 × 7: The clipboard is unavailable. Choose it to try again.').waitFor();
+        await palette(page, 'time in Tokyo');
+        const clock = await page.locator('[data-command-answer]').getAttribute('aria-label');
+        assert.match(clock ?? '', /^Copy \d{1,2}:\d{2}:\d{2}\s?[AP]M\S*( \S+)?, .*Asia\/Tokyo/, `the clock answer is named result first: ${clock}`);
+        await page.locator('[data-command-query]').press('Escape');
       });
       await step('a failed write shows its error and keeps the draft', async () => {
         await page.locator('[data-view="today"]').click();

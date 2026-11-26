@@ -191,19 +191,25 @@ function renderAnswer(found) {
   const button = element('button');
   button.type = 'button';
   button.dataset.commandAnswer = found.kind;
-  button.append(element('strong',found.result),element('span',` ${found.expression} · Copy`));
+  const detail = element('span',` ${found.expression} · Copy`);
+  button.append(element('strong',found.result),detail);
+  // Read aloud, the result and what it answers run together ("8 2 + 2 × 3"), so the name says
+  // what choosing it does first and keeps the two apart (issue #179).
+  const name = (done,why = '') => button.setAttribute('aria-label',`${done} ${found.result}, ${found.expression}${why}`);
+  name('Copy');
   // The copy goes through the host's clipboard, as the context menu's does (issue #177). A
   // refusal says the host's reason; choosing the answer again tries again.
   button.addEventListener('click',() => {
     bridge.request('terminal.clipboard.write',{text: found.result}).then(
-      () => {button.lastChild.textContent = ` ${found.expression} · Copied`;resultsStatus.textContent = `Copied ${found.result}.`;},
+      () => {detail.textContent = ` ${found.expression} · Copied`;name('Copied');resultsStatus.textContent = `Copied ${found.result}.`;},
       error => {
         const said = `Could not copy: ${message(error)} Choose it to try again.`;
-        button.lastChild.textContent = ` ${found.expression} · ${said}`;resultsStatus.textContent = said;
+        detail.textContent = ` ${found.expression} · ${said}`;name('Could not copy',`: ${message(error)} Choose it to try again.`);resultsStatus.textContent = said;
       });
   });
   return button;
 }
+const CHOOSE_CAPTURE = 'Choose a capture with the arrow keys.';
 function renderCommands() {
   results.replaceChildren();
   const view = paletteView(commands,query.value);
@@ -238,12 +244,29 @@ function renderCommands() {
     });
     results.append(button);
   }
+  // The row Enter runs from the field is marked, with the accent wash and a ↵ that is not read
+  // aloud; Enter chooses that row and no other (issue #178). Captures that Enter does not run,
+  // after an answer that is only an error, say how to choose one instead.
+  const target = results.querySelector('button:not([data-not-on-enter])');
+  if (target) {
+    target.dataset.enterTarget = '';
+    const hint = element('span','↵');
+    hint.className = 'enter-hint';hint.setAttribute('aria-hidden','true');
+    target.append(hint);
+  }
+  const unchosen = !target && results.querySelector('[data-not-on-enter]');
+  if (unchosen) {
+    const hint = element('p',CHOOSE_CAPTURE);
+    hint.dataset.commandHint = '';
+    results.insertBefore(hint,unchosen);
+  }
   if (!results.childElementCount) results.append(element('p','No commands found.'));
   // What the results hold is said aloud as the person types (issue #176).
   const count = view.commands.length, said = [];
   if (view.answer) said.push(view.answer.error ?? `Answer: ${view.answer.result}`);
   if (count) said.push(`${count} ${count === 1 ? 'command' : 'commands'}`);
   else if (!view.answer) said.push('No commands found.');
+  if (unchosen) said.push(CHOOSE_CAPTURE);
   resultsStatus.textContent = said.join(' ');
 }
 function changed(next) {
@@ -330,7 +353,7 @@ wideToggle.addEventListener('click',() => {
 query.addEventListener('input',renderCommands);
 query.addEventListener('keydown',event => {
   if (event.key === 'ArrowDown') {event.preventDefault();results.querySelector('button')?.focus();}
-  if (event.key === 'Enter') {event.preventDefault();results.querySelector('button:not([data-not-on-enter])')?.click();}
+  if (event.key === 'Enter') {event.preventDefault();results.querySelector('[data-enter-target]')?.click();}
 });
 results.addEventListener('keydown',event => {
   if (!['ArrowDown','ArrowUp'].includes(event.key)) return;
