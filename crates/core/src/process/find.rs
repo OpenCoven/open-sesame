@@ -4,7 +4,7 @@
 //! directory on `PATH`, then the known install locations. The working directory is never
 //! searched, and a name is never passed to a shell.
 
-use super::ShellEnv;
+use super::{EnvSource, Output, RunError, ShellEnv};
 use crate::protocol::BridgeError;
 use std::path::{Path, PathBuf};
 
@@ -85,6 +85,77 @@ impl Search {
             .find(|candidate| is_program(candidate))
     }
 
+    /// The environment to start `program` with, a path [`Search::find`] returned for `env` when
+    /// it was given `explicit`; pass it as [`Run::env`](super::Run::env) with
+    /// [`Run::clear_env`](super::Run::clear_env).
+    ///
+    /// When the login shell's `PATH` could not be had and the program was found in one of the
+    /// known install locations, what it needs to start may not be on the short `PATH` a desktop
+    /// launch gives: a script npm installed names `node` through `#!/usr/bin/env`, and the
+    /// shims of asdf and the Windows shims of mise and Volta run their manager by name. The owner
+    /// decided on 18 November 2026 (issue #145) that such a program starts with its own folder
+    /// first on its `PATH`, then the `PATH` as it was, then the other known locations, and that a
+    /// program that still cannot start is reported with [`could_not_start`]. Only `PATH`
+    /// changes. A path the person set (`explicit`), a program found on the `PATH` (also when its
+    /// folder is one of the known locations too, as `/usr/bin` or `~/.cargo/bin` can be), and any
+    /// program when the login shell's environment was captured start with the environment as it
+    /// is. On Windows there is no login shell to ask, so the environment is always the inherited
+    /// one and the change applies to every program found only in a known location.
+    pub fn start_env(
+        &self,
+        env: &ShellEnv,
+        program: &Path,
+        explicit: Option<&Path>,
+    ) -> Vec<(String, String)> {
+        let mut vars = env.to_run_env();
+        if explicit.is_some() || *env.source() == EnvSource::LoginShell {
+            return vars;
+        }
+        let Some(folder) = program.parent().filter(|folder| {
+            self.known_dirs.iter().any(|dir| same_dir(dir, folder))
+                && !self.path.iter().any(|dir| same_dir(dir, folder))
+        }) else {
+            return vars;
+        };
+        // Folders that cannot be written into a `PATH`, such as one with the separator in its
+        // name, are left out rather than giving up the change.
+        let joined = |dirs: Vec<&Path>| {
+            let dirs: Vec<&Path> = dirs
+                .into_iter()
+                .filter(|dir| std::env::join_paths([dir]).is_ok())
+                .collect();
+            std::env::join_paths(dirs)
+                .ok()
+                .and_then(|joined| joined.into_string().ok())
+                .unwrap_or_default()
+        };
+        let current = env.get("PATH").unwrap_or_default();
+        let on_path: Vec<PathBuf> = std::env::split_paths(current).collect();
+        let after: Vec<&Path> = self
+            .known_dirs
+            .iter()
+            .map(PathBuf::as_path)
+            .filter(|dir| {
+                !same_dir(dir, folder) && !on_path.iter().any(|other| same_dir(other, dir))
+            })
+            .collect();
+        // The `PATH` as it was is kept as written, empty entries and all.
+        let value = [joined(vec![folder]), current.to_string(), joined(after)]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(if cfg!(windows) { ";" } else { ":" });
+        // On Windows the variable is usually stored as `Path`; that entry is the one replaced.
+        let key = vars.iter().position(|(name, _)| {
+            name == "PATH" || (cfg!(windows) && name.eq_ignore_ascii_case("PATH"))
+        });
+        match key {
+            Some(at) => vars[at].1 = value,
+            None => vars.push(("PATH".to_string(), value)),
+        }
+        vars
+    }
+
     fn candidates(&self, dir: &Path, name: &str) -> Vec<PathBuf> {
         if self.extensions.is_empty() {
             return vec![dir.join(name)];
@@ -126,7 +197,7 @@ impl Search {
 /// Volta or mise is found before a system copy even when its manager has no version of that
 /// tool to run. A program
 /// found in one of these may still need its interpreter, or the manager itself, on the `PATH`
-/// it is started with (issue #145).
+/// it is started with: [`Search::start_env`] gives it one (issue #145).
 fn known_dirs(env: &ShellEnv, home: Option<&Path>) -> Vec<PathBuf> {
     let home = home.filter(|home| home.is_absolute());
     // The folder a variable names when it names an absolute one.
@@ -445,7 +516,40 @@ pub fn resolve(name: &str, explicit: Option<&Path>) -> Option<PathBuf> {
     Search::from_env(&ShellEnv::inherited()).find(name, explicit)
 }
 
+/// Whether two folders are the same as a `PATH` names them: exactly, or ignoring ASCII case on
+/// Windows, whose file names are not case-sensitive.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b || (cfg!(windows) && a.as_os_str().eq_ignore_ascii_case(b.as_os_str()))
+}
+
 /// The message for a tool that is not installed. A missing tool is an ordinary error.
 pub fn not_installed(name: &str) -> BridgeError {
     BridgeError(format!("{name} is not installed, or Open Sesame could not find it. Install it, or set its path in Settings."))
+}
+
+/// The message for a tool that was found but could not start because something it needs to run
+/// was not found (issue #145): see [`start_failed`].
+pub fn could_not_start(name: &str) -> BridgeError {
+    BridgeError(format!("{name} was found but could not start, because a program it needs to run was not found. Set its path in Settings."))
+}
+
+/// Whether a run of a program found in a known location (one [`Search::start_env`] changed the
+/// `PATH` for) failed to start because something it needs was missing: the system could not find
+/// what the program's `#!` line names (`RunError::NotFound`), or, on macOS and Linux, a command it
+/// ran was not found, which `env` and the shells report with status 127. On Windows no status is
+/// counted: `cmd.exe` ends with status 1 both for a command script that cannot find what it runs,
+/// as an npm `.cmd` without `node`, and for `cmd /c` with a missing command (the hosted
+/// windows-2025 runner, 22 November 2026), and any failure can give 1 (issue #217).
+/// Status 127 cannot be told apart from a program that ran and then exited with it itself, or ran
+/// its work and then failed to find a later command, so those are counted too.
+/// `RunError::NotFound` is also what a program removed between `find` and the run gives; a
+/// caller that sees the program itself gone reports [`not_installed`] instead. Use it, and
+/// [`could_not_start`], only for a program found in a known location: for a path the person set
+/// or a program found on the `PATH`, the advice to set its path in Settings would not help.
+pub fn start_failed(result: &Result<Output, RunError>) -> bool {
+    match result {
+        Err(RunError::NotFound) => true,
+        Ok(output) => !cfg!(windows) && output.status == Some(127),
+        Err(_) => false,
+    }
 }
