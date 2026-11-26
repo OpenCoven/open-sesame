@@ -80,7 +80,8 @@
 }
 
 .terminals .tab [role="tab"][aria-selected="true"] { background: var(--terminal); color: var(--terminal-ink); }
-.terminals .tab[data-ended="true"] [role="tab"] { color: var(--faint); }
+/* An ended shell's tab says "(ended)" in its label and keeps the colours of any other tab:
+   --faint, for disabled controls, read below 4.5:1 there (#168). */
 .terminals .tab .close { padding: 0 var(--space-2); }
 .terminals .tab .close:hover { color: var(--ink); }
 

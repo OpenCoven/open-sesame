@@ -529,6 +529,82 @@ try {
         report.results.push({engine:name,label:'measured contrast',contrast:Object.fromEntries(Object.entries(measured).map(([scheme,values])=>[scheme,Object.fromEntries(Object.entries(values).map(([part,n])=>[part,Number(n.toFixed(2))]))]))});
         assert.deepEqual(shortfalls,[],'Every measured pair reaches its contrast in both schemes');
       });
+      await step('bar buttons fill on hover and press as rail buttons do, Wide shows pressed without a ring, and an ended shell tab reads at 4.5:1 (#180, #168)',async()=>{
+        const parse=value=>{const n=value.match(/[0-9.]+/g).map(Number);return [n[0],n[1],n[2],n[3]??1];};
+        const over=([r,g,b,a],[R,G,B])=>[r*a+R*(1-a),g*a+G*(1-a),b*a+B*(1-a),1];
+        const lum=c=>{const [r,g,b]=c.slice(0,3).map(v=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
+        const ratio=(a,b)=>{const [x,y]=[lum(a),lum(b)].sort((m,n)=>n-m);return (x+0.05)/(y+0.05);};
+        const problems=[],measured={};
+        for(const colorScheme of ['dark','light']) {
+          const themed=await context.newPage();
+          try {
+            await themed.addInitScript(railHost);
+            // Each pane's channel is kept, so the step can end a shell as the host would.
+            await themed.addInitScript(()=>{window.__channels__=[];window.__TAURI__.core.Channel=class{constructor(){window.__channels__.push(this);}};});
+            await themed.emulateMedia({colorScheme,reducedMotion:'reduce'});
+            await themed.setViewportSize({width:860,height:900});
+            await themed.goto(origin+'/ui/index.html');
+            await themed.locator('[data-ready="true"]').waitFor();
+            await themed.evaluate(()=>window.__rail__.peek());
+            await themed.locator('[data-panel]').waitFor({state:'visible'});
+            await themed.locator('[data-view="shells"]').click();
+            await themed.waitForFunction(()=>window.__rail__.host.held===true);
+            const wide=themed.locator('[data-wide-toggle]'),collapse=themed.locator('[data-collapse]'),today=themed.locator('[data-view="today"]');
+            await wide.waitFor({state:'visible'});
+            // A colour as the page computes it from a token, for comparison.
+            const token=name=>themed.evaluate(name=>{const probe=document.createElement('div');probe.style.background=`var(${name})`;document.body.append(probe);const value=getComputedStyle(probe).backgroundColor;probe.remove();return value;},name);
+            const fill=locator=>locator.evaluate(node=>getComputedStyle(node).backgroundColor);
+            const away=()=>themed.mouse.move(5,890);
+            const hovered=async locator=>{await locator.hover();const value=await fill(locator);await away();return value;};
+            // Held down and moved off before release, so nothing is chosen.
+            const held=async locator=>{const box=await locator.boundingBox();await themed.mouse.move(box.x+box.width/2,box.y+box.height/2);await themed.mouse.down();const value=await fill(locator);await away();await themed.mouse.up();return value;};
+            const [fillHover,fillActive,wash]=[await token('--fill-hover'),await token('--fill-active'),await token('--accent-wash')];
+            const seen=measured[colorScheme]={rail:{hover:await hovered(today),active:await held(today)},collapse:{hover:await hovered(collapse),active:await held(collapse)}};
+            if(seen.rail.hover!==fillHover||seen.rail.active!==fillActive)problems.push(`${colorScheme}: the rail buttons are not the reference (${JSON.stringify(seen.rail)})`);
+            if(seen.collapse.hover!==fillHover)problems.push(`${colorScheme}: Close panel on hover is ${seen.collapse.hover}, not ${fillHover}`);
+            if(seen.collapse.active!==fillActive)problems.push(`${colorScheme}: Close panel held down is ${seen.collapse.active}, not ${fillActive}`);
+            // Shells asks for the wide panel, so Wide panel starts pressed: the accent wash and the
+            // accent icon, with no edge that reads as a focus ring.
+            const pressedNow=()=>themed.waitForFunction(value=>document.querySelector('[data-wide-toggle]').getAttribute('aria-pressed')===value,String(true));
+            await pressedNow();
+            await away();await wide.evaluate(node=>node.blur());
+            const pressed=seen.pressed=await wide.evaluate(node=>({fill:getComputedStyle(node).backgroundColor,edge:getComputedStyle(node).borderTopColor,icon:getComputedStyle(node).color}));
+            const strong=await themed.evaluate(()=>{const probe=document.createElement('div');probe.style.color='var(--accent-strong)';document.body.append(probe);const value=getComputedStyle(probe).color;probe.remove();return value;});
+            if(pressed.fill!==wash)problems.push(`${colorScheme}: pressed Wide panel fill is ${pressed.fill}, not the accent wash ${wash}`);
+            if(parse(pressed.edge)[3]!==0)problems.push(`${colorScheme}: pressed Wide panel has a visible edge ${pressed.edge}, which reads as a focus ring`);
+            if(pressed.icon!==strong)problems.push(`${colorScheme}: pressed Wide panel icon is ${pressed.icon}, not ${strong}`);
+            await themed.screenshot({path:path.join(output,`${name}-${colorScheme}-bar-pressed.png`),animations:'disabled'});
+            // Not pressed, it fills on hover as the others do.
+            await wide.click();
+            await themed.waitForFunction(()=>document.querySelector('[data-wide-toggle]').getAttribute('aria-pressed')==='false');
+            seen.wideHover=await hovered(wide);
+            if(seen.wideHover!==fillHover)problems.push(`${colorScheme}: Wide panel on hover is ${seen.wideHover}, not ${fillHover}`);
+            await wide.click();
+            await pressedNow();
+            // Two shells, the first ended: its tab is drawn ended both when it is chosen and not.
+            const launch=themed.locator('[data-launch] button[type="submit"]');
+            await launch.click();
+            await themed.waitForFunction(()=>window.__channels__.length===1);
+            await launch.click();
+            await themed.waitForFunction(()=>window.__channels__.length===2);
+            await themed.evaluate(()=>window.__channels__[0].onmessage({event:'terminal.exit'}));
+            const ended=themed.locator('.terminals .tab[data-ended="true"] [role="tab"]');
+            await ended.waitFor();
+            // The text against what is really behind it: each background up the tree laid over the next.
+            const contrastOf=()=>ended.evaluate(node=>{const layers=[];for(let at=node;at;at=at.parentElement)layers.push(getComputedStyle(at).backgroundColor);layers.push(getComputedStyle(document.documentElement).backgroundColor);return {color:getComputedStyle(node).color,layers};});
+            const read=async()=>{const {color,layers}=await contrastOf();let ground=[255,255,255,1];for(const layer of layers.reverse())ground=over(parse(layer),ground);return ratio(over(parse(color),ground),ground);};
+            seen.endedBehind=await read();
+            await ended.click();
+            await themed.waitForFunction(()=>document.querySelector('.terminals .tab[data-ended="true"] [role="tab"]').getAttribute('aria-selected')==='true');
+            await away();
+            seen.endedChosen=await read();
+            await themed.screenshot({path:path.join(output,`${name}-${colorScheme}-ended-tab.png`),animations:'disabled'});
+            for(const which of ['endedBehind','endedChosen'])if(!(seen[which]>=4.5))problems.push(`${colorScheme}: the ended tab (${which==='endedChosen'?'chosen':'not chosen'}) reads at ${seen[which].toFixed(2)}:1`);
+          }finally{await themed.close();}
+        }
+        report.results.push({engine:name,label:'measured bar and tab states',measured});
+        assert.deepEqual(problems,[],JSON.stringify(measured));
+      });
       await step('the rail: every strip and bar button in Tab, names that say what they do, the keyboard kept when the panel closes',async()=>{
         // With no rail the mark is the brand, not a disabled control (#187).
         const brand=page.locator('[data-rail-toggle]');
