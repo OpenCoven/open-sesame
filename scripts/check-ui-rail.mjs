@@ -241,8 +241,9 @@ for (const file of ['ui/shell.css', 'ui/widgets/views.css', 'ui/widgets/shells.c
   assert(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/.test(text), `${file} takes its colours from tokens.css`);
   // The audit's oldest engine (docs/ui-shell.md) has neither; a rule that names one is dropped whole there.
   assert(!/color-mix\(|:has\(|@container|@layer/.test(text), `${file} uses nothing newer than the shell's engine baseline`);
-  // --faint is below 4.5:1 on some surfaces, so it is for disabled controls only (#168).
-  for (const [, selector] of text.matchAll(/([^{}]+)\{[^{}]*var\(--faint\)[^{}]*\}/g)) assert(selector.split(',').every(part => part.includes(':disabled')), `${file} uses --faint outside a :disabled rule: ${selector.trim()}`);
+  // --faint is below 4.5:1 on some surfaces, so it is for disabled controls only (#168): ones
+  // that are :disabled, or marked aria-disabled while a request is pending.
+  for (const [, selector] of text.matchAll(/([^{}]+)\{[^{}]*var\(--faint\)[^{}]*\}/g)) assert(selector.split(',').every(part => part.includes(':disabled') || part.includes('[aria-disabled="true"]')), `${file} uses --faint outside a disabled control's rule: ${selector.trim()}`);
   for (const [, duration] of text.matchAll(/(?:animation|transition):[^;]*?\b([0-9.]+m?s)\b/g)) assert.fail(`${file} names a duration (${duration}) outside tokens.css; use --quick or --smooth so reduced motion reaches it`);
 }
 assert.match(tokens, /@media \(prefers-color-scheme: light\)/, 'Dark first, with a light theme for a system set to light');

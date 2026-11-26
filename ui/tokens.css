@@ -26,7 +26,8 @@
 
   --ink: #eef0f4;
   --muted: #a3a9b6;
-  /* Disabled controls only: it is below 4.5:1 on some surfaces (check-ui-rail.mjs). */
+  /* Disabled controls only (:disabled or aria-disabled): it is below 4.5:1 on some surfaces
+     (check-ui-rail.mjs). */
   --faint: #6d7482;
 
   /* One accent, for what is selected and what has the keyboard. */
