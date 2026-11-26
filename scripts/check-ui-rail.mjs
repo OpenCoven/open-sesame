@@ -3,7 +3,7 @@
 // it follows and whether a resting pointer opens it are the host's (cargo test for the
 // decisions, a launched application for the window).
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
@@ -241,7 +241,16 @@ for (const file of ['ui/shell.css', 'ui/widgets/views.css', 'ui/widgets/shells.c
   assert(!/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/.test(text), `${file} takes its colours from tokens.css`);
   // The audit's oldest engine (docs/ui-shell.md) has neither; a rule that names one is dropped whole there.
   assert(!/color-mix\(|:has\(|@container|@layer/.test(text), `${file} uses nothing newer than the shell's engine baseline`);
+  // Sizes come from tokens.css too (#188): no size above 3 px of a stylesheet's own, which leaves
+  // hairlines, focus offsets and small nudges. A media query's width cannot read a custom
+  // property, so the condition is left out.
+  for (const [, size] of text.replace(/@media[^{]*\{/g, '@media {').matchAll(/(-?\d*\.?\d+)px\b/g)) if (Math.abs(Number(size)) > 3) assert.fail(`${file} names a size (${size}px) outside tokens.css; add or use a token`);
   for (const [, duration] of text.matchAll(/(?:animation|transition):[^;]*?\b([0-9.]+m?s)\b/g)) assert.fail(`${file} names a duration (${duration}) outside tokens.css; use --quick or --smooth so reduced motion reaches it`);
+}
+// Every token is used somewhere in the shell (#188).
+{
+  const uses = ['ui/index.html', ...readdirSync(path.join(root, 'ui'), {recursive: true}).filter(name => /\.(css|js)$/.test(name)).map(name => path.join('ui', name))].map(read).join('\n');
+  for (const [, name] of tokens.matchAll(/^\s*(--[a-z0-9-]+):/gm)) assert(uses.includes(`var(${name}`), `${name} is declared in tokens.css and used nowhere in ui/`);
 }
 assert.match(tokens, /@media \(prefers-color-scheme: light\)/, 'Dark first, with a light theme for a system set to light');
 // Every view has an icon in the sprite, and the wide views are views.

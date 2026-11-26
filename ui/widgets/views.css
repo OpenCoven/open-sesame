@@ -37,7 +37,7 @@
 
 .today-date { color: var(--muted); font-size: var(--text-small); }
 .today-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-3); }
-.today-clock { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today-clock { font-size: var(--text-clock); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .today-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .today-tasks label { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-1) 0; overflow-wrap: anywhere; }
 .today-tasks input[type="checkbox"] { margin-top: 2px; flex: none; }
@@ -47,7 +47,7 @@
 .item-list li { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); background: var(--raised); border: 1px solid var(--line); }
 .item-list input[type="checkbox"] { margin-top: 3px; flex: none; }
 .item-main { flex: 1 1 9rem; min-width: 0; display: grid; gap: 2px; }
-.item-open { min-height: 0; padding: 0; border: 0; border-radius: 4px; background: none; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
+.item-open { min-height: 0; padding: 0; border: 0; border-radius: var(--radius-text); background: none; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
 .item-open:hover { background: none; color: var(--accent-strong); }
 .item-open[aria-current="true"] { color: var(--accent-strong); }
 .item-detail { font-size: var(--text-small); }
@@ -60,7 +60,7 @@
 
 .view.focus { justify-items: center; text-align: center; padding-top: var(--space-5); }
 .focus .view-row { justify-content: center; }
-.focus-clock { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
+.focus-clock { font-size: var(--text-display); font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
 .focus input[type="number"] { width: 5rem; }
 .focus label { color: var(--muted); }
 

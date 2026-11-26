@@ -529,6 +529,36 @@ try {
         report.results.push({engine:name,label:'measured contrast',contrast:Object.fromEntries(Object.entries(measured).map(([scheme,values])=>[scheme,Object.fromEntries(Object.entries(values).map(([part,n])=>[part,Number(n.toFixed(2))]))]))});
         assert.deepEqual(shortfalls,[],'Every measured pair reaches its contrast in both schemes');
       });
+      await step('the panel slides in away from the strip on either edge (#189)',async()=>{
+        const start={};
+        for(const edge of ['right','left']) {
+          const railed=await context.newPage();
+          try {
+            await railed.addInitScript(railHost);
+            await railed.addInitScript(edge=>{window.__rail__.host.edge=edge;},edge);
+            await railed.setViewportSize({width:56,height:376});
+            await railed.goto(origin+'/ui/index.html');
+            await railed.locator('[data-ready="true"]').waitFor();
+            // The entry animation is held at its first frame as it starts, and its offset read.
+            const first=railed.evaluate(()=>new Promise(resolve=>{
+              const panel=document.querySelector('[data-panel]');
+              panel.addEventListener('animationstart',()=>{
+                const animation=panel.getAnimations().find(entry=>entry.animationName==='panel-in');
+                animation.pause();animation.currentTime=0;
+                resolve(new DOMMatrixReadOnly(getComputedStyle(panel).transform).m41);
+              },{once:true});
+            }));
+            await railed.setViewportSize({width:400,height:900});
+            await railed.evaluate(()=>window.__rail__.peek());
+            start[edge]=await first;
+          }finally{await railed.close();}
+        }
+        // On the right edge the panel is left of the strip and starts nearer it, to the right; on
+        // the left edge it is right of the strip and starts nearer it, to the left.
+        assert(start.right>0,`on the right edge the panel should start to the right, nearer the strip; it starts at ${start.right}px`);
+        assert(start.left<0,`on the left edge the panel should start to the left, nearer the strip; it starts at ${start.left}px`);
+        assert.equal(Math.abs(start.left),Math.abs(start.right),'the same distance on both edges');
+      });
       await step('the rail: every strip and bar button in Tab, names that say what they do, the keyboard kept when the panel closes',async()=>{
         // With no rail the mark is the brand, not a disabled control (#187).
         const brand=page.locator('[data-rail-toggle]');

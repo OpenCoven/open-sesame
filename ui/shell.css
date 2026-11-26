@@ -75,7 +75,7 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
   padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 11px;
+  border-radius: var(--radius-button);
   background: transparent;
   color: var(--muted);
 }
@@ -88,36 +88,36 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
 .rail-button[aria-current="page"]::before {
   content: "";
   position: absolute;
-  top: 11px;
-  bottom: 11px;
-  left: -8px;
-  width: 3px;
+  top: var(--current-inset);
+  bottom: var(--current-inset);
+  left: calc(-1 * var(--current-offset));
+  width: var(--current-width);
   border-radius: var(--radius-pill);
   background: var(--accent);
 }
-.shell[data-presentation="rail"][data-edge="right"] .rail-button[aria-current="page"]::before { left: auto; right: -8px; }
+.shell[data-presentation="rail"][data-edge="right"] .rail-button[aria-current="page"]::before { left: auto; right: calc(-1 * var(--current-offset)); }
 
 /* A mark from ui/attention.js: something under way, or something that needs the person. */
 .rail-button[data-mark]::after {
   content: "";
   position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 8px;
-  height: 8px;
+  top: var(--dot-inset);
+  right: var(--dot-inset);
+  width: var(--dot);
+  height: var(--dot);
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 2px var(--sunken);
+  box-shadow: 0 0 0 var(--dot-ring) var(--sunken);
 }
 .rail-button[data-mark="attention"]::after { background: var(--attention); animation: attention var(--pulse) var(--ease) infinite; }
 @keyframes attention {
-  0%, 100% { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 2px var(--attention-ring); }
-  50% { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 6px transparent; }
+  0%, 100% { box-shadow: 0 0 0 var(--dot-ring) var(--sunken), 0 0 0 var(--dot-ring) var(--attention-ring); }
+  50% { box-shadow: 0 0 0 var(--dot-ring) var(--sunken), 0 0 0 var(--dot-pulse) transparent; }
 }
 
 .rail-mark { color: var(--ink); }
 .rail-mark:disabled { color: var(--ink); }
-.rail-mark .icon { width: 24px; height: 24px; }
+.rail-mark .icon { width: var(--icon-large); height: var(--icon-large); }
 /* The keyboard was handed back to another application with the mark focused: no ring on the strip until it returns. */
 .shell[data-window-focus="false"] .rail-mark:focus-visible { outline: none; }
 
@@ -128,7 +128,7 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 6px 6px 6px 0;
+  margin: var(--panel-gap) var(--panel-gap) var(--panel-gap) 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -136,9 +136,12 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
   overflow: hidden;
   animation: panel-in var(--smooth) var(--ease);
 }
-.shell[data-presentation="rail"][data-edge="right"] .panel { margin: 6px 0 6px 6px; }
+.shell[data-presentation="rail"][data-edge="right"] .panel { margin: var(--panel-gap) 0 var(--panel-gap) var(--panel-gap); }
+/* The panel opens away from the strip: from the right on the right edge, from the left on the
+   left edge (#189). */
+.shell[data-edge="left"] { --panel-from: calc(-1 * var(--enter-shift)); }
 @keyframes panel-in {
-  from { opacity: 0; transform: translateX(8px); }
+  from { opacity: 0; transform: translateX(var(--panel-from, var(--enter-shift))); }
   to { opacity: 1; transform: none; }
 }
 /* The closed rail is the strip alone. */
@@ -151,7 +154,7 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: 52px;
+  min-height: var(--bar-height);
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--line);
 }
@@ -161,8 +164,8 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
 .shell[data-state="unavailable"] .status { color: var(--warn); }
 .bar-button {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: var(--control-bar);
+  height: var(--control-bar);
   min-height: 0;
   padding: 0;
   display: grid;
@@ -171,7 +174,7 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
   color: var(--muted);
 }
 .bar-button:hover { color: var(--ink); }
-.bar-button .icon { width: 18px; height: 18px; }
+.bar-button .icon { width: var(--icon-small); height: var(--icon-small); }
 .shell[data-edge="left"] [data-collapse] .icon { transform: scaleX(-1); }
 
 .notice {
@@ -201,18 +204,18 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
   animation: sheet-in var(--quick) var(--ease);
 }
 @keyframes sheet-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(var(--space-1)); }
   to { opacity: 1; transform: none; }
 }
 
 .palette { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
 .palette label { display: grid; gap: var(--space-2); color: var(--muted); font-size: var(--text-small); }
-.palette input { width: 100%; min-height: 36px; padding: 0 var(--space-3); font-size: var(--text); color: var(--ink); }
+.palette input { width: 100%; min-height: var(--control-large); padding: 0 var(--space-3); font-size: var(--text); color: var(--ink); }
 .command-results { flex: 1; min-height: 0; display: grid; gap: 2px; align-content: start; overflow: auto; }
 .command-results button {
   display: block;
   width: 100%;
-  min-height: 34px;
+  min-height: var(--control-row);
   padding: var(--space-2) var(--space-3);
   background: transparent;
   text-align: left;
@@ -249,12 +252,12 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
 .sheet .check { display: flex; align-items: center; gap: var(--space-2); color: var(--ink); }
 .sheet .field { display: grid; gap: var(--space-1); }
 .sheet select { width: 100%; }
-.widget-settings [data-widget-options] { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-1) var(--space-3); }
-.widget-settings [data-widget-options] label { display: flex; align-items: center; gap: var(--space-2); min-height: 28px; color: var(--ink); }
+.widget-settings [data-widget-options] { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--switch-min), 1fr)); gap: var(--space-1) var(--space-3); }
+.widget-settings [data-widget-options] label { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-small); color: var(--ink); }
 
 /* The page's own context menu (context-menu.js, issue #115), which replaces the web view's. */
-.context-menu { position: fixed; z-index: 1000; display: grid; min-width: 9rem; padding: 4px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: var(--shadow-raised); }
-.context-menu button { border: 0; background: none; text-align: left; border-radius: var(--radius-control); padding: 5px 11px; }
+.context-menu { position: fixed; z-index: 1000; display: grid; min-width: 9rem; padding: var(--space-1); background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: var(--shadow-raised); }
+.context-menu button { border: 0; background: none; text-align: left; border-radius: var(--radius-control); padding: var(--menu-item-padding); }
 .context-menu:focus { outline: none; }
 .context-menu button:hover:not(:disabled), .context-menu button:focus-visible { background: var(--fill-hover); }
 .context-menu button:focus-visible { outline-offset: -2px; }
