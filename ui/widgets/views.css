@@ -2,8 +2,6 @@
    344 px across, that also reads well when the panel is wide or the window is an ordinary one.
    Loaded with any of the three and removed with it. Colours and sizes come from tokens.css. */
 .view { display: grid; gap: var(--space-4); max-width: 44rem; align-content: start; }
-/* The panel's bar already names the view; the heading stays for assistive technology. */
-.view > h2, .view > header > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .view h3 { color: var(--muted); font-size: var(--text-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .view .muted { color: var(--muted); overflow-wrap: anywhere; }
 .view-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -63,7 +61,3 @@
 .focus-clock { font-size: 64px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
 .focus input[type="number"] { width: 5rem; }
 .focus label { color: var(--muted); }
-
-/* A port that has not landed yet (widgets/pending.js) and anything else a view leaves bare. */
-.widget-view > h2 { margin-bottom: var(--space-2); }
-.widget-view > p { color: var(--muted); }

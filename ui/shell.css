@@ -188,6 +188,11 @@ html[data-surface="page"] .shell { border-radius: var(--radius-window); box-shad
 .view-host { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .widget-view { flex: 1; min-width: 0; padding: var(--space-4); overflow: auto; }
 .widget-view[data-widget-view="shells"] { padding: 0; display: flex; }
+/* The panel's bar already names the view, so a view's own title is not drawn again; it stays for
+   assistive technology (#201). Here rather than in a widget's stylesheet, because a pending view
+   (widgets/pending.js) loads none. */
+.widget-view > h2, .view > h2, .view > header > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.widget-view > p { color: var(--muted); }
 .empty { padding: var(--space-4); color: var(--muted); }
 
 /* Commands and Settings open over the view, inside the panel; the view under them stays as it

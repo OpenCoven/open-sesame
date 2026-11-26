@@ -49,6 +49,8 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
   // on the control that comes next instead of leaving it on the page (issue #199).
   const cardOf=id=>[...collection.children].find(child=>child.dataset.instance===id);
   const buttonOf=(parent,text)=>[...(parent?.querySelectorAll('button')||[])].find(b=>b.textContent===text);
+  // The card's first button is Turn on or Turn off, whichever the card now shows.
+  const refocus=id=>{if(current())cardOf(id)?.querySelector('button')?.focus();};
 
   function content(parent,definition,values,data) {
     for(const component of definition.components) {
@@ -73,7 +75,7 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
     content(previewHost,definition,model.configuration(definition),definition.fixtures);
     button(previewHost,'Install widget',async()=>{
       const entry={...model.instance(definition),active:true};
-      if(await save(current=>[...current,entry])){preview=null;renderPreview();render();say('Widget installed.');cardOf(entry.id)?.querySelector('button')?.focus();}
+      if(await save(current=>[...current,entry])){preview=null;renderPreview();render();say('Widget installed.');refocus(entry.id);}
     }).disabled=!readable;
     for(const entry of entries) button(previewHost,`Replace ${entry.definition.name}`,async()=>{
       if(await save(current=>current.map(old=>old.id===entry.id?model.replace(old,definition):old))){retire(entry.id);drafts.delete(entry.id);preview=null;renderPreview();render();say('Widget replaced.');}
@@ -90,9 +92,9 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
       button(card,entry.active===false?'Turn on':'Turn off',async()=>{
         const active=entry.active===false;
         // Off retires activity immediately, even when the storage reply is delayed.
-        if(!active){retire(entry.id);entry.active=false;render();}
-        if(await save(current=>current.map(old=>old.id===entry.id?{...old,active}:old)))render();
-        else render();
+        if(!active){retire(entry.id);entry.active=false;render();refocus(entry.id);}
+        await save(current=>current.map(old=>old.id===entry.id?{...old,active}:old));
+        render();refocus(entry.id);
       });
       button(card,'Export definition',()=>{
         const url=URL.createObjectURL(new Blob([JSON.stringify(entry.definition,null,2)+'\n'],{type:'application/json'}));
@@ -100,7 +102,7 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
         setTimeout(()=>URL.revokeObjectURL(url),0);
       });
       if(entry.previous)button(card,'Roll back',async()=>{
-        if(await save(current=>current.map(old=>old.id===entry.id?model.rollback(old):old))){retire(entry.id);drafts.delete(entry.id);render();say('Widget rolled back.');}
+        if(await save(current=>current.map(old=>old.id===entry.id?model.rollback(old):old))){retire(entry.id);drafts.delete(entry.id);render();say('Widget rolled back.');refocus(entry.id);}
       });
       const remove=button(card,'Remove widget',()=>{
         remove.hidden=true;

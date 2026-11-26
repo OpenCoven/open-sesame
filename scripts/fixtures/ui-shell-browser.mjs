@@ -356,6 +356,49 @@ try {
         const removed=await focused();
         assert.equal(removed.label,'Import widget JSON','after removal the keyboard is on the file input');
       });
+      await step('a card\'s own buttons keep the keyboard while they work and after the card is drawn again (#199)',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        const focused=()=>page.evaluate(()=>{const e=document.activeElement;return {text:e.textContent.trim(),card:e.closest('.json-card')?.dataset.instance||null};});
+        const cards=await host.locator('.json-card').count();
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await host.getByRole('button',{name:'Install widget',exact:true}).click();
+        const card=host.locator('.json-card').nth(cards);await card.waitFor();
+        const id=await card.getAttribute('data-instance');
+        const press=async(name,said)=>{
+          await card.getByRole('button',{name,exact:true}).focus();
+          await page.keyboard.press('Enter');
+          if(said)await host.getByRole('status').filter({hasText:said}).waitFor();
+        };
+        await press('Save configuration','Configuration saved.');
+        assert.deepEqual(await focused(),{text:'Save configuration',card:id},'Save configuration keeps the keyboard');
+        await press('Turn off');
+        await card.getByRole('button',{name:'Turn on',exact:true}).waitFor();
+        await page.waitForFunction(()=>document.activeElement!==document.body).catch(()=>{});
+        assert.deepEqual(await focused(),{text:'Turn on',card:id},'Turn off hands the keyboard to Turn on');
+        await page.keyboard.press('Enter');
+        await card.getByRole('button',{name:'Turn off',exact:true}).waitFor();
+        await page.waitForFunction(()=>document.activeElement!==document.body).catch(()=>{});
+        assert.deepEqual(await focused(),{text:'Turn off',card:id},'Turn on hands the keyboard to Turn off');
+        await card.getByRole('button',{name:'Remove widget',exact:true}).click();
+        await card.getByRole('button',{name:'Confirm removal',exact:true}).click();
+        await host.getByRole('status').filter({hasText:'Widget removed.'}).waitFor();
+        assert.equal(await host.locator('.json-card').count(),cards);
+      });
+      await step('a view names itself once, in the bar, and a pending view says what to do (#201)',async()=>{
+        // The bar's h1 names the view; the view's own h2 stays for assistive technology but is not drawn.
+        const drawn=locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return r.width>1&&r.height>1;});
+        const json=page.locator('[data-widget-view="declarative"] > h2');
+        assert.equal(await json.textContent(),'JSON widgets');
+        assert.equal(await drawn(json),false,'the JSON widgets view does not draw its title again');
+        await page.locator('[data-view="agents"]').click();
+        const agents=page.locator('[data-widget-view="agents"]');
+        await agents.locator('p').waitFor();
+        assert.equal(await page.locator('.bar-title h1').textContent(),'Agents');
+        assert(await drawn(page.locator('.bar-title h1')),'the bar names the view');
+        assert.equal(await agents.locator('h2').textContent(),'Agents','the heading is still there to be read');
+        assert.equal(await drawn(agents.locator('h2')),false,'the pending view does not draw its title again');
+        assert.equal(await agents.locator('p').textContent(),'Agents is coming in a later version. Turn it off in Settings to hide it from the rail.');
+      });
       await step('last view and installed command survive reload without JSON code loading',async()=>{
         await page.locator('[data-view="today"]').click();
         await page.waitForFunction(()=>window.__fixture__.settings['shell.lastView']==='today');
