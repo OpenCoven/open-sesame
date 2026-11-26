@@ -260,6 +260,17 @@ const loaded = async (core, options = {}) => { const store = I.createItemStore({
   assert.equal(existing.saved, true);
   assert.equal(existing.project.name, 'Project 3', 'A name already in use returns that project, as the prototype does');
 }
+{ // The core enforces the same caps (issue #128): a save the UI let through because its list was
+  // out of date is refused by the core, and the UI shows the core's sentence and keeps nothing.
+  const core = createStorageCore();
+  for (let i = 0; i < 29; i++) core.seed({kind: 'note', text: `Open ${i}`});
+  const store = await loaded(core);
+  core.seed({kind: 'task', text: 'Added elsewhere'});
+  const late = await store.create({kind: 'note', text: 'One too many'}, {draft: 'late'});
+  assert.deepEqual(plain(late), {saved: false, error: 'You have 30 active items. Archive one to make room.', conflict: false});
+  assert.equal(core.items.size, 30, 'The refused create stored nothing');
+  assert.equal(core.seed({kind: 'task', text: 'Stored done', stage: 'done', done: false}).done, true, 'A task archived without done is stored done');
+}
 { // Projects: create with a client ID and retry, rename with expectedUpdatedAt, delete moves items.
   const core = createStorageCore();
   const store = await loaded(core);
@@ -383,4 +394,4 @@ assert(!/\bimport\b/.test(source), 'The store imports nothing');
 assert(!/\b(?:window|globalThis|self|document|localStorage|sessionStorage|indexedDB|fetch|XMLHttpRequest)\b/.test(source), 'The store reaches no global, storage or network');
 assert(!/Date\.now|new Date\(|setTimeout|setInterval/.test(source), 'The store sets no time and schedules nothing');
 
-console.log('Items: archive rule, stage patch, excerpt and titles match the prototype, except that the excerpt replaces a tag with a space; an edit sends only the fields the person edited; Today shows the latest active note and open tasks; creates reuse their client UUID after a lost reply or failure, edits name expectedUpdatedAt, conflicts overwrite nothing, 300/30/30 caps hold at their edges with the prototype sentences, and a failed write saves nothing.');
+console.log('Items: archive rule, stage patch, excerpt and titles match the prototype, except that the excerpt replaces a tag with a space; an edit sends only the fields the person edited; Today shows the latest active note and open tasks; creates reuse their client UUID after a lost reply or failure, edits name expectedUpdatedAt, conflicts overwrite nothing, 300/30/30 caps hold at their edges with the prototype sentences and a save the core refuses for a cap shows its sentence, and a failed write saves nothing.');
