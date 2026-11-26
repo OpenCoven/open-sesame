@@ -11,7 +11,8 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
   let writes=Promise.resolve();
   const drafts=new Map(), lifetimes=new Map(), noteIds=new Map();
   const status=node('p');status.setAttribute('role','status');
-  const say=text=>{if(!signal.aborted)status.textContent=text;};
+  // A sentence that reports a failure is drawn in the warning colour; any other clears it.
+  const say=(text,tone)=>{if(signal.aborted)return;status.textContent=text;if(tone)status.dataset.tone=tone;else delete status.dataset.tone;};
   const current=()=>!signal.aborted;
   const title=node('h2','JSON widgets');
   const explanation=node('p','Import a widget definition, review its sample content and requested access, then install it.');
@@ -24,7 +25,7 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
     const b=node('button',text);b.type='button';
     b.addEventListener('click',async()=>{
       b.disabled=true;
-      try{await action();}catch(error){say(error.message||String(error));}
+      try{await action();}catch(error){say(error.message||String(error),'warn');}
       finally{b.disabled=false;}
     });parent.append(b);return b;
   };
@@ -44,6 +45,12 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
     lifetimes.get(id)?.abort();lifetimes.delete(id);
   };
   const config=entry=>drafts.get(entry.id)||model.configuration(entry.definition,entry.config);
+  // render() and renderPreview() draw their parts again, so each action puts the keyboard back
+  // on the control that comes next instead of leaving it on the page (issue #199).
+  const cardOf=id=>[...collection.children].find(child=>child.dataset.instance===id);
+  const buttonOf=(parent,text)=>[...(parent?.querySelectorAll('button')||[])].find(b=>b.textContent===text);
+  // The card's first button is Turn on or Turn off, whichever the card now shows.
+  const refocus=id=>{if(current())cardOf(id)?.querySelector('button')?.focus();};
 
   function content(parent,definition,values,data) {
     for(const component of definition.components) {
@@ -68,7 +75,7 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
     content(previewHost,definition,model.configuration(definition),definition.fixtures);
     button(previewHost,'Install widget',async()=>{
       const entry={...model.instance(definition),active:true};
-      if(await save(current=>[...current,entry])){preview=null;renderPreview();render();say('Widget installed.');}
+      if(await save(current=>[...current,entry])){preview=null;renderPreview();render();say('Widget installed.');refocus(entry.id);}
     }).disabled=!readable;
     for(const entry of entries) button(previewHost,`Replace ${entry.definition.name}`,async()=>{
       if(await save(current=>current.map(old=>old.id===entry.id?model.replace(old,definition):old))){retire(entry.id);drafts.delete(entry.id);preview=null;renderPreview();render();say('Widget replaced.');}
@@ -85,9 +92,9 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
       button(card,entry.active===false?'Turn on':'Turn off',async()=>{
         const active=entry.active===false;
         // Off retires activity immediately, even when the storage reply is delayed.
-        if(!active){retire(entry.id);entry.active=false;render();}
-        if(await save(current=>current.map(old=>old.id===entry.id?{...old,active}:old)))render();
-        else render();
+        if(!active){retire(entry.id);entry.active=false;render();refocus(entry.id);}
+        await save(current=>current.map(old=>old.id===entry.id?{...old,active}:old));
+        render();refocus(entry.id);
       });
       button(card,'Export definition',()=>{
         const url=URL.createObjectURL(new Blob([JSON.stringify(entry.definition,null,2)+'\n'],{type:'application/json'}));
@@ -95,22 +102,23 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
         setTimeout(()=>URL.revokeObjectURL(url),0);
       });
       if(entry.previous)button(card,'Roll back',async()=>{
-        if(await save(current=>current.map(old=>old.id===entry.id?model.rollback(old):old))){retire(entry.id);drafts.delete(entry.id);render();say('Widget rolled back.');}
+        if(await save(current=>current.map(old=>old.id===entry.id?model.rollback(old):old))){retire(entry.id);drafts.delete(entry.id);render();say('Widget rolled back.');refocus(entry.id);}
       });
       const remove=button(card,'Remove widget',()=>{
         remove.hidden=true;
-        button(card,'Confirm removal',async()=>{
+        const confirm=button(card,'Confirm removal',async()=>{
           const previousActive=entry.active!==false;
           retire(entry.id);entry.active=false;render();
           try {
-            if(await save(current=>current.filter(old=>old.id!==entry.id))){drafts.delete(entry.id);render();say('Widget removed.');}
+            if(await save(current=>current.filter(old=>old.id!==entry.id))){drafts.delete(entry.id);render();say('Widget removed.');if(current())file.focus();}
           } catch(error) {
             entries=entries.map(old=>old.id===entry.id?{...old,active:previousActive}:old);
             if(current())render();
             throw error;
           }
         });
-        button(card,'Keep widget',()=>render());
+        button(card,'Keep widget',()=>{render();buttonOf(cardOf(entry.id),'Remove widget')?.focus();});
+        confirm.focus();
       });
       if(entry.active!==false) {
         const lifetime=lifetimes.get(entry.id)||new AbortController();lifetimes.set(entry.id,lifetime);
@@ -158,20 +166,26 @@ export async function mount({surface,signal,bridge,navigate,report,catalogChange
       if(chosen.size>100000)throw Error('Package must be JSON under 100 KB');
       const raw=await chosen.text();
       if(!current()||ticket!==turn)return;
-      preview=model.parse(raw);renderPreview();say('Review the sample and requested access before installing.');
-    }catch(error){if(current()&&ticket===turn){preview=null;renderPreview();say(error.message);}}
+      try {preview=model.parse(raw);}
+      catch(error){
+        // The engine's parser text and the validator's field list are not sentences for a person.
+        if(error instanceof SyntaxError)throw Error('This file is not JSON. Choose a widget definition file (.json).');
+        throw Error(`This definition cannot be installed: ${error.message}`);
+      }
+      renderPreview();say('Review the sample and requested access before installing.');
+    }catch(error){if(current()&&ticket===turn){preview=null;renderPreview();say(error.message,'warn');}}
   });
   try {
     entries=await store.read();readable=true;
     if(current()){announce();render();}
-  }catch(error){say(`${error.message} Import previews still work; installation needs working storage.`);}
+  }catch(error){say(`${error.message} Import previews still work; installation needs working storage.`,'warn');}
   signal.addEventListener('abort',()=>{ticket++;for(const id of lifetimes.keys())retire(id);},{once:true});
   return {dispose:async()=>{ticket++;for(const id of lifetimes.keys())retire(id);await writes;surface.replaceChildren();},command:async action=>{
     if(!action.startsWith('instance:'))return;
     const id=action.slice('instance:'.length),entry=entries.find(item=>item.id===id);
     if(!entry)throw Error('This JSON widget is no longer installed.');
     if(entry.active===false&&await save(current=>current.map(old=>old.id===id?{...old,active:true}:old)))render();
-    const card=[...collection.children].find(child=>child.dataset.instance===id);
+    const card=cardOf(id);
     card?.scrollIntoView({block:'nearest'});card?.querySelector('button')?.focus();
   }};
 }

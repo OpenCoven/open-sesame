@@ -273,6 +273,27 @@ try {
         await host.locator('.json-card').waitFor();
         assert(!await host.getByText('Sample content · no action or provider is run.',{exact:true}).count());
       });
+      await step('a file that is not a definition gets a plain warning and no empty preview',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]'),status=host.getByRole('status'),preview=host.locator(':scope > section');
+        const colour=locator=>locator.evaluate(e=>getComputedStyle(e).color);
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('hello')});
+        await status.filter({hasText:'This file is not JSON. Choose a widget definition file (.json).'}).waitFor();
+        assert.equal(await status.textContent(),'This file is not JSON. Choose a widget definition file (.json).','the engine\'s parser text is not shown');
+        assert.equal(await status.getAttribute('data-tone'),'warn');
+        assert.notEqual(await colour(status),await colour(host.getByText('Import a widget definition',{exact:false})),'a warning is not drawn in the muted colour');
+        assert(await preview.isHidden(),'the empty preview draws no box');
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'partial.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({name:definition.name}))});
+        await status.filter({hasText:'This definition cannot be installed:'}).waitFor();
+        assert((await status.textContent()).startsWith('This definition cannot be installed: '),'the field list follows a sentence');
+        assert.equal(await status.getAttribute('data-tone'),'warn');
+        assert(await preview.isHidden());
+        // A definition that can be installed clears the warning.
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await status.filter({hasText:'Review the sample'}).waitFor();
+        assert.equal(await status.getAttribute('data-tone'),null);
+        assert(await preview.isVisible());
+        await host.getByRole('button',{name:'Dismiss preview',exact:true}).click();
+      });
       await step('unknown code is rejected and markup is rendered as text',async()=>{
         const host=page.locator('[data-widget-view="declarative"]');
         await host.getByLabel('Import widget JSON').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...definition,script:'./evil.js'}))});
@@ -311,6 +332,72 @@ try {
         await page.evaluate(()=>window.__fixture__.releaseNote());
         await page.waitForTimeout(100);
         assert.equal(await host.getByRole('status').textContent(),beforeReply,'A retired action must not report its late error');
+      });
+      await step('install, remove, keep and removal each leave the keyboard on the next control',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        const focused=()=>page.evaluate(()=>{const e=document.activeElement;return {tag:e.tagName,text:e.textContent.trim(),label:e.getAttribute('aria-label'),card:e.closest('.json-card')?.dataset.instance||null};});
+        const cards=await host.locator('.json-card').count();
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await host.getByRole('button',{name:'Install widget',exact:true}).click();
+        await host.locator('.json-card').nth(cards).waitFor();
+        const card=host.locator('.json-card').nth(cards),id=await card.getAttribute('data-instance');
+        const installed=await focused();
+        assert.equal(installed.card,id,'after install the keyboard is in the new card');
+        assert.equal(installed.tag,'BUTTON');
+        await card.getByRole('button',{name:'Remove widget',exact:true}).click();
+        assert.deepEqual(await focused(),{tag:'BUTTON',text:'Confirm removal',label:null,card:id},'Remove widget moves to Confirm removal');
+        await card.getByRole('button',{name:'Keep widget',exact:true}).click();
+        assert.deepEqual(await focused(),{tag:'BUTTON',text:'Remove widget',label:null,card:id},'Keep widget goes back to Remove widget');
+        await page.keyboard.press('Enter');
+        assert.equal((await focused()).text,'Confirm removal');
+        await page.keyboard.press('Enter');
+        await host.getByRole('status').filter({hasText:'Widget removed.'}).waitFor();
+        assert.equal(await host.locator(`.json-card[data-instance="${id}"]`).count(),0);
+        const removed=await focused();
+        assert.equal(removed.label,'Import widget JSON','after removal the keyboard is on the file input');
+      });
+      await step('a card\'s own buttons keep the keyboard while they work and after the card is drawn again (#199)',async()=>{
+        const host=page.locator('[data-widget-view="declarative"]');
+        const focused=()=>page.evaluate(()=>{const e=document.activeElement;return {text:e.textContent.trim(),card:e.closest('.json-card')?.dataset.instance||null};});
+        const cards=await host.locator('.json-card').count();
+        await host.getByLabel('Import widget JSON').setInputFiles({name:'widget.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(definition))});
+        await host.getByRole('button',{name:'Install widget',exact:true}).click();
+        const card=host.locator('.json-card').nth(cards);await card.waitFor();
+        const id=await card.getAttribute('data-instance');
+        const press=async(name,said)=>{
+          await card.getByRole('button',{name,exact:true}).focus();
+          await page.keyboard.press('Enter');
+          if(said)await host.getByRole('status').filter({hasText:said}).waitFor();
+        };
+        await press('Save configuration','Configuration saved.');
+        assert.deepEqual(await focused(),{text:'Save configuration',card:id},'Save configuration keeps the keyboard');
+        await press('Turn off');
+        await card.getByRole('button',{name:'Turn on',exact:true}).waitFor();
+        await page.waitForFunction(()=>document.activeElement!==document.body).catch(()=>{});
+        assert.deepEqual(await focused(),{text:'Turn on',card:id},'Turn off hands the keyboard to Turn on');
+        await page.keyboard.press('Enter');
+        await card.getByRole('button',{name:'Turn off',exact:true}).waitFor();
+        await page.waitForFunction(()=>document.activeElement!==document.body).catch(()=>{});
+        assert.deepEqual(await focused(),{text:'Turn off',card:id},'Turn on hands the keyboard to Turn off');
+        await card.getByRole('button',{name:'Remove widget',exact:true}).click();
+        await card.getByRole('button',{name:'Confirm removal',exact:true}).click();
+        await host.getByRole('status').filter({hasText:'Widget removed.'}).waitFor();
+        assert.equal(await host.locator('.json-card').count(),cards);
+      });
+      await step('a view names itself once, in the bar, and a pending view says what to do (#201)',async()=>{
+        // The bar's h1 names the view; the view's own h2 stays for assistive technology but is not drawn.
+        const drawn=locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return r.width>1&&r.height>1;});
+        const json=page.locator('[data-widget-view="declarative"] > h2');
+        assert.equal(await json.textContent(),'JSON widgets');
+        assert.equal(await drawn(json),false,'the JSON widgets view does not draw its title again');
+        await page.locator('[data-view="agents"]').click();
+        const agents=page.locator('[data-widget-view="agents"]');
+        await agents.locator('p').waitFor();
+        assert.equal(await page.locator('.bar-title h1').textContent(),'Agents');
+        assert(await drawn(page.locator('.bar-title h1')),'the bar names the view');
+        assert.equal(await agents.locator('h2').textContent(),'Agents','the heading is still there to be read');
+        assert.equal(await drawn(agents.locator('h2')),false,'the pending view does not draw its title again');
+        assert.equal(await agents.locator('p').textContent(),'Agents is coming in a later version. Turn it off in Settings to hide it from the rail.');
       });
       await step('last view and installed command survive reload without JSON code loading',async()=>{
         await page.locator('[data-view="today"]').click();
