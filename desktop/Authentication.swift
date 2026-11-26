@@ -1,4 +1,8 @@
+#if os(iOS)
+import UIKit
+#else
 import AppKit
+#endif
 import AuthenticationServices
 import Security
 import WorkOS
@@ -9,7 +13,11 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
     static let clientID = "client_01M6WS836GMGC87S8SVBR6X35A"
     static let redirect = "opensesame://auth/callback"
     static let signedOut = "opensesame://auth/signed-out"
+    #if os(iOS)
+    private static let keychainService = "computer.opensesame.mobile.workos.production"
+    #else
     private static let keychainService = "com.perch.widgetstudio.workos.production"
+    #endif
     private let publicClient = PublicClient(clientID: clientID)
     private let verifier = WorkOSClient(configuration: Configuration(apiKey: "", timeout: 20, maxRetries: 1, clientID: clientID))
     private var browser: ASWebAuthenticationSession?
@@ -18,19 +26,39 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
     private var expiryTimer: Timer?
     private var epoch = 0
     private var expires = Date.distantPast
+    #if os(iOS)
+    private var mobileAt:Date?
+    private var mobileTicks:TimeInterval?
+    private var mobileDeadline:TimeInterval?
+    #endif
     private var user: User?
     private var saved: SavedSession?
     private(set) var busy = false
     private var restoring = false
     private(set) var message = "Sign in to use Open Sesame."
+    #if os(iOS)
+    weak var window: UIWindow?
+    #else
     weak var window: NSWindow?
+    #endif
     var changed: (() -> Void)?
-    var authenticated: Bool { user != nil && expires > Date() }
+    var authenticated: Bool {
+        #if os(iOS)
+        guard UIApplication.shared.isProtectedDataAvailable,let at=mobileAt,let ticks=mobileTicks,let deadline=mobileDeadline,MobileSessionClock.valid(attestedAt:at,ticks:ticks,deadline:deadline) else { return false }
+        #endif
+        return user != nil && expires > Date()
+    }
 
     private struct SavedSession: Codable {
         let refreshToken: String
         let sealedSession: String
         let password: String
+        // Native Keychain attestation is written only after signed user verification. Never imported.
+        var attestedUser: User? = nil
+        var attestedExpiry: Date? = nil
+        var attestedAt:Date? = nil
+        var attestedTicks:TimeInterval? = nil
+        var continuousDeadline:TimeInterval? = nil
     }
     enum AuthError: Error { case invalidCallback, invalidSession, keychain }
 
@@ -71,7 +99,17 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
         guard !busy, !UserDefaults.standard.bool(forKey: "openSesame.auth.signedOut") else { changed?(); return }
         do {
             guard let value = try readSession() else { changed?(); return }
-            saved = value; refresh()
+            saved = value
+            #if os(iOS)
+            if let account = value.attestedUser, let deadline = value.attestedExpiry, let at=value.attestedAt,let ticks=value.attestedTicks,let continuous=value.continuousDeadline,deadline > Date(), UIApplication.shared.isProtectedDataAvailable,MobileSessionClock.valid(attestedAt:at,ticks:ticks,deadline:continuous) {
+                mobileAt=at;mobileTicks=ticks;mobileDeadline=continuous
+                user = account; expires = deadline
+                expiryTimer?.invalidate()
+                expiryTimer = Timer.scheduledTimer(withTimeInterval: max(1, deadline.timeIntervalSinceNow), repeats: false) { [weak self] _ in Task { @MainActor in self?.changed?() } }
+                changed?()
+            }
+            #endif
+            refresh()
         } catch { message = "The saved sign-in could not be opened. Sign in again."; changed?() }
     }
 
@@ -111,8 +149,14 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
         guard ticket == epoch, !Task.isCancelled else { return }
         guard result.authenticated, result.user?.id == response.user.id else { throw AuthError.invalidSession }
         let deadline = try Self.expiration(response.accessToken)
-        let value = SavedSession(refreshToken: response.refreshToken, sealedSession: sealed, password: password)
+        var value = SavedSession(refreshToken: response.refreshToken, sealedSession: sealed, password: password, attestedUser: response.user, attestedExpiry: deadline)
+        #if os(iOS)
+        value.attestedAt=Date();value.attestedTicks=MobileSessionClock.now;value.continuousDeadline=value.attestedTicks!+max(0,deadline.timeIntervalSinceNow)
+        #endif
         try writeSession(value)
+        #if os(iOS)
+        mobileAt=value.attestedAt;mobileTicks=value.attestedTicks;mobileDeadline=value.continuousDeadline
+        #endif
         UserDefaults.standard.set(false, forKey: "openSesame.auth.signedOut")
         saved = value; user = response.user; expires = deadline; busy = false; restoring = false; message = "Signed in."
         refreshTimer?.invalidate(); expiryTimer?.invalidate()
@@ -159,7 +203,7 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
         epoch += 1; task?.cancel(); browser?.cancel(); browser = nil
         refreshTimer?.invalidate(); expiryTimer?.invalidate(); busy = false; restoring = false
         UserDefaults.standard.set(true, forKey: "openSesame.auth.signedOut")
-        saved = nil; user = nil; expires = .distantPast; message = "Signed out on this Mac."
+        saved = nil; user = nil; expires = .distantPast; message = "Signed out on this device."
         do { try deleteSession() } catch { message = "Signed out. The saved credential could not be removed; sign in again to replace it." }
         changed?()
         let ticket = epoch
@@ -167,10 +211,23 @@ final class OpenSesameAuthentication: NSObject, ASWebAuthenticationPresentationC
             Task { @MainActor in
                 guard let session = try? Session(client: verifier, sessionData: previous.sealedSession, validatingCookiePassword: previous.password),
                       let url = try? await session.getVerifiedLogoutUrl(returnTo: Self.signedOut), ticket == epoch else { return }
+                #if os(iOS)
+                await UIApplication.shared.open(url)
+                #else
                 NSWorkspace.shared.open(url)
+                #endif
             }
         }
     }
+
+    #if os(iOS)
+    func validateClock() {
+        guard user != nil,UIApplication.shared.isProtectedDataAvailable,!authenticated else{return}
+        epoch += 1;task?.cancel();refreshTimer?.invalidate();expiryTimer?.invalidate();busy=false;restoring=false;user=nil;expires = .distantPast
+        message="Your session needs verification. Sign in or reconnect to continue.";changed?()
+        if saved != nil {refresh()}
+    }
+    #endif
 
     func shutdown() { epoch += 1; task?.cancel(); browser?.cancel(); refreshTimer?.invalidate(); expiryTimer?.invalidate() }
 

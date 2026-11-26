@@ -19,13 +19,13 @@
   function startAudioSession(){el('audio-start').click()}
   button.addEventListener('click',open);el('voice-command-close').addEventListener('click',close);el('voice-command-talk').addEventListener('click',()=>window.OpenSesameVoice.active?window.OpenSesameVoice.stop():talk());el('voice-command-draft').addEventListener('input',refresh);
   el('voice-live-audio').addEventListener('click',()=>{window.OpenSesameVoice.cancel();sheet.hidden=true;window.OpenSesameLauncher?.close(true);changeScenario('audio');el('live-capture-mode').focus({preventScroll:true})});
-  el('voice-command-run').addEventListener('click',()=>{
+  el('voice-command-run').addEventListener('click',async ()=>{
     const intent=interpret();if(el('voice-command-run').disabled)return;
     if(intent.kind==='computer'){window.OpenSesameComputer.run(intent.control);return}
     if(intent.kind==='item'){
       const capture=el('capture-input');if(capture.value.trim()){toast('Save or clear your current capture draft first. Your spoken command is kept here.');return}
       el('capture-type').value='auto';capture.value=OpenSesameVoiceModel.draft(el('voice-command-draft').value);capture.dispatchEvent(new Event('input',{bubbles:true}));sheet.hidden=true;el('capture-form').requestSubmit();
-    }else if(window.openSesameCapture.execute(intent)===true)sheet.hidden=true;
+    }else if(await window.openSesameCapture.execute(intent)===true)sheet.hidden=true;
   });
   el('voice-command-draft').addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();el('voice-command-run').click()}});
   function reset(cancel=false){clearTimeout(timer);timer=0;pointer=null;if(holding){holding=false;anchor.classList.remove('voice-holding');suppressUntil=Date.now()+500;if(cancel)window.OpenSesameVoice.cancel();else window.OpenSesameVoice.stop()}}

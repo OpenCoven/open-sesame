@@ -22,6 +22,10 @@ The checked-in create-markdown runtime comes from the [vendored tokenizer](../ve
 
 [lockin.js](lockin.js) owns local-media play/seek; [media-transport.js](media-transport.js) adds shared volume, fullscreen and empty/drag hints to the same bar and video element; native controls are reserved for fullscreen. Keep live/unknown-duration seek disabled and preserve queue/file ownership in [lockin.js](lockin.js). Process presentation disclosures in [agent-monitor.js](agent-monitor.js) must preserve identity-bound native controls and explicit stop confirmation.
 
+[Workspace persistence](../docs/workspace-storage.md) is hydrated by workspace-bootstrap.js before executing the ordered index.html script descriptors. Canonical owners read the hydrated snapshot and await writes; preserve failure rollback, note-save veto and newer drafts. IndexedDB is browser evidence only; no native adapter or credential export is implied. Keep new storage keys explicitly allowlisted and validated, and never restore prototype or execution identity as workspace data.
+
+
+
 [Image Studio](../docs/image-generation.md) uses the optional installation lifecycle and Media page adapter. Only explicit Generate sends a prompt; retire pending requests when hidden, deactivated or transferred. Keep prompt/shape drafts local and preview pixels out of shared workspace snapshots. Provider sign-in and export remain native operations.
 
 [mobile-shell.js](mobile-shell.js) owns responsive presentation over mounted panes; [mobile-model.js](mobile-model.js) derives Today from existing state. Keep native macOS modes excluded and preserve saved activity keys, capture ownership and page-widget identities. See the [mobile contract](../docs/mobile-shell.md); reference typography/mark and device qualification remain separate gates.
@@ -35,6 +39,10 @@ Mobile Task Manager keeps its form and task list in the installed page view’s 
 Mobile Calendar and Reader styling retains their existing data, scheduling, pagination and article-scroll owners. Tools restores focus on dialog close, after native modal dismissal; an explicit installed-page route suppresses that restoration. Keep viewport-only presentation scoped to the mobile shell.
 
 [content-focus.js](content-focus.js) changes presentation without remounting live content; [escape.js](escape.js) restores focused content before collapsing the app and ignores retargeted keyup events. [rail-headings.js](rail-headings.js) delegates full-row targets to existing rail controls while preserving nested actions. [terminal-clipboard.js](terminal-clipboard.js) owns terminal selection/context-menu shortcuts and retires late paste reads after destination changes. [workspace-widgets.js](workspace-widgets.js) gates native view/navigation visibility with lifecycle state while [familiar-capture.js](familiar-capture.js) and [familiar-routing-model.js](familiar-routing-model.js) prepare default or explicitly tagged familiar drafts without sending them.
+
+
+The [iOS host](../ios/README.md) selects [workspace-native.js](workspace-native.js) before canonical hydration. A renderer platform flag selects presentation/backend, never account or operation authority. Native file actions own iOS export/import/recovery UI; browser data dialogs remain browser-specific. Keep Mac backend and native receiving guards intact.
+
 
 Today task edits and completion must use Task Manager and its lifecycle-guarded shared store. Inactive content routes to the available Widgets entry without activation. Preserve the content-focus Escape-before-Today order and explicit fresh-profile widget defaults.
 
